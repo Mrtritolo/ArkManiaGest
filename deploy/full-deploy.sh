@@ -70,9 +70,17 @@ apt-get install -y -qq libnginx-mod-http-geoip2 2>/dev/null || echo "  WARNING: 
 
 # Node.js 20 LTS
 if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d v) -lt 18 ]]; then
-    echo "  Installazione Node.js 20 LTS..."
+    echo "  Installing Node.js 20 LTS..."
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null
     apt-get install -y -qq nodejs
+fi
+
+# Upgrade npm to the latest release on top of NodeSource's bundled one —
+# NodeSource lags behind npm's own release cadence, so a "new major version
+# of npm available" notice would otherwise pop up on every install.
+if command -v npm &>/dev/null; then
+    echo "  Upgrading npm to latest..."
+    npm install -g npm@latest 2>&1 | tail -1 || true
 fi
 
 echo "  Python: $(python3 --version)"
@@ -290,25 +298,34 @@ echo ""
 # =============================================
 echo "=== PHASE 8/9: GeoIP + Nginx production ==="
 
-# Scarica GeoIP DB
+# Download GeoIP DB (db-ip.com, free country-level database).
+# db-ip publishes the new month's DB a few days after the first, so on
+# early-in-the-month deploys we may need to fall back a couple of
+# months.  We try the current month and then the previous 3 months.
 mkdir -p /usr/share/GeoIP
 GEOIP_OK=0
 
-for MONTH in "$(date +%Y-%m)" "$(date -d '-1 month' +%Y-%m 2>/dev/null || date +%Y-%m)"; do
+GEOIP_MONTHS=()
+GEOIP_MONTHS+=("$(date -u +%Y-%m)")
+for OFFSET in 1 2 3; do
+    GEOIP_MONTHS+=("$(date -u -d "-${OFFSET} month" +%Y-%m 2>/dev/null || true)")
+done
+for MONTH in "${GEOIP_MONTHS[@]}"; do
+    [ -z "$MONTH" ] && continue
     URL="https://download.db-ip.com/free/dbip-country-lite-${MONTH}.mmdb.gz"
-    echo "  Provo: $URL"
+    echo "  Trying: $URL"
     if wget -q --timeout=15 "$URL" -O /tmp/geoip.mmdb.gz 2>/dev/null; then
         gunzip -f /tmp/geoip.mmdb.gz
         mv /tmp/geoip.mmdb /usr/share/GeoIP/dbip-country-lite.mmdb
         chmod 644 /usr/share/GeoIP/dbip-country-lite.mmdb
         GEOIP_OK=1
-        echo "  GeoIP DB installato"
+        echo "  GeoIP DB installed ($MONTH)"
         break
     fi
 done
 
 if [ "$GEOIP_OK" = "0" ]; then
-    echo "  GeoIP DB non scaricato -- geo-blocking non attivo"
+    echo "  GeoIP DB not downloaded -- geo-blocking disabled"
 fi
 
 # Controlla se il modulo geoip2 e' disponibile
@@ -321,20 +338,34 @@ fi
 if [ "$SSL_OK" = "1" ]; then
     if [ "$GEOIP_OK" = "1" ] && [ "$HAS_GEOIP_MOD" = "1" ]; then
         # Full config: SSL + GeoIP
-        # Build GeoIP country lines from deploy.conf
-        COUNTRY_LINES=""
+        # Build GeoIP country + IP whitelist blocks as multi-line strings
+        # (real newlines).  We then substitute with awk -- sed cannot take
+        # a replacement that contains literal newlines without escaping,
+        # which is what caused the "unterminated `s' command" error on
+        # earlier releases.
+        COUNTRY_BLOCK=""
         for CC in ${GEOIP_ALLOWED_COUNTRIES:-}; do
-            COUNTRY_LINES="${COUNTRY_LINES}    ${CC}      1;\n"
+            if [ -n "$COUNTRY_BLOCK" ]; then
+                COUNTRY_BLOCK="${COUNTRY_BLOCK}"$'\n'"    ${CC}      1;"
+            else
+                COUNTRY_BLOCK="    ${CC}      1;"
+            fi
         done
-        # Build IP whitelist lines from deploy.conf
-        WL_LINES=""
+        WL_BLOCK=""
         for IP in ${GEOIP_WHITELIST_IPS:-}; do
-            WL_LINES="${WL_LINES}    ${IP} 1;\n"
+            if [ -n "$WL_BLOCK" ]; then
+                WL_BLOCK="${WL_BLOCK}"$'\n'"    ${IP} 1;"
+            else
+                WL_BLOCK="    ${IP} 1;"
+            fi
         done
-        sed -e "s|__GEOIP_COUNTRIES__|$(echo -e "$COUNTRY_LINES")|" \
-            -e "s|__GEOIP_WHITELIST__|$(echo -e "$WL_LINES")|" \
-            deploy/geoip2.conf > /etc/nginx/conf.d/geoip2.conf
-        # Replace placeholders in production nginx config
+        # awk handles multi-line string variables natively via -v.
+        awk -v countries="$COUNTRY_BLOCK" -v whitelist="$WL_BLOCK" '
+            { gsub(/__GEOIP_COUNTRIES__/, countries);
+              gsub(/__GEOIP_WHITELIST__/, whitelist);
+              print }
+        ' deploy/geoip2.conf > /etc/nginx/conf.d/geoip2.conf
+        # Single-line substitutions stay on sed -- no newlines in values.
         sed -e "s|__DOMAIN__|${DOMAIN}|g" \
             -e "s|__APP_DIR__|${APP_DIR}|g" \
             -e "s|__PUBLIC_ORIGIN__|${PUBLIC_SITE_ORIGIN:-https://example.com}|g" \
