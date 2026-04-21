@@ -381,6 +381,362 @@
       "resultsCount": "({{count}} risultati)"
     }
   },
+  "onlinePlayers": {
+    "heading": "Giocatori online",
+    "subtitle": "{{count}} giocatori connessi su {{servers}} server attivi",
+    "updatedLabel": "Aggiornato:",
+    "autoRefreshLabel": "Auto 30s",
+    "refreshButton": "Aggiorna",
+    "allServersLabel": "Tutti i server",
+    "loading": "Caricamento…",
+    "unknownPlayer": "Sconosciuto",
+    "emptyTitle": "Nessun giocatore connesso",
+    "emptyServer": "Nessun giocatore su questo server",
+    "emptyCluster": "Il cluster è attualmente vuoto",
+    "table": {
+      "player": "Giocatore",
+      "server": "Server",
+      "map": "Mappa",
+      "duration": "Durata",
+      "connectedAt": "Connesso alle"
+    }
+  },
+  "bans": {
+    "heading": "Ban Manager",
+    "subtitle": "Gestione ban cluster-wide — {{count}} ban attivi",
+    "newButton": "Nuovo Ban",
+    "stats": {
+      "active": "Ban attivi",
+      "total": "Totale ban",
+      "unbanned": "Sbloccati"
+    },
+    "searchPlaceholder": "Cerca per EOS ID, nome o motivo…",
+    "searchButton": "Cerca",
+    "filterActive": "Attivi",
+    "filterAll": "Tutti",
+    "loading": "Caricamento…",
+    "emptyTitle": "Nessun ban trovato",
+    "emptyNoResults": "Nessun risultato per la ricerca",
+    "emptyNoneAll": "Il cluster non ha ban registrati",
+    "emptyNoneActive": "Nessun ban attivo nel cluster",
+    "table": {
+      "player": "Giocatore",
+      "reason": "Motivo",
+      "bannedBy": "Bannato da",
+      "date": "Data",
+      "expires": "Scadenza",
+      "actions": "Azioni"
+    },
+    "unknownPlayer": "Sconosciuto",
+    "unbannedBadge": "SBLOCCATO",
+    "permanent": "Permanente",
+    "unbanButton": "Sblocca",
+    "copyEosTooltip": "Copia EOS ID",
+    "detail": {
+      "eosId": "EOS ID",
+      "fullReason": "Motivo completo",
+      "bannedAt": "Bannato il",
+      "expires": "Scadenza",
+      "unbannedBy": "Sbloccato da",
+      "unbannedAt": "Sbloccato il"
+    },
+    "confirmUnban": "Sbloccare il ban di {{name}}?",
+    "confirmUnbanFallback": "questo giocatore",
+    "modal": {
+      "title": "Nuovo Ban",
+      "eosLabel": "EOS ID",
+      "eosPlaceholder": "abc123def456…",
+      "nameLabel": "Nome giocatore",
+      "namePlaceholder": "Opzionale",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "Motivo del ban…",
+      "bannedByLabel": "Bannato da",
+      "durationLabel": "Durata",
+      "permanent": "Permanente",
+      "temporary": "Temporaneo",
+      "expireLabel": "Scadenza",
+      "cancel": "Annulla",
+      "submit": "Banna giocatore",
+      "submitting": "Creazione…"
+    },
+    "defaultReason": "Nessun motivo"
+  },
+  "decay": {
+    "heading": "Decay Manager",
+    "subtitle": "Gestione decadimento tribù — {{count}} tribù monitorate",
+    "hoursLeft": {
+      "expired": "Scaduto da {{h}}h",
+      "hours": "{{h}}h rimaste",
+      "days": "{{d}}g {{h}}h"
+    },
+    "tabs": {
+      "tribes": "Tribù",
+      "pending": "In attesa purge",
+      "log": "Log purge"
+    },
+    "stats": {
+      "total": "Totale",
+      "expired": "Scadute",
+      "expiring": "In scadenza",
+      "safe": "Sicure",
+      "pending": "Pending",
+      "purged7d": "Purge 7gg"
+    },
+    "filter": {
+      "all": "Tutte",
+      "expired": "Scadute",
+      "expiring": "In scadenza",
+      "safe": "Sicure"
+    },
+    "searchPlaceholder": "Cerca tribù…",
+    "searchButton": "Cerca",
+    "loading": "Caricamento…",
+    "emptyTribes": "Nessuna tribù trovata",
+    "emptyPending": "Nessuna tribù in attesa di purge",
+    "emptyLog": "Nessuna purge registrata",
+    "unknownTribe": "Non identificata",
+    "defaultGroup": "Default",
+    "status": {
+      "expired": "SCADUTA",
+      "ok": "OK"
+    },
+    "reason": {
+      "orphaned": "Orfana",
+      "expired": "Scaduta"
+    },
+    "tribes": {
+      "table": {
+        "id": "Tribe ID",
+        "name": "Nome tribù",
+        "player": "Giocatore",
+        "group": "Gruppo",
+        "days": "Giorni",
+        "expires": "Scadenza",
+        "status": "Stato"
+      }
+    },
+    "pending": {
+      "table": {
+        "server": "Server",
+        "reason": "Motivo",
+        "structures": "Strutture",
+        "dinos": "Dino",
+        "flaggedAt": "Flaggata"
+      }
+    },
+    "log": {
+      "table": {
+        "map": "Mappa",
+        "by": "Da",
+        "date": "Data"
+      }
+    }
+  },
+  "leaderboard": {
+    "heading": "Classifica",
+    "subtitle": "Classifica giocatori ArkMania",
+    "subtitleSuffix": "— {{players}} giocatori, {{events}} eventi",
+    "sort": {
+      "points": "Punti",
+      "killsWild": "Kill Wild",
+      "killsPvp": "Kill PvP",
+      "tames": "Tame",
+      "crafts": "Craft",
+      "deaths": "Morti"
+    },
+    "stats": {
+      "players": "Giocatori",
+      "totalPoints": "Punti totali",
+      "killsWild": "Kill Wild",
+      "tames": "Tame",
+      "crafts": "Craft",
+      "deaths": "Morti"
+    },
+    "filter": {
+      "allServers": "Tutti"
+    },
+    "tabs": {
+      "ranking": "Classifica",
+      "events": "Eventi recenti"
+    },
+    "sortByLabel": "Ordina per:",
+    "searchPlaceholder": "Cerca giocatore…",
+    "searchButton": "Cerca",
+    "loading": "Caricamento…",
+    "emptyRanking": "Nessun giocatore in classifica",
+    "emptyEvents": "Nessun evento registrato",
+    "table": {
+      "player": "Giocatore",
+      "points": "Punti",
+      "killsWild": "Kill Wild",
+      "killsPvp": "Kill PvP",
+      "tames": "Tame",
+      "crafts": "Craft",
+      "destroyed": "Distrutti",
+      "deaths": "Morti",
+      "last": "Ultimo"
+    },
+    "events": {
+      "typeLabel": "Tipo:",
+      "all": "Tutti",
+      "killWild": "Kill Wild",
+      "killPvp": "Kill PvP",
+      "tame": "Tame",
+      "craft": "Craft",
+      "table": {
+        "event": "Evento",
+        "points": "Punti",
+        "target": "Target",
+        "server": "Server",
+        "date": "Data"
+      }
+    }
+  },
+  "rareDinos": {
+    "heading": "Dino rari",
+    "subtitle": "{{total}} dino nel pool — {{enabled}} abilitati, {{disabled}} disabilitati",
+    "generateRandom": "Genera random",
+    "addDino": "Aggiungi dino",
+    "generator": {
+      "title": "Generatore dino random",
+      "countLabel": "Quantità",
+      "mapLabel": "Mappa",
+      "allMaps": "Tutte le mappe (*)",
+      "statPresetLabel": "Preset stat",
+      "preset": {
+        "none": "Nessuno (senza stat)",
+        "low": "Bassi",
+        "balanced": "Bilanciati",
+        "high": "Alti",
+        "random": "Random (misti)"
+      },
+      "excludeExisting": "Escludi pool esistente",
+      "generating": "Generazione…",
+      "generateBtn": "Genera {{count}} dino",
+      "availableInfo": "{{available}} dino disponibili",
+      "excludedInfo": "({{excluded}} esclusi dal pool)",
+      "colDino": "Dino",
+      "colHp": "HP",
+      "colMelee": "Melee",
+      "colSpeed": "Velocità",
+      "reroll": "Re-roll",
+      "addToPool": "Aggiungi al pool",
+      "replaceAll": "Sostituisci tutti",
+      "confirmReplace": "Questo ELIMINERÀ tutti i dino esistenti e li sostituirà con questi. Continuare?",
+      "errorGeneration": "Generazione fallita",
+      "errorBulkInsert": "Inserimento di massa fallito"
+    },
+    "searchPlaceholder": "Cerca dino…",
+    "filterMap": {
+      "all": "Tutte le mappe",
+      "global": "Globale (*)"
+    },
+    "filterEnabled": {
+      "all": "Tutti",
+      "on": "Attivi",
+      "off": "Disattivi"
+    },
+    "resultsCount": "{{count}} risultati",
+    "loading": "Caricamento…",
+    "empty": "Nessun dino trovato",
+    "table": {
+      "dino": "Dino",
+      "map": "Mappa",
+      "status": "Stato",
+      "actions": "Azioni"
+    },
+    "mapAll": "Tutte",
+    "tooltip": {
+      "edit": "Modifica",
+      "copyBp": "Copia BP",
+      "delete": "Elimina"
+    },
+    "confirmDelete": "Eliminare \"{{name}}\" dal pool?",
+    "errorBpRequired": "Blueprint obbligatorio",
+    "modal": {
+      "editTitle": "Modifica: {{name}}",
+      "newTitle": "Nuovo dino raro",
+      "blueprintLabel": "Blueprint",
+      "blueprintPlaceholder": "Cerca creatura o incolla blueprint…",
+      "mapLabel": "Mappa",
+      "mapAll": "Tutte le mappe",
+      "enabled": "Abilitato",
+      "disabled": "Disabilitato",
+      "statsHeading": "Bonus stat (wild level aggiunti, -1 = disabilitato)",
+      "minLabel": "Min",
+      "maxLabel": "Max",
+      "cancel": "Annulla",
+      "save": "Salva modifiche",
+      "add": "Aggiungi al pool"
+    },
+    "stat": {
+      "health": "Vita",
+      "stamina": "Stamina",
+      "oxygen": "Ossigeno",
+      "food": "Cibo",
+      "weight": "Peso",
+      "melee": "Melee",
+      "speed": "Velocità"
+    }
+  },
+  "transferRules": {
+    "heading": "Regole transfer",
+    "subtitle": "Regole di trasferimento tra server — {{count}} configurate",
+    "newButton": "Nuova regola",
+    "levels": {
+      "full": {
+        "label": "Full",
+        "desc": "Personaggio + inventario + dino"
+      },
+      "survivorInv": {
+        "label": "Survivor + inv.",
+        "desc": "Personaggio e inventario"
+      },
+      "survivorOnly": {
+        "label": "Solo survivor",
+        "desc": "Solo personaggio"
+      },
+      "blocked": {
+        "label": "Bloccato",
+        "desc": "Trasferimento negato"
+      }
+    },
+    "serverTypePrefix": "Tipo: {{type}}",
+    "success": {
+      "created": "Regola creata",
+      "updated": "Regola aggiornata",
+      "deleted": "Regola eliminata"
+    },
+    "confirmDelete": "Eliminare questa regola?",
+    "form": {
+      "heading": "Nuova regola",
+      "sourceLabel": "Sorgente",
+      "destLabel": "Destinazione",
+      "levelLabel": "Livello",
+      "selectPlaceholder": "Seleziona…",
+      "notesPlaceholder": "Note opzionali…",
+      "create": "Crea",
+      "cancel": "Annulla"
+    },
+    "loading": "Caricamento…",
+    "empty": {
+      "title": "Nessuna regola configurata",
+      "hint": "Il livello default (dalla config globale) si applica a tutti i trasferimenti"
+    },
+    "table": {
+      "source": "Sorgente",
+      "dest": "Destinazione",
+      "level": "Livello",
+      "notes": "Note"
+    },
+    "notesPlaceholder": "Note…",
+    "tooltip": {
+      "save": "Salva",
+      "cancel": "Annulla",
+      "edit": "Modifica",
+      "delete": "Elimina"
+    }
+  },
   "database": {
     "title": "Configurazione Database",
     "subtitle": "Connessioni MariaDB — configurate nel file .env del server",

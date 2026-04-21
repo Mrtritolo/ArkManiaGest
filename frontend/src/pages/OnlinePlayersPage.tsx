@@ -6,6 +6,7 @@
  * Auto-refreshes every 30 seconds.
  */
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
 import { Users, RefreshCw, Globe, Server } from 'lucide-react'
 
@@ -45,6 +46,7 @@ function formatMapName(map: string): string {
 }
 
 export default function OnlinePlayersPage() {
+  const { t } = useTranslation()
   const [players, setPlayers]     = useState<OnlinePlayer[]>([])
   const [servers, setServers]     = useState<ServerStat[]>([])
   const [totalOnline, setTotalOnline]     = useState(0)
@@ -86,12 +88,12 @@ export default function OnlinePlayersPage() {
     <div className="page-container">
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Users size={22} /> Online Players</h1>
+          <h1 className="page-title"><Users size={22} /> {t('onlinePlayers.heading')}</h1>
           <p className="page-subtitle">
-            {totalOnline} players connected on {serversOnline} active servers
+            {t('onlinePlayers.subtitle', { count: totalOnline, servers: serversOnline })}
             {lastUpdate && (
               <span style={{ marginLeft: '0.75rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                Updated: {lastUpdate.toLocaleTimeString('it-IT')}
+                {t('onlinePlayers.updatedLabel')} {lastUpdate.toLocaleTimeString(undefined)}
               </span>
             )}
           </p>
@@ -100,10 +102,10 @@ export default function OnlinePlayersPage() {
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem',
                           fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
-            Auto 30s
+            {t('onlinePlayers.autoRefreshLabel')}
           </label>
           <button onClick={() => loadData(true)} className="btn btn-ghost" disabled={refreshing} style={{ fontSize: '0.8rem' }}>
-            <RefreshCw size={14} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} /> Refresh
+            <RefreshCw size={14} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} /> {t('onlinePlayers.refreshButton')}
           </button>
         </div>
       </div>
@@ -127,7 +129,7 @@ export default function OnlinePlayersPage() {
           </div>
           <div>
             <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{totalOnline}</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>All servers</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>{t('onlinePlayers.allServersLabel')}</div>
           </div>
         </button>
 
@@ -170,13 +172,13 @@ export default function OnlinePlayersPage() {
 
       {/* Player table */}
       {loading ? (
-        <div className="pl-loading">Loading…</div>
+        <div className="pl-loading">{t('onlinePlayers.loading')}</div>
       ) : filteredPlayers.length === 0 ? (
         <div className="pl-empty" style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
           <Users size={48} style={{ opacity: 0.15 }} />
-          <p style={{ fontSize: '0.92rem', fontWeight: 500 }}>No players connected</p>
+          <p style={{ fontSize: '0.92rem', fontWeight: 500 }}>{t('onlinePlayers.emptyTitle')}</p>
           <p style={{ fontSize: '0.78rem' }}>
-            {filterServer !== 'all' ? 'No players on this server' : 'The cluster is currently empty'}
+            {filterServer !== 'all' ? t('onlinePlayers.emptyServer') : t('onlinePlayers.emptyCluster')}
           </p>
         </div>
       ) : (
@@ -189,9 +191,9 @@ export default function OnlinePlayersPage() {
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
             letterSpacing: '0.06em', color: 'var(--text-secondary)',
           }}>
-            <span>Player</span><span>Server</span><span>Map</span>
-            <span style={{ textAlign: 'center' }}>Duration</span>
-            <span style={{ textAlign: 'right' }}>Connected at</span>
+            <span>{t('onlinePlayers.table.player')}</span><span>{t('onlinePlayers.table.server')}</span><span>{t('onlinePlayers.table.map')}</span>
+            <span style={{ textAlign: 'center' }}>{t('onlinePlayers.table.duration')}</span>
+            <span style={{ textAlign: 'right' }}>{t('onlinePlayers.table.connectedAt')}</span>
           </div>
 
           {filteredPlayers.map((p) => (
@@ -205,7 +207,7 @@ export default function OnlinePlayersPage() {
                                 background: '#22c55e', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
                   <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)',
                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.player_name || 'Unknown'}
+                    {p.player_name || t('onlinePlayers.unknownPlayer')}
                   </span>
                 </div>
                 <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
@@ -233,7 +235,7 @@ export default function OnlinePlayersPage() {
               </div>
               <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 {p.login_time
-                  ? new Date(p.login_time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+                  ? new Date(p.login_time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
                   : '—'}
               </div>
             </div>

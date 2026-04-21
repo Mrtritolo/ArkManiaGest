@@ -381,6 +381,362 @@
       "resultsCount": "({{count}} results)"
     }
   },
+  "onlinePlayers": {
+    "heading": "Online Players",
+    "subtitle": "{{count}} players connected on {{servers}} active servers",
+    "updatedLabel": "Updated:",
+    "autoRefreshLabel": "Auto 30s",
+    "refreshButton": "Refresh",
+    "allServersLabel": "All servers",
+    "loading": "Loading…",
+    "unknownPlayer": "Unknown",
+    "emptyTitle": "No players connected",
+    "emptyServer": "No players on this server",
+    "emptyCluster": "The cluster is currently empty",
+    "table": {
+      "player": "Player",
+      "server": "Server",
+      "map": "Map",
+      "duration": "Duration",
+      "connectedAt": "Connected at"
+    }
+  },
+  "bans": {
+    "heading": "Ban Manager",
+    "subtitle": "Cluster-wide ban management — {{count}} active bans",
+    "newButton": "New Ban",
+    "stats": {
+      "active": "Active bans",
+      "total": "Total bans",
+      "unbanned": "Unbanned"
+    },
+    "searchPlaceholder": "Search by EOS ID, name or reason…",
+    "searchButton": "Search",
+    "filterActive": "Active",
+    "filterAll": "All",
+    "loading": "Loading…",
+    "emptyTitle": "No bans found",
+    "emptyNoResults": "No results for the search",
+    "emptyNoneAll": "The cluster has no recorded bans",
+    "emptyNoneActive": "No active bans on the cluster",
+    "table": {
+      "player": "Player",
+      "reason": "Reason",
+      "bannedBy": "Banned by",
+      "date": "Date",
+      "expires": "Expires",
+      "actions": "Actions"
+    },
+    "unknownPlayer": "Unknown",
+    "unbannedBadge": "UNBANNED",
+    "permanent": "Permanent",
+    "unbanButton": "Unban",
+    "copyEosTooltip": "Copy EOS ID",
+    "detail": {
+      "eosId": "EOS ID",
+      "fullReason": "Full reason",
+      "bannedAt": "Banned on",
+      "expires": "Expires",
+      "unbannedBy": "Unbanned by",
+      "unbannedAt": "Unbanned on"
+    },
+    "confirmUnban": "Unban {{name}}?",
+    "confirmUnbanFallback": "this player",
+    "modal": {
+      "title": "New Ban",
+      "eosLabel": "EOS ID",
+      "eosPlaceholder": "abc123def456…",
+      "nameLabel": "Player name",
+      "namePlaceholder": "Optional",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Ban reason…",
+      "bannedByLabel": "Banned by",
+      "durationLabel": "Duration",
+      "permanent": "Permanent",
+      "temporary": "Temporary",
+      "expireLabel": "Expires",
+      "cancel": "Cancel",
+      "submit": "Ban Player",
+      "submitting": "Creating…"
+    },
+    "defaultReason": "No reason"
+  },
+  "decay": {
+    "heading": "Decay Manager",
+    "subtitle": "Tribe decay management — {{count}} tribes monitored",
+    "hoursLeft": {
+      "expired": "Expired {{h}}h ago",
+      "hours": "{{h}}h remaining",
+      "days": "{{d}}d {{h}}h"
+    },
+    "tabs": {
+      "tribes": "Tribes",
+      "pending": "Pending purge",
+      "log": "Purge log"
+    },
+    "stats": {
+      "total": "Total",
+      "expired": "Expired",
+      "expiring": "Expiring",
+      "safe": "Safe",
+      "pending": "Pending",
+      "purged7d": "Purged 7d"
+    },
+    "filter": {
+      "all": "All",
+      "expired": "Expired",
+      "expiring": "Expiring",
+      "safe": "Safe"
+    },
+    "searchPlaceholder": "Search tribes…",
+    "searchButton": "Search",
+    "loading": "Loading…",
+    "emptyTribes": "No tribes found",
+    "emptyPending": "No tribes pending purge",
+    "emptyLog": "No purges recorded",
+    "unknownTribe": "Unidentified",
+    "defaultGroup": "Default",
+    "status": {
+      "expired": "EXPIRED",
+      "ok": "OK"
+    },
+    "reason": {
+      "orphaned": "Orphaned",
+      "expired": "Expired"
+    },
+    "tribes": {
+      "table": {
+        "id": "Tribe ID",
+        "name": "Tribe name",
+        "player": "Player",
+        "group": "Group",
+        "days": "Days",
+        "expires": "Expires",
+        "status": "Status"
+      }
+    },
+    "pending": {
+      "table": {
+        "server": "Server",
+        "reason": "Reason",
+        "structures": "Structures",
+        "dinos": "Dinos",
+        "flaggedAt": "Flagged"
+      }
+    },
+    "log": {
+      "table": {
+        "map": "Map",
+        "by": "By",
+        "date": "Date"
+      }
+    }
+  },
+  "leaderboard": {
+    "heading": "Leaderboard",
+    "subtitle": "ArkMania player ranking",
+    "subtitleSuffix": "— {{players}} players, {{events}} events",
+    "sort": {
+      "points": "Points",
+      "killsWild": "Wild Kills",
+      "killsPvp": "PvP Kills",
+      "tames": "Tames",
+      "crafts": "Crafts",
+      "deaths": "Deaths"
+    },
+    "stats": {
+      "players": "Players",
+      "totalPoints": "Total Points",
+      "killsWild": "Wild Kills",
+      "tames": "Tames",
+      "crafts": "Crafts",
+      "deaths": "Deaths"
+    },
+    "filter": {
+      "allServers": "All"
+    },
+    "tabs": {
+      "ranking": "Ranking",
+      "events": "Recent events"
+    },
+    "sortByLabel": "Sort by:",
+    "searchPlaceholder": "Search player…",
+    "searchButton": "Search",
+    "loading": "Loading…",
+    "emptyRanking": "No players ranked",
+    "emptyEvents": "No events recorded",
+    "table": {
+      "player": "Player",
+      "points": "Points",
+      "killsWild": "Wild Kills",
+      "killsPvp": "PvP Kills",
+      "tames": "Tames",
+      "crafts": "Crafts",
+      "destroyed": "Destroyed",
+      "deaths": "Deaths",
+      "last": "Last"
+    },
+    "events": {
+      "typeLabel": "Type:",
+      "all": "All",
+      "killWild": "Wild Kill",
+      "killPvp": "PvP Kill",
+      "tame": "Tame",
+      "craft": "Craft",
+      "table": {
+        "event": "Event",
+        "points": "Points",
+        "target": "Target",
+        "server": "Server",
+        "date": "Date"
+      }
+    }
+  },
+  "rareDinos": {
+    "heading": "Rare Dinos",
+    "subtitle": "{{total}} dinos in pool — {{enabled}} enabled, {{disabled}} disabled",
+    "generateRandom": "Generate Random",
+    "addDino": "Add Dino",
+    "generator": {
+      "title": "Random Dino Generator",
+      "countLabel": "Count",
+      "mapLabel": "Map",
+      "allMaps": "All maps (*)",
+      "statPresetLabel": "Stat Preset",
+      "preset": {
+        "none": "None (no stats)",
+        "low": "Low",
+        "balanced": "Balanced",
+        "high": "High",
+        "random": "Random (mixed)"
+      },
+      "excludeExisting": "Exclude existing pool",
+      "generating": "Generating…",
+      "generateBtn": "Generate {{count}} Dinos",
+      "availableInfo": "{{available}} dinos available",
+      "excludedInfo": "({{excluded}} excluded from pool)",
+      "colDino": "Dino",
+      "colHp": "HP",
+      "colMelee": "Melee",
+      "colSpeed": "Speed",
+      "reroll": "Re-roll",
+      "addToPool": "Add to Pool",
+      "replaceAll": "Replace All",
+      "confirmReplace": "This will DELETE all existing dinos and replace with these. Continue?",
+      "errorGeneration": "Generation failed",
+      "errorBulkInsert": "Bulk insert failed"
+    },
+    "searchPlaceholder": "Search dinos…",
+    "filterMap": {
+      "all": "All maps",
+      "global": "Global (*)"
+    },
+    "filterEnabled": {
+      "all": "All",
+      "on": "Enabled",
+      "off": "Disabled"
+    },
+    "resultsCount": "{{count}} results",
+    "loading": "Loading…",
+    "empty": "No dinos found",
+    "table": {
+      "dino": "Dino",
+      "map": "Map",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "mapAll": "All",
+    "tooltip": {
+      "edit": "Edit",
+      "copyBp": "Copy BP",
+      "delete": "Delete"
+    },
+    "confirmDelete": "Remove \"{{name}}\" from the pool?",
+    "errorBpRequired": "Blueprint required",
+    "modal": {
+      "editTitle": "Edit: {{name}}",
+      "newTitle": "New Rare Dino",
+      "blueprintLabel": "Blueprint",
+      "blueprintPlaceholder": "Search creature or paste blueprint…",
+      "mapLabel": "Map",
+      "mapAll": "All maps",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "statsHeading": "Stat Bonus (wild levels added, -1 = disabled)",
+      "minLabel": "Min",
+      "maxLabel": "Max",
+      "cancel": "Cancel",
+      "save": "Save Changes",
+      "add": "Add to Pool"
+    },
+    "stat": {
+      "health": "Health",
+      "stamina": "Stamina",
+      "oxygen": "Oxygen",
+      "food": "Food",
+      "weight": "Weight",
+      "melee": "Melee",
+      "speed": "Speed"
+    }
+  },
+  "transferRules": {
+    "heading": "Transfer Rules",
+    "subtitle": "Server-to-server transfer rules — {{count}} configured",
+    "newButton": "New Rule",
+    "levels": {
+      "full": {
+        "label": "Full",
+        "desc": "Character + inventory + dinos"
+      },
+      "survivorInv": {
+        "label": "Survivor + Inv.",
+        "desc": "Character and inventory"
+      },
+      "survivorOnly": {
+        "label": "Survivor only",
+        "desc": "Character only"
+      },
+      "blocked": {
+        "label": "Blocked",
+        "desc": "Transfer denied"
+      }
+    },
+    "serverTypePrefix": "Type: {{type}}",
+    "success": {
+      "created": "Rule created",
+      "updated": "Rule updated",
+      "deleted": "Rule deleted"
+    },
+    "confirmDelete": "Delete this rule?",
+    "form": {
+      "heading": "New Rule",
+      "sourceLabel": "Source",
+      "destLabel": "Destination",
+      "levelLabel": "Level",
+      "selectPlaceholder": "Select…",
+      "notesPlaceholder": "Optional notes…",
+      "create": "Create",
+      "cancel": "Cancel"
+    },
+    "loading": "Loading…",
+    "empty": {
+      "title": "No rules configured",
+      "hint": "The default level (from the global config) applies to all transfers"
+    },
+    "table": {
+      "source": "Source",
+      "dest": "Destination",
+      "level": "Level",
+      "notes": "Notes"
+    },
+    "notesPlaceholder": "Notes…",
+    "tooltip": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete"
+    }
+  },
   "database": {
     "title": "Database Configuration",
     "subtitle": "MariaDB connections — configured in the server .env file",

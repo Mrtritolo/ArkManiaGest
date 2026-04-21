@@ -3,6 +3,7 @@
  * Shows tribes with decay status, pending purge, and recent logs.
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkDecayApi } from '../services/api'
 import {
   Timer, Search, AlertCircle, AlertTriangle, CheckCircle, Clock,
@@ -33,19 +34,21 @@ interface DecayStats {
 
 function formatDate(iso: string | null) {
   if (!iso) return '—'
-  try { const d = new Date(iso); return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) }
+  try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) }
   catch { return iso.slice(0, 16) }
-}
-
-function formatHoursLeft(h: number) {
-  if (h < 0) return `Scaduto da ${Math.abs(h)}h`
-  if (h < 24) return `${h}h rimaste`
-  return `${Math.floor(h / 24)}g ${h % 24}h`
 }
 
 type TabType = 'tribes' | 'pending' | 'log'
 
 export default function DecayPage() {
+  const { t } = useTranslation()
+
+  function formatHoursLeft(h: number) {
+    if (h < 0) return t('decay.hoursLeft.expired', { h: Math.abs(h) })
+    if (h < 24) return t('decay.hoursLeft.hours', { h })
+    return t('decay.hoursLeft.days', { d: Math.floor(h / 24), h: h % 24 })
+  }
+
   const [stats, setStats] = useState<DecayStats>({ total: 0, expired: 0, expiring_soon: 0, safe: 0, pending: 0, purged_last_7d: 0 })
   const [tribes, setTribes] = useState<DecayTribe[]>([])
   const [pending, setPending] = useState<PendingItem[]>([])
@@ -80,9 +83,9 @@ export default function DecayPage() {
   }
 
   const TABS: { key: TabType; label: string; count: number }[] = [
-    { key: 'tribes', label: 'Tribù', count: stats.total },
-    { key: 'pending', label: 'In attesa purge', count: stats.pending },
-    { key: 'log', label: 'Log purge', count: stats.purged_last_7d },
+    { key: 'tribes', label: t('decay.tabs.tribes'), count: stats.total },
+    { key: 'pending', label: t('decay.tabs.pending'), count: stats.pending },
+    { key: 'log', label: t('decay.tabs.log'), count: stats.purged_last_7d },
   ]
 
   return (
@@ -90,8 +93,8 @@ export default function DecayPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Timer size={22} /> Decay Manager</h1>
-          <p className="page-subtitle">Gestione decadimento tribù — {stats.total} tribù monitorate</p>
+          <h1 className="page-title"><Timer size={22} /> {t('decay.heading')}</h1>
+          <p className="page-subtitle">{t('decay.subtitle', { count: stats.total })}</p>
         </div>
       </div>
 
@@ -105,12 +108,12 @@ export default function DecayPage() {
       {/* Stats cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.6rem', marginBottom: '1.25rem' }}>
         {[
-          { label: 'Totale', value: stats.total, icon: Building, color: 'var(--accent)', bg: 'var(--accent-glow)' },
-          { label: 'Scadute', value: stats.expired, icon: XCircle, color: 'var(--danger)', bg: 'var(--danger-bg)' },
-          { label: 'In scadenza', value: stats.expiring_soon, icon: AlertTriangle, color: 'var(--warning)', bg: 'var(--warning-bg)' },
-          { label: 'Sicure', value: stats.safe, icon: CheckCircle, color: 'var(--success)', bg: 'var(--success-bg)' },
-          { label: 'Pending', value: stats.pending, icon: Clock, color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },
-          { label: 'Purge 7gg', value: stats.purged_last_7d, icon: Trash2, color: 'var(--text-muted)', bg: 'var(--bg-card-muted)' },
+          { label: t('decay.stats.total'), value: stats.total, icon: Building, color: 'var(--accent)', bg: 'var(--accent-glow)' },
+          { label: t('decay.stats.expired'), value: stats.expired, icon: XCircle, color: 'var(--danger)', bg: 'var(--danger-bg)' },
+          { label: t('decay.stats.expiring'), value: stats.expiring_soon, icon: AlertTriangle, color: 'var(--warning)', bg: 'var(--warning-bg)' },
+          { label: t('decay.stats.safe'), value: stats.safe, icon: CheckCircle, color: 'var(--success)', bg: 'var(--success-bg)' },
+          { label: t('decay.stats.pending'), value: stats.pending, icon: Clock, color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },
+          { label: t('decay.stats.purged7d'), value: stats.purged_last_7d, icon: Trash2, color: 'var(--text-muted)', bg: 'var(--bg-card-muted)' },
         ].map(s => (
           <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.85rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
             <div style={{ width: 32, height: 32, borderRadius: 7, background: s.bg, border: `1px solid ${s.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -126,18 +129,18 @@ export default function DecayPage() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '2px', marginBottom: '0.75rem' }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+        {TABS.map(tb => (
+          <button key={tb.key} onClick={() => setActiveTab(tb.key)} style={{
             display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.5rem 0.9rem',
             border: 'none', borderRadius: '8px 8px 0 0', cursor: 'pointer', whiteSpace: 'nowrap',
-            background: activeTab === t.key ? 'var(--bg-card)' : 'transparent',
-            color: activeTab === t.key ? 'var(--accent)' : 'var(--text-muted)',
-            fontWeight: activeTab === t.key ? 600 : 500, fontSize: '0.88rem',
-            borderBottom: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
-            boxShadow: activeTab === t.key ? 'var(--shadow-sm)' : 'none',
+            background: activeTab === tb.key ? 'var(--bg-card)' : 'transparent',
+            color: activeTab === tb.key ? 'var(--accent)' : 'var(--text-muted)',
+            fontWeight: activeTab === tb.key ? 600 : 500, fontSize: '0.88rem',
+            borderBottom: activeTab === tb.key ? '2px solid var(--accent)' : '2px solid transparent',
+            boxShadow: activeTab === tb.key ? 'var(--shadow-sm)' : 'none',
           }}>
-            {t.label}
-            <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{t.count}</span>
+            {tb.label}
+            <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{tb.count}</span>
           </button>
         ))}
       </div>
@@ -154,52 +157,52 @@ export default function DecayPage() {
                   background: filterStatus === f ? 'var(--accent)' : 'var(--bg-input)',
                   color: filterStatus === f ? '#fff' : 'var(--text-secondary)',
                 }}>
-                  {f === 'all' ? 'Tutte' : f === 'expired' ? 'Scadute' : f === 'expiring' ? 'In scadenza' : 'Sicure'}
+                  {f === 'all' ? t('decay.filter.all') : f === 'expired' ? t('decay.filter.expired') : f === 'expiring' ? t('decay.filter.expiring') : t('decay.filter.safe')}
                 </button>
               ))}
             </div>
             <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.3rem' }}>
               <div style={{ position: 'relative', width: 220 }}>
                 <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input className="input" placeholder="Cerca tribù..." value={search} onChange={e => setSearch(e.target.value)}
+                <input className="input" placeholder={t('decay.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)}
                   style={{ paddingLeft: 26, fontSize: '0.82rem', height: 32 }} />
               </div>
-              <button type="submit" className="btn btn-primary" style={{ height: 32, fontSize: '0.78rem' }}>Cerca</button>
+              <button type="submit" className="btn btn-primary" style={{ height: 32, fontSize: '0.78rem' }}>{t('decay.searchButton')}</button>
             </form>
           </div>
 
           {/* Table */}
           <div style={{ maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
-            {loading ? <div className="pl-loading">Caricamento...</div> : tribes.length === 0 ? (
-              <div className="pl-empty"><Timer size={40} style={{ opacity: 0.15 }} /><p>Nessuna tribù trovata</p></div>
+            {loading ? <div className="pl-loading">{t('decay.loading')}</div> : tribes.length === 0 ? (
+              <div className="pl-empty"><Timer size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyTribes')}</p></div>
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                  <span>Tribe ID</span><span>Nome Tribù</span><span>Giocatore</span><span>Gruppo</span><span>Giorni</span><span>Scadenza</span><span style={{ textAlign: 'center' }}>Stato</span>
+                  <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.tribes.table.group')}</span><span>{t('decay.tribes.table.days')}</span><span>{t('decay.tribes.table.expires')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.status')}</span>
                 </div>
-                {tribes.map(t => (
-                  <div key={t.targeting_team} style={{
+                {tribes.map(tr => (
+                  <div key={tr.targeting_team} style={{
                     display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px',
                     padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
                   }}>
-                    <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{t.targeting_team}</span>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, fontStyle: t.tribe_name ? 'normal' : 'italic', color: t.tribe_name ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                      {t.tribe_name || 'Non Identificata'}
+                    <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{tr.targeting_team}</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, fontStyle: tr.tribe_name ? 'normal' : 'italic', color: tr.tribe_name ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                      {tr.tribe_name || t('decay.unknownTribe')}
                     </span>
                     <div>
-                      <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{t.player_name || '—'}</div>
-                      <div style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', opacity: 0.6 }}>{t.last_refresh_eos?.slice(0, 16)}</div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{tr.player_name || '—'}</div>
+                      <div style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', opacity: 0.6 }}>{tr.last_refresh_eos?.slice(0, 16)}</div>
                     </div>
-                    <span style={{ fontSize: '0.82rem' }}>{t.last_refresh_group || 'Default'}</span>
-                    <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{t.last_refresh_days}g</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(t.expire_time)}</span>
+                    <span style={{ fontSize: '0.82rem' }}>{tr.last_refresh_group || t('decay.defaultGroup')}</span>
+                    <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{tr.last_refresh_days}g</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(tr.expire_time)}</span>
                     <div style={{ textAlign: 'center' }}>
                       <span style={{
                         fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: 4,
-                        background: t.status === 'expired' ? 'var(--danger-bg)' : t.status === 'expiring' ? 'var(--warning-bg)' : 'var(--success-bg)',
-                        color: t.status === 'expired' ? 'var(--danger)' : t.status === 'expiring' ? 'var(--warning)' : 'var(--success)',
+                        background: tr.status === 'expired' ? 'var(--danger-bg)' : tr.status === 'expiring' ? 'var(--warning-bg)' : 'var(--success-bg)',
+                        color: tr.status === 'expired' ? 'var(--danger)' : tr.status === 'expiring' ? 'var(--warning)' : 'var(--success)',
                       }}>
-                        {t.status === 'expired' ? 'SCADUTA' : t.status === 'expiring' ? formatHoursLeft(t.hours_left) : 'OK'}
+                        {tr.status === 'expired' ? t('decay.status.expired') : tr.status === 'expiring' ? formatHoursLeft(tr.hours_left) : t('decay.status.ok')}
                       </span>
                     </div>
                   </div>
@@ -214,11 +217,11 @@ export default function DecayPage() {
       {activeTab === 'pending' && (
         <div className="card" style={{ minHeight: 200 }}>
           {pending.length === 0 ? (
-            <div className="pl-empty"><CheckCircle size={40} style={{ opacity: 0.15 }} /><p>Nessuna tribù in attesa di purge</p></div>
+            <div className="pl-empty"><CheckCircle size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyPending')}</p></div>
           ) : (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                <span>Tribe ID</span><span>Nome Tribù</span><span>Giocatore</span><span>Server</span><span>Motivo</span><span>Strutture</span><span>Dino</span><span>Flaggata</span>
+                <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.flaggedAt')}</span>
               </div>
               {pending.map(p => (
                 <div key={`${p.targeting_team}-${p.server_key}`} style={{
@@ -227,15 +230,15 @@ export default function DecayPage() {
                 }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 600 }}>{p.targeting_team}</span>
                   <span style={{ fontSize: '0.82rem', fontWeight: 600, fontStyle: p.tribe_name ? 'normal' : 'italic', color: p.tribe_name ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                    {p.tribe_name || 'Non Identificata'}
+                    {p.tribe_name || t('decay.unknownTribe')}
                   </span>
                   <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{p.player_name || '—'}</span>
                   <span style={{ fontSize: '0.82rem' }}>{p.server_name || p.server_key.split('_')[0]}</span>
                   <span style={{
                     fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase',
                     color: p.reason === 'orphaned' ? '#8b5cf6' : 'var(--danger)',
-                  }}>{p.reason === 'orphaned' ? 'Orfana' : p.reason === 'expired' ? 'Scaduta' : p.reason}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: p.structure_count > 500 ? 700 : 400, color: p.structure_count > 500 ? 'var(--danger)' : 'var(--text-secondary)' }}>{p.structure_count.toLocaleString('it-IT')}</span>
+                  }}>{p.reason === 'orphaned' ? t('decay.reason.orphaned') : p.reason === 'expired' ? t('decay.reason.expired') : p.reason}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: p.structure_count > 500 ? 700 : 400, color: p.structure_count > 500 ? 'var(--danger)' : 'var(--text-secondary)' }}>{p.structure_count.toLocaleString(undefined)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{p.dino_count}</span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(p.flagged_at)}</span>
                 </div>
@@ -249,11 +252,11 @@ export default function DecayPage() {
       {activeTab === 'log' && (
         <div className="card" style={{ minHeight: 200 }}>
           {log.length === 0 ? (
-            <div className="pl-empty"><Activity size={40} style={{ opacity: 0.15 }} /><p>Nessuna purge registrata</p></div>
+            <div className="pl-empty"><Activity size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyLog')}</p></div>
           ) : (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 100px 100px 100px 130px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                <span>Tribe ID</span><span>Server</span><span>Mappa</span><span>Strutture</span><span>Dino</span><span>Da</span><span>Data</span>
+                <span>{t('decay.tribes.table.id')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.log.table.map')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.log.table.by')}</span><span>{t('decay.log.table.date')}</span>
               </div>
               {log.map(l => (
                 <div key={l.id} style={{

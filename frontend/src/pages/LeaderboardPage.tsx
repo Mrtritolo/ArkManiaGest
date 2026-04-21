@@ -3,6 +3,7 @@
  * Scores, PvE/PvP filters, recent event log.
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkLeaderboardApi } from '../services/api'
 import {
   Trophy, Search, Crosshair, Heart, Hammer, Skull, Users, Activity,
@@ -36,21 +37,12 @@ const EVENT_ICONS: Record<number, string> = {
   1: '🗡️', 2: '⚔️', 3: '☠️', 4: '🦎', 5: '🔨', 6: '💥', 7: '💀',
 }
 
-const SORT_OPTIONS = [
-  { value: 'total_points', label: 'Punti' },
-  { value: 'kills_wild', label: 'Kill Wild' },
-  { value: 'kills_player', label: 'Kill PvP' },
-  { value: 'tames', label: 'Tame' },
-  { value: 'crafts', label: 'Craft' },
-  { value: 'deaths', label: 'Morti' },
-]
-
 function fmtDate(iso: string | null) {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
-    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) + ' ' +
-           d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' +
+           d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
   } catch { return iso.slice(0, 16) }
 }
 
@@ -61,6 +53,17 @@ function fmtServer(key: string) {
 type TabType = 'classifica' | 'eventi'
 
 export default function LeaderboardPage() {
+  const { t } = useTranslation()
+
+  const SORT_OPTIONS = [
+    { value: 'total_points', label: t('leaderboard.sort.points') },
+    { value: 'kills_wild', label: t('leaderboard.sort.killsWild') },
+    { value: 'kills_player', label: t('leaderboard.sort.killsPvp') },
+    { value: 'tames', label: t('leaderboard.sort.tames') },
+    { value: 'crafts', label: t('leaderboard.sort.crafts') },
+    { value: 'deaths', label: t('leaderboard.sort.deaths') },
+  ]
+
   const [stats, setStats] = useState<LbStats | null>(null)
   const [scores, setScores] = useState<LbScore[]>([])
   const [events, setEvents] = useState<LbEvent[]>([])
@@ -111,8 +114,8 @@ export default function LeaderboardPage() {
   }
 
   const TABS: { key: TabType; label: string }[] = [
-    { key: 'classifica', label: 'Classifica' },
-    { key: 'eventi', label: 'Eventi recenti' },
+    { key: 'classifica', label: t('leaderboard.tabs.ranking') },
+    { key: 'eventi', label: t('leaderboard.tabs.events') },
   ]
 
   return (
@@ -120,10 +123,10 @@ export default function LeaderboardPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Trophy size={22} /> Leaderboard</h1>
+          <h1 className="page-title"><Trophy size={22} /> {t('leaderboard.heading')}</h1>
           <p className="page-subtitle">
-            Classifica giocatori ArkMania
-            {stats && <> — {stats.total_players} giocatori, {stats.total_events} eventi</>}
+            {t('leaderboard.subtitle')}
+            {stats && <> {t('leaderboard.subtitleSuffix', { players: stats.total_players, events: stats.total_events })}</>}
           </p>
         </div>
         <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }}>
@@ -142,12 +145,12 @@ export default function LeaderboardPage() {
       {stats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
           {[
-            { label: 'Giocatori', value: stats.total_players, icon: Users, color: 'var(--accent)' },
-            { label: 'Punti Totali', value: stats.total_points, icon: Trophy, color: '#f59e0b' },
-            { label: 'Kill Wild', value: stats.total_kills_wild, icon: Crosshair, color: '#ef4444' },
-            { label: 'Tame', value: stats.total_tames, icon: Heart, color: '#22c55e' },
-            { label: 'Craft', value: stats.total_crafts, icon: Hammer, color: '#3b82f6' },
-            { label: 'Morti', value: stats.total_deaths, icon: Skull, color: '#6b7280' },
+            { label: t('leaderboard.stats.players'), value: stats.total_players, icon: Users, color: 'var(--accent)' },
+            { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy, color: '#f59e0b' },
+            { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair, color: '#ef4444' },
+            { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart, color: '#22c55e' },
+            { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer, color: '#3b82f6' },
+            { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull, color: '#6b7280' },
           ].map(s => (
             <div key={s.label} style={{
               display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem',
@@ -155,7 +158,7 @@ export default function LeaderboardPage() {
             }}>
               <s.icon size={15} color={s.color} />
               <div>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>{loading ? '...' : s.value.toLocaleString('it-IT')}</div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>{loading ? '...' : s.value.toLocaleString(undefined)}</div>
                 <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{s.label}</div>
               </div>
             </div>
@@ -166,27 +169,27 @@ export default function LeaderboardPage() {
       {/* Filtri globali */}
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)' }}>
-          {['', 'PvE', 'PvP'].map(t => (
-            <button key={t} onClick={() => setServerType(t)} style={{
+          {['', 'PvE', 'PvP'].map(st => (
+            <button key={st} onClick={() => setServerType(st)} style={{
               padding: '0.3rem 0.65rem', border: 'none', fontSize: '0.78rem', fontWeight: 500, cursor: 'pointer',
-              background: serverType === t ? 'var(--accent)' : 'var(--bg-input)',
-              color: serverType === t ? '#fff' : 'var(--text-secondary)',
+              background: serverType === st ? 'var(--accent)' : 'var(--bg-input)',
+              color: serverType === st ? '#fff' : 'var(--text-secondary)',
             }}>
-              {t || 'Tutti'}
+              {st || t('leaderboard.filter.allServers')}
             </button>
           ))}
         </div>
 
         {/* Tabs */}
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+        {TABS.map(tb => (
+          <button key={tb.key} onClick={() => setActiveTab(tb.key)} style={{
             padding: '0.3rem 0.75rem', border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer',
-            background: activeTab === t.key ? 'var(--bg-card)' : 'transparent',
-            color: activeTab === t.key ? 'var(--accent)' : 'var(--text-muted)',
-            fontWeight: activeTab === t.key ? 700 : 500, fontSize: '0.82rem',
-            boxShadow: activeTab === t.key ? 'var(--shadow-sm)' : 'none',
+            background: activeTab === tb.key ? 'var(--bg-card)' : 'transparent',
+            color: activeTab === tb.key ? 'var(--accent)' : 'var(--text-muted)',
+            fontWeight: activeTab === tb.key ? 700 : 500, fontSize: '0.82rem',
+            boxShadow: activeTab === tb.key ? 'var(--shadow-sm)' : 'none',
           }}>
-            {t.label}
+            {tb.label}
           </button>
         ))}
       </div>
@@ -197,7 +200,7 @@ export default function LeaderboardPage() {
           {/* Toolbar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-card-muted)', gap: '0.5rem', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Ordina per:</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('leaderboard.sortByLabel')}</span>
               <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{
                 fontSize: '0.78rem', padding: '0.2rem 0.5rem', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)', background: 'var(--bg-input)', color: 'var(--text-primary)',
@@ -208,25 +211,25 @@ export default function LeaderboardPage() {
             <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.3rem' }}>
               <div style={{ position: 'relative', width: 200 }}>
                 <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input className="input" placeholder="Cerca giocatore..." value={search} onChange={e => setSearch(e.target.value)}
+                <input className="input" placeholder={t('leaderboard.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)}
                   style={{ paddingLeft: 26, fontSize: '0.82rem', height: 30 }} />
               </div>
-              <button type="submit" className="btn btn-primary" style={{ height: 30, fontSize: '0.75rem' }}>Cerca</button>
+              <button type="submit" className="btn btn-primary" style={{ height: 30, fontSize: '0.75rem' }}>{t('leaderboard.searchButton')}</button>
             </form>
           </div>
 
           {/* Table */}
           <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
-            {loading ? <div className="pl-loading">Caricamento...</div> : scores.length === 0 ? (
-              <div className="pl-empty"><Trophy size={40} style={{ opacity: 0.12 }} /><p>Nessun giocatore in classifica</p></div>
+            {loading ? <div className="pl-loading">{t('leaderboard.loading')}</div> : scores.length === 0 ? (
+              <div className="pl-empty"><Trophy size={40} style={{ opacity: 0.12 }} /><p>{t('leaderboard.emptyRanking')}</p></div>
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '50px 1.5fr 80px 80px 70px 70px 70px 70px 70px 100px', padding: '0.45rem 1rem', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)', position: 'sticky', top: 0 }}>
-                  <span>#</span><span>Giocatore</span><span style={{ textAlign: 'right' }}>Punti</span>
-                  <span style={{ textAlign: 'right' }}>Kill Wild</span><span style={{ textAlign: 'right' }}>Kill PvP</span>
-                  <span style={{ textAlign: 'right' }}>Tame</span><span style={{ textAlign: 'right' }}>Craft</span>
-                  <span style={{ textAlign: 'right' }}>Distrutti</span><span style={{ textAlign: 'right' }}>Morti</span>
-                  <span style={{ textAlign: 'right' }}>Ultimo</span>
+                  <span>#</span><span>{t('leaderboard.table.player')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.points')}</span>
+                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.killsWild')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.killsPvp')}</span>
+                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.tames')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.crafts')}</span>
+                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.destroyed')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.deaths')}</span>
+                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.last')}</span>
                 </div>
                 {scores.map(s => (
                   <div key={`${s.eos_id}-${s.server_type}`} style={{
@@ -250,7 +253,7 @@ export default function LeaderboardPage() {
                       <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{s.server_type}</div>
                     </div>
                     {/* Stats */}
-                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString('it-IT')}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString(undefined)}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_wild > 0 ? '#ef4444' : 'var(--text-muted)' }}>{s.kills_wild}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_player > 0 ? '#dc2626' : 'var(--text-muted)' }}>{s.kills_player}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.tames > 0 ? '#22c55e' : 'var(--text-muted)' }}>{s.tames}</span>
@@ -271,13 +274,13 @@ export default function LeaderboardPage() {
         <div className="card" style={{ minHeight: 300 }}>
           {/* Filtro tipo evento */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-card-muted)', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Tipo:</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('leaderboard.events.typeLabel')}</span>
             {[
-              { value: undefined, label: 'Tutti' },
-              { value: 1, label: '🗡️ Kill Wild' },
-              { value: 3, label: '☠️ Kill PvP' },
-              { value: 4, label: '🦎 Tame' },
-              { value: 5, label: '🔨 Craft' },
+              { value: undefined, label: t('leaderboard.events.all') },
+              { value: 1, label: `🗡️ ${t('leaderboard.events.killWild')}` },
+              { value: 3, label: `☠️ ${t('leaderboard.events.killPvp')}` },
+              { value: 4, label: `🦎 ${t('leaderboard.events.tame')}` },
+              { value: 5, label: `🔨 ${t('leaderboard.events.craft')}` },
             ].map(f => (
               <button key={String(f.value)} onClick={() => setEventTypeFilter(f.value)} style={{
                 padding: '0.2rem 0.5rem', border: 'none', borderRadius: 'var(--radius)',
@@ -291,13 +294,13 @@ export default function LeaderboardPage() {
           </div>
 
           <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
-            {loading ? <div className="pl-loading">Caricamento...</div> : events.length === 0 ? (
-              <div className="pl-empty"><Activity size={40} style={{ opacity: 0.12 }} /><p>Nessun evento registrato</p></div>
+            {loading ? <div className="pl-loading">{t('leaderboard.loading')}</div> : events.length === 0 ? (
+              <div className="pl-empty"><Activity size={40} style={{ opacity: 0.12 }} /><p>{t('leaderboard.emptyEvents')}</p></div>
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1.5fr 80px 100px', padding: '0.45rem 1rem', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
-                  <span>Giocatore</span><span>Evento</span><span style={{ textAlign: 'right' }}>Punti</span>
-                  <span>Target</span><span>Server</span><span style={{ textAlign: 'right' }}>Data</span>
+                  <span>{t('leaderboard.table.player')}</span><span>{t('leaderboard.events.table.event')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.events.table.points')}</span>
+                  <span>{t('leaderboard.events.table.target')}</span><span>{t('leaderboard.events.table.server')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.events.table.date')}</span>
                 </div>
                 {events.map(ev => (
                   <div key={ev.id} style={{

@@ -3,6 +3,7 @@
  * Add/edit modal with all stat parameters, filters, and blueprint search from DB.
  */
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkRareDinosApi, blueprintsApi } from '../services/api'
 import {
   Eye, Plus, Trash2, Edit2, Save, X, AlertCircle, Search,
@@ -37,6 +38,7 @@ const DEFAULT_STATS = {
 }
 
 export default function RareDinosPage() {
+  const { t } = useTranslation()
   const [dinos, setDinos] = useState<RareDino[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -74,7 +76,7 @@ export default function RareDinosPage() {
       setGenInfo({ available: res.data.available_dinos, excluded: res.data.excluded_existing })
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Generation failed')
+      setError(detail || t('rareDinos.generator.errorGeneration'))
     } finally { setGenLoading(false) }
   }
 
@@ -87,7 +89,7 @@ export default function RareDinosPage() {
       loadDinos()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Bulk insert failed')
+      setError(detail || t('rareDinos.generator.errorBulkInsert'))
     } finally { setGenLoading(false) }
   }
 
@@ -155,7 +157,7 @@ export default function RareDinosPage() {
   }
 
   async function handleSave() {
-    if (!form.dino_bp.trim()) { setError('Blueprint obbligatorio'); return }
+    if (!form.dino_bp.trim()) { setError(t('rareDinos.errorBpRequired')); return }
     try {
       if (editingDino) {
         await arkRareDinosApi.update(editingDino.id, form)
@@ -173,7 +175,7 @@ export default function RareDinosPage() {
   }
 
   async function handleDelete(id: number, name: string) {
-    if (!confirm(`Eliminare "${name}" dal pool?`)) return
+    if (!confirm(t('rareDinos.confirmDelete', { name }))) return
     try { await arkRareDinosApi.delete(id); await loadDinos() }
     catch (e: any) { setError(e.message) }
   }
@@ -190,17 +192,17 @@ export default function RareDinosPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Eye size={22} /> Rare Dinos</h1>
+          <h1 className="page-title"><Eye size={22} /> {t('rareDinos.heading')}</h1>
           <p className="page-subtitle">
-            {dinos.length} dino nel pool — {enabledCount} abilitati, {dinos.length - enabledCount} disabilitati
+            {t('rareDinos.subtitle', { total: dinos.length, enabled: enabledCount, disabled: dinos.length - enabledCount })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
           <button onClick={() => { setShowGenerator(true); setGenResults([]) }} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }}>
-            <Shuffle size={15} /> Genera Random
+            <Shuffle size={15} /> {t('rareDinos.generateRandom')}
           </button>
           <button onClick={openAddModal} className="btn btn-primary">
-            <Plus size={16} /> Aggiungi Dino
+            <Plus size={16} /> {t('rareDinos.addDino')}
           </button>
         </div>
       </div>
@@ -210,52 +212,52 @@ export default function RareDinosPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ width: 600, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--bg-root)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem' }}><Shuffle size={18} /> Random Dino Generator</h3>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem' }}><Shuffle size={18} /> {t('rareDinos.generator.title')}</h3>
               <button onClick={() => setShowGenerator(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
             </div>
 
             {/* Generator controls */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>Count</label>
+                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.countLabel')}</label>
                 <input type="number" value={genCount} onChange={e => setGenCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
                   min={1} max={50} className="input" style={{ fontFamily: 'var(--font-mono)' }} />
               </div>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>Map</label>
+                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.mapLabel')}</label>
                 <select value={genMap} onChange={e => setGenMap(e.target.value)} className="input">
-                  <option value="*">All maps (*)</option>
+                  <option value="*">{t('rareDinos.generator.allMaps')}</option>
                   {maps.filter(m => m !== '*').map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>Stat Preset</label>
+                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.statPresetLabel')}</label>
                 <select value={genPreset} onChange={e => setGenPreset(e.target.value)} className="input">
-                  <option value="none">None (no stats)</option>
-                  <option value="low">Low</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="high">High</option>
-                  <option value="random">Random (mixed)</option>
+                  <option value="none">{t('rareDinos.generator.preset.none')}</option>
+                  <option value="low">{t('rareDinos.generator.preset.low')}</option>
+                  <option value="balanced">{t('rareDinos.generator.preset.balanced')}</option>
+                  <option value="high">{t('rareDinos.generator.preset.high')}</option>
+                  <option value="random">{t('rareDinos.generator.preset.random')}</option>
                 </select>
               </div>
               <div style={{ display: 'flex', alignItems: 'end' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', cursor: 'pointer', padding: '0.4rem 0' }}>
                   <input type="checkbox" checked={genExclude} onChange={e => setGenExclude(e.target.checked)} style={{ accentColor: 'var(--green)' }} />
-                  Exclude existing pool
+                  {t('rareDinos.generator.excludeExisting')}
                 </label>
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem' }}>
               <button onClick={handleGenerate} disabled={genLoading} className="btn btn-primary" style={{ flex: 1 }}>
-                {genLoading ? <><Loader2 size={14} className="pl-spin" /> Generating...</> : <><Shuffle size={14} /> Generate {genCount} Dinos</>}
+                {genLoading ? <><Loader2 size={14} className="pl-spin" /> {t('rareDinos.generator.generating')}</> : <><Shuffle size={14} /> {t('rareDinos.generator.generateBtn', { count: genCount })}</>}
               </button>
             </div>
 
             {/* Results preview */}
             {genInfo && (
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                {genInfo.available} dinos available{genInfo.excluded > 0 && ` (${genInfo.excluded} excluded from pool)`}
+                {t('rareDinos.generator.availableInfo', { available: genInfo.available })}{genInfo.excluded > 0 && ` ${t('rareDinos.generator.excludedInfo', { excluded: genInfo.excluded })}`}
               </div>
             )}
 
@@ -265,10 +267,10 @@ export default function RareDinosPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>Dino</th>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>HP</th>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>Melee</th>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>Speed</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colDino')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colHp')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colMelee')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colSpeed')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -292,15 +294,15 @@ export default function RareDinosPage() {
 
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   <button onClick={handleGenerate} disabled={genLoading} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }}>
-                    <Shuffle size={13} /> Re-roll
+                    <Shuffle size={13} /> {t('rareDinos.generator.reroll')}
                   </button>
                   <div style={{ flex: 1 }} />
                   <button onClick={() => handleApplyGenerated(false)} disabled={genLoading} className="btn btn-primary">
-                    <Plus size={13} /> Add to Pool
+                    <Plus size={13} /> {t('rareDinos.generator.addToPool')}
                   </button>
-                  <button onClick={() => { if (confirm('This will DELETE all existing dinos and replace with these. Continue?')) handleApplyGenerated(true) }}
+                  <button onClick={() => { if (confirm(t('rareDinos.generator.confirmReplace'))) handleApplyGenerated(true) }}
                     disabled={genLoading} className="btn btn-ghost" style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}>
-                    Replace All
+                    {t('rareDinos.generator.replaceAll')}
                   </button>
                 </div>
               </>
@@ -320,15 +322,15 @@ export default function RareDinosPage() {
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
           <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input className="input" placeholder="Cerca dino..." value={search} onChange={e => setSearch(e.target.value)}
+          <input className="input" placeholder={t('rareDinos.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)}
             style={{ paddingLeft: 28, fontSize: '0.82rem' }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'var(--bg-input)', borderRadius: 'var(--radius)', padding: '0.3rem 0.5rem', border: '1px solid var(--border)' }}>
           <Filter size={13} style={{ color: 'var(--text-muted)' }} />
           <select value={filterMap} onChange={e => setFilterMap(e.target.value)}
             style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-            <option value="all">Tutte le mappe</option>
-            <option value="*">Globale (*)</option>
+            <option value="all">{t('rareDinos.filterMap.all')}</option>
+            <option value="*">{t('rareDinos.filterMap.global')}</option>
             {maps.filter(m => m !== '*').map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
@@ -340,29 +342,29 @@ export default function RareDinosPage() {
                 background: filterEnabled === f ? 'var(--accent)' : 'var(--bg-input)',
                 color: filterEnabled === f ? '#fff' : 'var(--text-secondary)',
               }}>
-              {f === 'all' ? 'Tutti' : f === 'on' ? 'Attivi' : 'Disattivi'}
+              {f === 'all' ? t('rareDinos.filterEnabled.all') : f === 'on' ? t('rareDinos.filterEnabled.on') : t('rareDinos.filterEnabled.off')}
             </button>
           ))}
         </div>
         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-          {filtered.length} risultati
+          {t('rareDinos.resultsCount', { count: filtered.length })}
         </span>
       </div>
 
       {/* Dino list */}
       {loading ? (
-        <div className="pl-loading">Caricamento...</div>
+        <div className="pl-loading">{t('rareDinos.loading')}</div>
       ) : filtered.length === 0 ? (
-        <div className="pl-empty"><Eye size={40} style={{ opacity: 0.2 }} /><p>Nessun dino trovato</p></div>
+        <div className="pl-empty"><Eye size={40} style={{ opacity: 0.2 }} /><p>{t('rareDinos.empty')}</p></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
           {/* Header */}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 80px repeat(7, 70px) 80px', gap: 0, padding: '0.5rem 1rem', background: 'var(--bg-card-muted)', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>
-            <span>Dino</span>
-            <span>Mappa</span>
-            <span style={{ textAlign: 'center' }}>Stato</span>
+            <span>{t('rareDinos.table.dino')}</span>
+            <span>{t('rareDinos.table.map')}</span>
+            <span style={{ textAlign: 'center' }}>{t('rareDinos.table.status')}</span>
             {STATS.map(s => <span key={s.key} style={{ textAlign: 'center' }}>{s.icon} {s.label}</span>)}
-            <span style={{ textAlign: 'center' }}>Azioni</span>
+            <span style={{ textAlign: 'center' }}>{t('rareDinos.table.actions')}</span>
           </div>
 
           {/* Rows */}
@@ -384,7 +386,7 @@ export default function RareDinosPage() {
 
               {/* Mappa */}
               <span style={{ fontSize: '0.78rem', color: dino.map_name === '*' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: dino.map_name === '*' ? 600 : 400 }}>
-                {dino.map_name === '*' ? 'Tutte' : dino.map_name.replace('_WP', '')}
+                {dino.map_name === '*' ? t('rareDinos.mapAll') : dino.map_name.replace('_WP', '')}
               </span>
 
               {/* Toggle */}
@@ -406,13 +408,13 @@ export default function RareDinosPage() {
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'center' }}>
-                <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title="Modifica">
+                <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.edit')}>
                   <Edit2 size={14} />
                 </button>
-                <button onClick={() => { navigator.clipboard.writeText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title="Copia BP">
+                <button onClick={() => { navigator.clipboard.writeText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.copyBp')}>
                   <Copy size={14} />
                 </button>
-                <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} title="Elimina">
+                <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} title={t('rareDinos.tooltip.delete')}>
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -430,7 +432,7 @@ export default function RareDinosPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Activity size={18} color="var(--accent)" />
-                {editingDino ? `Modifica: ${editingDino.display_name}` : 'Nuovo Dino Raro'}
+                {editingDino ? t('rareDinos.modal.editTitle', { name: editingDino.display_name }) : t('rareDinos.modal.newTitle')}
               </h2>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={20} /></button>
             </div>
@@ -441,10 +443,10 @@ export default function RareDinosPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
                 <div>
                   <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Blueprint
+                    {t('rareDinos.modal.blueprintLabel')}
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <input className="input" placeholder="Cerca creatura o incolla blueprint..."
+                    <input className="input" placeholder={t('rareDinos.modal.blueprintPlaceholder')}
                       value={editingDino ? form.dino_bp : bpSearch || form.dino_bp}
                       onChange={e => {
                         if (editingDino) {
@@ -486,11 +488,11 @@ export default function RareDinosPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Mappa
+                    {t('rareDinos.modal.mapLabel')}
                   </label>
                   <select className="input" value={form.map_name} onChange={e => setForm(prev => ({ ...prev, map_name: e.target.value }))}
                     style={{ fontSize: '0.82rem' }}>
-                    <option value="*">Tutte le mappe</option>
+                    <option value="*">{t('rareDinos.modal.mapAll')}</option>
                     <option value="TheIsland_WP">The Island</option>
                     <option value="TheCenter_WP">The Center</option>
                     <option value="ScorchedEarth_WP">Scorched Earth</option>
@@ -511,13 +513,13 @@ export default function RareDinosPage() {
                 <button onClick={() => setForm(prev => ({ ...prev, enabled: !prev.enabled }))}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600, color: form.enabled ? 'var(--success)' : 'var(--text-muted)' }}>
                   {form.enabled ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
-                  {form.enabled ? 'Abilitato' : 'Disabilitato'}
+                  {form.enabled ? t('rareDinos.modal.enabled') : t('rareDinos.modal.disabled')}
                 </button>
               </div>
 
               {/* Stats grid */}
               <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Stat Bonus (wild levels aggiunti, -1 = disabilitato)
+                {t('rareDinos.modal.statsHeading')}
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.65rem' }}>
                 {STATS.map(s => {
@@ -549,14 +551,14 @@ export default function RareDinosPage() {
                       {isActive && (
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 2 }}>Min</div>
+                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 2 }}>{t('rareDinos.modal.minLabel')}</div>
                             <input type="number" className="input" value={form[minKey]}
                               onChange={e => setForm(prev => ({ ...prev, [minKey]: Number(e.target.value) }))}
                               style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', textAlign: 'center', height: 32 }} />
                           </div>
                           <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', paddingTop: 14 }}>–</span>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 2 }}>Max</div>
+                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 2 }}>{t('rareDinos.modal.maxLabel')}</div>
                             <input type="number" className="input" value={form[maxKey]}
                               onChange={e => setForm(prev => ({ ...prev, [maxKey]: Number(e.target.value) }))}
                               style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', textAlign: 'center', height: 32 }} />
@@ -571,9 +573,9 @@ export default function RareDinosPage() {
 
             {/* Modal footer */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', padding: '0.75rem 1.25rem', borderTop: '1px solid var(--border)', background: 'var(--bg-card-muted)' }}>
-              <button onClick={() => setShowModal(false)} className="btn btn-ghost">Annulla</button>
+              <button onClick={() => setShowModal(false)} className="btn btn-ghost">{t('rareDinos.modal.cancel')}</button>
               <button onClick={handleSave} className="btn btn-primary">
-                <Save size={14} /> {editingDino ? 'Salva Modifiche' : 'Aggiungi al Pool'}
+                <Save size={14} /> {editingDino ? t('rareDinos.modal.save') : t('rareDinos.modal.add')}
               </button>
             </div>
           </div>

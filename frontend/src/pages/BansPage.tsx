@@ -3,6 +3,7 @@
  * Design consistent with OnlinePlayersPage and RareDinosPage.
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkBansApi } from '../services/api'
 import {
   Ban, Search, Plus, XCircle, AlertCircle, X, Shield,
@@ -19,12 +20,13 @@ function formatDate(iso: string | null): string {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
-    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' }) +
-      ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' }) +
+      ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
   } catch { return iso.slice(0, 16) }
 }
 
 export default function BansPage() {
+  const { t } = useTranslation()
   const [bans, setBans] = useState<BanItem[]>([])
   const [activeCount, setActiveCount] = useState(0)
   const [search, setSearch] = useState('')
@@ -58,7 +60,7 @@ export default function BansPage() {
   }
 
   async function handleUnban(id: number, name: string) {
-    if (!confirm(`Sbloccare il ban di ${name || 'questo giocatore'}?`)) return
+    if (!confirm(t('bans.confirmUnban', { name: name || t('bans.confirmUnbanFallback') }))) return
     try {
       await arkBansApi.unban(id)
       await loadBans()
@@ -73,7 +75,7 @@ export default function BansPage() {
       await arkBansApi.create({
         eos_id: form.eos_id.trim(),
         player_name: form.player_name.trim() || undefined,
-        reason: form.reason.trim() || 'No reason',
+        reason: form.reason.trim() || t('bans.defaultReason'),
         banned_by: form.banned_by.trim() || 'Admin',
         expire_time: form.permanent ? undefined : (form.expire_time || undefined),
       })
@@ -92,13 +94,13 @@ export default function BansPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Ban size={22} /> Ban Manager</h1>
+          <h1 className="page-title"><Ban size={22} /> {t('bans.heading')}</h1>
           <p className="page-subtitle">
-            Gestione ban cluster-wide — {activeCount} ban attivi
+            {t('bans.subtitle', { count: activeCount })}
           </p>
         </div>
         <button onClick={() => setShowModal(true)} className="btn btn-primary">
-          <Plus size={16} /> Nuovo Ban
+          <Plus size={16} /> {t('bans.newButton')}
         </button>
       </div>
 
@@ -117,7 +119,7 @@ export default function BansPage() {
           </div>
           <div>
             <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--danger)', lineHeight: 1 }}>{activeCount}</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Ban attivi</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('bans.stats.active')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
@@ -126,7 +128,7 @@ export default function BansPage() {
           </div>
           <div>
             <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{totalBans}</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Totale ban</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('bans.stats.total')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
@@ -135,7 +137,7 @@ export default function BansPage() {
           </div>
           <div>
             <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1 }}>{expiredCount}</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Sbloccati</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('bans.stats.unbanned')}</div>
           </div>
         </div>
       </div>
@@ -145,12 +147,12 @@ export default function BansPage() {
         <form onSubmit={handleSearchSubmit} style={{ flex: 1, display: 'flex', gap: '0.4rem' }}>
           <div style={{ position: 'relative', flex: 1, maxWidth: 400 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="input" placeholder="Cerca per EOS ID, nome o motivo..." value={search}
+            <input className="input" placeholder={t('bans.searchPlaceholder')} value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ paddingLeft: 30, fontSize: '0.85rem', height: 36 }} />
           </div>
           <button type="submit" className="btn btn-primary" style={{ height: 36 }}>
-            <Search size={14} /> Cerca
+            <Search size={14} /> {t('bans.searchButton')}
           </button>
         </form>
         <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)' }}>
@@ -158,26 +160,26 @@ export default function BansPage() {
             padding: '0.4rem 0.75rem', border: 'none', fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
             background: !showAll ? 'var(--danger)' : 'var(--bg-input)', color: !showAll ? '#fff' : 'var(--text-secondary)',
           }}>
-            Attivi
+            {t('bans.filterActive')}
           </button>
           <button onClick={() => setShowAll(true)} style={{
             padding: '0.4rem 0.75rem', border: 'none', fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
             background: showAll ? 'var(--accent)' : 'var(--bg-input)', color: showAll ? '#fff' : 'var(--text-secondary)',
           }}>
-            Tutti
+            {t('bans.filterAll')}
           </button>
         </div>
       </div>
 
       {/* Ban list */}
       {loading ? (
-        <div className="pl-loading">Caricamento...</div>
+        <div className="pl-loading">{t('bans.loading')}</div>
       ) : bans.length === 0 ? (
         <div className="pl-empty" style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', padding: '3rem' }}>
           <Shield size={48} style={{ opacity: 0.15 }} />
-          <p style={{ fontSize: '0.95rem', fontWeight: 500 }}>Nessun ban trovato</p>
+          <p style={{ fontSize: '0.95rem', fontWeight: 500 }}>{t('bans.emptyTitle')}</p>
           <p style={{ fontSize: '0.82rem' }}>
-            {search ? 'Nessun risultato per la ricerca' : showAll ? 'Il cluster non ha ban registrati' : 'Nessun ban attivo nel cluster'}
+            {search ? t('bans.emptyNoResults') : showAll ? t('bans.emptyNoneAll') : t('bans.emptyNoneActive')}
           </p>
         </div>
       ) : (
@@ -188,12 +190,12 @@ export default function BansPage() {
             padding: '0.5rem 1rem', background: 'var(--bg-card-muted)',
             fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)',
           }}>
-            <span>Giocatore</span>
-            <span>Motivo</span>
-            <span>Bannato da</span>
-            <span>Data</span>
-            <span style={{ textAlign: 'center' }}>Scadenza</span>
-            <span style={{ textAlign: 'center' }}>Azioni</span>
+            <span>{t('bans.table.player')}</span>
+            <span>{t('bans.table.reason')}</span>
+            <span>{t('bans.table.bannedBy')}</span>
+            <span>{t('bans.table.date')}</span>
+            <span style={{ textAlign: 'center' }}>{t('bans.table.expires')}</span>
+            <span style={{ textAlign: 'center' }}>{t('bans.table.actions')}</span>
           </div>
 
           {/* Rows */}
@@ -216,11 +218,11 @@ export default function BansPage() {
                       boxShadow: ban.is_active ? '0 0 4px rgba(239,68,68,0.5)' : 'none',
                     }} />
                     <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ban.player_name || 'Sconosciuto'}
+                      {ban.player_name || t('bans.unknownPlayer')}
                     </span>
                     {!ban.is_active && (
                       <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--success)', background: 'var(--success-bg)', padding: '0.05rem 0.3rem', borderRadius: 3 }}>
-                        SBLOCCATO
+                        {t('bans.unbannedBadge')}
                       </span>
                     )}
                   </div>
@@ -250,7 +252,7 @@ export default function BansPage() {
                     background: ban.expire_time ? 'var(--warning-bg)' : 'var(--danger-bg)',
                     color: ban.expire_time ? 'var(--warning)' : 'var(--danger)',
                   }}>
-                    {ban.expire_time ? formatDate(ban.expire_time) : 'Permanente'}
+                    {ban.expire_time ? formatDate(ban.expire_time) : t('bans.permanent')}
                   </span>
                 </div>
 
@@ -259,11 +261,11 @@ export default function BansPage() {
                   {ban.is_active && (
                     <button onClick={e => { e.stopPropagation(); handleUnban(ban.id, ban.player_name || '') }}
                       className="btn btn-ghost" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', color: 'var(--success)' }}>
-                      <CheckCircle size={14} /> Sblocca
+                      <CheckCircle size={14} /> {t('bans.unbanButton')}
                     </button>
                   )}
                   <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(ban.eos_id) }}
-                    className="btn btn-ghost" style={{ padding: '0.25rem 0.35rem' }} title="Copia EOS ID">
+                    className="btn btn-ghost" style={{ padding: '0.25rem 0.35rem' }} title={t('bans.copyEosTooltip')}>
                     <Copy size={13} />
                   </button>
                 </div>
@@ -274,31 +276,31 @@ export default function BansPage() {
                 <div style={{ padding: '0.5rem 1rem 0.75rem 2.2rem', borderTop: '1px solid var(--border)', background: 'var(--bg-card-muted)', fontSize: '0.82rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem 1.5rem' }}>
                     <div>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>EOS ID</span>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.eosId')}</span>
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', marginTop: 2 }}>{ban.eos_id}</div>
                     </div>
                     <div>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Motivo completo</span>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.fullReason')}</span>
                       <div style={{ marginTop: 2 }}>{ban.reason}</div>
                     </div>
                     <div>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Bannato il</span>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.bannedAt')}</span>
                       <div style={{ marginTop: 2 }}>{formatDate(ban.ban_time)}</div>
                     </div>
                     {ban.expire_time && (
                       <div>
-                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Scadenza</span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.expires')}</span>
                         <div style={{ marginTop: 2 }}>{formatDate(ban.expire_time)}</div>
                       </div>
                     )}
                     {!ban.is_active && ban.unbanned_by && (
                       <>
                         <div>
-                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Sbloccato da</span>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.unbannedBy')}</span>
                           <div style={{ marginTop: 2, color: 'var(--success)' }}>{ban.unbanned_by}</div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Sbloccato il</span>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.unbannedAt')}</span>
                           <div style={{ marginTop: 2 }}>{formatDate(ban.unban_time)}</div>
                         </div>
                       </>
@@ -320,7 +322,7 @@ export default function BansPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <UserX size={18} color="var(--danger)" />
-                Nuovo Ban
+                {t('bans.modal.title')}
               </h2>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={20} /></button>
             </div>
@@ -331,9 +333,9 @@ export default function BansPage() {
                 {/* EOS ID */}
                 <div>
                   <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    EOS ID <span style={{ color: 'var(--danger)' }}>*</span>
+                    {t('bans.modal.eosLabel')} <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
-                  <input className="input" placeholder="abc123def456..." required value={form.eos_id}
+                  <input className="input" placeholder={t('bans.modal.eosPlaceholder')} required value={form.eos_id}
                     onChange={e => setForm({ ...form, eos_id: e.target.value })}
                     style={{ fontSize: '0.88rem', fontFamily: 'var(--font-mono)', height: 36 }} />
                 </div>
@@ -341,9 +343,9 @@ export default function BansPage() {
                 {/* Nome giocatore */}
                 <div>
                   <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Nome Giocatore
+                    {t('bans.modal.nameLabel')}
                   </label>
-                  <input className="input" placeholder="Opzionale" value={form.player_name}
+                  <input className="input" placeholder={t('bans.modal.namePlaceholder')} value={form.player_name}
                     onChange={e => setForm({ ...form, player_name: e.target.value })}
                     style={{ fontSize: '0.88rem', height: 36 }} />
                 </div>
@@ -351,9 +353,9 @@ export default function BansPage() {
                 {/* Motivo */}
                 <div>
                   <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Motivo
+                    {t('bans.modal.reasonLabel')}
                   </label>
-                  <input className="input" placeholder="Motivo del ban..." value={form.reason}
+                  <input className="input" placeholder={t('bans.modal.reasonPlaceholder')} value={form.reason}
                     onChange={e => setForm({ ...form, reason: e.target.value })}
                     style={{ fontSize: '0.88rem', height: 36 }} />
                 </div>
@@ -362,7 +364,7 @@ export default function BansPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <div>
                     <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Bannato da
+                      {t('bans.modal.bannedByLabel')}
                     </label>
                     <input className="input" value={form.banned_by}
                       onChange={e => setForm({ ...form, banned_by: e.target.value })}
@@ -370,20 +372,20 @@ export default function BansPage() {
                   </div>
                   <div>
                     <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Durata
+                      {t('bans.modal.durationLabel')}
                     </label>
                     <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)', height: 36 }}>
                       <button type="button" onClick={() => setForm({ ...form, permanent: true })} style={{
                         flex: 1, border: 'none', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
                         background: form.permanent ? 'var(--danger)' : 'var(--bg-input)', color: form.permanent ? '#fff' : 'var(--text-secondary)',
                       }}>
-                        Permanente
+                        {t('bans.modal.permanent')}
                       </button>
                       <button type="button" onClick={() => setForm({ ...form, permanent: false })} style={{
                         flex: 1, border: 'none', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
                         background: !form.permanent ? 'var(--warning)' : 'var(--bg-input)', color: !form.permanent ? '#fff' : 'var(--text-secondary)',
                       }}>
-                        Temporaneo
+                        {t('bans.modal.temporary')}
                       </button>
                     </div>
                   </div>
@@ -393,7 +395,7 @@ export default function BansPage() {
                 {!form.permanent && (
                   <div>
                     <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <Clock size={12} style={{ verticalAlign: -1 }} /> Scadenza
+                      <Clock size={12} style={{ verticalAlign: -1 }} /> {t('bans.modal.expireLabel')}
                     </label>
                     <input type="datetime-local" className="input" value={form.expire_time}
                       onChange={e => setForm({ ...form, expire_time: e.target.value })}
@@ -404,9 +406,9 @@ export default function BansPage() {
 
               {/* Footer */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', padding: '0.75rem 1.25rem', borderTop: '1px solid var(--border)', background: 'var(--bg-card-muted)' }}>
-                <button type="button" onClick={() => setShowModal(false)} className="btn btn-ghost">Annulla</button>
+                <button type="button" onClick={() => setShowModal(false)} className="btn btn-ghost">{t('bans.modal.cancel')}</button>
                 <button type="submit" className="btn btn-primary" disabled={creating} style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}>
-                  <Ban size={14} /> {creating ? 'Creazione...' : 'Banna Giocatore'}
+                  <Ban size={14} /> {creating ? t('bans.modal.submitting') : t('bans.modal.submit')}
                 </button>
               </div>
             </form>
