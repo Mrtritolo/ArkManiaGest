@@ -407,8 +407,49 @@ fi
 section "Running remote bootstrap (takes a few minutes)"
 echo "${C_GR}  Tailing remote log. Ctrl+C detaches; the deploy continues on the server.${C_RS}"
 echo ""
+# full-deploy.sh finishes with the final health check, which will fail on
+# a fresh install because the real .env hasn't been installed yet (the
+# rsync in full-deploy.sh explicitly excludes .env).  We deliberately do
+# NOT abort on that non-zero exit; we overwrite .env and restart the
+# service in the next step.
 if ! run_ssh "sudo -n chmod +x /tmp/arkmaniagest-deploy/deploy/full-deploy.sh && sudo -n bash /tmp/arkmaniagest-deploy/deploy/full-deploy.sh"; then
-    fail "full-deploy.sh exited with a non-zero status.  Inspect /tmp/arkmaniagest-deploy.log on the server."
+    warn "full-deploy.sh exited non-zero; this is expected on a fresh install."
+    warn "If the issue persists after the .env install step, inspect /tmp/arkmaniagest-deploy.log."
+fi
+
+# ---------------------------------------------------------------------------
+# 7b. Install the real .env + restart the backend
+# ---------------------------------------------------------------------------
+
+section "Installing the real backend/.env and restarting the service"
+
+run_scp "${STAGING}/.env" "/tmp/arkmaniagest-panel.env" || fail "scp of backend/.env failed"
+if ! run_ssh "sudo -n install -o arkmania -g arkmania -m 600 /tmp/arkmaniagest-panel.env /opt/arkmaniagest/backend/.env && sudo -n rm -f /tmp/arkmaniagest-panel.env && sudo -n systemctl restart arkmaniagest"; then
+    fail "Could not install backend/.env or restart the service. Run: sudo systemctl status arkmaniagest on the server."
+fi
+ok ".env installed; backend restarted"
+
+# ---------------------------------------------------------------------------
+# 7c. Wait for the backend /health endpoint
+# ---------------------------------------------------------------------------
+
+section "Waiting for the backend to come up"
+
+health_ok=0
+for attempt in $(seq 1 15); do
+    if run_ssh "curl -sf -o /dev/null http://127.0.0.1:8000/health" >/dev/null 2>&1; then
+        ok "backend /health responded after ${attempt} attempt(s)"
+        health_ok=1
+        break
+    fi
+    echo "${C_GR}  ... waiting (attempt ${attempt} / 15)${C_RS}"
+    sleep 3
+done
+if [[ $health_ok -ne 1 ]]; then
+    warn "backend did not answer on :8000. Dumping systemd status + logs:"
+    run_ssh "sudo -n systemctl --no-pager status arkmaniagest | tail -n 40" || true
+    run_ssh "sudo -n journalctl -u arkmaniagest --no-pager -n 60" || true
+    fail "Backend not answering on :8000; cannot seed admin user."
 fi
 
 # ---------------------------------------------------------------------------
@@ -423,7 +464,7 @@ ADMIN_DISP_JS="$(json_escape "$ADMIN_DISPLAY")"
 admin_body="{\"admin_username\":\"${ADMIN_USER_JS}\",\"admin_password\":\"${ADMIN_PASS_JS}\",\"admin_display_name\":\"${ADMIN_DISP_JS}\",\"app_name\":\"ArkManiaGest\"}"
 admin_b64="$(printf '%s' "$admin_body" | base64 -w0 2>/dev/null || printf '%s' "$admin_body" | base64)"
 
-if run_ssh "echo $admin_b64 | base64 -d | curl -sS --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup"; then
+if run_ssh "echo $admin_b64 | base64 -d | curl -sS -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup"; then
     ok "admin user created"
 else
     warn "setup endpoint call returned non-zero.  Complete the setup wizard manually at https://${DOMAIN}."

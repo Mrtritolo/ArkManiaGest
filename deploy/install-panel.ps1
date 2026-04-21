@@ -476,19 +476,74 @@ Write-Host "-- Running remote bootstrap (this takes a few minutes) --" -Foregrou
 Write-Host "  Tailing remote log. You can Ctrl+C to detach: the deploy continues on the server." -ForegroundColor DarkGray
 Write-Host ""
 
-$full_deploy = @'
-set -e
-sudo -n chmod +x /tmp/arkmaniagest-deploy/deploy/full-deploy.sh
-sudo -n bash /tmp/arkmaniagest-deploy/deploy/full-deploy.sh 2>&1
-'@
-
-$rc = Invoke-SSH @("bash", "-c", $full_deploy)
+# Single-arg form: ssh sends the string verbatim to the remote shell, so
+# there is no splatting that would break across `&&`.  We swallow the
+# overall non-zero exit code on purpose -- full-deploy.sh reports a
+# non-zero status when its final "Backend" health check fails, but
+# that's expected because we still have to overwrite the template .env
+# with the real one (next step) before the backend can start.
+$bootstrap = "sudo -n chmod +x /tmp/arkmaniagest-deploy/deploy/full-deploy.sh && sudo -n bash /tmp/arkmaniagest-deploy/deploy/full-deploy.sh"
+$rc = Invoke-SSH @($bootstrap)
 if ($rc -ne 0) {
-    Fail "full-deploy.sh exited with code $rc on the remote host.  Inspect /tmp/arkmaniagest-deploy.log on the server."
+    Write-Host "  WARNING: full-deploy.sh exited with code $rc.  This is expected for" -ForegroundColor Yellow
+    Write-Host "           fresh installs because the generated .env is pushed in the" -ForegroundColor Yellow
+    Write-Host "           next step; if the issue persists after that, inspect" -ForegroundColor Yellow
+    Write-Host "           /tmp/arkmaniagest-deploy.log on the server." -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------------------
-# 8. Seed the initial admin user (calls the setup endpoint locally on the server)
+# 7b. Install the real .env + restart the backend
+# ---------------------------------------------------------------------------
+#
+# full-deploy.sh's rsync explicitly excludes `.env` so it never replaces
+# a production config.  On a fresh install it then copies the `.env.production`
+# template into place.  We now overwrite that placeholder with the
+# installer-generated .env (real DB_PASSWORD, JWT_SECRET, FIELD_ENCRYPTION_KEY),
+# fix ownership, and restart the systemd unit.
+
+Write-Host ""
+Write-Host "-- Installing the real backend/.env and restarting the service --" -ForegroundColor Cyan
+
+# Stage the .env under /tmp first (scp can't write /opt/... as a non-root user),
+# then sudo-move it into place.
+$scp_rc = Invoke-SCP (Join-Path $staging ".env") "/tmp/arkmaniagest-panel.env"
+if ($scp_rc -ne 0) {
+    Fail "scp of backend/.env failed"
+}
+$install_env = "sudo -n install -o arkmania -g arkmania -m 600 /tmp/arkmaniagest-panel.env /opt/arkmaniagest/backend/.env && sudo -n rm -f /tmp/arkmaniagest-panel.env && sudo -n systemctl restart arkmaniagest"
+$rc = Invoke-SSH @($install_env)
+if ($rc -ne 0) {
+    Fail "Could not install backend/.env or restart the service (rc=$rc).  Run: sudo systemctl status arkmaniagest on the server."
+}
+Write-Host "  [OK] .env installed; backend restarted" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
+# 7c. Wait for the backend /health endpoint
+# ---------------------------------------------------------------------------
+
+Write-Host ""
+Write-Host "-- Waiting for the backend to come up --" -ForegroundColor Cyan
+
+$health_ok = $false
+foreach ($attempt in 1..15) {
+    $rc = Invoke-SSH-Quiet @("curl -sf -o /dev/null http://127.0.0.1:8000/health")
+    if ($rc -eq 0) {
+        Write-Host "  [OK] backend /health responded after $attempt attempt(s)" -ForegroundColor Green
+        $health_ok = $true
+        break
+    }
+    Write-Host "  ... waiting (attempt $attempt / 15)" -ForegroundColor DarkGray
+    Start-Sleep -Seconds 3
+}
+if (-not $health_ok) {
+    Write-Host "  WARNING: backend did not answer on :8000.  Dumping systemd status + logs:" -ForegroundColor Yellow
+    Invoke-SSH @("sudo -n systemctl --no-pager status arkmaniagest | tail -n 40") | Out-Null
+    Invoke-SSH @("sudo -n journalctl -u arkmaniagest --no-pager -n 60") | Out-Null
+    Fail "Backend is not answering on :8000; cannot seed admin user."
+}
+
+# ---------------------------------------------------------------------------
+# 8. Seed the initial admin user
 # ---------------------------------------------------------------------------
 
 Write-Host ""
@@ -506,9 +561,9 @@ $admin_body = @"
 }
 "@
 $payload_b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($admin_body))
-$setup_cmd = "echo $payload_b64 | base64 -d | curl -sS --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup"
+$setup_cmd = "echo $payload_b64 | base64 -d | curl -sS -o /tmp/arkmaniagest-setup.out -w '%{http_code}' -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup; echo; cat /tmp/arkmaniagest-setup.out; rm -f /tmp/arkmaniagest-setup.out"
 
-$setup_rc = Invoke-SSH @("bash", "-c", $setup_cmd)
+$setup_rc = Invoke-SSH @($setup_cmd)
 if ($setup_rc -ne 0) {
     Write-Host "  WARNING: setup endpoint returned non-zero.  You may need to open" -ForegroundColor Yellow
     Write-Host "           https://$domain and complete the setup wizard manually." -ForegroundColor Yellow
