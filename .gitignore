@@ -1,56 +1,92 @@
-# .gitignore - ArkManiaGest
+# =============================================================================
+# .gitignore — ArkManiaGest
+# =============================================================================
+# Keep the repository minimal: only source code, build configuration, and the
+# deploy tooling.  Secrets, runtime state, build artifacts, editor metadata,
+# and external reference material stay local.
+# =============================================================================
 
-# Python
+# --- Python (backend) ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 dist/
 build/
 venv/
 .venv/
+env/
 
-# Node
+# --- Node / Vite (frontend) ---
 node_modules/
 frontend/dist/
+.vite/
+*.tsbuildinfo
 
-# Environment / Secrets
+# --- Secrets & environment ---
 .env
 .env.local
 .env.*.local
 *.vault
+# Runtime data (local sqlite, cache, ecc.)
 data/
+backend/data/
 
-# IDE
+# --- IDE / Editor ---
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+*.sublime-*
 
-# OS
+# --- OS artifacts ---
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Logs
+# --- Log / backup locali ---
 logs/
 *.log
+*.bak
+*.backup
+*~$
+backup*/
 
-# SSH Keys
+# --- SSH / Key material ---
 *.pem
 *.key
+*.crt
 id_rsa*
+id_ed25519*
+*.ppk
 
-# File deprecati
+# --- Claude Code session-specific ---
+# Only launch.json (preview server config) is tracked — everything else is
+# per-developer state.
+.claude/*.local.json
+.claude/settings.local.json
+.claude/logs/
+.claude/cache/
+
+# --- File / cartelle deprecate (dev-only) ---
 _deprecated/
+config/
 
-# Reference / sorgenti esterni di riferimento (non in git)
+# --- Sorgenti di riferimento esterni (clonati localmente, non vanno su git) ---
+# Usato per tenere una copia del repo POK-ASA-Server come riferimento per
+# il template dei docker-compose e gli script bash di gestione istanze.
 reference/
 
-# Cartelle vuote
-config/
-.claude/settings.local.json
+# --- Dataset Dododex import (grandi JSON di dati di gioco) ---
 deploy/imports/s-dino-variants.json
 deploy/imports/hair-chairs-items.json
 deploy/imports/dododex-skins-test.json
 deploy/imports/_parse_dododex_items.py
+
+# --- Archivi temporanei di deploy ---
+/*.tar.gz
+/*.zip
