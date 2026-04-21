@@ -225,6 +225,162 @@
     "invalidPort": "Porta non valida",
     "passwordRequired": "Password obbligatoria"
   },
+  "users": {
+    "title": "Gestione utenti",
+    "subtitle": "Crea e gestisci gli account del portale",
+    "new": "Nuovo utente",
+    "formNew": "Nuovo utente",
+    "formEdit": "Modifica: {{username}}",
+    "field": {
+      "username": "Nome utente",
+      "displayName": "Nome visualizzato",
+      "passwordNew": "Password",
+      "passwordEdit": "Nuova password (vuoto = mantieni attuale)",
+      "role": "Ruolo"
+    },
+    "placeholder": {
+      "username": "es. marco",
+      "displayName": "es. Marco Rossi",
+      "passwordNew": "Minimo 6 caratteri",
+      "passwordEdit": "Vuoto per lasciare invariata"
+    },
+    "role": {
+      "adminOption": "Admin — Accesso completo",
+      "operatorOption": "Operatore — Gestisce player e server",
+      "viewerOption": "Viewer — Solo lettura",
+      "admin": "Admin",
+      "operator": "Operatore",
+      "viewer": "Viewer"
+    },
+    "status": {
+      "active": "Attivo",
+      "disabled": "Disattivato",
+      "enable": "Abilita",
+      "disable": "Disabilita"
+    },
+    "column": {
+      "user": "Utente",
+      "role": "Ruolo",
+      "status": "Stato",
+      "lastLogin": "Ultimo accesso",
+      "created": "Creato"
+    },
+    "action": {
+      "save": "Salva",
+      "create": "Crea",
+      "edit": "Modifica",
+      "delete": "Elimina"
+    },
+    "lastLoginNever": "Mai",
+    "loading": "Caricamento…",
+    "confirmDelete": "Eliminare l'utente \"{{username}}\"?",
+    "messages": {
+      "created": "Utente \"{{username}}\" creato",
+      "updated": "Utente \"{{username}}\" aggiornato",
+      "deleted": "Utente \"{{username}}\" eliminato",
+      "enabled": "Utente \"{{username}}\" abilitato",
+      "disabled": "Utente \"{{username}}\" disabilitato",
+      "allRequired": "Tutti i campi sono obbligatori"
+    },
+    "errors": {
+      "load": "Impossibile caricare gli utenti",
+      "save": "Salvataggio fallito",
+      "update": "Aggiornamento fallito",
+      "delete": "Eliminazione fallita"
+    }
+  },
+  "generalSettings": {
+    "title": "Impostazioni generali",
+    "subtitle": "Configurazione globale dell'applicazione",
+    "section": {
+      "app": "Applicazione",
+      "backup": "Backup automatico",
+      "system": "Informazioni di sistema"
+    },
+    "field": {
+      "appName": "Nome applicazione",
+      "logLevel": "Livello log",
+      "autoBackup": "Abilita i backup automatici della configurazione",
+      "interval": "Intervallo (ore)",
+      "retention": "Copie da mantenere"
+    },
+    "hint": {
+      "appName": "Mostrato nell'header e nei log",
+      "logLevel": "Verbosità dei log applicativi",
+      "autoBackup": "Salva automaticamente una copia dei file di configurazione dei plugin",
+      "interval": "Frequenza dei backup (1–168 h)",
+      "retention": "Numero massimo di backup da conservare"
+    },
+    "info": {
+      "version": "Versione",
+      "database": "Database",
+      "dbConnected": "Connesso",
+      "dbOffline": "Offline",
+      "backend": "Backend",
+      "configStorage": "Storage config"
+    },
+    "save": "Salva impostazioni",
+    "saving": "Salvataggio…",
+    "saved": "Impostazioni salvate con successo!",
+    "errorPrefix": "Errore",
+    "saveFailed": "Salvataggio fallito"
+  },
+  "eventLog": {
+    "title": "Log eventi",
+    "subtitleStats": "{{total}} eventi totali — pagina {{page}} di {{totalPages}}",
+    "purge": "Pulisci",
+    "purgeTitle": "Pulizia Event Log",
+    "purgeKeep": "Mantieni ultimi",
+    "purgeType": "Tipo evento",
+    "purgeGo": "Elimina vecchi eventi",
+    "purging": "Eliminazione…",
+    "purgeAllTypes": "tutti i tipi",
+    "purgeConfirmAll": "ATTENZIONE: eliminare TUTTI gli eventi ({{type}})?\nQuesta azione è irreversibile!",
+    "purgeConfirmOlder": "Eliminare gli eventi più vecchi di {{days}} giorni ({{type}})?\nQuesta azione è irreversibile.",
+    "purgeDeleted": "{{count}} eventi eliminati",
+    "purgeFootnote": "Verranno eliminati tutti gli eventi precedenti alla data di retention selezionata. Azione irreversibile.",
+    "days": {
+      "d7": "7 giorni",
+      "d14": "14 giorni",
+      "d30": "30 giorni",
+      "d60": "60 giorni",
+      "d90": "90 giorni",
+      "m6": "6 mesi",
+      "y1": "1 anno",
+      "all": "Elimina TUTTI"
+    },
+    "types": {
+      "LOGIN": "Login",
+      "RARE_SPAWN": "Rare Spawn",
+      "RARE_DESPAWN": "Rare Despawn",
+      "RARE_KILLED": "Rare Killed",
+      "RARE_TAMED": "Rare Tamed",
+      "DECAY_SCAN": "Decay Scan"
+    },
+    "filter": {
+      "server": "Server",
+      "type": "Tipo evento",
+      "search": "Cerca",
+      "searchPlaceholder": "Giocatore o dettagli…",
+      "allServers": "Tutti",
+      "allTypes": "Tutti"
+    },
+    "column": {
+      "type": "Tipo",
+      "player": "Giocatore",
+      "server": "Server",
+      "details": "Dettagli",
+      "datetime": "Data / Ora"
+    },
+    "loading": "Caricamento…",
+    "empty": "Nessun evento trovato",
+    "pagination": {
+      "prev": "Precedente",
+      "next": "Successivo",
+      "page": "Pagina <strong>{{page}}</strong> di <strong>{{total}}</strong>",
+      "resultsCount": "({{count}} risultati)"
+    }
+  },
   "database": {
     "title": "Configurazione Database",
     "subtitle": "Connessioni MariaDB — configurate nel file .env del server",

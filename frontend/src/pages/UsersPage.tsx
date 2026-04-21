@@ -5,6 +5,7 @@
  * and deleting accounts.  Only the admin role has access to this page.
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Users, Plus, Trash2, Shield, Pencil, X, Save,
   UserCheck, UserX, Loader2, AlertCircle, CheckCircle,
@@ -14,10 +15,10 @@ import type { AuthUser, UserRole } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
-  admin:    { label: 'Admin',    color: '#dc2626' },
-  operator: { label: 'Operator', color: '#2563eb' },
-  viewer:   { label: 'Viewer',   color: '#6b7280' },
+const ROLE_COLORS: Record<UserRole, string> = {
+  admin:    '#dc2626',
+  operator: '#2563eb',
+  viewer:   '#6b7280',
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ interface UserForm {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
+  const { t } = useTranslation()
   const [users, setUsers]     = useState<AuthUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
@@ -49,8 +51,8 @@ export default function UsersPage() {
   // Auto-clear success toast
   useEffect(() => {
     if (!success) return
-    const t = setTimeout(() => setSuccess(''), 3000)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setSuccess(''), 3000)
+    return () => clearTimeout(timer)
   }, [success])
 
   async function loadUsers(): Promise<void> {
@@ -61,7 +63,7 @@ export default function UsersPage() {
     } catch (err: unknown) {
       setError(
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Failed to load users',
+        ?? t('users.errors.load'),
       )
     } finally {
       setLoading(false)
@@ -92,22 +94,22 @@ export default function UsersPage() {
         if (form.role         !== editUser.role)         updates.role         = form.role
         if (form.password)                               updates.password     = form.password
         await usersApi.update(editUser.id, updates)
-        setSuccess(`User "${editUser.username}" updated`)
+        setSuccess(t('users.messages.updated', { username: editUser.username }))
       } else {
         if (!form.username || !form.password || !form.display_name) {
-          setError('All fields are required')
+          setError(t('users.messages.allRequired'))
           setSaving(false)
           return
         }
         await usersApi.create(form)
-        setSuccess(`User "${form.username}" created`)
+        setSuccess(t('users.messages.created', { username: form.username }))
       }
       setShowForm(false)
       loadUsers()
     } catch (err: unknown) {
       setError(
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Save failed',
+        ?? t('users.errors.save'),
       )
     } finally {
       setSaving(false)
@@ -117,33 +119,35 @@ export default function UsersPage() {
   async function handleToggleActive(u: AuthUser): Promise<void> {
     try {
       await usersApi.update(u.id, { active: !u.active })
-      setSuccess(`User "${u.username}" ${u.active ? 'disabled' : 'enabled'}`)
+      setSuccess(u.active
+        ? t('users.messages.disabled', { username: u.username })
+        : t('users.messages.enabled',  { username: u.username }))
       loadUsers()
     } catch (err: unknown) {
       setError(
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Update failed',
+        ?? t('users.errors.update'),
       )
     }
   }
 
   async function handleDelete(u: AuthUser): Promise<void> {
-    if (!confirm(`Delete user "${u.username}"?`)) return
+    if (!confirm(t('users.confirmDelete', { username: u.username }))) return
     try {
       await usersApi.delete(u.id)
-      setSuccess(`User "${u.username}" deleted`)
+      setSuccess(t('users.messages.deleted', { username: u.username }))
       loadUsers()
     } catch (err: unknown) {
       setError(
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Delete failed',
+        ?? t('users.errors.delete'),
       )
     }
   }
 
   function formatDate(d: string | null): string {
-    if (!d) return 'Never'
-    return new Date(d).toLocaleDateString('it-IT', {
+    if (!d) return t('users.lastLoginNever')
+    return new Date(d).toLocaleDateString(undefined, {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     })
@@ -153,11 +157,11 @@ export default function UsersPage() {
     <div className="pl-page">
       <div className="pl-header">
         <div>
-          <h1 className="pl-title"><Users size={24} /> User Management</h1>
-          <p className="pl-subtitle">Create and manage portal user accounts</p>
+          <h1 className="pl-title"><Users size={24} /> {t('users.title')}</h1>
+          <p className="pl-subtitle">{t('users.subtitle')}</p>
         </div>
         <button onClick={openNew} className="btn btn-primary btn-sm">
-          <Plus size={14} /> New User
+          <Plus size={14} /> {t('users.new')}
         </button>
       </div>
 
@@ -169,7 +173,7 @@ export default function UsersPage() {
         <div className="pl-sync-panel" style={{ marginBottom: '1rem' }}>
           <div className="pl-sync-header">
             <span className="pl-sync-title">
-              {editUser ? `Edit: ${editUser.username}` : 'New User'}
+              {editUser ? t('users.formEdit', { username: editUser.username }) : t('users.formNew')}
             </span>
             <button onClick={() => setShowForm(false)} className="pl-btn-icon" style={{ width: 22, height: 22 }}>
               <X size={12} />
@@ -178,45 +182,45 @@ export default function UsersPage() {
           <div className="pl-sync-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
             {!editUser && (
               <div className="form-group">
-                <label className="form-label">Username</label>
+                <label className="form-label">{t('users.field.username')}</label>
                 <input
                   className="form-input" value={form.username}
                   onChange={e => setForm({ ...form, username: e.target.value })}
-                  placeholder="e.g. marco" autoFocus
+                  placeholder={t('users.placeholder.username')} autoFocus
                 />
               </div>
             )}
             <div className="form-group">
-              <label className="form-label">Display Name</label>
+              <label className="form-label">{t('users.field.displayName')}</label>
               <input
                 className="form-input" value={form.display_name}
                 onChange={e => setForm({ ...form, display_name: e.target.value })}
-                placeholder="e.g. Marco Rossi"
+                placeholder={t('users.placeholder.displayName')}
               />
             </div>
             <div className="form-group">
               <label className="form-label">
-                {editUser ? 'New Password (leave blank to keep current)' : 'Password'}
+                {editUser ? t('users.field.passwordEdit') : t('users.field.passwordNew')}
               </label>
               <input
                 className="form-input" type="password" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })}
-                placeholder={editUser ? 'Leave blank to keep unchanged' : 'Minimum 6 characters'}
+                placeholder={editUser ? t('users.placeholder.passwordEdit') : t('users.placeholder.passwordNew')}
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Role</label>
+              <label className="form-label">{t('users.field.role')}</label>
               <select className="form-input" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                <option value="admin">Admin — Full access</option>
-                <option value="operator">Operator — Manage players and servers</option>
-                <option value="viewer">Viewer — Read only</option>
+                <option value="admin">{t('users.role.adminOption')}</option>
+                <option value="operator">{t('users.role.operatorOption')}</option>
+                <option value="viewer">{t('users.role.viewerOption')}</option>
               </select>
             </div>
             <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowForm(false)} className="btn btn-secondary btn-sm">Cancel</button>
+              <button onClick={() => setShowForm(false)} className="btn btn-secondary btn-sm">{t('common.cancel')}</button>
               <button onClick={handleSave} disabled={saving} className="btn btn-primary btn-sm">
                 {saving ? <Loader2 size={14} className="pl-spin" /> : <Save size={14} />}
-                {' '}{editUser ? 'Save' : 'Create'}
+                {' '}{editUser ? t('users.action.save') : t('users.action.create')}
               </button>
             </div>
           </div>
@@ -225,22 +229,24 @@ export default function UsersPage() {
 
       {/* User table */}
       {loading ? (
-        <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> Loading…</div>
+        <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> {t('users.loading')}</div>
       ) : (
         <table className="pl-table">
           <thead>
             <tr>
-              <th>User</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Last login</th>
-              <th>Created</th>
+              <th>{t('users.column.user')}</th>
+              <th>{t('users.column.role')}</th>
+              <th>{t('users.column.status')}</th>
+              <th>{t('users.column.lastLogin')}</th>
+              <th>{t('users.column.created')}</th>
               <th style={{ width: 120 }}></th>
             </tr>
           </thead>
           <tbody>
             {users.map(u => {
-              const r = ROLE_LABELS[u.role as UserRole] ?? ROLE_LABELS.viewer
+              const role = u.role as UserRole
+              const color = ROLE_COLORS[role] ?? ROLE_COLORS.viewer
+              const roleLabel = t(`users.role.${role}`)
               return (
                 <tr key={u.id}>
                   <td>
@@ -260,15 +266,15 @@ export default function UsersPage() {
                   <td>
                     <span
                       className="pl-chip"
-                      style={{ background: `${r.color}15`, color: r.color, borderColor: `${r.color}30` }}
+                      style={{ background: `${color}15`, color, borderColor: `${color}30` }}
                     >
-                      <Shield size={9} /> {r.label}
+                      <Shield size={9} /> {roleLabel}
                     </span>
                   </td>
                   <td>
                     {u.active
-                      ? <span style={{ color: '#16a34a', fontSize: '0.78rem' }}><UserCheck size={12} /> Active</span>
-                      : <span style={{ color: '#dc2626', fontSize: '0.78rem' }}><UserX size={12} /> Disabled</span>
+                      ? <span style={{ color: '#16a34a', fontSize: '0.78rem' }}><UserCheck size={12} /> {t('users.status.active')}</span>
+                      : <span style={{ color: '#dc2626', fontSize: '0.78rem' }}><UserX size={12} /> {t('users.status.disabled')}</span>
                     }
                   </td>
                   <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{formatDate(u.last_login)}</td>
@@ -279,7 +285,7 @@ export default function UsersPage() {
                         onClick={() => openEdit(u)}
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '0.2rem 0.4rem' }}
-                        title="Edit"
+                        title={t('users.action.edit')}
                       >
                         <Pencil size={12} />
                       </button>
@@ -287,7 +293,7 @@ export default function UsersPage() {
                         onClick={() => handleToggleActive(u)}
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '0.2rem 0.4rem' }}
-                        title={u.active ? 'Disable' : 'Enable'}
+                        title={u.active ? t('users.status.disable') : t('users.status.enable')}
                       >
                         {u.active ? <UserX size={12} /> : <UserCheck size={12} />}
                       </button>
@@ -295,7 +301,7 @@ export default function UsersPage() {
                         onClick={() => handleDelete(u)}
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '0.2rem 0.4rem', color: '#dc2626' }}
-                        title="Delete"
+                        title={t('users.action.delete')}
                       >
                         <Trash2 size={12} />
                       </button>

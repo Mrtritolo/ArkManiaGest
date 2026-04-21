@@ -225,6 +225,162 @@
     "invalidPort": "Invalid port",
     "passwordRequired": "Password is required"
   },
+  "users": {
+    "title": "User Management",
+    "subtitle": "Create and manage portal user accounts",
+    "new": "New User",
+    "formNew": "New User",
+    "formEdit": "Edit: {{username}}",
+    "field": {
+      "username": "Username",
+      "displayName": "Display Name",
+      "passwordNew": "Password",
+      "passwordEdit": "New Password (leave blank to keep current)",
+      "role": "Role"
+    },
+    "placeholder": {
+      "username": "e.g. marco",
+      "displayName": "e.g. Marco Rossi",
+      "passwordNew": "Minimum 6 characters",
+      "passwordEdit": "Leave blank to keep unchanged"
+    },
+    "role": {
+      "adminOption": "Admin — Full access",
+      "operatorOption": "Operator — Manage players and servers",
+      "viewerOption": "Viewer — Read only",
+      "admin": "Admin",
+      "operator": "Operator",
+      "viewer": "Viewer"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled",
+      "enable": "Enable",
+      "disable": "Disable"
+    },
+    "column": {
+      "user": "User",
+      "role": "Role",
+      "status": "Status",
+      "lastLogin": "Last login",
+      "created": "Created"
+    },
+    "action": {
+      "save": "Save",
+      "create": "Create",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "lastLoginNever": "Never",
+    "loading": "Loading…",
+    "confirmDelete": "Delete user \"{{username}}\"?",
+    "messages": {
+      "created": "User \"{{username}}\" created",
+      "updated": "User \"{{username}}\" updated",
+      "deleted": "User \"{{username}}\" deleted",
+      "enabled": "User \"{{username}}\" enabled",
+      "disabled": "User \"{{username}}\" disabled",
+      "allRequired": "All fields are required"
+    },
+    "errors": {
+      "load": "Failed to load users",
+      "save": "Save failed",
+      "update": "Update failed",
+      "delete": "Delete failed"
+    }
+  },
+  "generalSettings": {
+    "title": "General Settings",
+    "subtitle": "Global application configuration",
+    "section": {
+      "app": "Application",
+      "backup": "Auto Backup",
+      "system": "System Information"
+    },
+    "field": {
+      "appName": "Application Name",
+      "logLevel": "Log Level",
+      "autoBackup": "Enable automatic configuration backups",
+      "interval": "Interval (hours)",
+      "retention": "Copies to keep"
+    },
+    "hint": {
+      "appName": "Shown in the header and logs",
+      "logLevel": "Application log verbosity",
+      "autoBackup": "Automatically save a backup copy of plugin configuration files",
+      "interval": "How often to run backups (1–168 h)",
+      "retention": "Maximum number of backups to retain"
+    },
+    "info": {
+      "version": "Version",
+      "database": "Database",
+      "dbConnected": "Connected",
+      "dbOffline": "Offline",
+      "backend": "Backend",
+      "configStorage": "Config storage"
+    },
+    "save": "Save Settings",
+    "saving": "Saving…",
+    "saved": "Settings saved successfully!",
+    "errorPrefix": "Error",
+    "saveFailed": "Save failed"
+  },
+  "eventLog": {
+    "title": "Event Log",
+    "subtitleStats": "{{total}} total events — page {{page}} of {{totalPages}}",
+    "purge": "Purge",
+    "purgeTitle": "Event log cleanup",
+    "purgeKeep": "Keep last",
+    "purgeType": "Event type",
+    "purgeGo": "Delete old events",
+    "purging": "Deleting…",
+    "purgeAllTypes": "all types",
+    "purgeConfirmAll": "WARNING: delete ALL events ({{type}})?\nThis action cannot be undone!",
+    "purgeConfirmOlder": "Delete events older than {{days}} days ({{type}})?\nThis action cannot be undone.",
+    "purgeDeleted": "{{count}} events deleted",
+    "purgeFootnote": "All events older than the selected retention date will be removed. Action cannot be undone.",
+    "days": {
+      "d7": "7 days",
+      "d14": "14 days",
+      "d30": "30 days",
+      "d60": "60 days",
+      "d90": "90 days",
+      "m6": "6 months",
+      "y1": "1 year",
+      "all": "Delete ALL"
+    },
+    "types": {
+      "LOGIN": "Login",
+      "RARE_SPAWN": "Rare Spawn",
+      "RARE_DESPAWN": "Rare Despawn",
+      "RARE_KILLED": "Rare Killed",
+      "RARE_TAMED": "Rare Tamed",
+      "DECAY_SCAN": "Decay Scan"
+    },
+    "filter": {
+      "server": "Server",
+      "type": "Event type",
+      "search": "Search",
+      "searchPlaceholder": "Player or details…",
+      "allServers": "All",
+      "allTypes": "All"
+    },
+    "column": {
+      "type": "Type",
+      "player": "Player",
+      "server": "Server",
+      "details": "Details",
+      "datetime": "Date / Time"
+    },
+    "loading": "Loading…",
+    "empty": "No events found",
+    "pagination": {
+      "prev": "Previous",
+      "next": "Next",
+      "page": "Page <strong>{{page}}</strong> of <strong>{{total}}</strong>",
+      "resultsCount": "({{count}} results)"
+    }
+  },
   "database": {
     "title": "Database Configuration",
     "subtitle": "MariaDB connections — configured in the server .env file",

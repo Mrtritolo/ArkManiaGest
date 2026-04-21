@@ -6,6 +6,7 @@
  * stats cards.  Follows the same design patterns as TransferRulesPage.
  */
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
 import {
   ScrollText, RefreshCw, AlertCircle, Search, ChevronLeft, ChevronRight,
@@ -39,16 +40,18 @@ interface ServerItem {
 
 // ── Event type styling map ────────────────────────────────────────────────────
 
-const EVENT_STYLES: Record<string, { color: string; bg: string; icon: LucideIcon; label: string }> = {
-  LOGIN:        { color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: LogIn,    label: 'Login' },
-  RARE_SPAWN:   { color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', icon: Sparkles, label: 'Rare Spawn' },
-  RARE_DESPAWN: { color: '#6b7280', bg: 'rgba(107,114,128,0.08)',icon: Eye,      label: 'Rare Despawn' },
-  RARE_KILLED:  { color: '#dc2626', bg: 'rgba(220,38,38,0.08)',  icon: Skull,    label: 'Rare Killed' },
-  RARE_TAMED:   { color: '#16a34a', bg: 'rgba(22,163,74,0.08)',  icon: Heart,    label: 'Rare Tamed' },
-  DECAY_SCAN:   { color: '#ca8a04', bg: 'rgba(202,138,4,0.08)',  icon: Timer,    label: 'Decay Scan' },
+// Visual styling only — labels are resolved via i18n using the key
+// `eventLog.types.<EVENT_TYPE>` (see locales/*.json).
+const EVENT_STYLES: Record<string, { color: string; bg: string; icon: LucideIcon }> = {
+  LOGIN:        { color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   icon: LogIn },
+  RARE_SPAWN:   { color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   icon: Sparkles },
+  RARE_DESPAWN: { color: '#6b7280', bg: 'rgba(107,114,128,0.08)',  icon: Eye },
+  RARE_KILLED:  { color: '#dc2626', bg: 'rgba(220,38,38,0.08)',    icon: Skull },
+  RARE_TAMED:   { color: '#16a34a', bg: 'rgba(22,163,74,0.08)',    icon: Heart },
+  DECAY_SCAN:   { color: '#ca8a04', bg: 'rgba(202,138,4,0.08)',    icon: Timer },
 }
 
-const DEFAULT_STYLE = { color: '#6b7280', bg: 'rgba(107,114,128,0.08)', icon: ScrollText, label: '?' }
+const DEFAULT_STYLE = { color: '#6b7280', bg: 'rgba(107,114,128,0.08)', icon: ScrollText }
 
 function getStyle(type: string) {
   return EVENT_STYLES[type] || DEFAULT_STYLE
@@ -67,6 +70,7 @@ const labelStyle: React.CSSProperties = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EventLogPage() {
+  const { t } = useTranslation()
   const [events, setEvents] = useState<EventItem[]>([])
   const [stats, setStats] = useState<EventStat[]>([])
   const [servers, setServers] = useState<ServerItem[]>([])
@@ -119,19 +123,23 @@ export default function EventLogPage() {
   useEffect(() => { loadMeta() }, [loadMeta])
   useEffect(() => { loadEvents() }, [loadEvents])
   useEffect(() => {
-    if (success) { const t = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(t) }
+    if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) }
   }, [success])
 
+  function eventLabel(type: string): string {
+    return t(`eventLog.types.${type}`, { defaultValue: type })
+  }
+
   async function handlePurge() {
-    const typeLabel = purgeType ? getStyle(purgeType).label : 'tutti i tipi'
+    const typeLabel = purgeType ? eventLabel(purgeType) : t('eventLog.purgeAllTypes')
     const msg = purgeDays === 0
-      ? `ATTENZIONE: Eliminare TUTTI gli eventi (${typeLabel})?\nQuesta azione e' irreversibile!`
-      : `Eliminare gli eventi piu' vecchi di ${purgeDays} giorni (${typeLabel})?\nQuesta azione e' irreversibile.`
+      ? t('eventLog.purgeConfirmAll',   { type: typeLabel })
+      : t('eventLog.purgeConfirmOlder', { type: typeLabel, days: purgeDays })
     if (!confirm(msg)) return
     setPurging(true)
     try {
       const res = await arkmaniaApi.purgeEvents(purgeDays, purgeType || undefined)
-      setSuccess(`${res.data.deleted.toLocaleString()} eventi eliminati`)
+      setSuccess(t('eventLog.purgeDeleted', { count: res.data.deleted.toLocaleString() }))
       setShowPurge(false)
       loadMeta()
       loadEvents()
@@ -163,12 +171,18 @@ export default function EventLogPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><ScrollText size={22} /> Event Log</h1>
-          <p className="page-subtitle">{totalEvents.toLocaleString()} eventi totali — pagina {page + 1} di {totalPages || 1}</p>
+          <h1 className="page-title"><ScrollText size={22} /> {t('eventLog.title')}</h1>
+          <p className="page-subtitle">
+            {t('eventLog.subtitleStats', {
+              total: totalEvents.toLocaleString(),
+              page: page + 1,
+              totalPages: totalPages || 1,
+            })}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
           <button onClick={() => setShowPurge(!showPurge)} className="btn btn-secondary" style={{ fontSize: '0.82rem' }}>
-            <Trash2 size={14} /> Pulisci
+            <Trash2 size={14} /> {t('eventLog.purge')}
           </button>
           <button onClick={() => { loadMeta(); loadEvents() }} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
             <RefreshCw size={14} />
@@ -195,39 +209,39 @@ export default function EventLogPage() {
       {showPurge && (
         <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid #dc2626' }}>
           <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: '#dc2626' }}>
-            <Trash2 size={14} style={{ verticalAlign: -2 }} /> Pulizia Event Log
+            <Trash2 size={14} style={{ verticalAlign: -2 }} /> {t('eventLog.purgeTitle')}
           </h3>
           <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
             <div>
-              <label style={labelStyle}>Mantieni ultimi</label>
+              <label style={labelStyle}>{t('eventLog.purgeKeep')}</label>
               <select className="input" value={purgeDays} onChange={e => setPurgeDays(Number(e.target.value))} style={{ fontSize: '0.82rem' }}>
-                <option value={7}>7 giorni</option>
-                <option value={14}>14 giorni</option>
-                <option value={30}>30 giorni</option>
-                <option value={60}>60 giorni</option>
-                <option value={90}>90 giorni</option>
-                <option value={180}>6 mesi</option>
-                <option value={365}>1 anno</option>
-                <option value={0}>Elimina TUTTI</option>
+                <option value={7}>{t('eventLog.days.d7')}</option>
+                <option value={14}>{t('eventLog.days.d14')}</option>
+                <option value={30}>{t('eventLog.days.d30')}</option>
+                <option value={60}>{t('eventLog.days.d60')}</option>
+                <option value={90}>{t('eventLog.days.d90')}</option>
+                <option value={180}>{t('eventLog.days.m6')}</option>
+                <option value={365}>{t('eventLog.days.y1')}</option>
+                <option value={0}>{t('eventLog.days.all')}</option>
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Tipo evento</label>
+              <label style={labelStyle}>{t('eventLog.purgeType')}</label>
               <select className="input" value={purgeType} onChange={e => setPurgeType(e.target.value)} style={{ fontSize: '0.82rem' }}>
-                <option value="">Tutti i tipi</option>
-                {Object.entries(EVENT_STYLES).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
+                <option value="">{t('eventLog.filter.allTypes')}</option>
+                {Object.keys(EVENT_STYLES).map((k) => (
+                  <option key={k} value={k}>{eventLabel(k)}</option>
                 ))}
               </select>
             </div>
             <button onClick={handlePurge} disabled={purging} className="btn btn-primary"
               style={{ fontSize: '0.82rem', background: '#dc2626', borderColor: '#dc2626' }}>
-              {purging ? 'Eliminazione...' : 'Elimina vecchi eventi'}
+              {purging ? t('eventLog.purging') : t('eventLog.purgeGo')}
             </button>
-            <button onClick={() => setShowPurge(false)} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>Annulla</button>
+            <button onClick={() => setShowPurge(false)} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('common.cancel')}</button>
           </div>
           <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            Verranno eliminati tutti gli eventi precedenti alla data di retention selezionata. Azione irreversibile.
+            {t('eventLog.purgeFootnote')}
           </p>
         </div>
       )}
@@ -251,7 +265,7 @@ export default function EventLogPage() {
               </div>
               <div>
                 <div style={{ fontSize: '1rem', fontWeight: 800, color: st.color, lineHeight: 1 }}>{s.count.toLocaleString()}</div>
-                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{st.label}</div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{eventLabel(s.event_type)}</div>
               </div>
             </button>
           )
@@ -261,30 +275,30 @@ export default function EventLogPage() {
       {/* Filters */}
       <div className="card" style={{ padding: '0.6rem 1rem', marginBottom: '0.75rem', display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 140 }}>
-          <label style={labelStyle}>Tipo Evento</label>
+          <label style={labelStyle}>{t('eventLog.filter.type')}</label>
           <select className="input" value={eventType} onChange={e => applyFilter(setEventType, e.target.value)}
             style={{ fontSize: '0.82rem' }}>
-            <option value="">Tutti</option>
-            {Object.entries(EVENT_STYLES).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
+            <option value="">{t('eventLog.filter.allTypes')}</option>
+            {Object.keys(EVENT_STYLES).map((k) => (
+              <option key={k} value={k}>{eventLabel(k)}</option>
             ))}
           </select>
         </div>
         <div style={{ minWidth: 140 }}>
-          <label style={labelStyle}>Server</label>
+          <label style={labelStyle}>{t('eventLog.filter.server')}</label>
           <select className="input" value={serverKey} onChange={e => applyFilter(setServerKey, e.target.value)}
             style={{ fontSize: '0.82rem' }}>
-            <option value="">Tutti</option>
+            <option value="">{t('eventLog.filter.allServers')}</option>
             {servers.map(s => (
               <option key={s.server_key} value={s.server_key}>{s.display_name}</option>
             ))}
           </select>
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <label style={labelStyle}>Cerca</label>
+          <label style={labelStyle}>{t('eventLog.filter.search')}</label>
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="input" placeholder="Giocatore o dettagli..."
+            <input className="input" placeholder={t('eventLog.filter.searchPlaceholder')}
               value={search} onChange={e => applyFilter(setSearch, e.target.value)}
               style={{ fontSize: '0.82rem', paddingLeft: 28 }} />
           </div>
@@ -294,11 +308,11 @@ export default function EventLogPage() {
       {/* Table */}
       <div className="card" style={{ minHeight: 200 }}>
         {loading ? (
-          <div className="pl-loading" style={{ padding: '3rem' }}>Caricamento...</div>
+          <div className="pl-loading" style={{ padding: '3rem' }}>{t('eventLog.loading')}</div>
         ) : events.length === 0 ? (
           <div className="pl-empty" style={{ padding: '3rem' }}>
             <ScrollText size={40} style={{ opacity: 0.12 }} />
-            <p>Nessun evento trovato</p>
+            <p>{t('eventLog.empty')}</p>
           </div>
         ) : (
           <>
@@ -311,11 +325,11 @@ export default function EventLogPage() {
               color: 'var(--text-secondary)', background: 'var(--bg-card-muted)',
               borderBottom: '2px solid var(--border)',
             }}>
-              <span>Tipo</span>
-              <span>Giocatore</span>
-              <span>Server</span>
-              <span>Dettagli</span>
-              <span>Data/Ora</span>
+              <span>{t('eventLog.column.type')}</span>
+              <span>{t('eventLog.column.player')}</span>
+              <span>{t('eventLog.column.server')}</span>
+              <span>{t('eventLog.column.details')}</span>
+              <span>{t('eventLog.column.datetime')}</span>
             </div>
 
             {/* Rows */}
@@ -341,7 +355,7 @@ export default function EventLogPage() {
                     background: st.bg, color: st.color, border: `1px solid ${st.color}20`,
                     whiteSpace: 'nowrap',
                   }}>
-                    <Icon size={11} /> {st.label}
+                    <Icon size={11} /> {eventLabel(ev.event_type)}
                   </span>
 
                   {/* Player name */}
@@ -372,7 +386,7 @@ export default function EventLogPage() {
 
                   {/* Timestamp */}
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    {ev.event_time ? new Date(ev.event_time).toLocaleString('it-IT', {
+                    {ev.event_time ? new Date(ev.event_time).toLocaleString(undefined, {
                       day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
                     }) : '—'}
                   </span>
@@ -393,13 +407,17 @@ export default function EventLogPage() {
               className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }}>
               <ChevronLeft size={16} />
             </button>
-            <span>Pagina <strong>{page + 1}</strong> di <strong>{totalPages}</strong></span>
+            <span
+              dangerouslySetInnerHTML={{
+                __html: t('eventLog.pagination.page', { page: page + 1, total: totalPages }),
+              }}
+            />
             <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
               className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }}>
               <ChevronRight size={16} />
             </button>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              ({total.toLocaleString()} risultati)
+              {t('eventLog.pagination.resultsCount', { count: total.toLocaleString() })}
             </span>
           </div>
         )}
