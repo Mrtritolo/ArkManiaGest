@@ -1,21 +1,23 @@
 # =============================================================================
-# deploy.conf — Shared configuration for all ArkManiaGest deploy scripts
+# deploy.conf.example — Deploy configuration template
 # =============================================================================
-# This is the SINGLE SOURCE OF TRUTH for deploy-time parameters.
-# Every .sh script in deploy/ sources this file.
+# This is the SINGLE SOURCE OF TRUTH template for deploy-time parameters.
 #
-# To deploy for a different client:
-#   1. Copy this file
-#   2. Change the values below
-#   3. All scripts will pick up the new values automatically
+# FIRST USE:
+#   1. Copy this file:   cp deploy/deploy.conf.example deploy/deploy.conf
+#   2. Edit deploy/deploy.conf and fill in real values.
+#   3. deploy/deploy.conf is gitignored — it stays on your dev PC only.
+#
+# Every .sh / .ps1 script in deploy/ sources deploy.conf at runtime.  When
+# the file is missing they fall back to this template and print a warning.
 # =============================================================================
 
-# --- Target server (used by PowerShell scripts on the dev PC) ---
+# --- Target server (used by the PowerShell scripts on the dev PC) ---
 DEPLOY_SERVER="root@YOUR_SERVER_IP"
 
 # --- Domain & SSL ---
-DOMAIN="gestionale.arkmania.it"
-SSL_EMAIL="info@arkmania.it"
+DOMAIN="your-domain.example.com"
+SSL_EMAIL="admin@example.com"
 
 # --- Application paths on the server ---
 APP_DIR="/opt/arkmaniagest"
@@ -30,12 +32,13 @@ GEOIP_ALLOWED_COUNTRIES="IT CH"
 # --- IP whitelist for GeoIP bypass (space-separated CIDR blocks) ---
 # These IPs bypass the geo-block regardless of country.
 # Localhost (127.0.0.1, ::1) is always included automatically.
-GEOIP_WHITELIST_IPS="ADMIN_WHITELIST_IP/32 YOUR_SERVER_IP/32 MONITORING_WHITELIST_IP/32"
+# Add your admin / office / monitoring IPs here (in the local deploy.conf).
+GEOIP_WHITELIST_IPS=""
 
 # --- Public API: CORS origin for the public-facing website ---
 # The /api/v1/public/ endpoints serve data to this origin.
 # Leave empty if no public website integration is needed.
-PUBLIC_SITE_ORIGIN="https://arkmania.it"
+PUBLIC_SITE_ORIGIN=""
 
 # --- Cron sync secret (must match CRON_SECRET in backend .env) ---
 # Leave empty to read from the backend .env at runtime (recommended).

@@ -6,10 +6,12 @@
 # ============================================
 set -euo pipefail
 
-# Source shared configuration
+# Source shared configuration (real file first, template fallback)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${SCRIPT_DIR}/deploy.conf" ]; then
     source "${SCRIPT_DIR}/deploy.conf"
+elif [ -f "${SCRIPT_DIR}/deploy.conf.example" ]; then
+    source "${SCRIPT_DIR}/deploy.conf.example"
 fi
 
 DOMAIN="${1:-${DOMAIN:-}}"

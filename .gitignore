@@ -34,6 +34,10 @@ frontend/dist/
 # Runtime data (local sqlite, cache, ecc.)
 data/
 backend/data/
+# Local deploy config (real server IPs, admin IP whitelist, cron secret) —
+# a sanitised template lives in deploy/deploy.conf.example.
+deploy/deploy.conf
+deploy/deploy.local.conf
 
 # --- IDE / Editor ---
 .vscode/

@@ -20,6 +20,12 @@ param(
 
 # Read defaults from deploy.conf (bash-style key=value)
 $CONF_PATH = Join-Path $PSScriptRoot "deploy.conf"
+if (-not (Test-Path $CONF_PATH)) {
+    $CONF_PATH = Join-Path $PSScriptRoot "deploy.conf.example"
+    if (Test-Path $CONF_PATH) {
+        Write-Host "  WARNING: using deploy.conf.example (template). Copy it to deploy/deploy.conf with real values." -ForegroundColor Yellow
+    }
+}
 $confVars  = @{}
 if (Test-Path $CONF_PATH) {
     Get-Content $CONF_PATH | ForEach-Object {

@@ -7,18 +7,29 @@ export DEBIAN_FRONTEND=noninteractive
 
 # Source shared configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF_FILE="${SCRIPT_DIR}/deploy.conf"
-if [ ! -f "$CONF_FILE" ]; then
-    # Fallback: check in the deploy source directory
-    CONF_FILE="/tmp/arkmaniagest-deploy/deploy/deploy.conf"
-fi
-if [ -f "$CONF_FILE" ]; then
-    # shellcheck source=deploy.conf
-    source "$CONF_FILE"
-else
-    echo "ERROR: deploy.conf not found. Cannot proceed."
+_CONF_CANDIDATES=(
+    "${SCRIPT_DIR}/deploy.conf"
+    "/tmp/arkmaniagest-deploy/deploy/deploy.conf"
+    "${SCRIPT_DIR}/deploy.conf.example"
+    "/tmp/arkmaniagest-deploy/deploy/deploy.conf.example"
+)
+CONF_FILE=""
+for _c in "${_CONF_CANDIDATES[@]}"; do
+    if [ -f "$_c" ]; then
+        CONF_FILE="$_c"
+        break
+    fi
+done
+if [ -z "$CONF_FILE" ]; then
+    echo "ERROR: neither deploy.conf nor deploy.conf.example was found. Cannot proceed."
     exit 1
 fi
+if [[ "$CONF_FILE" == *.example ]]; then
+    echo "WARNING: using deploy.conf.example (template). Copy it to"
+    echo "         deploy/deploy.conf and fill in real values for this host."
+fi
+# shellcheck source=deploy.conf.example
+source "$CONF_FILE"
 
 EMAIL="${SSL_EMAIL}"
 DEPLOY_SRC="/tmp/arkmaniagest-deploy"
