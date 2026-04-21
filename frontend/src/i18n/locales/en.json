@@ -323,7 +323,23 @@
     "saving": "Saving…",
     "saved": "Settings saved successfully!",
     "errorPrefix": "Error",
-    "saveFailed": "Save failed"
+    "saveFailed": "Save failed",
+    "updates": {
+      "section": "Updates",
+      "checkNow": "Check now",
+      "checking": "Checking…",
+      "current": "Installed version",
+      "latest": "Latest release",
+      "upToDate": "You are on the latest release.",
+      "updateAvailable": "Update available: {{version}}",
+      "viewRelease": "View release on GitHub",
+      "publishedAt": "Published: {{when}}",
+      "builtAt": "Built: {{when}}",
+      "commit": "Commit",
+      "noReleases": "No releases have been published yet.",
+      "error": "Update check failed: {{message}}",
+      "cacheHint": "Results are cached for 1 hour. Use \"Check now\" to refresh immediately."
+    }
   },
   "eventLog": {
     "title": "Event Log",

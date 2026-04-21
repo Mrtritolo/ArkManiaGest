@@ -6,8 +6,9 @@
  */
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
 import { settingsApi } from '../services/api'
-import type { AppSettings } from '../types'
+import type { AppSettings, VersionCheckResult } from '../types'
 
 interface HealthInfo {
   version: string
@@ -31,7 +32,37 @@ export default function GeneralSettingsPage() {
   const [isError, setIsError] = useState(false)
   const [health, setHealth]   = useState<HealthInfo | null>(null)
 
-  useEffect(() => { loadSettings(); loadHealth() }, [])
+  const [versionInfo, setVersionInfo]   = useState<VersionCheckResult | null>(null)
+  const [versionLoading, setVersionLoading] = useState(false)
+
+  useEffect(() => { loadSettings(); loadHealth(); loadVersion(false) }, [])
+
+  async function loadVersion(force: boolean): Promise<void> {
+    setVersionLoading(true)
+    try {
+      const res = await settingsApi.checkVersion(force)
+      setVersionInfo(res.data)
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? (err instanceof Error ? err.message : 'error')
+      setVersionInfo({
+        current: health?.version ?? '',
+        current_commit: null,
+        current_built_at: null,
+        latest: null,
+        update_available: false,
+        release_url: null,
+        release_name: null,
+        release_published_at: null,
+        release_notes: null,
+        cached_at: null,
+        error: detail,
+      })
+    } finally {
+      setVersionLoading(false)
+    }
+  }
 
   async function loadHealth(): Promise<void> {
     try {
@@ -162,6 +193,97 @@ export default function GeneralSettingsPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Updates */}
+      <div className="card mt-6">
+        <h2 className="card-title">
+          <span className="card-title-icon"><Download size={14} /></span>
+          {t('generalSettings.updates.section')}
+        </h2>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 180 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {t('generalSettings.updates.current')}
+            </span>
+            <span style={{ fontSize: '1rem', fontWeight: 700 }}>
+              {versionInfo?.current || health?.version || '…'}
+            </span>
+            {versionInfo?.current_commit && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                {t('generalSettings.updates.commit')}: {versionInfo.current_commit.substring(0, 8)}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 180 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {t('generalSettings.updates.latest')}
+            </span>
+            <span
+              style={{
+                fontSize: '1rem',
+                fontWeight: 700,
+                color: versionInfo?.update_available ? 'var(--warning, #ca8a04)' : 'var(--success, #16a34a)',
+              }}
+            >
+              {versionInfo?.latest || (versionInfo?.error ? '—' : '…')}
+            </span>
+            {versionInfo?.release_published_at && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {t('generalSettings.updates.publishedAt', {
+                  when: new Date(versionInfo.release_published_at).toLocaleString(undefined),
+                })}
+              </span>
+            )}
+          </div>
+
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={() => loadVersion(true)}
+              disabled={versionLoading}
+              className="btn btn-secondary"
+            >
+              <RefreshCw size={14} style={{ animation: versionLoading ? 'spin 1s linear infinite' : 'none' }} />
+              {versionLoading ? t('generalSettings.updates.checking') : t('generalSettings.updates.checkNow')}
+            </button>
+            {versionInfo?.release_url && (
+              <a
+                href={versionInfo.release_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary"
+              >
+                <ExternalLink size={14} /> {t('generalSettings.updates.viewRelease')}
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Status line */}
+        <div style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
+          {versionInfo?.error ? (
+            <span style={{ color: 'var(--danger, #dc2626)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <AlertCircle size={14} />
+              {t('generalSettings.updates.error', { message: versionInfo.error })}
+            </span>
+          ) : versionInfo?.update_available && versionInfo.latest ? (
+            <span style={{ color: 'var(--warning, #ca8a04)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Download size={14} />
+              {t('generalSettings.updates.updateAvailable', { version: versionInfo.latest })}
+            </span>
+          ) : versionInfo?.latest ? (
+            <span style={{ color: 'var(--success, #16a34a)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <CheckCircle size={14} /> {t('generalSettings.updates.upToDate')}
+            </span>
+          ) : null}
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+            {t('generalSettings.updates.cacheHint')}
+          </p>
+        </div>
+
+        <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
       </div>
 
       {/* System info */}

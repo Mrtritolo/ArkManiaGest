@@ -24,6 +24,7 @@ import type {
   DualDatabaseConfig,
   DatabaseTestRequest,
   DatabaseTestResult,
+  VersionCheckResult,
   SSHMachine,
   SSHMachineCreate,
   SSHMachineUpdate,
@@ -201,6 +202,16 @@ export const settingsApi = {
   get: () => api.get<AppSettings>("/settings/app-settings"),
   update: (data: AppSettingsUpdate) =>
     api.put<AppSettings>("/settings/app-settings", data),
+
+  /**
+   * Ask the backend to query GitHub for the latest release and compare it
+   * against the running version.  Pass `force=true` to bypass the 1-hour
+   * server-side cache (useful for the manual "Check now" button).
+   */
+  checkVersion: (force = false) =>
+    api.get<VersionCheckResult>("/settings/version-check", {
+      params: force ? { force: true } : undefined,
+    }),
 };
 
 // ---------------------------------------------------------------------------

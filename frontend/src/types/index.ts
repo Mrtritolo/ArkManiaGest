@@ -48,6 +48,20 @@ export interface DualDatabaseConfig {
   plugin_configured: boolean;
 }
 
+export interface VersionCheckResult {
+  current: string;
+  current_commit: string | null;
+  current_built_at: string | null;
+  latest: string | null;
+  update_available: boolean;
+  release_url: string | null;
+  release_name: string | null;
+  release_published_at: string | null;
+  release_notes: string | null;
+  cached_at: string | null;
+  error: string | null;
+}
+
 export interface DatabaseTestRequest {
   host: string;
   port: number;

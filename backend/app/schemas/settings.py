@@ -98,3 +98,29 @@ class DatabaseTestRequest(BaseModel):
     name: str
     user: str
     password: str
+
+
+# ── Version / update check ───────────────────────────────────────────────────
+
+class VersionCheckResponse(BaseModel):
+    """
+    Result of a GitHub release check.
+
+    Populated by :func:`app.api.routes.settings.check_for_updates`; cached
+    in-memory for an hour between calls so the GitHub API rate limit is
+    respected.  ``update_available`` is ``True`` iff ``latest`` compares
+    greater than ``current`` via standard semver ordering.
+    """
+
+    current: str
+    current_commit: Optional[str] = None
+    current_built_at: Optional[str] = None
+    latest: Optional[str] = None
+    update_available: bool = False
+    release_url: Optional[str] = None
+    release_name: Optional[str] = None
+    release_published_at: Optional[str] = None
+    release_notes: Optional[str] = None
+    cached_at: Optional[str] = None
+    # Populated when the GitHub API cannot be reached or returns an error.
+    error: Optional[str] = None

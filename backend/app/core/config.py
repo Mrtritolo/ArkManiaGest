@@ -80,6 +80,16 @@ class ServerSettings(BaseSettings):
     ALLOWED_IPS: str = ""
     SSH_TIMEOUT: int = 30
 
+    # --- Update checker ---
+    # GitHub repository in "owner/repo" format.  The GET /settings/version-check
+    # endpoint queries https://api.github.com/repos/<GITHUB_REPO>/releases/latest
+    # to report whether a newer release is available.
+    GITHUB_REPO: str = "Mrtritolo/ArkManiaGest"
+    # Optional personal access token — only used to lift GitHub's anonymous
+    # rate limit from 60 to 5000 requests per hour.  Leave empty for public
+    # repos; the check still works unauthenticated.
+    GITHUB_TOKEN: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

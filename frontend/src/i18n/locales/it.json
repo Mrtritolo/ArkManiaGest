@@ -323,7 +323,23 @@
     "saving": "Salvataggio…",
     "saved": "Impostazioni salvate con successo!",
     "errorPrefix": "Errore",
-    "saveFailed": "Salvataggio fallito"
+    "saveFailed": "Salvataggio fallito",
+    "updates": {
+      "section": "Aggiornamenti",
+      "checkNow": "Verifica ora",
+      "checking": "Verifica in corso…",
+      "current": "Versione installata",
+      "latest": "Ultima release",
+      "upToDate": "Sei sull'ultima versione disponibile.",
+      "updateAvailable": "Aggiornamento disponibile: {{version}}",
+      "viewRelease": "Apri la release su GitHub",
+      "publishedAt": "Pubblicata: {{when}}",
+      "builtAt": "Build: {{when}}",
+      "commit": "Commit",
+      "noReleases": "Non è stata ancora pubblicata nessuna release.",
+      "error": "Verifica aggiornamenti fallita: {{message}}",
+      "cacheHint": "I risultati sono in cache per 1 ora. Usa \"Verifica ora\" per forzare."
+    }
   },
   "eventLog": {
     "title": "Log eventi",

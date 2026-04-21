@@ -90,3 +90,6 @@ deploy/imports/_parse_dododex_items.py
 # --- Archivi temporanei di deploy ---
 /*.tar.gz
 /*.zip
+
+# --- Release build artefacts (produced by deploy/package-release.ps1) ---
+release-build/

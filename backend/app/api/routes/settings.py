@@ -12,8 +12,16 @@ Protected endpoints:
     POST /settings/database/test        — Test a custom DB connection
     POST /settings/database/test-current — Test the active DB connection
 """
-import aiomysql
+import json
+import logging
+import os
+import time
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import aiomysql
+import httpx
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +43,10 @@ from app.schemas.settings import (
     DatabaseConfigRead,
     DualDatabaseConfigRead,
     DatabaseTestRequest,
+    VersionCheckResponse,
 )
+
+log = logging.getLogger("arkmaniagest.settings")
 
 router = APIRouter()
 
@@ -239,3 +250,192 @@ async def test_current_plugin_database(_admin: dict = Depends(require_admin)):
         s.plugin_db_password,
         s.plugin_db_name,
     )
+
+
+# ── Version / update check ───────────────────────────────────────────────────
+#
+# In-memory cache: ``(expires_at, VersionCheckResponse)``.  A second request
+# within the TTL returns the cached response without hitting the GitHub API.
+# Resets on every backend restart.
+_VERSION_CACHE: tuple[float, Optional[VersionCheckResponse]] = (0.0, None)
+_VERSION_CACHE_TTL_SECONDS = 60 * 60          # 1 hour
+_GITHUB_API_TIMEOUT_SECONDS = 6
+_VERSION_MANIFEST_CANDIDATES = (
+    Path("/opt/arkmaniagest/VERSION.json"),
+    Path(__file__).resolve().parents[3] / "VERSION.json",
+)
+
+
+def _local_version_info() -> tuple[str, Optional[str], Optional[str]]:
+    """
+    Return ``(version, commit, built_at)`` for the running backend.
+
+    Prefers the ``VERSION.json`` file produced by the release packager
+    (``deploy/package-release.ps1``), falls back to the FastAPI app's
+    ``version`` attribute when the file is absent (dev / source checkout).
+    """
+    for candidate in _VERSION_MANIFEST_CANDIDATES:
+        try:
+            if candidate.is_file():
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                return (
+                    str(data.get("version", "")),
+                    data.get("commit"),
+                    data.get("built_at"),
+                )
+        except Exception as exc:
+            log.debug("VERSION.json read failed at %s: %s", candidate, exc)
+
+    # Fallback: read the value hardcoded in the FastAPI constructor.
+    from app.main import app as fastapi_app
+    return str(getattr(fastapi_app, "version", "") or ""), None, None
+
+
+def _parse_semver(text: str) -> tuple[int, int, int, str]:
+    """
+    Very permissive semver parser: returns (major, minor, patch, prerelease).
+
+    Missing components default to 0.  Non-numeric suffixes (``rc1``, ``beta``)
+    keep their natural alphabetical order but sort BEFORE an empty suffix,
+    so ``2.3.0`` > ``2.3.0-rc1``.
+    """
+    s = text.lstrip("vV").strip()
+    pre = ""
+    if "-" in s:
+        s, pre = s.split("-", 1)
+    if "+" in s:  # build metadata — ignored for ordering
+        s = s.split("+", 1)[0]
+    parts = s.split(".") + ["0", "0", "0"]
+
+    def _as_int(v: str) -> int:
+        try:
+            return int(v)
+        except ValueError:
+            return 0
+
+    major, minor, patch = _as_int(parts[0]), _as_int(parts[1]), _as_int(parts[2])
+    return major, minor, patch, pre
+
+
+def _semver_gt(new: str, current: str) -> bool:
+    """True if *new* is strictly newer than *current* per :func:`_parse_semver`."""
+    nmaj, nmin, npat, npre = _parse_semver(new)
+    cmaj, cmin, cpat, cpre = _parse_semver(current)
+    if (nmaj, nmin, npat) != (cmaj, cmin, cpat):
+        return (nmaj, nmin, npat) > (cmaj, cmin, cpat)
+    # Same base: empty prerelease ("") is considered greater than any suffix.
+    if npre == cpre:
+        return False
+    if not npre:   # new is stable, current is a pre-release → newer
+        return True
+    if not cpre:   # current is stable, new is a pre-release → older
+        return False
+    return npre > cpre
+
+
+@router.get("/version-check", response_model=VersionCheckResponse)
+async def check_for_updates(
+    _admin: dict = Depends(require_admin),
+    force: bool = False,
+) -> VersionCheckResponse:
+    """
+    Report whether a newer ArkManiaGest release is available on GitHub.
+
+    Read-side only: hits the GitHub Releases API once per hour (cached),
+    compares the returned ``tag_name`` with the local version, and returns
+    the comparison result.  The query runs server-side so the browser never
+    talks to the GitHub API directly (CORS, rate limits, IP fingerprinting).
+
+    ``force=true`` bypasses the cache for manual re-checks.
+    """
+    global _VERSION_CACHE
+
+    current, current_commit, current_built_at = _local_version_info()
+
+    now = time.time()
+    cached_expires, cached_payload = _VERSION_CACHE
+    if not force and cached_payload is not None and now < cached_expires:
+        # Re-issue the cached payload but refresh the "current" fields —
+        # those come from a local file and are cheap to re-read.
+        return cached_payload.model_copy(update={
+            "current": current,
+            "current_commit": current_commit,
+            "current_built_at": current_built_at,
+        })
+
+    repo = server_settings.GITHUB_REPO.strip()
+    if not repo or "/" not in repo:
+        payload = VersionCheckResponse(
+            current=current,
+            current_commit=current_commit,
+            current_built_at=current_built_at,
+            error="GITHUB_REPO is not configured in .env.",
+            cached_at=datetime.now(timezone.utc).isoformat(),
+        )
+        _VERSION_CACHE = (now + _VERSION_CACHE_TTL_SECONDS, payload)
+        return payload
+
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ArkManiaGest-UpdateCheck",
+    }
+    if server_settings.GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {server_settings.GITHUB_TOKEN}"
+
+    try:
+        async with httpx.AsyncClient(timeout=_GITHUB_API_TIMEOUT_SECONDS) as client:
+            r = await client.get(url, headers=headers)
+    except Exception as exc:
+        payload = VersionCheckResponse(
+            current=current,
+            current_commit=current_commit,
+            current_built_at=current_built_at,
+            error=f"GitHub request failed: {exc}",
+            cached_at=datetime.now(timezone.utc).isoformat(),
+        )
+        # Cache errors with a short TTL so a flaky network doesn't DOS us.
+        _VERSION_CACHE = (now + 60, payload)
+        return payload
+
+    if r.status_code == 404:
+        payload = VersionCheckResponse(
+            current=current,
+            current_commit=current_commit,
+            current_built_at=current_built_at,
+            error="No releases published yet.",
+            cached_at=datetime.now(timezone.utc).isoformat(),
+        )
+        _VERSION_CACHE = (now + _VERSION_CACHE_TTL_SECONDS, payload)
+        return payload
+
+    if r.status_code != 200:
+        payload = VersionCheckResponse(
+            current=current,
+            current_commit=current_commit,
+            current_built_at=current_built_at,
+            error=f"GitHub API returned HTTP {r.status_code}.",
+            cached_at=datetime.now(timezone.utc).isoformat(),
+        )
+        _VERSION_CACHE = (now + 60, payload)
+        return payload
+
+    data = r.json()
+    tag_name = str(data.get("tag_name") or data.get("name") or "").strip()
+    latest = tag_name.lstrip("vV") if tag_name else None
+    update_available = bool(current and latest and _semver_gt(latest, current))
+
+    payload = VersionCheckResponse(
+        current=current,
+        current_commit=current_commit,
+        current_built_at=current_built_at,
+        latest=latest,
+        update_available=update_available,
+        release_url=data.get("html_url"),
+        release_name=data.get("name"),
+        release_published_at=data.get("published_at"),
+        release_notes=data.get("body"),
+        cached_at=datetime.now(timezone.utc).isoformat(),
+    )
+    _VERSION_CACHE = (now + _VERSION_CACHE_TTL_SECONDS, payload)
+    return payload
