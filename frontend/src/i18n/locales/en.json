@@ -737,6 +737,149 @@
       "delete": "Delete"
     }
   },
+  "players": {
+    "heading": "Players",
+    "subtitle": "Player management, shop points and permissions",
+    "registeredCount": "{{count}} registered",
+    "syncNamesTitle": "Sync names from .arkprofile",
+    "syncNamesButton": "Sync Names",
+    "syncing": "Syncing names…",
+    "refreshTooltip": "Refresh",
+    "syncPanel": {
+      "title": "Sync Names from .arkprofile",
+      "allButton": "All",
+      "columns": {
+        "container": "Container",
+        "server": "Server",
+        "map": "Map",
+        "host": "Host",
+        "profiles": "Profiles"
+      },
+      "empty": "No container with SavedArks found. Run a scan from the Containers page first."
+    },
+    "syncResult": {
+      "scanned": "Scanned {{count}} profiles",
+      "matched": "{{count}} match",
+      "updated": "{{count}} updated",
+      "errors": "{{count}} errors",
+      "noMatch": "{{count}} without match"
+    },
+    "stats": {
+      "players": "Players",
+      "pointsInCirculation": "Points in circulation",
+      "totalSpent": "Total spent",
+      "groups": "Groups"
+    },
+    "searchPlaceholder": "Search by name, EOS ID…",
+    "allGroups": "All groups",
+    "searchButton": "Search",
+    "loading": "Loading…",
+    "empty": "No players found",
+    "table": {
+      "player": "Player",
+      "tribe": "Tribe",
+      "points": "Points",
+      "groups": "Groups",
+      "timed": "Timed",
+      "login": "Login"
+    },
+    "unknownPlayer": "Unknown",
+    "unknownTribe": "Unidentified",
+    "timeAgo": {
+      "minutes": "{{n}}m ago",
+      "hours": "{{n}}h ago",
+      "days": "{{n}}d ago",
+      "months": "{{n}}M ago"
+    },
+    "chipTimed": {
+      "expired": "Expired",
+      "expiresOn": "Expires: {{date}}"
+    },
+    "detail": {
+      "spentLabel": "Spent:",
+      "banTooltip": "Ban player"
+    },
+    "ban": {
+      "sectionTitle": "Ban Player",
+      "intro": "Ban <strong>{{name}}</strong> from the cluster",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Reason for ban…",
+      "durationLabel": "Duration",
+      "permanent": "Permanent",
+      "oneDay": "1 Day",
+      "threeDays": "3 Days",
+      "sevenDays": "7 Days",
+      "thirtyDays": "30 Days",
+      "confirmBan": "Confirm Ban",
+      "banning": "Banning…",
+      "cancel": "Cancel",
+      "defaultReason": "Violation of server rules",
+      "noReason": "No reason specified"
+    },
+    "points": {
+      "sectionTitle": "Shop Points",
+      "setButton": "Set"
+    },
+    "perms": {
+      "sectionTitle": "Fixed Permissions",
+      "save": "Save Fixed Permissions",
+      "timedSectionTitle": "Timed Permissions",
+      "emptyTimed": "No timed permissions",
+      "saveTimed": "Save Timed",
+      "active": "Active",
+      "expired": "Expired",
+      "flagLabel": "Flag",
+      "expiresLabel": "Expires"
+    },
+    "kits": {
+      "sectionTitle": "Kits"
+    },
+    "maps": {
+      "sectionTitle": "Character Maps",
+      "searching": "Searching…",
+      "searchButton": "Search in maps",
+      "notFound": "Player not found in any map",
+      "debugInfo": "Debug info ({{count}} step)",
+      "nameLabel": "Name:",
+      "sourceTooltipSelect": "Select as source",
+      "sourceTooltipDeselect": "Deselect source",
+      "sourceSelectLabel": "Source",
+      "sourceCancelLabel": "Cancel"
+    },
+    "copy": {
+      "fromLabel": "From:",
+      "destContainerLabel": "Destination container",
+      "selectPlaceholder": "Select…",
+      "destMapLabel": "Destination map",
+      "destMapPlaceholder": "e.g. Aberration_WP",
+      "copying": "Copying…",
+      "copyButton": "Copy Character",
+      "success": "Character copied to {{map}}",
+      "successOverwritten": "Character copied to {{map}} (overwritten, backup created)"
+    },
+    "messages": {
+      "pointsSet": "Points set to {{value}}",
+      "pointsChangedPositive": "+{{amount}} points (total: {{total}})",
+      "pointsChangedNegative": "{{amount}} points (total: {{total}})",
+      "fixedPermsUpdated": "Fixed permissions updated",
+      "timedPermsUpdated": "Timed permissions updated",
+      "bannedPermanent": "Player {{name}} banned permanently",
+      "bannedTemporary": "Player {{name}} banned for {{duration}}",
+      "syncErrors": "Sync errors: {{errors}}"
+    },
+    "errors": {
+      "load": "Load error. Check DB connection.",
+      "detail": "Detail error",
+      "mapSearch": "Map search error",
+      "destContainerNotFound": "Destination container not found",
+      "copyCharacter": "Character copy error",
+      "invalidPoints": "Invalid points value",
+      "generic": "Error",
+      "banFailed": "Ban failed",
+      "syncNames": "Name sync error"
+    },
+    "syncFallback": "—"
+  },
   "database": {
     "title": "Database Configuration",
     "subtitle": "MariaDB connections — configured in the server .env file",

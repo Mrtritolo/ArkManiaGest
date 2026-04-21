@@ -737,6 +737,149 @@
       "delete": "Elimina"
     }
   },
+  "players": {
+    "heading": "Giocatori",
+    "subtitle": "Gestione giocatori, punti shop e permessi",
+    "registeredCount": "{{count}} registrati",
+    "syncNamesTitle": "Sincronizza nomi da .arkprofile",
+    "syncNamesButton": "Sync Nomi",
+    "syncing": "Sync nomi...",
+    "refreshTooltip": "Aggiorna",
+    "syncPanel": {
+      "title": "Sync Nomi da .arkprofile",
+      "allButton": "Tutti",
+      "columns": {
+        "container": "Container",
+        "server": "Server",
+        "map": "Mappa",
+        "host": "Host",
+        "profiles": "Profili"
+      },
+      "empty": "Nessun container con SavedArks trovato. Esegui prima una scansione dalla pagina Container."
+    },
+    "syncResult": {
+      "scanned": "Scansionati {{count}} profili",
+      "matched": "{{count}} match",
+      "updated": "{{count}} aggiornati",
+      "errors": "{{count}} errori",
+      "noMatch": "{{count}} senza match"
+    },
+    "stats": {
+      "players": "Giocatori",
+      "pointsInCirculation": "Punti in circolo",
+      "totalSpent": "Totale spesi",
+      "groups": "Gruppi"
+    },
+    "searchPlaceholder": "Cerca per nome, EOS ID...",
+    "allGroups": "Tutti i gruppi",
+    "searchButton": "Cerca",
+    "loading": "Caricamento…",
+    "empty": "Nessun giocatore trovato",
+    "table": {
+      "player": "Giocatore",
+      "tribe": "Tribù",
+      "points": "Punti",
+      "groups": "Gruppi",
+      "timed": "Temp.",
+      "login": "Login"
+    },
+    "unknownPlayer": "Sconosciuto",
+    "unknownTribe": "Non Identificata",
+    "timeAgo": {
+      "minutes": "{{n}}m fa",
+      "hours": "{{n}}h fa",
+      "days": "{{n}}g fa",
+      "months": "{{n}}M fa"
+    },
+    "chipTimed": {
+      "expired": "Scaduto",
+      "expiresOn": "Scade: {{date}}"
+    },
+    "detail": {
+      "spentLabel": "Spesi:",
+      "banTooltip": "Banna giocatore"
+    },
+    "ban": {
+      "sectionTitle": "Banna giocatore",
+      "intro": "Banna <strong>{{name}}</strong> dal cluster",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "Motivo del ban...",
+      "durationLabel": "Durata",
+      "permanent": "Permanente",
+      "oneDay": "1 giorno",
+      "threeDays": "3 giorni",
+      "sevenDays": "7 giorni",
+      "thirtyDays": "30 giorni",
+      "confirmBan": "Conferma ban",
+      "banning": "Ban in corso...",
+      "cancel": "Annulla",
+      "defaultReason": "Violazione delle regole del server",
+      "noReason": "Nessun motivo specificato"
+    },
+    "points": {
+      "sectionTitle": "Punti Shop",
+      "setButton": "Imposta"
+    },
+    "perms": {
+      "sectionTitle": "Permessi Fissi",
+      "save": "Salva Permessi Fissi",
+      "timedSectionTitle": "Permessi Temporanei",
+      "emptyTimed": "Nessun permesso temporaneo",
+      "saveTimed": "Salva Temporanei",
+      "active": "Attivo",
+      "expired": "Scaduto",
+      "flagLabel": "Flag",
+      "expiresLabel": "Scadenza"
+    },
+    "kits": {
+      "sectionTitle": "Kits"
+    },
+    "maps": {
+      "sectionTitle": "Mappe Personaggio",
+      "searching": "Ricerca in corso...",
+      "searchButton": "Cerca nelle mappe",
+      "notFound": "Giocatore non trovato in nessuna mappa",
+      "debugInfo": "Debug info ({{count}} step)",
+      "nameLabel": "Nome:",
+      "sourceTooltipSelect": "Seleziona come sorgente",
+      "sourceTooltipDeselect": "Deseleziona sorgente",
+      "sourceSelectLabel": "Sorgente",
+      "sourceCancelLabel": "Annulla"
+    },
+    "copy": {
+      "fromLabel": "Da:",
+      "destContainerLabel": "Container destinazione",
+      "selectPlaceholder": "Seleziona...",
+      "destMapLabel": "Mappa destinazione",
+      "destMapPlaceholder": "Es. Aberration_WP",
+      "copying": "Copia in corso...",
+      "copyButton": "Copia Personaggio",
+      "success": "Personaggio copiato in {{map}}",
+      "successOverwritten": "Personaggio copiato in {{map}} (sovrascritto, backup creato)"
+    },
+    "messages": {
+      "pointsSet": "Punti impostati a {{value}}",
+      "pointsChangedPositive": "+{{amount}} punti (totale: {{total}})",
+      "pointsChangedNegative": "{{amount}} punti (totale: {{total}})",
+      "fixedPermsUpdated": "Permessi fissi aggiornati",
+      "timedPermsUpdated": "Permessi temporanei aggiornati",
+      "bannedPermanent": "Giocatore {{name}} bannato permanentemente",
+      "bannedTemporary": "Giocatore {{name}} bannato per {{duration}}",
+      "syncErrors": "Errori durante sync: {{errors}}"
+    },
+    "errors": {
+      "load": "Errore caricamento. Verifica connessione DB.",
+      "detail": "Errore dettaglio",
+      "mapSearch": "Errore ricerca mappe",
+      "destContainerNotFound": "Container destinazione non trovato",
+      "copyCharacter": "Errore copia personaggio",
+      "invalidPoints": "Valore punti non valido",
+      "generic": "Errore",
+      "banFailed": "Ban fallito",
+      "syncNames": "Errore sincronizzazione nomi"
+    },
+    "syncFallback": "—"
+  },
   "database": {
     "title": "Configurazione Database",
     "subtitle": "Connessioni MariaDB — configurate nel file .env del server",
