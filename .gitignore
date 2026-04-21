@@ -69,12 +69,8 @@ id_ed25519*
 *.ppk
 
 # --- Claude Code session-specific ---
-# Only launch.json (preview server config) is tracked — everything else is
-# per-developer state.
-.claude/*.local.json
-.claude/settings.local.json
-.claude/logs/
-.claude/cache/
+# Per-developer / per-tool state — never share via git.
+.claude/
 
 # --- File / cartelle deprecate (dev-only) ---
 _deprecated/

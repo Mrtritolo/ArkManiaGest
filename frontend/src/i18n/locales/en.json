@@ -164,7 +164,16 @@
       "createTitle": "New SSH machine",
       "editTitle": "Edit: {{name}}",
       "create": "Create machine",
-      "update": "Update machine"
+      "update": "Update machine",
+      "saving": "Saving…",
+      "namePlaceholder": "e.g. Production Server 1",
+      "nameHint": "Unique name to identify the machine",
+      "descriptionPlaceholder": "e.g. Main TheIsland server",
+      "hostnamePlaceholder": "e.g. ark01.example.com",
+      "ipPlaceholder": "192.168.1.100",
+      "passwordEditPlaceholder": "(leave empty to keep current)",
+      "passwordKeepHint": "Empty = keep current password",
+      "keyPathPlaceholder": "~/.ssh/id_rsa"
     },
     "empty": {
       "title": "No machines configured",
@@ -181,11 +190,68 @@
       "updated": "Machine \"{{name}}\" updated",
       "deleted": "\"{{name}}\" deleted",
       "duplicated": "Duplicated as \"{{name}}\""
+    },
+    "confirmDelete": "Delete machine \"{{name}}\"?",
+    "loadingList": "Loading machines…",
+    "lastConnection": "Last connection",
+    "ipFallback": "N/A",
+    "import": {
+      "title": "Import from ServerForge",
+      "intro": "Pick the machines to import. ServerForge does not expose SSH credentials, so you must provide a user and password (or key) for each one.",
+      "loading": "Loading machines from ServerForge…",
+      "empty": "No machines found on ServerForge",
+      "alreadyImported": "Already imported",
+      "label": {
+        "user": "SSH user",
+        "auth": "Auth",
+        "password": "SSH password",
+        "keyPath": "Key path",
+        "go": "Import"
+      },
+      "placeholder": {
+        "password": "Password…",
+        "keyPath": "~/.ssh/id_rsa"
+      },
+      "imported": "Machine \"{{name}}\" imported from ServerForge",
+      "errors": {
+        "userRequired": "Provide the SSH user before importing",
+        "passwordRequired": "Provide the SSH password before importing",
+        "generic": "Import failed"
+      }
     }
   },
   "validation": {
     "required": "Required",
     "invalidPort": "Invalid port",
     "passwordRequired": "Password is required"
+  },
+  "database": {
+    "title": "Database Configuration",
+    "subtitle": "MariaDB connections — configured in the server .env file",
+    "panelTitle": "Panel Database",
+    "pluginTitle": "Plugin Database",
+    "panelHint": "ArkManiaGest data: panel users, SSH machines, settings, server and MariaDB instances, action log.",
+    "pluginHintConfigured": "Game-plugin data (ARKM_config / bans / rare_dinos / players / leaderboard / decay) and the native ARK tables.",
+    "pluginHintFallback": "PLUGIN_DB_* not configured in .env: the plugin shares the Panel DB connection (legacy mode).",
+    "badge": {
+      "separate": "separate",
+      "shared": "shared with panel"
+    },
+    "label": {
+      "host": "Host",
+      "port": "Port",
+      "name": "Database",
+      "user": "User",
+      "password": "Password"
+    },
+    "passwordMasked": "••••••••",
+    "passwordMissing": "(not configured)",
+    "testButton": "Test Connection",
+    "testing": "Testing…",
+    "testFailed": "Test failed",
+    "configCard": {
+      "title": "Configuration",
+      "body": "Credentials live in the backend's <code>.env</code> file. To change them, edit <code>.env</code> (use <code>DB_*</code> for the panel and <code>PLUGIN_DB_*</code> for the plugin) and restart the backend. SSH machine passwords are stored AES-256-GCM encrypted in the Panel DB."
+    }
   }
 }

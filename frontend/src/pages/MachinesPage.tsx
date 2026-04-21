@@ -2,6 +2,7 @@
  * MachinesPage — Full CRUD for SSH machines + ServerForge import
  */
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { machinesApi, sfApi } from '../services/api'
 import StatusBadge from '../components/StatusBadge'
 import type { SSHMachine, SSHMachineCreate, SSHTestResult, SFImportPreview } from '../types'
@@ -26,6 +27,7 @@ const emptyMachine: SSHMachineCreate = {
 }
 
 export default function MachinesPage() {
+  const { t } = useTranslation()
   const [machines, setMachines] = useState<SSHMachine[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -49,7 +51,7 @@ export default function MachinesPage() {
   const [importForm, setImportForm] = useState<Record<number, { ssh_user: string; ssh_password: string; auth_method: string; ssh_key_path: string }>>({})
 
   useEffect(() => { loadMachines(); checkSfToken() }, [])
-  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(t) } }, [success])
+  useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
 
   async function checkSfToken() {
     try {
@@ -61,7 +63,7 @@ export default function MachinesPage() {
   async function loadMachines() {
     setLoading(true)
     try { const res = await machinesApi.list(); setMachines(res.data) }
-    catch { setError('Impossibile caricare le macchine') }
+    catch { setError(t('machines.errors.load')) }
     finally { setLoading(false) }
   }
 
@@ -84,7 +86,7 @@ export default function MachinesPage() {
       }
       setImportForm(forms)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Impossibile caricare macchine da ServerForge')
+      setError(err.response?.data?.detail || t('machines.errors.load'))
       setShowImport(false)
     } finally {
       setSfLoading(false)
@@ -101,11 +103,11 @@ export default function MachinesPage() {
   async function handleImportMachine(sfm: SFImportPreview) {
     const creds = importForm[sfm.sf_id]
     if (!creds?.ssh_user) {
-      setError('Inserisci l\'utente SSH per importare')
+      setError(t('machines.import.errors.userRequired'))
       return
     }
     if (creds.auth_method === 'password' && !creds.ssh_password) {
-      setError('Inserisci la password SSH per importare')
+      setError(t('machines.import.errors.passwordRequired'))
       return
     }
 
@@ -127,14 +129,14 @@ export default function MachinesPage() {
         ark_config_path: '/opt/ark/ShooterGame/Saved/Config/LinuxServer',
         ark_plugins_path: '/opt/ark/ShooterGame/Binaries/Linux/Plugins',
       })
-      setSuccess(`Macchina "${name}" importata da ServerForge`)
+      setSuccess(t('machines.import.imported', { name }))
       // Refresh list and import status
       await loadMachines()
       setSfMachines(prev => prev.map(m =>
         m.sf_id === sfm.sf_id ? { ...m, already_imported: true } : m
       ))
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Errore durante l\'importazione')
+      setError(err.response?.data?.detail || t('machines.import.errors.generic'))
     } finally {
       setImportingId(null)
     }
@@ -154,12 +156,12 @@ export default function MachinesPage() {
 
   function validate(): boolean {
     const errors: Record<string, string> = {}
-    if (!form.name.trim()) errors.name = 'Nome obbligatorio'
-    if (!form.hostname.trim()) errors.hostname = 'Hostname obbligatorio'
-    if (!form.ssh_user.trim()) errors.ssh_user = 'Utente SSH obbligatorio'
-    if (form.ssh_port < 1 || form.ssh_port > 65535) errors.ssh_port = 'Porta non valida'
-    if (form.auth_method === 'password' && !editingId && !form.ssh_password) errors.ssh_password = 'Password obbligatoria'
-    if ((form.auth_method === 'key' || form.auth_method === 'key_password') && !form.ssh_key_path) errors.ssh_key_path = 'Percorso chiave obbligatorio'
+    if (!form.name.trim()) errors.name = t('validation.required')
+    if (!form.hostname.trim()) errors.hostname = t('validation.required')
+    if (!form.ssh_user.trim()) errors.ssh_user = t('validation.required')
+    if (form.ssh_port < 1 || form.ssh_port > 65535) errors.ssh_port = t('validation.invalidPort')
+    if (form.auth_method === 'password' && !editingId && !form.ssh_password) errors.ssh_password = t('validation.passwordRequired')
+    if ((form.auth_method === 'key' || form.auth_method === 'key_password') && !form.ssh_key_path) errors.ssh_key_path = t('validation.required')
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -191,22 +193,22 @@ export default function MachinesPage() {
     if (!validate()) return
     setSaving(true); setError('')
     try {
-      if (editingId) { await machinesApi.update(editingId, form); setSuccess(`Macchina "${form.name}" aggiornata`) }
-      else { await machinesApi.create(form); setSuccess(`Macchina "${form.name}" creata`) }
+      if (editingId) { await machinesApi.update(editingId, form); setSuccess(t('machines.messages.updated', { name: form.name })) }
+      else { await machinesApi.create(form); setSuccess(t('machines.messages.created', { name: form.name })) }
       await loadMachines(); setShowForm(false); setEditingId(null)
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore durante il salvataggio') }
+    } catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.save')) }
     finally { setSaving(false) }
   }
 
   async function handleDelete(id: number, name: string) {
-    if (!confirm(`Eliminare la macchina "${name}"?`)) return
-    try { await machinesApi.delete(id); setSuccess(`"${name}" eliminata`); await loadMachines() }
-    catch (err: any) { setError(err.response?.data?.detail || 'Errore') }
+    if (!confirm(t('machines.confirmDelete', { name }))) return
+    try { await machinesApi.delete(id); setSuccess(t('machines.messages.deleted', { name })); await loadMachines() }
+    catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.delete')) }
   }
 
   async function handleDuplicate(id: number) {
-    try { const res = await machinesApi.duplicate(id); setSuccess(`Duplicata come "${res.data.name}"`); await loadMachines() }
-    catch (err: any) { setError(err.response?.data?.detail || 'Errore') }
+    try { const res = await machinesApi.duplicate(id); setSuccess(t('machines.messages.duplicated', { name: res.data.name })); await loadMachines() }
+    catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.save')) }
   }
 
   async function handleTest(id: number) {
@@ -223,21 +225,21 @@ export default function MachinesPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Macchine SSH</h1>
+          <h1 className="page-title">{t('machines.title')}</h1>
           <p className="page-subtitle">
-            Gestisci le macchine remote per connessioni SSH e trasferimento file
-            {machines.length > 0 && <span className="page-subtitle-count"> - {machines.length} configurate</span>}
+            {t('machines.subtitle')}
+            {machines.length > 0 && <span className="page-subtitle-count"> {t('machines.subtitleCount', { count: machines.length })}</span>}
           </p>
         </div>
         {!showForm && !showImport && (
           <div className="page-header-actions">
             {sfHasToken && (
               <button onClick={handleOpenImport} className="btn btn-secondary">
-                &#x26A1; Importa da ServerForge
+                &#x26A1; {t('machines.importServerForge')}
               </button>
             )}
             <button onClick={handleNew} className="btn btn-primary">
-              + Nuova Macchina
+              + {t('machines.newMachine')}
             </button>
           </div>
         )}
@@ -256,26 +258,23 @@ export default function MachinesPage() {
         </div>
       )}
 
-      {/* ========== PANNELLO IMPORT SERVERFORGE ========== */}
+      {/* ========== ServerForge import panel ========== */}
       {showImport && (
         <div className="card card-form mb-8">
           <div className="card-title-row">
             <h2 className="card-title">
               <span className="card-title-icon">&#x26A1;</span>
-              Importa da ServerForge
+              {t('machines.import.title')}
             </h2>
-            <button onClick={() => setShowImport(false)} className="btn btn-sm btn-ghost">Chiudi</button>
+            <button onClick={() => setShowImport(false)} className="btn btn-sm btn-ghost">{t('common.close')}</button>
           </div>
-          <p className="card-text mb-6">
-            Seleziona le macchine da importare. ServerForge non espone le credenziali SSH,
-            quindi dovrai inserire utente e password per ogni macchina.
-          </p>
+          <p className="card-text mb-6">{t('machines.import.intro')}</p>
 
           {sfLoading ? (
-            <div className="loading-state">Caricamento macchine da ServerForge...</div>
+            <div className="loading-state">{t('machines.import.loading')}</div>
           ) : sfMachines.length === 0 ? (
             <div className="empty-state" style={{ padding: '2rem' }}>
-              <p className="empty-state-text">Nessuna macchina trovata su ServerForge</p>
+              <p className="empty-state-text">{t('machines.import.empty')}</p>
             </div>
           ) : (
             <div className="sf-import-list">
@@ -283,15 +282,15 @@ export default function MachinesPage() {
                 const creds = importForm[sfm.sf_id]
                 return (
                   <div key={sfm.sf_id} className={`sf-import-item ${sfm.already_imported ? 'sf-import-done' : ''}`}>
-                    {/* Info macchina */}
+                    {/* Machine info */}
                     <div className="sf-import-info">
                       <div className="sf-import-main">
                         <span className="sf-import-name">{sfm.hostname || sfm.ip_address}</span>
                         <span className={`sf-status-pill sf-status-${sfm.status}`}>{sfm.status}</span>
-                        {sfm.already_imported && <span className="sf-import-tag">Gia' importata</span>}
+                        {sfm.already_imported && <span className="sf-import-tag">{t('machines.import.alreadyImported')}</span>}
                       </div>
                       <div className="sf-import-meta">
-                        <span>IP: {sfm.ip_address || 'N/D'}</span>
+                        <span>IP: {sfm.ip_address || t('machines.ipFallback')}</span>
                         <span>SSH: {sfm.ssh_port}</span>
                         <span>OS: {sfm.os}</span>
                         <span>{sfm.location}</span>
@@ -299,38 +298,38 @@ export default function MachinesPage() {
                       </div>
                     </div>
 
-                    {/* Form credenziali + pulsante import */}
+                    {/* Credentials form + import button */}
                     {!sfm.already_imported && creds && (
                       <div className="sf-import-creds">
                         <div className="sf-import-creds-row">
                           <div className="sf-import-field">
-                            <label className="form-label">Utente SSH</label>
+                            <label className="form-label">{t('machines.import.label.user')}</label>
                             <input type="text" value={creds.ssh_user}
                               onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_user', e.target.value)}
                               className="form-input" placeholder="root" />
                           </div>
                           <div className="sf-import-field">
-                            <label className="form-label">Auth</label>
+                            <label className="form-label">{t('machines.import.label.auth')}</label>
                             <select value={creds.auth_method}
                               onChange={e => handleImportFormChange(sfm.sf_id, 'auth_method', e.target.value)}
                               className="form-input">
-                              <option value="password">Password</option>
-                              <option value="key">Chiave SSH</option>
+                              <option value="password">{t('machines.auth.password')}</option>
+                              <option value="key">{t('machines.auth.key')}</option>
                             </select>
                           </div>
                           {creds.auth_method === 'password' ? (
                             <div className="sf-import-field sf-import-field-wide">
-                              <label className="form-label">Password SSH</label>
+                              <label className="form-label">{t('machines.import.label.password')}</label>
                               <input type="password" value={creds.ssh_password}
                                 onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_password', e.target.value)}
-                                className="form-input" placeholder="Password..." />
+                                className="form-input" placeholder={t('machines.import.placeholder.password')} />
                             </div>
                           ) : (
                             <div className="sf-import-field sf-import-field-wide">
-                              <label className="form-label">Percorso Chiave</label>
+                              <label className="form-label">{t('machines.import.label.keyPath')}</label>
                               <input type="text" value={creds.ssh_key_path}
                                 onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_key_path', e.target.value)}
-                                className="form-input" placeholder="~/.ssh/id_rsa" />
+                                className="form-input" placeholder={t('machines.import.placeholder.keyPath')} />
                             </div>
                           )}
                           <button
@@ -338,7 +337,7 @@ export default function MachinesPage() {
                             disabled={importingId === sfm.sf_id}
                             className="btn btn-sm sf-btn-import"
                           >
-                            {importingId === sfm.sf_id ? '...' : 'Importa'}
+                            {importingId === sfm.sf_id ? '…' : t('machines.import.label.go')}
                           </button>
                         </div>
                       </div>
@@ -356,58 +355,56 @@ export default function MachinesPage() {
         <div className="card card-form mb-8" ref={formRef}>
           <h2 className="card-title">
             <span className="card-title-icon">{editingId ? '~' : '+'}</span>
-            {editingId ? `Modifica: ${form.name || '...'}` : 'Nuova Macchina SSH'}
+            {editingId ? t('machines.form.editTitle', { name: form.name || '…' }) : t('machines.form.createTitle')}
           </h2>
 
           <fieldset className="form-fieldset">
-            <legend className="form-legend">Identificazione</legend>
+            <legend className="form-legend">{t('machines.section.identification')}</legend>
             <div className="form-grid">
               <div className="form-group form-group-3">
-                <label className="form-label">Nome *</label>
+                <label className="form-label">{t('machines.field.name')} *</label>
                 <input type="text" name="name" value={form.name} onChange={handleChange}
-                  className={inputClass('name')} placeholder="es. Server Produzione 1" autoFocus />
-                <span className="form-hint">Nome univoco per identificare la macchina</span>
+                  className={inputClass('name')} placeholder={t('machines.form.namePlaceholder')} autoFocus />
+                <span className="form-hint">{t('machines.form.nameHint')}</span>
                 {fieldError('name')}
               </div>
               <div className="form-group form-group-3">
-                <label className="form-label">Descrizione</label>
+                <label className="form-label">{t('machines.field.description')}</label>
                 <input type="text" name="description" value={form.description} onChange={handleChange}
-                  className="form-input" placeholder="es. Server principale TheIsland" />
+                  className="form-input" placeholder={t('machines.form.descriptionPlaceholder')} />
               </div>
               <div className="form-group form-group-3">
-                <label className="form-label">Hostname *</label>
+                <label className="form-label">{t('machines.field.hostname')} *</label>
                 <input type="text" name="hostname" value={form.hostname} onChange={handleChange}
-                  className={inputClass('hostname')} placeholder="es. ark01.example.com" />
+                  className={inputClass('hostname')} placeholder={t('machines.form.hostnamePlaceholder')} />
                 {fieldError('hostname')}
               </div>
               <div className="form-group form-group-2">
-                <label className="form-label">Indirizzo IP</label>
+                <label className="form-label">{t('machines.field.ip')}</label>
                 <input type="text" name="ip_address" value={form.ip_address} onChange={handleChange}
-                  className="form-input" placeholder="192.168.1.100" />
+                  className="form-input" placeholder={t('machines.form.ipPlaceholder')} />
               </div>
               <div className="form-group form-group-1">
                 <label className="form-label form-label-inline">
                   <input type="checkbox" name="is_active" checked={form.is_active} onChange={handleChange} className="form-checkbox" />
-                  Attiva
+                  {t('machines.field.active')}
                 </label>
               </div>
               <div className="form-group form-group-2">
-                <label className="form-label">Sistema operativo host</label>
+                <label className="form-label">{t('machines.field.osType')}</label>
                 <select name="os_type" value={form.os_type} onChange={handleChange} className="form-input">
-                  <option value="linux">Linux nativo</option>
-                  <option value="windows">Windows + WSL</option>
+                  <option value="linux">{t('machines.os.linux')}</option>
+                  <option value="windows">{t('machines.os.windows')}</option>
                 </select>
-                <span className="form-hint">
-                  Determina come POK-manager e docker vengono invocati via SSH.
-                </span>
+                <span className="form-hint">{t('machines.osHint')}</span>
               </div>
               {form.os_type === 'windows' && (
                 <div className="form-group form-group-2">
-                  <label className="form-label">Distro WSL</label>
+                  <label className="form-label">{t('machines.field.wslDistro')}</label>
                   <input type="text" name="wsl_distro" value={form.wsl_distro || ''}
                     onChange={handleChange} className="form-input" placeholder="Ubuntu" />
                   <span className="form-hint">
-                    Nome della distribuzione WSL (verifica con <code>wsl -l -q</code>).
+                    {t('machines.wslHint', { cmd: 'wsl -l -q' })}
                   </span>
                 </div>
               )}
@@ -415,47 +412,47 @@ export default function MachinesPage() {
           </fieldset>
 
           <fieldset className="form-fieldset">
-            <legend className="form-legend">Connessione SSH</legend>
+            <legend className="form-legend">{t('machines.section.sshConnection')}</legend>
             <div className="form-grid">
               <div className="form-group form-group-1">
-                <label className="form-label">Porta</label>
+                <label className="form-label">{t('machines.field.port')}</label>
                 <input type="number" name="ssh_port" value={form.ssh_port} onChange={handleChange}
                   className={inputClass('ssh_port')} min={1} max={65535} />
                 {fieldError('ssh_port')}
               </div>
               <div className="form-group form-group-2">
-                <label className="form-label">Utente SSH *</label>
+                <label className="form-label">{t('machines.field.user')} *</label>
                 <input type="text" name="ssh_user" value={form.ssh_user} onChange={handleChange}
                   className={inputClass('ssh_user')} placeholder="root" />
                 {fieldError('ssh_user')}
               </div>
               <div className="form-group form-group-2">
-                <label className="form-label">Metodo Auth</label>
+                <label className="form-label">{t('machines.field.auth')}</label>
                 <select name="auth_method" value={form.auth_method} onChange={handleChange} className="form-input">
-                  <option value="password">Password</option>
-                  <option value="key">Chiave SSH</option>
-                  <option value="key_password">Chiave + Passphrase</option>
+                  <option value="password">{t('machines.auth.password')}</option>
+                  <option value="key">{t('machines.auth.key')}</option>
+                  <option value="key_password">{t('machines.auth.keyPassword')}</option>
                 </select>
               </div>
               <div className="form-group form-group-1" />
               {(form.auth_method === 'password' || form.auth_method === 'key_password') && (
                 <div className="form-group form-group-3">
-                  <label className="form-label">{form.auth_method === 'password' ? 'Password SSH' : 'Passphrase'}{!editingId && ' *'}</label>
+                  <label className="form-label">{form.auth_method === 'password' ? t('machines.field.password') : t('machines.field.passphrase')}{!editingId && ' *'}</label>
                   <input type="password"
                     name={form.auth_method === 'password' ? 'ssh_password' : 'ssh_passphrase'}
                     value={form.auth_method === 'password' ? form.ssh_password : form.ssh_passphrase}
                     onChange={handleChange}
                     className={inputClass(form.auth_method === 'password' ? 'ssh_password' : 'ssh_passphrase')}
-                    placeholder={editingId ? '(lascia vuoto per non modificare)' : ''} />
-                  {editingId && <span className="form-hint">Vuoto = mantieni password attuale</span>}
+                    placeholder={editingId ? t('machines.form.passwordEditPlaceholder') : ''} />
+                  {editingId && <span className="form-hint">{t('machines.form.passwordKeepHint')}</span>}
                   {fieldError('ssh_password')}
                 </div>
               )}
               {(form.auth_method === 'key' || form.auth_method === 'key_password') && (
                 <div className="form-group form-group-3">
-                  <label className="form-label">Percorso Chiave SSH *</label>
+                  <label className="form-label">{t('machines.field.keyPath')} *</label>
                   <input type="text" name="ssh_key_path" value={form.ssh_key_path} onChange={handleChange}
-                    className={inputClass('ssh_key_path')} placeholder="~/.ssh/id_rsa" />
+                    className={inputClass('ssh_key_path')} placeholder={t('machines.form.keyPathPlaceholder')} />
                   {fieldError('ssh_key_path')}
                 </div>
               )}
@@ -463,20 +460,20 @@ export default function MachinesPage() {
           </fieldset>
 
           <fieldset className="form-fieldset">
-            <legend className="form-legend">Percorsi Ark: Survival Ascended</legend>
+            <legend className="form-legend">{t('machines.section.arkPaths')}</legend>
             <div className="form-grid">
               <div className="form-group form-group-full">
-                <label className="form-label">Root Directory ARK</label>
+                <label className="form-label">{t('machines.field.arkRoot')}</label>
                 <input type="text" name="ark_root_path" value={form.ark_root_path} onChange={handleChange}
                   className="form-input" placeholder="/opt/ark" />
               </div>
               <div className="form-group form-group-3">
-                <label className="form-label">Directory Configurazione</label>
+                <label className="form-label">{t('machines.field.arkConfig')}</label>
                 <input type="text" name="ark_config_path" value={form.ark_config_path} onChange={handleChange}
                   className="form-input" />
               </div>
               <div className="form-group form-group-3">
-                <label className="form-label">Directory Plugin</label>
+                <label className="form-label">{t('machines.field.arkPlugins')}</label>
                 <input type="text" name="ark_plugins_path" value={form.ark_plugins_path} onChange={handleChange}
                   className="form-input" />
               </div>
@@ -485,25 +482,25 @@ export default function MachinesPage() {
 
           <div className="form-actions">
             <button onClick={handleSave} disabled={saving} className="btn btn-primary">
-              {saving ? 'Salvataggio...' : editingId ? 'Aggiorna Macchina' : 'Crea Macchina'}
+              {saving ? t('machines.form.saving') : editingId ? t('machines.form.update') : t('machines.form.create')}
             </button>
-            <button onClick={handleCancel} className="btn btn-ghost">Annulla</button>
+            <button onClick={handleCancel} className="btn btn-ghost">{t('common.cancel')}</button>
           </div>
         </div>
       )}
 
-      {/* ========== LISTA MACCHINE ========== */}
+      {/* ========== Machines list ========== */}
       {loading ? (
-        <div className="loading-state">Caricamento macchine...</div>
+        <div className="loading-state">{t('machines.loadingList')}</div>
       ) : machines.length === 0 && !showForm && !showImport ? (
         <div className="empty-state">
           <span className="empty-state-icon">&#x29C9;</span>
-          <h3 className="empty-state-title">Nessuna macchina configurata</h3>
-          <p className="empty-state-text">Aggiungi la prima macchina SSH per gestire i tuoi server Ark.</p>
+          <h3 className="empty-state-title">{t('machines.empty.title')}</h3>
+          <p className="empty-state-text">{t('machines.empty.text')}</p>
           <div className="card-actions" style={{ justifyContent: 'center', marginTop: '1rem' }}>
-            <button onClick={handleNew} className="btn btn-primary">+ Nuova Macchina</button>
+            <button onClick={handleNew} className="btn btn-primary">+ {t('machines.newMachine')}</button>
             {sfHasToken && (
-              <button onClick={handleOpenImport} className="btn btn-secondary">&#x26A1; Importa da ServerForge</button>
+              <button onClick={handleOpenImport} className="btn btn-secondary">&#x26A1; {t('machines.importServerForge')}</button>
             )}
           </div>
         </div>
@@ -511,16 +508,19 @@ export default function MachinesPage() {
         <div className="machines-list">
           {machines.map((machine) => {
             const isExpanded = expandedId === machine.id
+            const osLong = machine.os_type === 'windows'
+              ? `${t('machines.os.windows')} (${machine.wsl_distro || 'Ubuntu'})`
+              : t('machines.os.linux')
             return (
               <div key={machine.id} className={`machine-card ${!machine.is_active ? 'machine-card-inactive' : ''}`}>
                 <div className="machine-card-header" onClick={() => setExpandedId(prev => prev === machine.id ? null : machine.id)} style={{ cursor: 'pointer' }}>
                   <div className="machine-card-info">
                     <h3 className="machine-card-name">
                       {machine.name}
-                      <span className="machine-card-tag" title={machine.os_type === 'windows' ? `Windows + WSL (${machine.wsl_distro || 'Ubuntu'})` : 'Linux nativo'}>
-                        {machine.os_type === 'windows' ? 'Windows+WSL' : 'Linux'}
+                      <span className="machine-card-tag" title={osLong}>
+                        {machine.os_type === 'windows' ? t('machines.tag.windows') : t('machines.tag.linux')}
                       </span>
-                      {!machine.is_active && <span className="machine-card-tag">disattivata</span>}
+                      {!machine.is_active && <span className="machine-card-tag">{t('machines.tag.inactive')}</span>}
                     </h3>
                     <p className="machine-card-host">{machine.ssh_user}@{machine.hostname}:{machine.ssh_port}</p>
                     {machine.description && <p className="machine-card-desc">{machine.description}</p>}
@@ -534,19 +534,15 @@ export default function MachinesPage() {
                 {isExpanded && (
                   <div className="machine-card-body">
                     <div className="machine-card-details">
-                      <div className="machine-card-detail"><span className="detail-label">Host OS</span>
-                        <span className="detail-value">
-                          {machine.os_type === 'windows'
-                            ? `Windows + WSL (${machine.wsl_distro || 'Ubuntu'})`
-                            : 'Linux nativo'}
-                        </span></div>
-                      <div className="machine-card-detail"><span className="detail-label">Auth</span>
-                        <span className="detail-value">{machine.auth_method === 'password' ? 'Password' : machine.auth_method === 'key' ? 'Chiave SSH' : 'Chiave + Passphrase'}</span></div>
-                      {machine.ip_address && <div className="machine-card-detail"><span className="detail-label">IP</span><span className="detail-value detail-value-mono">{machine.ip_address}</span></div>}
-                      <div className="machine-card-detail"><span className="detail-label">ARK Root</span><span className="detail-value detail-value-mono">{machine.ark_root_path}</span></div>
-                      <div className="machine-card-detail"><span className="detail-label">Config</span><span className="detail-value detail-value-mono">{machine.ark_config_path}</span></div>
-                      <div className="machine-card-detail"><span className="detail-label">Plugin</span><span className="detail-value detail-value-mono">{machine.ark_plugins_path}</span></div>
-                      {machine.last_connection && <div className="machine-card-detail"><span className="detail-label">Ultima connessione</span><span className="detail-value">{new Date(machine.last_connection).toLocaleString('it-IT')}</span></div>}
+                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.osType')}</span>
+                        <span className="detail-value">{osLong}</span></div>
+                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.auth')}</span>
+                        <span className="detail-value">{machine.auth_method === 'password' ? t('machines.auth.password') : machine.auth_method === 'key' ? t('machines.auth.key') : t('machines.auth.keyPassword')}</span></div>
+                      {machine.ip_address && <div className="machine-card-detail"><span className="detail-label">{t('machines.field.ip')}</span><span className="detail-value detail-value-mono">{machine.ip_address}</span></div>}
+                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.arkRoot')}</span><span className="detail-value detail-value-mono">{machine.ark_root_path}</span></div>
+                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.arkConfig')}</span><span className="detail-value detail-value-mono">{machine.ark_config_path}</span></div>
+                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.arkPlugins')}</span><span className="detail-value detail-value-mono">{machine.ark_plugins_path}</span></div>
+                      {machine.last_connection && <div className="machine-card-detail"><span className="detail-label">{t('machines.lastConnection')}</span><span className="detail-value">{new Date(machine.last_connection).toLocaleString()}</span></div>}
                     </div>
 
                     {testResults[machine.id] && (
@@ -559,11 +555,11 @@ export default function MachinesPage() {
 
                     <div className="machine-card-actions">
                       <button onClick={() => handleTest(machine.id)} disabled={testingId === machine.id} className="btn btn-sm btn-secondary">
-                        {testingId === machine.id ? 'Testing...' : 'Test Connessione'}
+                        {testingId === machine.id ? t('machines.status.testing') : t('machines.action.test')}
                       </button>
-                      <button onClick={() => handleEdit(machine)} className="btn btn-sm btn-ghost">Modifica</button>
-                      <button onClick={() => handleDuplicate(machine.id)} className="btn btn-sm btn-ghost">Duplica</button>
-                      <button onClick={() => handleDelete(machine.id, machine.name)} className="btn btn-sm btn-danger">Elimina</button>
+                      <button onClick={() => handleEdit(machine)} className="btn btn-sm btn-ghost">{t('common.edit')}</button>
+                      <button onClick={() => handleDuplicate(machine.id)} className="btn btn-sm btn-ghost">{t('common.duplicate')}</button>
+                      <button onClick={() => handleDelete(machine.id, machine.name)} className="btn btn-sm btn-danger">{t('common.delete')}</button>
                     </div>
                   </div>
                 )}
