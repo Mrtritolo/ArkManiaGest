@@ -129,7 +129,7 @@ $ssh_port    = Ask "SSH port" "22"
 $ssh_key_path = ""
 $ssh_password = ""
 
-# Try SSH with no explicit auth first — this succeeds when the user
+# Try SSH with no explicit auth first -- this succeeds when the user
 # already has ssh-agent running OR a default key at ~/.ssh/id_*.  In
 # that case we skip the auth prompts entirely.
 Write-Host ""
@@ -144,7 +144,7 @@ $probe_args = @(
 $probe_ok = ($LASTEXITCODE -eq 0)
 
 if ($probe_ok) {
-    Write-Host "  [OK] SSH already works with your default identities — no extra auth needed." -ForegroundColor Green
+    Write-Host "  [OK] SSH already works with your default identities -- no extra auth needed." -ForegroundColor Green
 } else {
     Write-Host "  SSH is not usable yet with default identities.  Let's configure it." -ForegroundColor Yellow
     $auth_method = Ask "SSH auth method [key/password]" "key"
@@ -189,11 +189,18 @@ $admin_pass    = Ask "Admin password (min 6 chars)" -secret -required
 
 Write-Host ""
 Write-Host "-- Confirm --" -ForegroundColor Cyan
-Write-Host "  Target     : $ssh_user@${target_host}:$ssh_port"
+$at = [char]0x40
+$target_line = '  Target     : ' + $ssh_user + $at + $target_host + ':' + $ssh_port
+Write-Host $target_line
 Write-Host "  Domain     : $domain"
 Write-Host "  SSL email  : $ssl_email"
-Write-Host "  MariaDB    : $(if ($db_install) { 'will be installed on target' } else { 'assumed already running' })"
-Write-Host "  DB user    : $db_user @ $db_host:$db_port"
+if ($db_install) {
+    Write-Host "  MariaDB    : will be installed on target"
+} else {
+    Write-Host "  MariaDB    : assumed already running"
+}
+$dbu_line = '  DB user    : ' + $db_user + ' ' + $at + ' ' + $db_host + ':' + $db_port
+Write-Host $dbu_line
 Write-Host "  Admin user : $admin_user ($admin_display)"
 Write-Host ""
 if (-not (AskYesNo "Proceed?" $true)) {
@@ -251,7 +258,7 @@ $fek   = New-RandomSecret 32
 $cron  = "cron_" + (New-RandomSecret 12)
 $pubk  = "pub_"  + (New-RandomSecret 12)
 
-# deploy.conf — sourced by full-deploy.sh on the server
+# deploy.conf -- sourced by full-deploy.sh on the server
 $deploy_conf = @"
 DEPLOY_SERVER="${ssh_user}@${target_host}"
 DOMAIN="${domain}"
@@ -266,7 +273,7 @@ PUBLIC_SITE_ORIGIN=""
 CRON_SYNC_SECRET=""
 "@
 
-# .env — consumed by the FastAPI backend
+# .env -- consumed by the FastAPI backend
 $dotenv = @"
 API_HOST=127.0.0.1
 API_PORT=8000

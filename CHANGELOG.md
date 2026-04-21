@@ -7,6 +7,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.2] - 2026-04-21
+
+### Fixed
+
+- **`install-panel.ps1`**: the interactive installer failed to parse on
+  Windows PowerShell 5.1 with the Italian UI locale.  Two issues were
+  at play:
+  - PowerShell 5.1 reads files without a UTF-8 BOM as Windows-1252, so
+    the em-dashes (`—`) and ellipses (`…`) in comments and section
+    banners broke the parser ("Token non riconosciuto").  All PS
+    scripts are now ASCII-only.
+  - `"@"` as a literal string inside a concatenation was parsed as a
+    here-string opener.  Replaced with `[char]0x40` builder.
+  - `"$var1:$var2"` interpolation was parsed as "scoped variable
+    reference".  Replaced with `${var1}:${var2}` form (and string
+    concatenation where safer).
+- Same sanitisation applied to `deploy-remote.ps1`,
+  `update-remote.ps1`, `maintainer/package-release.ps1`.
+
+---
+
 ## [2.3.1] - 2026-04-21
 
 First-class interactive installers and release-bundle cleanup.

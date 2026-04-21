@@ -1,14 +1,14 @@
 # =============================================================================
-# ArkManiaGest — Release packager
+# ArkManiaGest -- Release packager
 # =============================================================================
 # Builds a self-contained release bundle that can be attached to a GitHub
 # Release.  Produces two artefacts:
 #
-#   arkmaniagest-v<VER>-linux.tar.gz   — deploy this on a Linux host
+#   arkmaniagest-v<VER>-linux.tar.gz   -- deploy this on a Linux host
 #                                        (use deploy/full-deploy.sh or
 #                                         deploy/server-update.sh)
 #
-#   arkmaniagest-v<VER>-windows.zip    — deploy from a Windows dev PC
+#   arkmaniagest-v<VER>-windows.zip    -- deploy from a Windows dev PC
 #                                        (use deploy/deploy-remote.ps1)
 #
 # Usage:
@@ -83,7 +83,7 @@ $gitDirty  = (git -C $PROJECT status --porcelain 2>$null | Measure-Object -Line)
 $buildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 Write-Host "`n[1/6] Checking workspace..." -ForegroundColor Yellow
-Write-Host "  commit : $gitHash ($gitBranch$(if ($gitDirty) { ' — DIRTY' }))" -ForegroundColor Gray
+Write-Host "  commit : $gitHash ($gitBranch$(if ($gitDirty) { ' -- DIRTY' }))" -ForegroundColor Gray
 Write-Host "  build  : $buildTime" -ForegroundColor Gray
 if ($gitDirty) {
     Write-Host "  WARNING: working tree has uncommitted changes." -ForegroundColor Yellow
@@ -113,7 +113,7 @@ try {
         $excludesWindows = $excludesLinux |
             Where-Object { $_ -notmatch '\.(ps1|bat|vbs)' }
 
-        # Stage Windows artefact (superset — includes .ps1 helpers)
+        # Stage Windows artefact (superset -- includes .ps1 helpers)
         $tmpWin = Join-Path $env:TEMP "aam-release-win-ex.txt"
         $excludesWindows | Out-File -Encoding ascii -FilePath $tmpWin
         & $TAR -cf - --exclude-from="$tmpWin" . | & $TAR -xf - -C "$STAGE"
@@ -177,7 +177,7 @@ $WIN_NAME     = "arkmaniagest-v$Version-windows.zip"
 Push-Location (Join-Path $ARTIFACT_DIR "..") | Out-Null
 Push-Location $ARTIFACT_DIR
 try {
-    # Linux bundle — strip the .ps1/.bat/.vbs files (not needed on Linux servers)
+    # Linux bundle -- strip the .ps1/.bat/.vbs files (not needed on Linux servers)
     $LINUX_STAGE = Join-Path (Split-Path $STAGE -Parent) "arkmaniagest-v$Version-linux"
     Copy-Item -Recurse -Force $STAGE $LINUX_STAGE
     Get-ChildItem -Path $LINUX_STAGE -Recurse -Include *.ps1,*.bat,*.vbs |
@@ -189,7 +189,7 @@ try {
     Remove-Item -Recurse -Force $LINUX_STAGE
     Write-Host "  Linux : $LINUX_NAME ($([math]::Round((Get-Item $LINUX_NAME).Length / 1MB, 2)) MB)" -ForegroundColor Green
 
-    # Windows bundle — full tree with .ps1 scripts
+    # Windows bundle -- full tree with .ps1 scripts
     if (Test-Path $WIN_NAME) { Remove-Item -Force $WIN_NAME }
     Compress-Archive -Path (Join-Path (Split-Path $STAGE -Parent) "arkmaniagest-v$Version") `
                      -DestinationPath $WIN_NAME -CompressionLevel Optimal
@@ -259,7 +259,7 @@ if ($Publish) {
     Write-Host "`n[bonus] Publishing to GitHub..." -ForegroundColor Yellow
     $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
     if (-not $ghCmd) {
-        Write-Host "  ERROR: gh CLI not found in PATH — install https://cli.github.com/ or publish manually." -ForegroundColor Red
+        Write-Host "  ERROR: gh CLI not found in PATH -- install https://cli.github.com/ or publish manually." -ForegroundColor Red
     } else {
         $tag = "v$Version"
         $flags = @("--title", "ArkManiaGest $tag", "--notes-file", $notesFile)

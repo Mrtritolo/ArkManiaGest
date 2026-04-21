@@ -33,7 +33,7 @@ $ARCHIVE = "$env:TEMP\arkmaniagest-deploy.tar.gz"
 # Shared exclusion list
 $DEPLOYIGNORE = "$PROJECT\deploy\.deployignore"
 
-# Force Windows tar (bsdtar) — Git's GNU tar in PATH cannot handle Windows paths.
+# Force Windows tar (bsdtar) -- Git's GNU tar in PATH cannot handle Windows paths.
 $TAR = if (Test-Path "C:\Windows\System32\tar.exe") { "C:\Windows\System32\tar.exe" } else { "tar" }
 
 
