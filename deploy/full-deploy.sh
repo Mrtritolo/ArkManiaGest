@@ -36,9 +36,9 @@ echo "================================================"
 echo ""
 
 # =============================================
-# FASE 1: PACCHETTI
+# PHASE 1: PACKAGES
 # =============================================
-echo "=== FASE 1/9: Pacchetti sistema ==="
+echo "=== PHASE 1/9: System packages ==="
 
 apt-get update -qq
 apt-get upgrade -y -qq
@@ -54,8 +54,8 @@ apt-get install -y -qq \
     logrotate \
     jq || true
 
-# GeoIP2 module (potrebbe non essere disponibile, non bloccare)
-apt-get install -y -qq libnginx-mod-http-geoip2 2>/dev/null || echo "  AVVISO: libnginx-mod-http-geoip2 non disponibile, GeoIP configurato dopo"
+# GeoIP2 module (may not be available, do not block on failure)
+apt-get install -y -qq libnginx-mod-http-geoip2 2>/dev/null || echo "  WARNING: libnginx-mod-http-geoip2 not available, GeoIP will be configured later"
 
 # Node.js 20 LTS
 if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d v) -lt 18 ]]; then
@@ -71,7 +71,7 @@ echo "  npm:    $(npm --version 2>/dev/null || echo 'N/A')"
 # Swap per build
 SWAP_SIZE=$(free -m | awk '/^Swap:/{print $2}')
 if [ "${SWAP_SIZE:-0}" -lt 512 ]; then
-    echo "  Creazione swap 1GB..."
+    echo "  Creating 1GB swap..."
     if [ ! -f /swapfile ]; then
         fallocate -l 1G /swapfile
         chmod 600 /swapfile
@@ -83,25 +83,25 @@ if [ "${SWAP_SIZE:-0}" -lt 512 ]; then
     fi
 fi
 echo "  RAM: $(free -m | awk '/^Mem:/{print $2}')MB  Swap: $(free -m | awk '/^Swap:/{print $2}')MB"
-echo "  FASE 1 OK"
+echo "  PHASE 1 OK"
 echo ""
 
 # =============================================
-# FASE 2: UTENTE + DIRECTORY
+# PHASE 2: USER + DIRECTORY
 # =============================================
-echo "=== FASE 2/9: Utente e directory ==="
+echo "=== PHASE 2/9: User and directory ==="
 
 id "$APP_USER" &>/dev/null || useradd -r -m -s /bin/bash "$APP_USER"
 mkdir -p "$APP_DIR" "$LOG_DIR" "$BACKUP_DIR" /var/www/certbot
 mkdir -p "$APP_DIR/backend/data"
 
-echo "  FASE 2 OK"
+echo "  PHASE 2 OK"
 echo ""
 
 # =============================================
-# FASE 3: COPIA FILE
+# PHASE 3: FILE COPY
 # =============================================
-echo "=== FASE 3/9: Copia file progetto ==="
+echo "=== PHASE 3/9: Copy project files ==="
 
 # --delete removes files on the server that no longer exist in the source,
 # keeping the production directory clean from leftovers of old deploys.
@@ -131,36 +131,36 @@ chmod 750 "$APP_DIR/backend/data"
 # created on Windows and every .sh will have \r\n line endings without this step.
 find "$APP_DIR/deploy" -name "*.sh" -exec sed -i 's/\r//g' {} \;
 echo "  Shell scripts: CRLF stripped"
-echo "  FASE 3 OK"
+echo "  PHASE 3 OK"
 echo ""
 
 # =============================================
-# FASE 4: BACKEND
+# PHASE 4: BACKEND
 # =============================================
-echo "=== FASE 4/9: Backend Python ==="
+echo "=== PHASE 4/9: Python backend ==="
 
 cd "$APP_DIR/backend"
 
 if [ ! -d "venv" ]; then
     sudo -u "$APP_USER" python3 -m venv venv
-    echo "  venv creato"
+    echo "  venv created"
 fi
 
 sudo -u "$APP_USER" venv/bin/pip install -q --upgrade pip 2>&1 | tail -1
 sudo -u "$APP_USER" venv/bin/pip install -q -r requirements.txt 2>&1 | tail -1
-echo "  FASE 4 OK"
+echo "  PHASE 4 OK"
 echo ""
 
 # =============================================
-# FASE 5: FRONTEND
+# PHASE 5: FRONTEND
 # =============================================
-echo "=== FASE 5/9: Frontend build ==="
+echo "=== PHASE 5/9: Frontend build ==="
 
 cd "$APP_DIR/frontend"
 
 echo "  npm ci in corso..."
 sudo -u "$APP_USER" npm ci 2>&1 | tail -5
-echo "  npm ci completato"
+echo "  npm ci completed"
 
 echo "  vite build in corso..."
 export NODE_OPTIONS="--max-old-space-size=1536"
@@ -170,17 +170,17 @@ BUILD_EXIT=$?
 if [ $BUILD_EXIT -eq 0 ] && [ -d "dist" ]; then
     echo "  Build OK: $(du -sh dist | cut -f1)"
 else
-    echo "  ERRORE BUILD (exit code: $BUILD_EXIT)"
-    echo "  Contenuto frontend/:"
+    echo "  BUILD ERROR (exit code: $BUILD_EXIT)"
+    echo "  frontend/ contents:"
     ls -la
 fi
-echo "  FASE 5 COMPLETATA"
+echo "  PHASE 5 COMPLETED"
 echo ""
 
 # =============================================
-# FASE 6: CONFIGURAZIONE
+# PHASE 6: SERVICE CONFIGURATION
 # =============================================
-echo "=== FASE 6/9: Configurazione servizi ==="
+echo "=== PHASE 6/9: Service configuration ==="
 
 cd "$APP_DIR"
 
@@ -190,9 +190,9 @@ if [ ! -f "backend/.env" ]; then
     cp deploy/.env.production backend/.env
     chown "$APP_USER:$APP_USER" backend/.env
     chmod 600 backend/.env
-    echo "  .env creato in backend/"
+    echo "  .env created in backend/"
 else
-    echo "  .env esiste (backend/) — controllo chiavi mancanti"
+    echo "  .env exists (backend/) — checking for missing keys"
     bash deploy/migrate-env.sh "$APP_DIR" || true
     chown "$APP_USER:$APP_USER" backend/.env
     chmod 600 backend/.env
@@ -217,22 +217,22 @@ cat > /etc/logrotate.d/arkmaniagest << 'EOF'
 }
 EOF
 
-# Avvia backend
+# Start backend
 systemctl restart arkmaniagest
 sleep 3
 if systemctl is-active --quiet arkmaniagest; then
-    echo "  Backend ATTIVO"
+    echo "  Backend RUNNING"
 else
-    echo "  Backend ERRORE — log:"
+    echo "  Backend ERROR — log:"
     journalctl -u arkmaniagest --no-pager -n 10
 fi
-echo "  FASE 6 OK"
+echo "  PHASE 6 OK"
 echo ""
 
 # =============================================
-# FASE 7: NGINX + SSL
+# PHASE 7: NGINX + SSL
 # =============================================
-echo "=== FASE 7/9: Nginx + SSL ==="
+echo "=== PHASE 7/9: Nginx + SSL ==="
 
 rm -f /etc/nginx/sites-enabled/default
 
@@ -249,7 +249,7 @@ if nginx -t 2>&1; then
     systemctl reload nginx
     echo "  Nginx HTTP attivo"
 else
-    echo "  Nginx config errore!"
+    echo "  Nginx config error!"
     nginx -t
 fi
 
@@ -268,16 +268,16 @@ if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
     echo "  SSL OTTENUTO"
     SSL_OK=1
 else
-    echo "  SSL FALLITO — verifica DNS"
+    echo "  SSL FAILED — check DNS"
     SSL_OK=0
 fi
-echo "  FASE 7 OK"
+echo "  PHASE 7 OK"
 echo ""
 
 # =============================================
-# FASE 8: GEOIP + NGINX PRODUCTION
+# PHASE 8: GEOIP + NGINX PRODUCTION
 # =============================================
-echo "=== FASE 8/9: GeoIP + Nginx production ==="
+echo "=== PHASE 8/9: GeoIP + Nginx production ==="
 
 # Scarica GeoIP DB
 mkdir -p /usr/share/GeoIP
@@ -403,9 +403,9 @@ NGINX_SSL
 
     if nginx -t 2>&1; then
         systemctl reload nginx
-        echo "  Nginx production ATTIVO"
+        echo "  Nginx production RUNNING"
     else
-        echo "  Nginx errore! Ripristino config HTTP..."
+        echo "  Nginx error! Restoring HTTP config..."
         cp deploy/nginx-initial.conf /etc/nginx/sites-available/arkmaniagest
         rm -f /etc/nginx/conf.d/geoip2.conf
         nginx -t && systemctl reload nginx
@@ -425,13 +425,13 @@ wget -q --timeout=15 "$URL" -O /tmp/geoip.mmdb.gz 2>/dev/null && \
     nginx -t 2>/dev/null && systemctl reload nginx
 GEOCRON
 chmod +x /etc/cron.monthly/update-geoip
-echo "  FASE 8 OK"
+echo "  PHASE 8 OK"
 echo ""
 
 # =============================================
-# FASE 9: FIREWALL + FAIL2BAN
+# PHASE 9: FIREWALL + FAIL2BAN
 # =============================================
-echo "=== FASE 9/9: Sicurezza ==="
+echo "=== PHASE 9/9: Security ==="
 
 # UFW
 ufw --force reset >/dev/null 2>&1
@@ -457,7 +457,7 @@ cat > /etc/cron.d/arkmaniagest << 'CRONS'
 */5 * * * * root curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 || systemctl restart arkmaniagest
 CRONS
 echo "  Cron backup + health OK"
-echo "  FASE 9 OK"
+echo "  PHASE 9 OK"
 echo ""
 
 # =============================================
@@ -472,7 +472,7 @@ check() {
     if eval "$2" 2>/dev/null; then
         echo "OK"
     else
-        echo "ERRORE"
+        echo "ERROR"
     fi
 }
 

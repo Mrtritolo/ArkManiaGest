@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================
-# ArkManiaGest — Backup completo
+# ArkManiaGest — Full backup
 # Usage: sudo bash backup.sh
-# Crea backup di: vault, .env, nginx config
+# Backs up: .env, nginx config, SSL domain list
 # ============================================
 set -euo pipefail
 
@@ -31,22 +31,22 @@ if [ -f "/etc/nginx/sites-available/arkmaniagest" ]; then
     echo "  [OK] Nginx config"
 fi
 
-# SSL certificates (percorso, non chiavi)
+# SSL certificates (just the domain list, not the keys)
 if [ -d "/etc/letsencrypt/live" ]; then
     ls /etc/letsencrypt/live/ > "$BACKUP_PATH/ssl-domains.txt" 2>/dev/null
     echo "  [OK] SSL domains list"
 fi
 
-# Comprimi
+# Compress
 cd "$BACKUP_DIR"
 tar -czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
 rm -rf "$BACKUP_PATH"
 
-# Mantieni ultimi 20 backup
+# Retain only the last 20 backups
 ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | tail -n +21 | xargs -r rm
 
 SIZE=$(du -sh "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" | cut -f1)
 echo ""
 echo "  Backup: ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz ($SIZE)"
-echo "  Totale backup: $(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l)"
+echo "  Total backups: $(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l)"
 echo ""
