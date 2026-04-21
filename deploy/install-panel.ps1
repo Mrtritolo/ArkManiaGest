@@ -405,26 +405,48 @@ Invoke-SSH @("find", "/tmp/arkmaniagest-deploy/deploy", "-name", "'*.sh'", "-exe
 # 6. Optional: install MariaDB
 # ---------------------------------------------------------------------------
 
+function Send-RemoteScript([string]$script, [string]$remote_path) {
+    # Write the script locally (LF line endings, UTF-8 no BOM), SCP it,
+    # then let the caller run it via a single-arg SSH invocation.  This
+    # avoids every flavour of shell-quoting headache that showed up on
+    # Windows PowerShell when the script is large and contains mixed
+    # quotes.
+    $local_tmp = [IO.Path]::GetTempFileName()
+    # Rename with .sh extension for clarity (not strictly required).
+    $local_sh  = $local_tmp + ".sh"
+    Rename-Item -Path $local_tmp -NewName (Split-Path $local_sh -Leaf)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    $body = ($script -replace "`r`n", "`n")
+    [System.IO.File]::WriteAllText($local_sh, $body, $utf8NoBom)
+    $scp_rc = Invoke-SCP $local_sh $remote_path
+    Remove-Item -Force $local_sh -ErrorAction SilentlyContinue
+    return $scp_rc
+}
+
 if ($db_install) {
     Write-Host ""
     Write-Host "-- Installing MariaDB on the target --" -ForegroundColor Cyan
-    $mariadb_root_pw = New-RandomSecret 16
     $sql = @"
+#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq mariadb-server
 systemctl enable --now mariadb
-mysql --user=root -e "
-  CREATE DATABASE IF NOT EXISTS \``${db_name}\`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+mysql --user=root --execute="
+  CREATE DATABASE IF NOT EXISTS ``${db_name}`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
   CREATE USER IF NOT EXISTS '${db_user}'@'localhost' IDENTIFIED BY '${db_pass}';
-  GRANT ALL PRIVILEGES ON \``${db_name}\``.* TO '${db_user}'@'localhost';
+  GRANT ALL PRIVILEGES ON ``${db_name}``.* TO '${db_user}'@'localhost';
   FLUSH PRIVILEGES;
 "
 "@
-    $sudo_prefix = "sudo -n "
-    $remote_cmd = "${sudo_prefix}bash -c " + "'" + $sql.Replace("'", "'\\''") + "'"
-    $rc = Invoke-SSH @("bash", "-c", $remote_cmd)
+    $remote_script_path = "/tmp/arkmaniagest-install-mariadb.sh"
+    $scp_rc = Send-RemoteScript $sql $remote_script_path
+    if ($scp_rc -ne 0) {
+        Fail "scp of MariaDB install script failed (rc=$scp_rc)"
+    }
+    # Single-arg SSH invocation: the remote shell runs the line verbatim.
+    $rc = Invoke-SSH @("sudo -n bash $remote_script_path && rm -f $remote_script_path")
     if ($rc -ne 0) {
         Write-Host "  WARNING: MariaDB install returned non-zero ($rc)." -ForegroundColor Yellow
         Write-Host "           You may need to install and grant privileges manually before re-running." -ForegroundColor Yellow

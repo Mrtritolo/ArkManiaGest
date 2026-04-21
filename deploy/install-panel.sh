@@ -372,19 +372,28 @@ run_ssh "find /tmp/arkmaniagest-deploy/deploy -name '*.sh' -exec sed -i 's/\r//g
 
 if [[ $DB_INSTALL -eq 1 ]]; then
     section "Installing MariaDB on the target"
-    ESCAPED_PASS="$(printf '%s' "$DB_PASS" | sed "s/'/'\\\\''/g")"
-    sql="set -euo pipefail
+    # Writing the install script to a local temp file + scp-ing it to the
+    # server sidesteps the shell-quoting hell of nested `sudo -n bash -c
+    # '...single-quotes in SQL...'`.  The remote then runs it directly
+    # with sudo, no inner -c needed.
+    local_script="${STAGING}/install-mariadb.sh"
+    cat > "$local_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq mariadb-server
 systemctl enable --now mariadb
-mysql --user=root -e \"
-  CREATE DATABASE IF NOT EXISTS \\\`${DB_NAME}\\\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${ESCAPED_PASS}';
-  GRANT ALL PRIVILEGES ON \\\`${DB_NAME}\\\`.* TO '${DB_USER}'@'localhost';
+mysql --user=root --execute="
+  CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+  GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
   FLUSH PRIVILEGES;
-\""
-    if run_ssh "sudo -n bash -c '$sql'"; then
+"
+EOF
+    remote_script="/tmp/arkmaniagest-install-mariadb.sh"
+    run_scp "$local_script" "$remote_script" || fail "scp of MariaDB install script failed"
+    if run_ssh "sudo -n bash $remote_script && rm -f $remote_script"; then
         ok "MariaDB installed and panel DB created"
     else
         warn "MariaDB install returned non-zero; may need manual grants before re-running."
