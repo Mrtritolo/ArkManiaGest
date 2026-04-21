@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 from app.core.store import get_plugin_config_sync
 
 router = APIRouter()
@@ -104,7 +104,7 @@ def _row_to_dino(r) -> dict:
 async def list_rare_dinos(
     map_name: Optional[str] = Query(None),
     enabled_only: bool = Query(False),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     List all rare-dino pool entries.
@@ -137,7 +137,7 @@ async def list_rare_dinos(
 
 
 @router.post("")
-async def create_rare_dino(body: RareDinoCreate, db: AsyncSession = Depends(get_db)):
+async def create_rare_dino(body: RareDinoCreate, db: AsyncSession = Depends(get_plugin_db)):
     """Add a creature to the rare-dino pool."""
     await db.execute(
         text(
@@ -163,7 +163,7 @@ async def create_rare_dino(body: RareDinoCreate, db: AsyncSession = Depends(get_
             "ex": body.extra,
         },
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"created": True}
 
 
@@ -171,7 +171,7 @@ async def create_rare_dino(body: RareDinoCreate, db: AsyncSession = Depends(get_
 async def update_rare_dino(
     dino_id: int,
     body: RareDinoUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Update a rare-dino pool entry.
@@ -195,7 +195,7 @@ async def update_rare_dino(
         text(f"UPDATE ARKM_rare_dinos SET {set_clause} WHERE id = :did"),
         updates,
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
 
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Dino not found")
@@ -203,7 +203,7 @@ async def update_rare_dino(
 
 
 @router.delete("/{dino_id}")
-async def delete_rare_dino(dino_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_rare_dino(dino_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """
     Remove a creature from the rare-dino pool.
 
@@ -214,7 +214,7 @@ async def delete_rare_dino(dino_id: int, db: AsyncSession = Depends(get_db)):
         text("DELETE FROM ARKM_rare_dinos WHERE id = :did"),
         {"did": dino_id},
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Dino not found")
     return {"deleted": True, "id": dino_id}
@@ -224,7 +224,7 @@ async def delete_rare_dino(dino_id: int, db: AsyncSession = Depends(get_db)):
 async def bulk_update_dinos(
     dinos: list[RareDinoCreate],
     replace_all: bool = Query(False, description="Delete all entries before inserting"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Import or replace the entire rare-dino pool in a single operation.
@@ -262,7 +262,7 @@ async def bulk_update_dinos(
             },
         )
 
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"imported": len(dinos), "replaced": replace_all}
 
 
@@ -275,7 +275,7 @@ async def list_rare_spawns(
         None, description="SPAWN / KILLED / TAMED / DESPAWN / CLEAR"
     ),
     server_key: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Return recent rare-dino spawn events from the log table."""
     where: list[str] = []
@@ -360,7 +360,7 @@ def _extract_display_name(bp: str) -> str:
 @router.post("/generate")
 async def generate_random_dinos(
     body: GenerateRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Generate a random selection of dinos from the blueprint DB.

@@ -44,6 +44,9 @@ id_rsa*
 # File deprecati
 _deprecated/
 
+# Reference / sorgenti esterni di riferimento (non in git)
+reference/
+
 # Cartelle vuote
 config/
 .claude/settings.local.json

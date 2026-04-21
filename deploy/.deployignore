@@ -29,6 +29,7 @@ Specifiche
 _deprecated
 config
 tests
+reference
 
 # --- Windows-only scripts (never needed on the Linux server) ---
 *.ps1

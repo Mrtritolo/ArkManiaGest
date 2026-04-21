@@ -39,6 +39,15 @@ export interface DatabaseConfig {
   has_password: boolean;
 }
 
+export interface DualDatabaseConfig {
+  panel: DatabaseConfig;
+  plugin: DatabaseConfig;
+  /** True when panel and plugin point at different host+db pairs. */
+  plugin_is_separate: boolean;
+  /** True when PLUGIN_DB_* is explicitly set in .env (not inheriting from panel). */
+  plugin_configured: boolean;
+}
+
 export interface DatabaseTestRequest {
   host: string;
   port: number;

@@ -45,20 +45,38 @@ async def lifespan(app: FastAPI):
     init_encryption(server_settings.FIELD_ENCRYPTION_KEY)
     log.info("AES-256-GCM field encryption initialised")
 
-    # 3. Initialise the async DB engine
-    from app.db.session import init_engine, create_app_tables
+    # 3. Initialise the async DB engines (panel + plugin)
+    from app.db.session import (
+        init_engine, init_plugin_engine, create_app_tables,
+    )
     if server_settings.DB_PASSWORD:
         init_engine(server_settings.database_url, debug=server_settings.DEBUG)
         log.info(
-            "Database connected: %s:%s/%s",
+            "Panel DB connected: %s:%s/%s",
             server_settings.DB_HOST,
             server_settings.DB_PORT,
             server_settings.DB_NAME,
         )
 
-        # 4. Create application tables if they do not exist yet
+        # 4. Create panel tables if they do not exist yet
         await create_app_tables()
-        log.info("arkmaniagest_* tables verified / created")
+        log.info("arkmaniagest_* panel tables verified / created")
+
+        # 5. Initialise the plugin DB engine (falls back to panel DSN when
+        #    no PLUGIN_DB_* variables are configured in .env)
+        init_plugin_engine(
+            server_settings.plugin_database_url,
+            debug=server_settings.DEBUG,
+        )
+        if server_settings.plugin_db_is_separate:
+            log.info(
+                "Plugin DB connected: %s:%s/%s",
+                server_settings.plugin_db_host,
+                server_settings.plugin_db_port,
+                server_settings.plugin_db_name,
+            )
+        else:
+            log.info("Plugin DB: shared with panel DB (no PLUGIN_DB_* configured)")
     else:
         log.warning(
             "DB_PASSWORD not set in .env — backend running in limited mode"
@@ -67,9 +85,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # --- Shutdown ---
-    from app.db.session import close_engine
+    from app.db.session import close_engine, close_plugin_engine
+    await close_plugin_engine()
     await close_engine()
-    log.info("Database connection closed")
+    log.info("Database connections closed")
 
 
 app = FastAPI(
@@ -133,12 +152,13 @@ app.add_middleware(
 @app.get("/health", tags=["System"])
 async def health_check():
     """Return basic liveness/readiness information."""
-    from app.db.session import _async_session
+    from app.db import session as db_session
     return {
         "status": "ok",
         "app": "ArkManiaGest",
         "version": "2.2.2",
-        "db_ready": _async_session is not None,
+        "db_ready": db_session._async_session is not None,
+        "plugin_db_ready": db_session._plugin_async_session is not None,
         "pid": os.getpid(),
     }
 

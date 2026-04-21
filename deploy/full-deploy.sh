@@ -120,6 +120,7 @@ rsync -a --delete \
     --exclude='_deprecated/' \
     --exclude='config/' \
     --exclude='tests/' \
+    --exclude='reference/' \
     "${DEPLOY_SRC}/" "$APP_DIR/"
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
@@ -191,7 +192,10 @@ if [ ! -f "backend/.env" ]; then
     chmod 600 backend/.env
     echo "  .env creato in backend/"
 else
-    echo "  .env esiste (backend/)"
+    echo "  .env esiste (backend/) — controllo chiavi mancanti"
+    bash deploy/migrate-env.sh "$APP_DIR" || true
+    chown "$APP_USER:$APP_USER" backend/.env
+    chmod 600 backend/.env
 fi
 
 # Systemd

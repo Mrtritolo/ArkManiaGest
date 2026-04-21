@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 
 router = APIRouter()
 
@@ -101,7 +101,7 @@ class ServerUpdate(BaseModel):
 # ── Module endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/modules")
-async def list_modules(db: AsyncSession = Depends(get_db)):
+async def list_modules(db: AsyncSession = Depends(get_plugin_db)):
     """
     List all config modules with their key counts.
 
@@ -136,7 +136,7 @@ async def list_modules(db: AsyncSession = Depends(get_db)):
 async def get_module_config(
     module: str,
     server_key: str = Query("*", description="'*' for global, specific key for overrides"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Read all config keys for a module, merging per-server overrides onto globals.
@@ -216,7 +216,7 @@ async def get_module_config(
 async def update_module_config(
     module: str,
     body: BulkConfigUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Bulk-update config keys belonging to a module.
@@ -250,7 +250,7 @@ async def update_module_config(
         )
         updated += 1
 
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"updated": updated, "server_key": body.server_key}
 
 
@@ -260,7 +260,7 @@ async def update_module_config(
 async def get_config_value(
     key: str = Query(..., description="Full config key, e.g. Login.BanEnabled"),
     server_key: str = Query("*"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Read a single config value, falling back to the global default.
@@ -288,7 +288,7 @@ async def get_config_value(
 
 
 @router.put("/config")
-async def set_config_value(item: ConfigItem, db: AsyncSession = Depends(get_db)):
+async def set_config_value(item: ConfigItem, db: AsyncSession = Depends(get_plugin_db)):
     """
     Upsert a single config value.
 
@@ -309,12 +309,12 @@ async def set_config_value(item: ConfigItem, db: AsyncSession = Depends(get_db))
             "desc": item.description,
         },
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"saved": True, "config_key": item.config_key, "server_key": item.server_key}
 
 
 @router.post("/config")
-async def add_config_key(item: ConfigItem, db: AsyncSession = Depends(get_db)):
+async def add_config_key(item: ConfigItem, db: AsyncSession = Depends(get_plugin_db)):
     """
     Insert a new config key (fails if the key already exists for the server).
 
@@ -348,7 +348,7 @@ async def add_config_key(item: ConfigItem, db: AsyncSession = Depends(get_db)):
             "desc": item.description,
         },
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"created": True, "config_key": item.config_key}
 
 
@@ -356,7 +356,7 @@ async def add_config_key(item: ConfigItem, db: AsyncSession = Depends(get_db)):
 async def delete_config_override(
     key: str = Query(...),
     server_key: str = Query(..., description="Only server-specific overrides can be deleted"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Delete a per-server config override.
@@ -372,14 +372,14 @@ async def delete_config_override(
         ),
         {"ck": key, "sk": server_key},
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"deleted": result.rowcount > 0}
 
 
 # ── Server management ──────────────────────────────────────────────────────────
 
 @router.get("/servers")
-async def list_servers(db: AsyncSession = Depends(get_db)):
+async def list_servers(db: AsyncSession = Depends(get_plugin_db)):
     """Return all servers registered in ``ARKM_servers``."""
     result = await db.execute(
         text(
@@ -410,7 +410,7 @@ async def list_servers(db: AsyncSession = Depends(get_db)):
 async def update_server(
     server_key: str,
     body: ServerUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Update display metadata for a server record."""
     set_clauses: list[str] = []
@@ -439,12 +439,12 @@ async def update_server(
         ),
         params,
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"updated": True, "server_key": server_key}
 
 
 @router.post("/servers", status_code=201)
-async def create_server(body: ServerCreate, db: AsyncSession = Depends(get_db)):
+async def create_server(body: ServerCreate, db: AsyncSession = Depends(get_plugin_db)):
     """
     Register a new game server in ``ARKM_servers``.
 
@@ -481,7 +481,7 @@ async def create_server(body: ServerCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/servers/{server_key}")
-async def delete_server(server_key: str, db: AsyncSession = Depends(get_db)):
+async def delete_server(server_key: str, db: AsyncSession = Depends(get_plugin_db)):
     """
     Delete a game server and all its config overrides.
 
@@ -502,7 +502,7 @@ async def delete_server(server_key: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/servers/{server_key}/overrides")
-async def get_server_overrides(server_key: str, db: AsyncSession = Depends(get_db)):
+async def get_server_overrides(server_key: str, db: AsyncSession = Depends(get_plugin_db)):
     """List all config overrides that apply to a specific server."""
     result = await db.execute(
         text(
@@ -523,7 +523,7 @@ async def get_server_overrides(server_key: str, db: AsyncSession = Depends(get_d
 @router.get("/search")
 async def search_config(
     q: str = Query(..., min_length=2),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Full-text search across config key, value, and description fields."""
     pattern = f"%{q}%"
@@ -546,7 +546,7 @@ async def search_config(
 # ── Permission groups ──────────────────────────────────────────────────────────
 
 @router.get("/permission-groups")
-async def list_permission_groups(db: AsyncSession = Depends(get_db)):
+async def list_permission_groups(db: AsyncSession = Depends(get_plugin_db)):
     """Return all permission group names (used to populate dropdowns)."""
     result = await db.execute(
         text("SELECT GroupName FROM PermissionGroups ORDER BY GroupName")
@@ -559,7 +559,7 @@ async def list_permission_groups(db: AsyncSession = Depends(get_db)):
 @router.get("/online")
 async def get_online_players(
     server_key: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Return currently connected players from ``ARKM_sessions``,
@@ -641,7 +641,7 @@ async def list_events(
     search: Optional[str] = Query(None, description="Search in player_name or details"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Paginated read-only view of ``ARKM_event_log``.
@@ -697,7 +697,7 @@ async def list_events(
 
 
 @router.get("/events/stats")
-async def event_stats(db: AsyncSession = Depends(get_db)):
+async def event_stats(db: AsyncSession = Depends(get_plugin_db)):
     """
     Aggregate event counts grouped by type, plus the most recent event
     timestamp.  Used by the Event Log page header cards.
@@ -720,7 +720,7 @@ async def event_stats(db: AsyncSession = Depends(get_db)):
 async def purge_events(
     keep_days: int = Query(..., ge=0, le=365, description="Delete events older than N days (0 = delete ALL)"),
     event_type: Optional[str] = Query(None, description="Limit purge to a specific event type"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Delete events older than ``keep_days`` from ``ARKM_event_log``.

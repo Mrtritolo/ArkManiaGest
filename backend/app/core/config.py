@@ -37,12 +37,26 @@ class ServerSettings(BaseSettings):
     DEBUG: bool = False
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "https://arkmania.it", "http://arkmania.it"]
 
-    # --- Database (required — from .env) ---
+    # --- Panel database (required — from .env) ---
+    # Stores ArkManiaGest's own data: users, SSH machines, settings, server
+    # instances, MariaDB instances, action log, scanned container cache.
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_NAME: str = "arkmaniagest"
     DB_USER: str = "root"
     DB_PASSWORD: str = ""
+
+    # --- Plugin database (optional — from .env) ---
+    # Stores the game plugin data: ARKM_config / bans / rare_dinos /
+    # transfer_rules / decay / leaderboard / players / sessions / event_log
+    # and the native ARK tables (Players, ArkShopPlayers, PermissionGroups,
+    # TribePermissions).  If any PLUGIN_DB_* is left empty the corresponding
+    # panel DB_* value is used, so legacy single-database setups keep working.
+    PLUGIN_DB_HOST: str = ""
+    PLUGIN_DB_PORT: int = 0
+    PLUGIN_DB_NAME: str = ""
+    PLUGIN_DB_USER: str = ""
+    PLUGIN_DB_PASSWORD: str = ""
 
     # --- Security (required — from .env) ---
     JWT_SECRET: str = ""           # 64 hex chars; auto-generated if empty
@@ -73,7 +87,7 @@ class ServerSettings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        """Async SQLAlchemy connection string (aiomysql driver)."""
+        """Async SQLAlchemy connection string for the panel DB (aiomysql driver)."""
         return (
             f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
@@ -81,10 +95,48 @@ class ServerSettings(BaseSettings):
 
     @property
     def database_url_sync(self) -> str:
-        """Synchronous SQLAlchemy connection string (pymysql driver)."""
+        """Synchronous SQLAlchemy connection string for the panel DB (pymysql driver)."""
         return (
             f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
+
+    # --- Plugin DB resolvers (fall back to panel DB if empty) -----------------
+
+    @property
+    def plugin_db_host(self) -> str:
+        return self.PLUGIN_DB_HOST or self.DB_HOST
+
+    @property
+    def plugin_db_port(self) -> int:
+        return self.PLUGIN_DB_PORT or self.DB_PORT
+
+    @property
+    def plugin_db_name(self) -> str:
+        return self.PLUGIN_DB_NAME or self.DB_NAME
+
+    @property
+    def plugin_db_user(self) -> str:
+        return self.PLUGIN_DB_USER or self.DB_USER
+
+    @property
+    def plugin_db_password(self) -> str:
+        return self.PLUGIN_DB_PASSWORD or self.DB_PASSWORD
+
+    @property
+    def plugin_db_is_separate(self) -> bool:
+        """True when the plugin DB points to a distinct host+db from the panel DB."""
+        return (
+            (self.plugin_db_host, self.plugin_db_port, self.plugin_db_name)
+            != (self.DB_HOST, self.DB_PORT, self.DB_NAME)
+        )
+
+    @property
+    def plugin_database_url(self) -> str:
+        """Async SQLAlchemy connection string for the plugin DB."""
+        return (
+            f"mysql+aiomysql://{self.plugin_db_user}:{self.plugin_db_password}"
+            f"@{self.plugin_db_host}:{self.plugin_db_port}/{self.plugin_db_name}"
         )
 
     def ensure_secrets(self) -> bool:

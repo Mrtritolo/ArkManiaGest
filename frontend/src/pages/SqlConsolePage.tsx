@@ -27,7 +27,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
-import { sqlConsoleApi } from "../services/api";
+import { sqlConsoleApi, type SqlDatabaseTarget } from "../services/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +80,7 @@ export default function SqlConsolePage() {
   const [query, setQuery] = useState("SELECT 1");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [executing, setExecuting] = useState(false);
+  const [database, setDatabase] = useState<SqlDatabaseTarget>("panel");
 
   // Table browser
   const [tables, setTables] = useState<TableInfo[]>([]);
@@ -97,17 +98,19 @@ export default function SqlConsolePage() {
 
   // ── Effects ──────────────────────────────────────────────────────────────
 
-  /** Load the table list on mount. */
+  /** Load the table list on mount and whenever the target database changes. */
   useEffect(() => {
+    setExpandedTable(null);
+    setTableColumns({});
     loadTables();
-  }, []);
+  }, [database]);
 
   // ── Data fetching ────────────────────────────────────────────────────────
 
   async function loadTables(): Promise<void> {
     setTablesLoading(true);
     try {
-      const res = await sqlConsoleApi.tables();
+      const res = await sqlConsoleApi.tables(database);
       setTables(res.data);
     } catch {
       /* Table list is non-critical; silently ignore */
@@ -122,7 +125,7 @@ export default function SqlConsolePage() {
 
     setColumnsLoading(tableName);
     try {
-      const res = await sqlConsoleApi.tableSchema(tableName);
+      const res = await sqlConsoleApi.tableSchema(tableName, database);
       setTableColumns((prev) => ({ ...prev, [tableName]: res.data }));
     } catch {
       /* Schema load is non-critical */
@@ -141,7 +144,7 @@ export default function SqlConsolePage() {
     setResult(null);
 
     try {
-      const res = await sqlConsoleApi.execute(trimmed);
+      const res = await sqlConsoleApi.execute(trimmed, database);
       setResult(res.data);
 
       // Append to history
@@ -264,7 +267,28 @@ export default function SqlConsolePage() {
             Execute queries directly against the MariaDB database
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div
+            className="btn-group"
+            role="group"
+            aria-label="Target database"
+            style={{ display: "flex", gap: "0.25rem" }}
+          >
+            <button
+              className={`btn btn-sm ${database === "panel" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setDatabase("panel")}
+              title="Query the ArkManiaGest panel database"
+            >
+              Panel DB
+            </button>
+            <button
+              className={`btn btn-sm ${database === "plugin" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setDatabase("plugin")}
+              title="Query the ArkMania plugin database"
+            >
+              Plugin DB
+            </button>
+          </div>
           <button
             className={`btn btn-sm ${browserOpen ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setBrowserOpen(!browserOpen)}

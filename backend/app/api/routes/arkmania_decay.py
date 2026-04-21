@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 
 router = APIRouter()
 
@@ -19,7 +19,7 @@ router = APIRouter()
 # redirect_slashes=False set in main.py.
 
 @router.get("")
-async def get_decay_overview(db: AsyncSession = Depends(get_db)):
+async def get_decay_overview(db: AsyncSession = Depends(get_plugin_db)):
     """
     Return aggregate decay statistics.
 
@@ -70,7 +70,7 @@ async def list_decay_tribes(
     ),
     search: Optional[str] = Query(None),
     limit: int = Query(100, le=500),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     List tribes with their decay status.
@@ -159,7 +159,7 @@ async def list_decay_tribes(
 
 
 @router.get("/pending")
-async def list_pending(db: AsyncSession = Depends(get_db)):
+async def list_pending(db: AsyncSession = Depends(get_plugin_db)):
     """List tribes flagged as pending purge, with structure and dino counts."""
     result = await db.execute(
         text(
@@ -199,7 +199,7 @@ async def list_pending(db: AsyncSession = Depends(get_db)):
 async def list_decay_log(
     limit: int = Query(50, le=200),
     server_key: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Return the most recent tribe purge log entries."""
     where = ""

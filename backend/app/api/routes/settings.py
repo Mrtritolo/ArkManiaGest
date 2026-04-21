@@ -33,6 +33,7 @@ from app.schemas.settings import (
     AppSettingsRead,
     AppSettingsUpdate,
     DatabaseConfigRead,
+    DualDatabaseConfigRead,
     DatabaseTestRequest,
 )
 
@@ -144,20 +145,34 @@ async def update_app_settings(
 
 # ── Database configuration ────────────────────────────────────────────────────
 
-@router.get("/database", response_model=DatabaseConfigRead)
+@router.get("/database", response_model=DualDatabaseConfigRead)
 async def get_database_config(_admin: dict = Depends(require_admin)):
     """
     Return the current database configuration from .env (admin only).
 
-    The actual password is never returned — only a boolean indicating
-    whether one is configured.
+    Returns details for both the panel and plugin databases.  When no
+    ``PLUGIN_DB_*`` variables are configured, the plugin block reflects the
+    panel values and ``plugin_configured`` is False.  Passwords are never
+    returned — only a ``has_password`` flag per connection.
     """
-    return DatabaseConfigRead(
-        host=server_settings.DB_HOST,
-        port=server_settings.DB_PORT,
-        name=server_settings.DB_NAME,
-        user=server_settings.DB_USER,
-        has_password=bool(server_settings.DB_PASSWORD),
+    s = server_settings
+    return DualDatabaseConfigRead(
+        panel=DatabaseConfigRead(
+            host=s.DB_HOST,
+            port=s.DB_PORT,
+            name=s.DB_NAME,
+            user=s.DB_USER,
+            has_password=bool(s.DB_PASSWORD),
+        ),
+        plugin=DatabaseConfigRead(
+            host=s.plugin_db_host,
+            port=s.plugin_db_port,
+            name=s.plugin_db_name,
+            user=s.plugin_db_user,
+            has_password=bool(s.plugin_db_password),
+        ),
+        plugin_is_separate=s.plugin_db_is_separate,
+        plugin_configured=bool(s.PLUGIN_DB_HOST or s.PLUGIN_DB_NAME),
     )
 
 
@@ -187,28 +202,40 @@ async def test_database_connection(req: DatabaseTestRequest):
         return {"success": False, "message": f"Connection failed: {exc}"}
 
 
-@router.post("/database/test-current")
-async def test_current_database(_admin: dict = Depends(require_admin)):
-    """
-    Test connectivity using the credentials currently in .env (admin only).
-    """
-    s = server_settings
-    if not s.DB_PASSWORD:
-        return {"success": False, "message": "DB_PASSWORD is not configured in .env."}
-
+async def _test_current(host: str, port: int, user: str, password: str, name: str) -> dict:
+    """Shared connectivity helper used by the panel/plugin test endpoints."""
+    if not password:
+        return {"success": False, "message": "Password is not configured in .env."}
     try:
         conn = await aiomysql.connect(
-            host=s.DB_HOST,
-            port=s.DB_PORT,
-            user=s.DB_USER,
-            password=s.DB_PASSWORD,
-            db=s.DB_NAME,
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            db=name,
             connect_timeout=5,
         )
         conn.close()
-        return {
-            "success": True,
-            "message": f"Connected to {s.DB_HOST}:{s.DB_PORT}/{s.DB_NAME}.",
-        }
+        return {"success": True, "message": f"Connected to {host}:{port}/{name}."}
     except Exception as exc:
         return {"success": False, "message": f"Connection failed: {exc}"}
+
+
+@router.post("/database/test-current")
+async def test_current_database(_admin: dict = Depends(require_admin)):
+    """Test connectivity to the **panel** database using .env credentials."""
+    s = server_settings
+    return await _test_current(s.DB_HOST, s.DB_PORT, s.DB_USER, s.DB_PASSWORD, s.DB_NAME)
+
+
+@router.post("/database/test-plugin")
+async def test_current_plugin_database(_admin: dict = Depends(require_admin)):
+    """Test connectivity to the **plugin** database using .env credentials."""
+    s = server_settings
+    return await _test_current(
+        s.plugin_db_host,
+        s.plugin_db_port,
+        s.plugin_db_user,
+        s.plugin_db_password,
+        s.plugin_db_name,
+    )

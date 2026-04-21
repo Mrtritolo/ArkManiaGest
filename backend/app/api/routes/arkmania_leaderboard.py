@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ _ALLOWED_SORT_COLUMNS: frozenset[str] = frozenset({
 # redirect_slashes=False set in main.py.
 
 @router.get("")
-async def leaderboard_overview(db: AsyncSession = Depends(get_db)):
+async def leaderboard_overview(db: AsyncSession = Depends(get_plugin_db)):
     """Return global aggregate statistics for the leaderboard dashboard."""
     stats = await db.execute(
         text(
@@ -78,7 +78,7 @@ async def list_scores(
     limit:   int = Query(50, le=200),
     offset:  int = Query(0, ge=0),
     search:  Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Return ranked player scores.
@@ -153,7 +153,7 @@ async def list_events(
     event_type:  Optional[int] = Query(None),
     eos_id:      Optional[str] = Query(None),
     limit:       int = Query(50, le=200),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Return recent leaderboard events with optional filters."""
     where:  list[str] = []
@@ -204,7 +204,7 @@ async def list_events(
 
 
 @router.get("/player/{eos_id}")
-async def get_player_leaderboard(eos_id: str, db: AsyncSession = Depends(get_db)):
+async def get_player_leaderboard(eos_id: str, db: AsyncSession = Depends(get_plugin_db)):
     """Return all scores and the most recent 50 events for a single player."""
     scores_result = await db.execute(
         text("SELECT * FROM ARKM_lb_scores WHERE eos_id = :eos"),

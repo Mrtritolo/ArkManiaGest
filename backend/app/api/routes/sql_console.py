@@ -23,11 +23,12 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import aiomysql
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.auth import require_admin
 from app.core.config import server_settings
 from app.schemas.sql_console import (
+    DatabaseTarget,
     SqlExecuteRequest,
     SqlExecuteResult,
     TableInfo,
@@ -43,36 +44,68 @@ _QUERY_TIMEOUT_SECONDS = 30
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _get_connection() -> aiomysql.Connection:
+def _resolve_connection_params(target: DatabaseTarget) -> dict:
     """
-    Open a short-lived aiomysql connection using the app's .env credentials.
+    Return the aiomysql connection kwargs for the requested database target.
 
-    This is intentionally separate from the SQLAlchemy engine so that raw
-    DDL/DML statements do not interfere with the ORM session management.
+    ``plugin`` falls back to the panel DSN when no ``PLUGIN_DB_*`` variables
+    are configured, so single-database deployments keep working.
 
     Raises:
-        HTTPException 500: Database credentials are not configured.
+        HTTPException 500: Target credentials are not configured.
     """
     s = server_settings
+    if target == "plugin":
+        password = s.plugin_db_password
+        if not password:
+            raise HTTPException(
+                status_code=500,
+                detail="Plugin database credentials are not configured in .env.",
+            )
+        return {
+            "host": s.plugin_db_host,
+            "port": s.plugin_db_port,
+            "user": s.plugin_db_user,
+            "password": password,
+            "db": s.plugin_db_name,
+        }
+
     if not s.DB_PASSWORD:
         raise HTTPException(
             status_code=500,
-            detail="Database credentials are not configured in .env.",
+            detail="Panel database credentials are not configured in .env.",
         )
+    return {
+        "host": s.DB_HOST,
+        "port": s.DB_PORT,
+        "user": s.DB_USER,
+        "password": s.DB_PASSWORD,
+        "db": s.DB_NAME,
+    }
 
+
+async def _get_connection(target: DatabaseTarget = "panel") -> aiomysql.Connection:
+    """
+    Open a short-lived aiomysql connection for the requested target.
+
+    This is intentionally separate from the SQLAlchemy engines so that raw
+    DDL/DML statements do not interfere with ORM session management.
+
+    Args:
+        target: ``"panel"`` (default) or ``"plugin"``.
+
+    Raises:
+        HTTPException 500: Connection failed or credentials missing.
+    """
+    params = _resolve_connection_params(target)
     try:
-        conn = await aiomysql.connect(
-            host=s.DB_HOST,
-            port=s.DB_PORT,
-            user=s.DB_USER,
-            password=s.DB_PASSWORD,
-            db=s.DB_NAME,
+        return await aiomysql.connect(
+            **params,
             connect_timeout=10,
             autocommit=True,
         )
-        return conn
     except Exception as exc:
-        log.error("SQL Console: connection failed — %s", exc)
+        log.error("SQL Console: connection failed [%s] — %s", target, exc)
         raise HTTPException(
             status_code=500,
             detail=f"Database connection failed: {exc}",
@@ -140,7 +173,7 @@ async def execute_query(
 
     conn: aiomysql.Connection | None = None
     try:
-        conn = await _get_connection()
+        conn = await _get_connection(req.database)
 
         async with conn.cursor() as cur:
             # Enforce a per-query execution timeout.
@@ -177,8 +210,9 @@ async def execute_query(
                 message = f"{row_count} row{'s' if row_count != 1 else ''} affected"
 
         log.info(
-            "SQL Console [%s]: %.1f ms — %s",
+            "SQL Console [%s/%s]: %.1f ms — %s",
             _admin.get("sub", "admin"),
+            req.database,
             elapsed_ms,
             message,
         )
@@ -207,16 +241,20 @@ async def execute_query(
 
 
 @router.get("/tables", response_model=list[TableInfo])
-async def list_tables(_admin: dict = Depends(require_admin)):
+async def list_tables(
+    database: DatabaseTarget = Query("panel"),
+    _admin: dict = Depends(require_admin),
+):
     """
-    List all tables in the configured database with basic size information.
+    List all tables in the requested database with basic size information.
 
     Reads from ``information_schema.TABLES`` to avoid running raw SHOW
     statements, which ensures consistent column names across MariaDB versions.
     """
+    params = _resolve_connection_params(database)
     conn: aiomysql.Connection | None = None
     try:
-        conn = await _get_connection()
+        conn = await _get_connection(database)
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -230,7 +268,7 @@ async def list_tables(_admin: dict = Depends(require_admin)):
                 WHERE TABLE_SCHEMA = %s
                 ORDER BY TABLE_NAME
                 """,
-                (server_settings.DB_NAME,),
+                (params["db"],),
             )
             rows = await cur.fetchall()
 
@@ -257,6 +295,7 @@ async def list_tables(_admin: dict = Depends(require_admin)):
 @router.get("/tables/{table_name}/schema", response_model=list[ColumnInfo])
 async def get_table_schema(
     table_name: str,
+    database: DatabaseTarget = Query("panel"),
     _admin: dict = Depends(require_admin),
 ):
     """
@@ -265,9 +304,10 @@ async def get_table_schema(
     Uses ``information_schema.COLUMNS`` to retrieve type, nullability, key
     info, defaults, and auto-increment status.
     """
+    params = _resolve_connection_params(database)
     conn: aiomysql.Connection | None = None
     try:
-        conn = await _get_connection()
+        conn = await _get_connection(database)
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -283,7 +323,7 @@ async def get_table_schema(
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
                 ORDER BY ORDINAL_POSITION
                 """,
-                (server_settings.DB_NAME, table_name),
+                (params["db"], table_name),
             )
             rows = await cur.fetchall()
 
@@ -291,7 +331,7 @@ async def get_table_schema(
             raise HTTPException(
                 status_code=404,
                 detail=f"Table '{table_name}' not found in database "
-                       f"'{server_settings.DB_NAME}'.",
+                       f"'{params['db']}'.",
             )
 
         return [

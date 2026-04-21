@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 
 router = APIRouter()
 
@@ -57,7 +57,7 @@ async def list_bans(
     active_only: bool = Query(True),
     search: Optional[str] = Query(None),
     limit: int = Query(100, le=500),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     List ban entries with optional active-only filter and text search.
@@ -99,7 +99,7 @@ async def list_bans(
 
 
 @router.post("")
-async def create_ban(body: BanCreate, db: AsyncSession = Depends(get_db)):
+async def create_ban(body: BanCreate, db: AsyncSession = Depends(get_plugin_db)):
     """Create a new active ban."""
     await db.execute(
         text(
@@ -116,7 +116,7 @@ async def create_ban(body: BanCreate, db: AsyncSession = Depends(get_db)):
             "expire": body.expire_time,
         },
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     return {"created": True, "eos_id": body.eos_id}
 
 
@@ -124,7 +124,7 @@ async def create_ban(body: BanCreate, db: AsyncSession = Depends(get_db)):
 async def unban(
     ban_id: int,
     unbanned_by: str = Query("Admin"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Deactivate an active ban.
@@ -140,14 +140,14 @@ async def unban(
         ),
         {"id": ban_id, "by": unbanned_by},
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Ban not found or already deactivated.")
     return {"unbanned": True, "ban_id": ban_id}
 
 
 @router.get("/{ban_id}")
-async def get_ban(ban_id: int, db: AsyncSession = Depends(get_db)):
+async def get_ban(ban_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """Return details for a single ban entry."""
     result = await db.execute(
         text(

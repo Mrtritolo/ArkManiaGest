@@ -58,7 +58,7 @@ if (Test-Path $DEPLOYIGNORE) {
         --exclude=node_modules --exclude=venv --exclude=__pycache__ --exclude=.git `
         --exclude="data/arkmaniagest.vault" --exclude="*.vault" --exclude=".env" `
         --exclude="frontend/dist" --exclude="Specifiche" --exclude="_deprecated" `
-        --exclude="config" --exclude="tests" `
+        --exclude="config" --exclude="tests" --exclude="reference" `
         --exclude="*.ps1" --exclude="*.bat" --exclude="*.vbs" `
         --exclude="CHANGELOG.md" --exclude="README.md" `
         .

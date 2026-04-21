@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 
 router = APIRouter()
 
@@ -66,7 +66,7 @@ def _row_to_rule(r) -> dict:
 # redirect_slashes=False set in main.py.
 
 @router.get("")
-async def list_transfer_rules(db: AsyncSession = Depends(get_db)):
+async def list_transfer_rules(db: AsyncSession = Depends(get_plugin_db)):
     """Return all transfer rules ordered by source → destination server."""
     result = await db.execute(
         text(
@@ -79,7 +79,7 @@ async def list_transfer_rules(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("")
-async def create_rule(body: TransferRuleCreate, db: AsyncSession = Depends(get_db)):
+async def create_rule(body: TransferRuleCreate, db: AsyncSession = Depends(get_plugin_db)):
     """
     Create a new transfer rule.
 
@@ -107,7 +107,7 @@ async def create_rule(body: TransferRuleCreate, db: AsyncSession = Depends(get_d
                 "notes": body.notes,
             },
         )
-        # Transaction committed by get_db dependency on success.
+        # Transaction committed by get_plugin_db dependency on success.
     except Exception as exc:
         if "Duplicate" in str(exc):
             raise HTTPException(
@@ -125,7 +125,7 @@ async def create_rule(body: TransferRuleCreate, db: AsyncSession = Depends(get_d
 async def update_rule(
     rule_id: int,
     body: TransferRuleUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Update an existing transfer rule.
@@ -160,7 +160,7 @@ async def update_rule(
         ),
         params,
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
 
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -168,7 +168,7 @@ async def update_rule(
 
 
 @router.delete("/{rule_id}")
-async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """
     Delete a transfer rule.
 
@@ -179,7 +179,7 @@ async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_db)):
         text("DELETE FROM ARKM_transfer_rules WHERE id = :rid"),
         {"rid": rule_id},
     )
-    # Transaction committed by get_db dependency on success.
+    # Transaction committed by get_plugin_db dependency on success.
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"deleted": True, "id": rule_id}

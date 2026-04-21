@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer
 from sqlalchemy import text as sa_text
 from app.core.config import server_settings
@@ -122,7 +122,7 @@ async def public_players_list(
     limit:     int           = Query(100, ge=1, le=500),
     offset:    int           = Query(0, ge=0),
     api_key:   Optional[str] = Query(None, alias="key"),
-    db:        AsyncSession  = Depends(get_db),
+    db:        AsyncSession  = Depends(get_plugin_db),
 ):
     """
     Public player list for the external website.
@@ -287,7 +287,7 @@ async def public_players_list(
 async def cron_sync_names(
     request: Request,
     secret:  str           = Query(...),
-    db:      AsyncSession  = Depends(get_db),
+    db:      AsyncSession  = Depends(get_plugin_db),
 ):
     """
     Cron job: scan ``.arkprofile`` files via SSH and update player names in DB.
@@ -409,7 +409,7 @@ async def public_leaderboard(
     limit:       int           = Query(50, ge=1, le=100),
     offset:      int           = Query(0, ge=0),
     api_key:     Optional[str] = Query(None, alias="key"),
-    db:          AsyncSession  = Depends(get_db),
+    db:          AsyncSession  = Depends(get_plugin_db),
 ):
     """
     Public leaderboard for the external website.
@@ -488,7 +488,7 @@ async def public_leaderboard(
 async def public_leaderboard_stats(
     request: Request,
     api_key: Optional[str] = Query(None, alias="key"),
-    db:      AsyncSession  = Depends(get_db),
+    db:      AsyncSession  = Depends(get_plugin_db),
 ):
     """Return aggregate leaderboard statistics for the website."""
     _validate_request(request, api_key)
@@ -551,7 +551,7 @@ async def public_rare_dinos(
     server_key: Optional[str] = Query(None),
     map_name:   Optional[str] = Query(None),
     api_key:    Optional[str] = Query(None, alias="key"),
-    db:         AsyncSession   = Depends(get_db),
+    db:         AsyncSession   = Depends(get_plugin_db),
 ):
     """
     Public endpoint: currently alive rare dinos.
@@ -619,7 +619,7 @@ async def public_rare_dinos(
 async def public_rare_dinos_pool(
     request: Request,
     api_key: Optional[str] = Query(None, alias="key"),
-    db:      AsyncSession   = Depends(get_db),
+    db:      AsyncSession   = Depends(get_plugin_db),
 ):
     """
     Public endpoint: configured rare dino pool (what can spawn).

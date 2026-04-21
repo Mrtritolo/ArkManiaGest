@@ -4,9 +4,16 @@ schemas/sql_console.py — Pydantic models for the SQL Console endpoints.
 Defines request/response shapes for arbitrary SQL query execution,
 table listing, and schema introspection.
 """
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+# Database targets supported by the SQL Console.  ``panel`` is the database
+# that stores ArkManiaGest's own data; ``plugin`` is the separate database
+# used by the game plugins (falls back to ``panel`` when no PLUGIN_DB_* is
+# configured in .env).
+DatabaseTarget = Literal["panel", "plugin"]
 
 
 # ── Request models ────────────────────────────────────────────────────────────
@@ -23,6 +30,10 @@ class SqlExecuteRequest(BaseModel):
     params: Optional[list[Any]] = Field(
         default=None,
         description="Optional positional parameters for parameterised queries.",
+    )
+    database: DatabaseTarget = Field(
+        default="panel",
+        description="Which database to target: 'panel' (default) or 'plugin'.",
     )
 
 

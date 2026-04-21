@@ -7,6 +7,115 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 
 ---
 
+## [Unreleased] — Fase 1: schema istanze Docker POK
+
+### Nuove tabelle (Panel DB)
+
+Tre tabelle di proprietà del pannello per ospitare le istanze ARK ASA
+gestite via POK-manager + le relative istanze MariaDB collocate sulle
+stesse macchine.  Sono create automaticamente al prossimo startup via
+`create_app_tables()` solo sul Panel DB.
+
+- **`ARKM_server_instances`** (35 colonne) — un record per container ARK
+  ASA. Campi chiave: `machine_id`, `name`, `map_name`, `session_name`,
+  `game_port`/`rcon_port`, `cluster_id`, mods, `container_name`, `image`,
+  `mem_limit_mb`, `pok_base_dir`/`instance_dir`, feature flags
+  (`mod_api`/`battleye`/`update_server`/…), stato runtime + timestamps.
+  Admin/server password salvate AES-256-GCM in `*_enc`.
+- **`ARKM_instance_actions`** (15 colonne) — audit log delle azioni
+  (bootstrap/create/start/stop/restart/update/backup/delete/rcon/pok_sync).
+  Conserva le righe anche dopo l'eliminazione dell'istanza
+  (`ON DELETE SET NULL` su `instance_id`/`machine_id`/`user_id`) per
+  mantenere la cronologia.
+- **`ARKM_mariadb_instances`** (17 colonne) — un record per container
+  MariaDB gestito. Root password AES-256-GCM, `databases_json` con
+  l'elenco di DB+utenti provisionati dentro il container (password dei
+  DB anch'esse cifrate).
+
+### Backend
+
+- **`app/db/session.py`**: `create_app_tables()` ora crea **solo** le
+  tabelle definite in `app.db.models.app`, anche se `Base.metadata`
+  contiene i modelli ARK plugin (Players, ArkShopPlayers, ecc.) —
+  questi restano di proprietà dei plugin di gioco e non devono mai
+  essere toccati dal pannello.
+- **`app/db/models/app.py`**: aggiunti i 3 ORM class con FK esplicite
+  verso `arkmaniagest_machines` e `arkmaniagest_users`.
+- **`app/schemas/server_instance.py`** / **`instance_action.py`** /
+  **`mariadb_instance.py`**: schemi Pydantic Create/Update/Read con enum
+  per stato, role update coordination, tipi di azione.  Password mai
+  esposte in lettura (solo flag `has_*_password`).
+- **`app/core/store.py`**: helper async `get_instance_async`,
+  `get_all_instances_async`, `log_action_async`, `finalise_action_async`,
+  `list_actions_async`, `get_mariadb_async`, `get_all_mariadb_async` +
+  row-to-dict normalizers che decriptano le password e sanitizzano il
+  JSON dei database nelle istanze MariaDB.
+
+### Nessuna route aggiunta in questa fase
+
+Le API REST (`/api/v1/instances/…`, `/api/v1/mariadb/…`) arriveranno nelle
+fasi successive (bootstrap POK + CRUD istanze), dopo l'implementazione
+del layer SSH cross-platform Linux/Windows+WSL.
+
+---
+
+## [Unreleased] — Fase 0: separazione Panel/Plugin DB
+
+### Refactoring infrastruttura
+
+Primo step del lavoro su istanze Docker POK-manager: separazione del database
+del pannello (dati ArkManiaGest) dal database dei plugin di gioco (ArkMania).
+Prerequisito per ospitare le nuove tabelle `ARKM_server_instances`,
+`ARKM_instance_actions`, `ARKM_mariadb_instances` nel DB pannello senza
+contaminare lo schema plugin.
+
+#### Backend
+
+- **`.env`**: nuove variabili `PLUGIN_DB_HOST`, `PLUGIN_DB_PORT`,
+  `PLUGIN_DB_NAME`, `PLUGIN_DB_USER`, `PLUGIN_DB_PASSWORD`. Se lasciate vuote,
+  la connessione plugin ricade trasparentemente sul DSN del pannello — le
+  installazioni single-database esistenti continuano a funzionare senza
+  modifiche.
+- **`app/core/config.py`**: nuove property `plugin_database_url`,
+  `plugin_db_host/port/name/user/password`, `plugin_db_is_separate`.
+- **`app/db/session.py`**: secondo engine/session factory con `init_plugin_engine()`
+  e dependency `get_plugin_db()` (affiancata a `get_db` / alias `get_panel_db`).
+  Nuovo `close_plugin_engine()` chiamato nel lifespan.
+- **`app/core/store.py`**: nuovo context manager `_sync_plugin_db_connection()`
+  per codice sync che deve puntare al plugin DB.
+- **Route switchate su `get_plugin_db`**: `arkmania_bans`, `arkmania_rare_dinos`,
+  `arkmania_transfer_rules`, `arkmania_leaderboard`, `arkmania_config`,
+  `arkmania_decay`, `players`, `public`. Nessuna route fa JOIN cross-DB: tutti
+  i left-join erano tra tabelle plugin (ARKM_* + Players nativa ARK), quindi
+  restano atomici.
+- **Route pannello invariate** (`get_db`): `auth`, `machines`, `serverforge`,
+  `settings`.
+- **SQL Console**: endpoint `/sql/execute`, `/sql/tables`, `/sql/tables/{n}/schema`
+  ora accettano `database: "panel" | "plugin"` (default `panel`).
+- **`GET /settings/database`**: schema aggiornato a `DualDatabaseConfigRead`
+  con blocco `panel` + `plugin` + flag `plugin_is_separate` / `plugin_configured`.
+- **Nuovo endpoint**: `POST /settings/database/test-plugin` per testare il
+  plugin DB con le credenziali di .env.
+- **`/health`**: aggiunto campo `plugin_db_ready`.
+
+#### Frontend
+
+- **`DatabaseSettingsPage`**: mostra due card separate (Panel / Plugin) ognuna
+  con i suoi parametri di connessione e pulsante Test. Badge "separato" /
+  "condiviso con panel" sul card plugin + hint che spiega il fallback.
+- **`SqlConsolePage`**: toggle Panel DB / Plugin DB nella toolbar; il cambio
+  ricarica automaticamente la lista tabelle del DB selezionato e resetta
+  l'accordion degli schemi. Ogni query `Execute` include il target scelto.
+- **Tipi**: nuovo `DualDatabaseConfig` + `SqlDatabaseTarget`.
+
+#### Sviluppatori
+
+- Lo script POK (`reference/POK-ASA-Server/`) è ora clonato localmente e
+  aggiunto a `.gitignore` come base di riferimento per la Fase 3 (bootstrap
+  container ARK ASA).
+
+---
+
 ## [2.2.2] - 2026-03-26
 
 ### Tribe Name Resolution Fix

@@ -41,11 +41,17 @@ rsync -a --delete \
     --exclude='config/' \
     --exclude='tests/' \
     --exclude='Specifiche/' \
+    --exclude='reference/' \
     $TMP/ $APP/
 chown -R $USR:$USR $APP
 
 # Strip Windows CRLF from all shell scripts synced from the Windows tar archive.
 find "$APP/deploy" -name "*.sh" -exec sed -i 's/\r//g' {} \;
+
+# Append any new keys from the template to the live .env (idempotent).
+bash "$APP/deploy/migrate-env.sh" "$APP" || true
+chown "$USR:$USR" "$APP/backend/.env"
+chmod 600 "$APP/backend/.env"
 echo "  OK"
 
 # Backend
@@ -118,7 +124,7 @@ if [ $? -eq 0 ]; then
 import sys, json
 try:
     d = json.load(sys.stdin)
-    print(f'  v{d.get(\"version\",\"?\")}  DB: {d.get(\"db_ready\",\"?\")}  PID: {d.get(\"pid\",\"?\")}')
+    print(f'  v{d.get(\"version\",\"?\")}  Panel DB: {d.get(\"db_ready\",\"?\")}  Plugin DB: {d.get(\"plugin_db_ready\",\"?\")}  PID: {d.get(\"pid\",\"?\")}')
 except:
     pass
 " 2>/dev/null || true

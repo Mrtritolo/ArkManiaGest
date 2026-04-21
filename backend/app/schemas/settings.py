@@ -75,6 +75,21 @@ class DatabaseConfigRead(BaseModel):
     has_password: bool
 
 
+class DualDatabaseConfigRead(BaseModel):
+    """
+    Connection details for both the panel and plugin databases.
+
+    When ``plugin_configured`` is False the plugin database falls back to
+    the panel DSN, so ``plugin`` reflects the effective runtime values
+    rather than empty placeholders.
+    """
+
+    panel: DatabaseConfigRead
+    plugin: DatabaseConfigRead
+    plugin_is_separate: bool
+    plugin_configured: bool
+
+
 class DatabaseTestRequest(BaseModel):
     """Credentials for ad-hoc database connectivity testing."""
 

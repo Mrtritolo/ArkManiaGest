@@ -40,7 +40,8 @@ _USER_ALLOWED_COLUMNS: frozenset[str] = frozenset(
 @contextmanager
 def _sync_db_connection():
     """
-    Context manager that yields a synchronous PyMySQL connection.
+    Context manager that yields a synchronous PyMySQL connection to the
+    **panel** database.
 
     The connection is always closed in the finally block, regardless of errors.
 
@@ -54,6 +55,33 @@ def _sync_db_connection():
         user=s.DB_USER,
         password=s.DB_PASSWORD,
         database=s.DB_NAME,
+        charset="utf8mb4",
+    )
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _sync_plugin_db_connection():
+    """
+    Context manager that yields a synchronous PyMySQL connection to the
+    **plugin** database.
+
+    Falls back to the panel DSN when ``PLUGIN_DB_*`` is empty in .env, so
+    legacy single-database installations keep working.
+
+    Yields:
+        A ``pymysql.connections.Connection`` object.
+    """
+    s = server_settings
+    conn = pymysql.connect(
+        host=s.plugin_db_host,
+        port=s.plugin_db_port,
+        user=s.plugin_db_user,
+        password=s.plugin_db_password,
+        database=s.plugin_db_name,
         charset="utf8mb4",
     )
     try:
@@ -515,3 +543,297 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
         {"uid": user_id},
     )
     return result.rowcount > 0
+
+
+# =============================================
+#  Server instances (panel DB) — async
+# =============================================
+
+def _row_to_instance_dict(row: dict) -> dict:
+    """
+    Normalise an ``ARKM_server_instances`` row for API consumption.
+
+    - Decrypts admin/server password blobs and removes the ``*_enc`` columns.
+    - Exposes ``has_admin_password`` / ``has_server_password`` convenience flags.
+    - Converts datetimes to ISO-8601 strings and integer booleans to ``bool``.
+    """
+    m = dict(row)
+
+    for enc_field, plain_field, has_field in (
+        ("admin_password_enc",  "admin_password",  "has_admin_password"),
+        ("server_password_enc", "server_password", "has_server_password"),
+    ):
+        raw = m.get(enc_field)
+        m[has_field] = bool(raw)
+        if raw:
+            try:
+                m[plain_field] = decrypt_value(raw)
+            except Exception:
+                m[plain_field] = None
+        else:
+            m[plain_field] = None
+        m.pop(enc_field, None)
+
+    for field in (
+        "created_at", "updated_at",
+        "last_status_at", "last_started_at", "last_stopped_at",
+    ):
+        if m.get(field) and hasattr(m[field], "isoformat"):
+            m[field] = m[field].isoformat()
+
+    for field in (
+        "is_active", "mod_api", "battleye", "update_server", "cpu_optimization",
+    ):
+        if field in m:
+            m[field] = bool(m[field])
+
+    return m
+
+
+async def get_instance_async(db: AsyncSession, instance_id: int) -> Optional[dict]:
+    """Fetch a single ARK server instance by primary key."""
+    result = await db.execute(
+        text("SELECT * FROM ARKM_server_instances WHERE id = :iid"),
+        {"iid": instance_id},
+    )
+    row = result.mappings().fetchone()
+    return _row_to_instance_dict(dict(row)) if row else None
+
+
+async def get_all_instances_async(
+    db: AsyncSession,
+    machine_id: Optional[int] = None,
+    active_only: bool = False,
+) -> List[dict]:
+    """
+    Fetch ARK server instance records, optionally filtered.
+
+    Args:
+        db:          SQLAlchemy async session.
+        machine_id:  When set, only instances bound to that machine.
+        active_only: When True, only instances with ``is_active = 1``.
+    """
+    clauses: List[str] = []
+    params: Dict[str, Any] = {}
+    if machine_id is not None:
+        clauses.append("machine_id = :mid")
+        params["mid"] = machine_id
+    if active_only:
+        clauses.append("is_active = 1")
+
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    result = await db.execute(
+        text(
+            f"SELECT * FROM ARKM_server_instances{where} "
+            f"ORDER BY machine_id, name"
+        ),
+        params,
+    )
+    return [_row_to_instance_dict(dict(r)) for r in result.mappings().fetchall()]
+
+
+# =============================================
+#  Instance actions (panel DB) — async
+# =============================================
+
+def _row_to_action_dict(row: dict) -> dict:
+    """Normalise a single ``ARKM_instance_actions`` row for API consumption."""
+    m = dict(row)
+    for field in ("started_at", "completed_at"):
+        if m.get(field) and hasattr(m[field], "isoformat"):
+            m[field] = m[field].isoformat()
+    return m
+
+
+async def log_action_async(
+    db: AsyncSession,
+    action: str,
+    *,
+    instance_id: Optional[int] = None,
+    machine_id: Optional[int] = None,
+    instance_name: Optional[str] = None,
+    status: str = "pending",
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    meta: Optional[str] = None,
+) -> int:
+    """
+    Insert a new action log entry and return the generated id.
+
+    Callers update ``status`` / ``stdout`` / ``stderr`` / ``exit_code`` /
+    ``completed_at`` via :func:`finalise_action_async` once the action
+    terminates.
+    """
+    result = await db.execute(
+        text(
+            "INSERT INTO ARKM_instance_actions "
+            "(instance_id, machine_id, instance_name, action, status, "
+            " meta, user_id, username, started_at) "
+            "VALUES (:iid, :mid, :iname, :act, :st, :meta, :uid, :un, :now)"
+        ),
+        {
+            "iid":   instance_id,
+            "mid":   machine_id,
+            "iname": instance_name,
+            "act":   action,
+            "st":    status,
+            "meta":  meta,
+            "uid":   user_id,
+            "un":    username,
+            "now":   datetime.now(timezone.utc),
+        },
+    )
+    return result.lastrowid
+
+
+async def finalise_action_async(
+    db: AsyncSession,
+    action_id: int,
+    *,
+    status: str,
+    stdout: Optional[str] = None,
+    stderr: Optional[str] = None,
+    exit_code: Optional[int] = None,
+    duration_ms: Optional[int] = None,
+) -> None:
+    """Mark an action as completed, storing stdout/stderr and timings."""
+    await db.execute(
+        text(
+            "UPDATE ARKM_instance_actions SET "
+            "status = :st, stdout = :out, stderr = :err, "
+            "exit_code = :rc, duration_ms = :dur, completed_at = :now "
+            "WHERE id = :id"
+        ),
+        {
+            "st":  status,
+            "out": stdout,
+            "err": stderr,
+            "rc":  exit_code,
+            "dur": duration_ms,
+            "now": datetime.now(timezone.utc),
+            "id":  action_id,
+        },
+    )
+
+
+async def list_actions_async(
+    db: AsyncSession,
+    *,
+    instance_id: Optional[int] = None,
+    machine_id: Optional[int] = None,
+    action: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[dict]:
+    """List action log entries matching the given filters (most recent first)."""
+    clauses: List[str] = []
+    params: Dict[str, Any] = {"lim": limit, "off": offset}
+    if instance_id is not None:
+        clauses.append("instance_id = :iid"); params["iid"] = instance_id
+    if machine_id is not None:
+        clauses.append("machine_id = :mid");  params["mid"] = machine_id
+    if action:
+        clauses.append("action = :act");      params["act"] = action
+    if status:
+        clauses.append("status = :st");       params["st"]  = status
+
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    result = await db.execute(
+        text(
+            f"SELECT * FROM ARKM_instance_actions{where} "
+            f"ORDER BY started_at DESC, id DESC LIMIT :lim OFFSET :off"
+        ),
+        params,
+    )
+    return [_row_to_action_dict(dict(r)) for r in result.mappings().fetchall()]
+
+
+# =============================================
+#  MariaDB instances (panel DB) — async
+# =============================================
+
+def _row_to_mariadb_dict(row: dict) -> dict:
+    """
+    Normalise an ``ARKM_mariadb_instances`` row for API consumption.
+
+    - Decrypts the root password blob.
+    - Parses ``databases_json`` into a list, stripping encrypted passwords
+      (only ``has_password`` survives in the read projection).
+    - Converts datetimes and booleans.
+    """
+    m = dict(row)
+
+    raw_root = m.get("root_password_enc")
+    m["has_root_password"] = bool(raw_root)
+    if raw_root:
+        try:
+            m["root_password"] = decrypt_value(raw_root)
+        except Exception:
+            m["root_password"] = None
+    else:
+        m["root_password"] = None
+    m.pop("root_password_enc", None)
+
+    # Parse + sanitise the databases JSON blob
+    raw_dbs = m.get("databases_json") or "[]"
+    try:
+        parsed = json.loads(raw_dbs)
+    except (json.JSONDecodeError, ValueError):
+        parsed = []
+    sanitised: List[dict] = []
+    for db in parsed if isinstance(parsed, list) else []:
+        if not isinstance(db, dict):
+            continue
+        sanitised.append({
+            "name":         db.get("name", ""),
+            "user":         db.get("user", ""),
+            "has_password": bool(db.get("password_enc")),
+        })
+    m["databases"] = sanitised
+    m.pop("databases_json", None)
+
+    for field in (
+        "created_at", "updated_at", "last_status_at", "last_started_at",
+    ):
+        if m.get(field) and hasattr(m[field], "isoformat"):
+            m[field] = m[field].isoformat()
+
+    if "is_active" in m:
+        m["is_active"] = bool(m["is_active"])
+
+    return m
+
+
+async def get_mariadb_async(db: AsyncSession, instance_id: int) -> Optional[dict]:
+    """Fetch a single MariaDB instance record by primary key."""
+    result = await db.execute(
+        text("SELECT * FROM ARKM_mariadb_instances WHERE id = :iid"),
+        {"iid": instance_id},
+    )
+    row = result.mappings().fetchone()
+    return _row_to_mariadb_dict(dict(row)) if row else None
+
+
+async def get_all_mariadb_async(
+    db: AsyncSession,
+    machine_id: Optional[int] = None,
+    active_only: bool = False,
+) -> List[dict]:
+    """Fetch MariaDB instance records, optionally filtered by machine/active."""
+    clauses: List[str] = []
+    params: Dict[str, Any] = {}
+    if machine_id is not None:
+        clauses.append("machine_id = :mid"); params["mid"] = machine_id
+    if active_only:
+        clauses.append("is_active = 1")
+
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    result = await db.execute(
+        text(
+            f"SELECT * FROM ARKM_mariadb_instances{where} "
+            f"ORDER BY machine_id, name"
+        ),
+        params,
+    )
+    return [_row_to_mariadb_dict(dict(r)) for r in result.mappings().fetchall()]

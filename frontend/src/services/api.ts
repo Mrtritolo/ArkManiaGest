@@ -21,7 +21,7 @@ import axios from "axios";
 import type {
   AppSettings,
   AppSettingsUpdate,
-  DatabaseConfig,
+  DualDatabaseConfig,
   DatabaseTestRequest,
   DatabaseTestResult,
   SSHMachine,
@@ -209,10 +209,14 @@ export const settingsApi = {
 
 /** Read-only access to DB config and connectivity testing. */
 export const databaseApi = {
-  get: () => api.get<DatabaseConfig>("/settings/database"),
+  /** Returns config for both panel and plugin databases. */
+  get: () => api.get<DualDatabaseConfig>("/settings/database"),
   test: (data: DatabaseTestRequest) =>
     api.post<DatabaseTestResult>("/settings/database/test", data),
+  /** Tests the panel DB with the credentials currently in .env. */
   testCurrent: () => api.post<DatabaseTestResult>("/settings/database/test-current"),
+  /** Tests the plugin DB with the credentials currently in .env. */
+  testPlugin: () => api.post<DatabaseTestResult>("/settings/database/test-plugin"),
 };
 
 // ---------------------------------------------------------------------------
@@ -725,19 +729,21 @@ export const gameConfigApi = {
 // SQL Console (admin only)
 // ---------------------------------------------------------------------------
 
-/** Direct SQL query execution against the configured MariaDB database. */
+export type SqlDatabaseTarget = "panel" | "plugin";
+
+/** Direct SQL query execution against one of the configured MariaDB databases. */
 export const sqlConsoleApi = {
   /** Execute an arbitrary SQL query (SELECT, INSERT, UPDATE, DDL, etc.). */
-  execute: (query: string) =>
-    api.post("/sql/execute", { query }),
+  execute: (query: string, database: SqlDatabaseTarget = "panel") =>
+    api.post("/sql/execute", { query, database }),
 
-  /** List all tables in the configured database with size information. */
-  tables: () =>
-    api.get("/sql/tables"),
+  /** List all tables in the target database with size information. */
+  tables: (database: SqlDatabaseTarget = "panel") =>
+    api.get("/sql/tables", { params: { database } }),
 
   /** Return column-level metadata for a specific table. */
-  tableSchema: (tableName: string) =>
-    api.get(`/sql/tables/${tableName}/schema`),
+  tableSchema: (tableName: string, database: SqlDatabaseTarget = "panel") =>
+    api.get(`/sql/tables/${tableName}/schema`, { params: { database } }),
 };
 
 export default api;

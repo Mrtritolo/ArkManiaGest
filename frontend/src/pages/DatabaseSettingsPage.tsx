@@ -1,18 +1,27 @@
 /**
- * DatabaseSettingsPage.tsx — MariaDB connection overview.
+ * DatabaseSettingsPage.tsx — MariaDB connections overview.
  *
- * Read-only view of the database configuration sourced from the server .env
- * file, plus a connectivity test button.
+ * Read-only view of the two database configurations (panel + plugin) sourced
+ * from the server .env file, each with its own connectivity test button.
+ *
+ * When PLUGIN_DB_* is empty in .env the plugin connection transparently
+ * falls back to the panel DSN; the page flags this explicitly.
  */
 import { useState, useEffect } from 'react'
 import { Database, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { databaseApi } from '../services/api'
-import type { DatabaseConfig } from '../types'
+import type { DatabaseConfig, DualDatabaseConfig } from '../types'
+
+type TestTarget = 'panel' | 'plugin'
+type TestState = { success: boolean; message: string }
 
 export default function DatabaseSettingsPage() {
-  const [config, setConfig]       = useState<DatabaseConfig | null>(null)
-  const [testing, setTesting]     = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [config, setConfig] = useState<DualDatabaseConfig | null>(null)
+  const [testing, setTesting] = useState<TestTarget | null>(null)
+  const [testResults, setTestResults] = useState<Record<TestTarget, TestState | null>>({
+    panel: null,
+    plugin: null,
+  })
 
   useEffect(() => { loadConfig() }, [])
 
@@ -23,19 +32,24 @@ export default function DatabaseSettingsPage() {
     } catch { /* silently ignore — page shows "Loading…" */ }
   }
 
-  async function handleTestCurrent(): Promise<void> {
-    setTesting(true)
-    setTestResult(null)
+  async function handleTest(target: TestTarget): Promise<void> {
+    setTesting(target)
+    setTestResults(prev => ({ ...prev, [target]: null }))
     try {
-      const res = await databaseApi.testCurrent()
-      setTestResult(res.data)
+      const res = target === 'panel'
+        ? await databaseApi.testCurrent()
+        : await databaseApi.testPlugin()
+      setTestResults(prev => ({ ...prev, [target]: res.data }))
     } catch (err: unknown) {
-      setTestResult({
-        success: false,
-        message: err instanceof Error ? err.message : 'Test failed',
-      })
+      setTestResults(prev => ({
+        ...prev,
+        [target]: {
+          success: false,
+          message: err instanceof Error ? err.message : 'Test failed',
+        },
+      }))
     } finally {
-      setTesting(false)
+      setTesting(null)
     }
   }
 
@@ -45,68 +59,44 @@ export default function DatabaseSettingsPage() {
         <div className="page-header-text">
           <h1 className="page-title"><Database size={22} /> Database Configuration</h1>
           <p className="page-subtitle">
-            MariaDB connection — configured in the server .env file
+            MariaDB connections — configured in the server .env file
           </p>
         </div>
       </div>
 
-      <div className="card">
-        <h2 className="card-title">
-          <span className="card-title-icon">&#x25C9;</span>
-          Connection Parameters
-        </h2>
-
-        {config ? (
-          <div className="form-grid">
-            <div className="form-group form-group-3">
-              <label className="form-label">Host</label>
-              <input type="text" value={config.host} className="form-input" readOnly style={{ opacity: 0.7 }} />
-            </div>
-            <div className="form-group form-group-1">
-              <label className="form-label">Port</label>
-              <input type="text" value={config.port} className="form-input" readOnly style={{ opacity: 0.7 }} />
-            </div>
-            <div className="form-group form-group-2">
-              <label className="form-label">Database</label>
-              <input type="text" value={config.name} className="form-input" readOnly style={{ opacity: 0.7 }} />
-            </div>
-            <div className="form-group form-group-2">
-              <label className="form-label">User</label>
-              <input type="text" value={config.user} className="form-input" readOnly style={{ opacity: 0.7 }} />
-            </div>
-            <div className="form-group form-group-2">
-              <label className="form-label">Password</label>
-              <input
-                type="text"
-                value={config.has_password ? '••••••••' : '(not configured)'}
-                className="form-input"
-                readOnly
-                style={{ opacity: 0.7 }}
-              />
-            </div>
-          </div>
-        ) : (
+      {config ? (
+        <>
+          <ConnectionCard
+            title="Panel Database"
+            hint="Dati ArkManiaGest: utenti pannello, macchine SSH, impostazioni, istanze server e MariaDB, log azioni."
+            cfg={config.panel}
+            testing={testing === 'panel'}
+            testResult={testResults.panel}
+            onTest={() => handleTest('panel')}
+          />
+          <ConnectionCard
+            title="Plugin Database"
+            hint={
+              config.plugin_configured
+                ? 'Dati plugin ArkMania di gioco (ARKM_config / bans / rare_dinos / players / leaderboard / decay) e tabelle native ARK.'
+                : 'PLUGIN_DB_* non configurato in .env: il plugin condivide la connessione del Panel DB (modalita legacy).'
+            }
+            cfg={config.plugin}
+            testing={testing === 'plugin'}
+            testResult={testResults.plugin}
+            onTest={() => handleTest('plugin')}
+            badge={
+              config.plugin_is_separate
+                ? { label: 'separato', tone: 'ok' }
+                : { label: 'condiviso con panel', tone: 'warn' }
+            }
+          />
+        </>
+      ) : (
+        <div className="card">
           <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
-        )}
-
-        <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button onClick={handleTestCurrent} disabled={testing} className="btn btn-primary">
-            {testing
-              ? <><RefreshCw size={14} className="pl-spin" /> Testing…</>
-              : 'Test Connection'}
-          </button>
-          {testResult && (
-            <span style={{
-              display: 'flex', alignItems: 'center', gap: '0.3rem',
-              fontSize: '0.85rem',
-              color: testResult.success ? 'var(--success)' : 'var(--danger)',
-            }}>
-              {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
-              {testResult.message}
-            </span>
-          )}
         </div>
-      </div>
+      )}
 
       <div className="card mt-6 card-muted">
         <h2 className="card-title">
@@ -114,10 +104,98 @@ export default function DatabaseSettingsPage() {
           Configuration
         </h2>
         <p className="card-text">
-          Database credentials are stored in the <code>.env</code> file on the backend
-          server.  To change them, edit <code>.env</code> and restart the backend.
-          SSH machine passwords are stored AES-256-GCM encrypted in the database.
+          Le credenziali sono salvate nel file <code>.env</code> del backend.
+          Per cambiarle, modifica <code>.env</code> (chiavi <code>DB_*</code> per il panel,
+          <code> PLUGIN_DB_*</code> per il plugin) e riavvia il backend.
+          Le password SSH delle macchine sono AES-256-GCM nel Panel DB.
         </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Sub-component ─────────────────────────────────────────────────────────────
+
+interface ConnectionCardProps {
+  title: string
+  hint: string
+  cfg: DatabaseConfig
+  testing: boolean
+  testResult: TestState | null
+  onTest: () => void
+  badge?: { label: string; tone: 'ok' | 'warn' }
+}
+
+function ConnectionCard({ title, hint, cfg, testing, testResult, onTest, badge }: ConnectionCardProps) {
+  return (
+    <div className="card" style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 className="card-title" style={{ margin: 0 }}>
+          <span className="card-title-icon">&#x25C9;</span>
+          {title}
+        </h2>
+        {badge && (
+          <span
+            style={{
+              fontSize: '0.72rem',
+              padding: '0.15rem 0.55rem',
+              borderRadius: '999px',
+              background: badge.tone === 'ok' ? 'var(--success-bg, #113922)' : 'var(--warning-bg, #3a2e13)',
+              color: badge.tone === 'ok' ? 'var(--success)' : 'var(--warning)',
+              border: '1px solid currentColor',
+            }}
+          >
+            {badge.label}
+          </span>
+        )}
+      </div>
+      <p className="card-text" style={{ marginTop: '0.25rem', fontSize: '0.82rem' }}>{hint}</p>
+
+      <div className="form-grid" style={{ marginTop: '0.75rem' }}>
+        <div className="form-group form-group-3">
+          <label className="form-label">Host</label>
+          <input type="text" value={cfg.host} className="form-input" readOnly style={{ opacity: 0.7 }} />
+        </div>
+        <div className="form-group form-group-1">
+          <label className="form-label">Port</label>
+          <input type="text" value={cfg.port} className="form-input" readOnly style={{ opacity: 0.7 }} />
+        </div>
+        <div className="form-group form-group-2">
+          <label className="form-label">Database</label>
+          <input type="text" value={cfg.name} className="form-input" readOnly style={{ opacity: 0.7 }} />
+        </div>
+        <div className="form-group form-group-2">
+          <label className="form-label">User</label>
+          <input type="text" value={cfg.user} className="form-input" readOnly style={{ opacity: 0.7 }} />
+        </div>
+        <div className="form-group form-group-2">
+          <label className="form-label">Password</label>
+          <input
+            type="text"
+            value={cfg.has_password ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : '(not configured)'}
+            className="form-input"
+            readOnly
+            style={{ opacity: 0.7 }}
+          />
+        </div>
+      </div>
+
+      <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <button onClick={onTest} disabled={testing} className="btn btn-primary">
+          {testing
+            ? <><RefreshCw size={14} className="pl-spin" /> Testing&hellip;</>
+            : 'Test Connection'}
+        </button>
+        {testResult && (
+          <span style={{
+            display: 'flex', alignItems: 'center', gap: '0.3rem',
+            fontSize: '0.85rem',
+            color: testResult.success ? 'var(--success)' : 'var(--danger)',
+          }}>
+            {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+            {testResult.message}
+          </span>
+        )}
       </div>
     </div>
   )

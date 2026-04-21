@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update, text
 
-from app.db.session import get_db
+from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer, PermissionGroup, TribePermission
 from app.core.store import get_machine_sync, get_plugin_config_sync
 from app.ssh.manager import SSHManager
@@ -43,7 +43,7 @@ router = APIRouter()
 # These must be declared before /{player_id} to avoid route interception.
 
 @router.get("/permissions/groups", response_model=List[PermissionGroupRead])
-async def list_permission_groups(db: AsyncSession = Depends(get_db)):
+async def list_permission_groups(db: AsyncSession = Depends(get_plugin_db)):
     """Return all permission groups sorted by name."""
     result = await db.execute(
         select(PermissionGroup).order_by(PermissionGroup.GroupName)
@@ -63,7 +63,7 @@ async def list_permission_groups(db: AsyncSession = Depends(get_db)):
 async def update_permission_group(
     group_id: int,
     data: PermissionGroupUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Update the permissions string for a specific group."""
     result = await db.execute(
@@ -80,7 +80,7 @@ async def update_permission_group(
 # ── Aggregate statistics ──────────────────────────────────────────────────────
 
 @router.get("/stats", response_model=PlayersStats)
-async def players_stats(db: AsyncSession = Depends(get_db)):
+async def players_stats(db: AsyncSession = Depends(get_plugin_db)):
     """
     Return aggregate statistics about registered players and the shop economy.
 
@@ -116,7 +116,7 @@ async def list_players(
     group: Optional[str] = Query(None, description="Filter by permission group"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Return a paginated list of players with optional search and group filters.
@@ -566,7 +566,7 @@ async def copy_character(data: CopyCharacterRequest):
 # ── Tribe permissions ─────────────────────────────────────────────────────────
 
 @router.get("/tribes", response_model=List[TribePermissionRead])
-async def list_tribe_permissions(db: AsyncSession = Depends(get_db)):
+async def list_tribe_permissions(db: AsyncSession = Depends(get_plugin_db)):
     """Return all tribe permission entries ordered by tribe ID."""
     result = await db.execute(
         select(TribePermission).order_by(TribePermission.TribeId)
@@ -587,7 +587,7 @@ async def list_tribe_permissions(db: AsyncSession = Depends(get_db)):
 # IMPORTANT: this parameterised route must remain AFTER all named sub-paths.
 
 @router.get("/{player_id}", response_model=PlayerFull)
-async def get_player(player_id: int, db: AsyncSession = Depends(get_db)):
+async def get_player(player_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """
     Return the full profile of a single player by database ID.
 
@@ -668,7 +668,7 @@ async def get_player(player_id: int, db: AsyncSession = Depends(get_db)):
 async def update_player(
     player_id: int,
     data: PlayerUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """Update name or permission strings for a player."""
     result = await db.execute(select(Player).where(Player.Id == player_id))
@@ -691,7 +691,7 @@ async def update_player(
 async def set_player_points(
     player_id: int,
     data: PlayerPointsUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Set a player's shop points to an absolute value.
@@ -719,7 +719,7 @@ async def set_player_points(
 async def add_player_points(
     player_id: int,
     data: PlayerPointsAdd,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Add or subtract shop points from a player (relative delta).
@@ -755,7 +755,7 @@ async def add_player_points(
 async def sync_player_names_from_profiles(
     machine_id: Optional[int] = Query(None, description="Restrict sync to a single machine"),
     container_name: Optional[str] = Query(None, description="Restrict sync to a single container"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Scan .arkprofile binary files on remote servers, extract player names,
