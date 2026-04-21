@@ -224,20 +224,31 @@ if ($ssh_key_path) {
 }
 
 function Invoke-SSH([string[]]$remote_cmd) {
-    # IMPORTANT: redirect ssh output to the host stream so the function's
-    # pipeline doesn't mix stdout (banner lines, remote command output)
-    # with the integer exit code.  Without Out-Host, PowerShell would
-    # return ["stdout lines...", $LASTEXITCODE] as a merged array.
+    # IMPORTANT: route stdout through Out-Host so the function's pipeline
+    # does NOT mix command output with the integer exit code.  We do
+    # *not* redirect stderr with `2>&1` here -- with the script's global
+    # `$ErrorActionPreference = "Stop"`, every stderr line from the
+    # remote command would become a terminating PowerShell error, which
+    # blows up on benign messages like "Processing triggers for
+    # mariadb-server".  Stderr from ssh.exe goes straight to the console
+    # instead, where the user sees it in real time.
     $ssh_args = $ssh_common_args + @("${ssh_user}@${target_host}") + $remote_cmd
-    & ssh.exe @ssh_args 2>&1 | Out-Host
+    & ssh.exe @ssh_args | Out-Host
     return $LASTEXITCODE
 }
 
 function Invoke-SSH-Quiet([string[]]$remote_cmd) {
-    # Like Invoke-SSH but discards ssh output (used for connectivity probes).
+    # Like Invoke-SSH but discards stdout (used for connectivity probes).
+    # Stderr is suppressed too since we do not care about probe chatter.
     $ssh_args = $ssh_common_args + @("${ssh_user}@${target_host}") + $remote_cmd
-    & ssh.exe @ssh_args 2>&1 | Out-Null
-    return $LASTEXITCODE
+    $prev_pref = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & ssh.exe @ssh_args 2>&1 | Out-Null
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prev_pref
+    }
 }
 
 $test_rc = Invoke-SSH-Quiet @("echo", "ArkManiaGest-SSH-OK")
@@ -372,9 +383,10 @@ $scp_common = @(
 if ($ssh_key_path) { $scp_common += @("-i", $ssh_key_path) }
 
 function Invoke-SCP([string]$src, [string]$dst) {
-    # Same exit-code-only discipline as Invoke-SSH.
+    # Same exit-code-only discipline as Invoke-SSH (no `2>&1` merge to
+    # avoid the ErrorActionPreference="Stop" terminating on stderr).
     $remote = "${ssh_user}@${target_host}:${dst}"
-    & scp.exe @scp_common $src $remote 2>&1 | Out-Host
+    & scp.exe @scp_common $src $remote | Out-Host
     return $LASTEXITCODE
 }
 
