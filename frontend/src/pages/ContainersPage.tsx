@@ -3,10 +3,11 @@
  * Discovers plugin paths, config files, and save directories for each container.
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   HardDrive, Search, RefreshCw, Server, FolderOpen, FileJson, Map, Users,
   Puzzle, Loader2, CheckCircle, AlertCircle, X, ChevronDown, ChevronUp,
-  Eye, Upload, Download, Folder, File
+  Eye, Folder, File
 } from 'lucide-react'
 import { machinesApi, containersApi } from '../services/api'
 
@@ -20,6 +21,7 @@ interface ContainerInfo {
 }
 
 export default function ContainersPage() {
+  const { t } = useTranslation()
   const [machines, setMachines] = useState<MachineItem[]>([])
   const [containers, setContainers] = useState<ContainerInfo[]>([])
   const [lastScan, setLastScan] = useState<string | null>(null)
@@ -41,7 +43,7 @@ export default function ContainersPage() {
   const [basePath, setBasePath] = useState('/gameadmin/containers')
 
   useEffect(() => { loadData() }, [])
-  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 5000); return () => clearTimeout(t) } }, [success])
+  useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 5000); return () => clearTimeout(timer) } }, [success])
 
   async function loadData() {
     setLoading(true)
@@ -62,13 +64,13 @@ export default function ContainersPage() {
     setScanning(machineId); setError('')
     try {
       const res = await containersApi.scanMachine(machineId, basePath)
-      setSuccess(`Scansione completata: ${res.data.containers_found} container trovati su "${res.data.machine}"`)
+      setSuccess(t('containersPage.messages.scanComplete', { count: res.data.containers_found, machine: res.data.machine }))
       // Reload
       const contRes = await containersApi.getAllContainers()
       setContainers(contRes.data.containers || [])
       setLastScan(contRes.data.last_scan)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Errore scansione SSH')
+      setError(err.response?.data?.detail || t('containersPage.messages.errorScan'))
     } finally { setScanning(null) }
   }
 
@@ -91,7 +93,7 @@ export default function ContainersPage() {
         setFileContent(res.data.content)
       }
     } catch (err: any) {
-      setFileContent(`Errore: ${err.response?.data?.detail || err.message}`)
+      setFileContent(t('containersPage.messages.errorPrefix', { detail: err.response?.data?.detail || err.message }))
     } finally { setFileLoading(false) }
   }
 
@@ -102,7 +104,7 @@ export default function ContainersPage() {
       setBrowseEntries(res.data.entries)
       setBrowsePath(res.data.path)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Errore navigazione')
+      setError(err.response?.data?.detail || t('containersPage.messages.errorBrowse'))
       setBrowsing(null)
     }
   }
@@ -122,20 +124,11 @@ export default function ContainersPage() {
     handleBrowse(browsing.machineId, browsing.container, parts.join('/'))
   }
 
-  function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString('it-IT') : 'Mai' }
+  function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString(undefined) : t('containersPage.neverScanned') }
 
-  const pathLabels: Record<string, string> = {
-    shooter_game: 'ShooterGame',
-    api_root: 'API Root',
-    arkapi_plugins: 'Plugins',
-    game_ini: 'Game.ini',
-    gameusersettings_ini: 'GameUserSettings.ini',
-    saved_arks: 'SavedArks',
-    logs: 'Logs',
-    arkshop_config: 'ArkShop Config',
-    permissions_config: 'Permissions Config',
-    lethaldecay_config: 'LethalDecay Config',
-    lethallogin_config: 'LethalLogin Config',
+  function pathLabel(key: string): string {
+    const translated = t(`containersPage.pathLabels.${key}`, { defaultValue: '' })
+    return translated || key
   }
 
   return (
@@ -143,17 +136,17 @@ export default function ContainersPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <HardDrive size={24} style={{ color: 'var(--accent)' }} /> Container di Gioco
+            <HardDrive size={24} style={{ color: 'var(--accent)' }} /> {t('containersPage.heading')}
           </h1>
           <p className="page-subtitle">
-            {containers.length} container scoperti
+            {t('containersPage.subtitleDiscovered', { count: containers.length })}
             {lastScan && <span style={{ margin: '0 0.4rem', opacity: 0.4 }}>&middot;</span>}
-            {lastScan && `Ultima scansione: ${fmtDate(lastScan)}`}
+            {lastScan && t('containersPage.subtitleLastScan', { date: fmtDate(lastScan) })}
           </p>
         </div>
         <div className="page-header-actions">
           <button onClick={handleScanAll} disabled={scanning !== null} className="btn btn-primary btn-sm">
-            {scanning !== null ? <><Loader2 size={14} className="pl-spin" /> Scansione...</> : <><Search size={14} /> Scansiona Tutte</>}
+            {scanning !== null ? <><Loader2 size={14} className="pl-spin" /> {t('containersPage.scanning')}</> : <><Search size={14} /> {t('containersPage.scanAll')}</>}
           </button>
         </div>
       </div>
@@ -164,7 +157,7 @@ export default function ContainersPage() {
       {/* Macchine con pulsante scan */}
       {/* Base path config */}
       <div className="ct-basepath-row">
-        <label>Base Path Container:</label>
+        <label>{t('containersPage.basePathLabel')}</label>
         <input type="text" value={basePath} onChange={e => setBasePath(e.target.value)}
           className="ct-basepath-input" />
       </div>
@@ -179,26 +172,25 @@ export default function ContainersPage() {
             </div>
             <button onClick={() => handleScan(m.id)} disabled={scanning === m.id} className="btn btn-sm btn-secondary">
               {scanning === m.id ? <Loader2 size={12} className="pl-spin" /> : <Search size={12} />}
-              Scansiona
+              {t('containersPage.scanButton')}
             </button>
           </div>
         ))}
         {machines.filter(m => m.is_active).length === 0 && (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nessuna macchina SSH attiva. Configura le macchine nelle impostazioni.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('containersPage.noActiveMachines')}</p>
         )}
       </div>
 
       {/* Container list */}
       {loading ? (
-        <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> Caricamento...</div>
+        <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> {t('containersPage.loading')}</div>
       ) : containers.length === 0 ? (
-        <div className="pl-empty"><HardDrive size={32} /><p>Nessun container scoperto. Avvia una scansione.</p></div>
+        <div className="pl-empty"><HardDrive size={32} /><p>{t('containersPage.empty')}</p></div>
       ) : (
         <div className="ct-list">
-          {containers.map((c, i) => {
+          {containers.map((c) => {
             const key = `${c.machine_id}-${c.name}`
             const isExpanded = expanded === key
-            const pluginPaths = Object.entries(c.paths).filter(([k]) => k.includes('config') || k.startsWith('plugin_'))
             return (
               <div key={key} className="ct-item">
                 <div className="ct-row" onClick={() => setExpanded(isExpanded ? null : key)}>
@@ -210,9 +202,9 @@ export default function ContainersPage() {
                     </div>
                   </div>
                   <span className="ct-machine-tag"><Server size={10} /> {c.machine_name || c.hostname}</span>
-                  <span className="ct-plugins-count"><Puzzle size={11} /> {c.plugins.length} plugin</span>
-                  <span className="ct-paths-count"><FolderOpen size={11} /> {Object.keys(c.paths).length} percorsi</span>
-                  {(c as any).profile_count > 0 && <span className="ct-paths-count"><Users size={11} /> {(c as any).profile_count} profili</span>}
+                  <span className="ct-plugins-count"><Puzzle size={11} /> {t('containersPage.pluginCount', { count: c.plugins.length })}</span>
+                  <span className="ct-paths-count"><FolderOpen size={11} /> {t('containersPage.pathsCount', { count: Object.keys(c.paths).length })}</span>
+                  {(c as any).profile_count > 0 && <span className="ct-paths-count"><Users size={11} /> {t('containersPage.profileCount', { count: (c as any).profile_count })}</span>}
                   {isExpanded ? <ChevronUp size={14} className="ct-chevron" /> : <ChevronDown size={14} className="ct-chevron" />}
                 </div>
 
@@ -221,18 +213,18 @@ export default function ContainersPage() {
                     {/* Info base */}
                     <div className="ct-detail-section">
                       <div className="ct-detail-meta">
-                        <span><strong>Path:</strong> {c.path}</span>
-                        {c.server_root && <span><strong>Server Root:</strong> {c.server_root}</span>}
-                        {(c as any).server_name && <span><strong>Nome Server:</strong> {(c as any).server_name}</span>}
-                        {c.map_name && <span><strong>Mappa:</strong> {c.map_name}</span>}
-                        <span><strong>Processo:</strong> {c.process_running ? '🟢 Attivo' : '🔴 Fermo'}</span>
+                        <span><strong>{t('containersPage.detail.pathLabel')}</strong> {c.path}</span>
+                        {c.server_root && <span><strong>{t('containersPage.detail.serverRootLabel')}</strong> {c.server_root}</span>}
+                        {(c as any).server_name && <span><strong>{t('containersPage.detail.serverNameLabel')}</strong> {(c as any).server_name}</span>}
+                        {c.map_name && <span><strong>{t('containersPage.detail.mapLabel')}</strong> {c.map_name}</span>}
+                        <span><strong>{t('containersPage.detail.processLabel')}</strong> {c.process_running ? t('containersPage.detail.processRunning') : t('containersPage.detail.processStopped')}</span>
                       </div>
                     </div>
 
                     {/* Plugin installati */}
                     {c.plugins.length > 0 && (
                       <div className="ct-detail-section">
-                        <span className="ct-section-label"><Puzzle size={13} /> Plugin installati</span>
+                        <span className="ct-section-label"><Puzzle size={13} /> {t('containersPage.detail.installedPlugins')}</span>
                         <div className="ct-plugins-list">
                           {c.plugins.map(p => <span key={p} className="pl-chip">{p}</span>)}
                         </div>
@@ -241,15 +233,15 @@ export default function ContainersPage() {
 
                     {/* Percorsi struttura */}
                     <div className="ct-detail-section">
-                      <span className="ct-section-label"><FolderOpen size={13} /> Struttura Server</span>
+                      <span className="ct-section-label"><FolderOpen size={13} /> {t('containersPage.detail.serverStructure')}</span>
                       <div className="ct-paths-list">
                         {Object.entries(c.paths).filter(([k]) => !k.startsWith('plugin_')).map(([key, path]) => (
                           <div key={key} className="ct-path-row">
-                            <span className="ct-path-key">{pathLabels[key] || key}</span>
+                            <span className="ct-path-key">{pathLabel(key)}</span>
                             <span className="ct-path-val">{path}</span>
                             {(key.includes('ini')) && c.machine_id && (
-                              <button onClick={e => { e.stopPropagation(); handleViewFile(c.machine_id!, c.name, key, pathLabels[key] || key) }}
-                                className="btn btn-sm btn-ghost" title="Visualizza"><Eye size={12} /></button>
+                              <button onClick={e => { e.stopPropagation(); handleViewFile(c.machine_id!, c.name, key, pathLabel(key)) }}
+                                className="btn btn-sm btn-ghost" title={t('containersPage.tooltip.view')}><Eye size={12} /></button>
                             )}
                           </div>
                         ))}
@@ -259,7 +251,7 @@ export default function ContainersPage() {
                     {/* Config plugin */}
                     {c.config_files?.length > 0 && (
                       <div className="ct-detail-section">
-                        <span className="ct-section-label"><FileJson size={13} /> Configurazioni Plugin</span>
+                        <span className="ct-section-label"><FileJson size={13} /> {t('containersPage.detail.pluginConfigs')}</span>
                         <div className="ct-paths-list">
                           {c.config_files.map((cf, i) => (
                             <div key={i} className="ct-path-row">
@@ -267,7 +259,7 @@ export default function ContainersPage() {
                               <span className="ct-path-val">{cf.path}</span>
                               {c.machine_id && (
                                 <button onClick={e => { e.stopPropagation(); handleViewFile(c.machine_id!, c.name, cf.key, `${cf.plugin}/${cf.file}`) }}
-                                  className="btn btn-sm btn-ghost" title="Visualizza"><Eye size={12} /></button>
+                                  className="btn btn-sm btn-ghost" title={t('containersPage.tooltip.view')}><Eye size={12} /></button>
                               )}
                             </div>
                           ))}
@@ -278,7 +270,7 @@ export default function ContainersPage() {
                     {/* Save files */}
                     {c.save_files.length > 0 && (
                       <div className="ct-detail-section">
-                        <span className="ct-section-label"><FileJson size={13} /> File di salvataggio</span>
+                        <span className="ct-section-label"><FileJson size={13} /> {t('containersPage.detail.saveFiles')}</span>
                         <div className="ct-save-files">
                           {c.save_files.map((f, i) => <span key={i} className="ct-save-file">{f.split('/').pop()}</span>)}
                         </div>
@@ -290,10 +282,10 @@ export default function ContainersPage() {
                       {c.machine_id && (
                         <>
                           <button onClick={() => handleBrowse(c.machine_id!, c.name)} className="btn btn-sm btn-secondary">
-                            <Folder size={12} /> Esplora File
+                            <Folder size={12} /> {t('containersPage.action.browse')}
                           </button>
-                          <button onClick={() => { containersApi.rescanContainer(c.machine_id!, c.name).then(() => { setSuccess(`${c.name} riscansionato`); loadData() }) }}
-                            className="btn btn-sm btn-ghost"><RefreshCw size={12} /> Riscansiona</button>
+                          <button onClick={() => { containersApi.rescanContainer(c.machine_id!, c.name).then(() => { setSuccess(t('containersPage.messages.rescanned', { name: c.name })); loadData() }) }}
+                            className="btn btn-sm btn-ghost"><RefreshCw size={12} /> {t('containersPage.action.rescan')}</button>
                         </>
                       )}
                     </div>
@@ -315,7 +307,7 @@ export default function ContainersPage() {
             </div>
             <div className="as-dialog-body">
               {fileLoading ? (
-                <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> Caricamento...</div>
+                <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> {t('containersPage.loading')}</div>
               ) : (
                 <pre className="ct-file-content">{fileContent}</pre>
               )}
@@ -335,7 +327,7 @@ export default function ContainersPage() {
             <div className="as-dialog-body">
               <div className="ct-browse-path">
                 <span>{browsePath}</span>
-                {browsing.subPath && <button onClick={navigateUp} className="btn btn-sm btn-ghost">&larr; Su</button>}
+                {browsing.subPath && <button onClick={navigateUp} className="btn btn-sm btn-ghost">{t('containersPage.fileBrowser.upButton')}</button>}
               </div>
               <div className="ct-browse-list">
                 {browseEntries.map((e, i) => (

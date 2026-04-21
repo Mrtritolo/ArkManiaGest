@@ -1282,6 +1282,326 @@
       "unknownError": "Unknown error"
     }
   },
+  "containersPage": {
+    "heading": "Game Containers",
+    "subtitleDiscovered": "{{count}} containers discovered",
+    "subtitleLastScan": "Last scan: {{date}}",
+    "neverScanned": "Never",
+    "scanAll": "Scan All",
+    "scanning": "Scanning…",
+    "scanButton": "Scan",
+    "basePathLabel": "Container Base Path:",
+    "noActiveMachines": "No active SSH machine. Configure machines in the settings.",
+    "loading": "Loading…",
+    "empty": "No containers discovered. Start a scan.",
+    "pluginCount": "{{count}} plugins",
+    "pathsCount": "{{count}} paths",
+    "profileCount": "{{count}} profiles",
+    "detail": {
+      "pathLabel": "Path:",
+      "serverRootLabel": "Server Root:",
+      "serverNameLabel": "Server Name:",
+      "mapLabel": "Map:",
+      "processLabel": "Process:",
+      "processRunning": "🟢 Running",
+      "processStopped": "🔴 Stopped",
+      "installedPlugins": "Installed plugins",
+      "serverStructure": "Server Structure",
+      "pluginConfigs": "Plugin Configurations",
+      "saveFiles": "Save files"
+    },
+    "tooltip": {
+      "view": "View"
+    },
+    "action": {
+      "browse": "Browse Files",
+      "rescan": "Rescan"
+    },
+    "fileBrowser": {
+      "upButton": "← Up"
+    },
+    "messages": {
+      "scanComplete": "Scan complete: {{count}} containers found on \"{{machine}}\"",
+      "rescanned": "{{name}} rescanned",
+      "errorScan": "SSH scan error",
+      "errorBrowse": "Navigation error",
+      "errorPrefix": "Error: {{detail}}"
+    },
+    "pathLabels": {
+      "shooter_game": "ShooterGame",
+      "api_root": "API Root",
+      "arkapi_plugins": "Plugins",
+      "game_ini": "Game.ini",
+      "gameusersettings_ini": "GameUserSettings.ini",
+      "saved_arks": "SavedArks",
+      "logs": "Logs",
+      "arkshop_config": "ArkShop Config",
+      "permissions_config": "Permissions Config",
+      "lethaldecay_config": "LethalDecay Config",
+      "lethallogin_config": "LethalLogin Config"
+    }
+  },
+  "gameConfig": {
+    "loadingContainers": "Loading containers...",
+    "noContainersTitle": "No containers with INI files",
+    "noContainersHint": "Scan your containers from the Containers page first.",
+    "loadingConfig": "Loading configuration...",
+    "topbarTitle": "Server Config",
+    "selectPlaceholder": "Select container...",
+    "reloadTooltip": "Reload from server",
+    "discard": "Discard",
+    "saving": "Saving...",
+    "save": "Save",
+    "unsavedConfirm": "You have unsaved changes. Continue?",
+    "unsavedSingle": "Unsaved changes",
+    "unsavedMulti": "{{count}} unsaved changes",
+    "navSettings": "Settings",
+    "navOverrides": "Overrides",
+    "navAdvanced": "Advanced",
+    "tabs": {
+      "stacks": "Stack Sizes",
+      "supply_crates": "Supply Crates",
+      "crafting": "Crafting Costs",
+      "npc_replace": "NPC Replacements",
+      "spawn_entries": "Spawn Entries",
+      "mods": "Mod Settings",
+      "uncategorized": "Extra Keys",
+      "raw": "Raw Editor"
+    },
+    "onOffToggles": "On/Off Toggles",
+    "defaultPrefix": "default: {{value}}",
+    "defaultTitle": "Default: {{value}}",
+    "stacks": {
+      "count": "{{count}} stack overrides",
+      "searchPlaceholder": "Search class...",
+      "add": "Add",
+      "colItemClass": "Item Class",
+      "colMaxQty": "Max Qty",
+      "colIgnoreMulti": "Ignore Multi",
+      "empty": "No stack overrides",
+      "emptyMatching": "No stack overrides matching search"
+    },
+    "crafting": {
+      "count": "{{count}} crafting cost overrides",
+      "add": "Add",
+      "itemClassPlaceholder": "ItemClassString (e.g. PrimalItemAmmo_ArrowTranq_C)",
+      "requiredResources": "Required Resources:",
+      "resourcePlaceholder": "ResourceItemTypeString",
+      "addResource": "Add resource",
+      "empty": "No crafting cost overrides"
+    },
+    "npc": {
+      "count": "{{count}} NPC replacements",
+      "add": "Add",
+      "colFrom": "From Class",
+      "colTo": "To Class",
+      "empty": "No NPC replacements configured"
+    },
+    "supply": {
+      "count": "{{count}} supply crate overrides",
+      "add": "Add",
+      "warn": "Supply crates have a complex structure. Edit the raw entry for each crate below.",
+      "newLabel": "New",
+      "metaCounts": "{{sets}} sets, {{entries}} entries",
+      "empty": "No supply crate overrides"
+    },
+    "spawn": {
+      "warn": "Spawn entries have a complex structure. Each row is a complete raw entry.",
+      "addDesc": "Add creatures to spawn zones",
+      "overrideDesc": "Override creatures in spawn zones",
+      "subtractDesc": "Remove creatures from spawn zones",
+      "count": "{{count}} entries",
+      "entryTitle": "Entry #{{num}}"
+    },
+    "mods": {
+      "empty": "No mod sections detected"
+    },
+    "uncategorized": {
+      "empty": "All settings are categorised — nothing extra here.",
+      "gusLabel": "GUS [{{section}}]",
+      "gameLabel": "Game.ini [{{section}}]"
+    },
+    "raw": {
+      "warn": "Advanced editor — direct INI file editing. Use with caution.",
+      "gusLabel": "GameUserSettings.ini",
+      "gameLabel": "Game.ini",
+      "chars": "{{count}} chars"
+    },
+    "messages": {
+      "loadFailed": "Failed to load containers",
+      "loadConfigFailed": "Failed to load config: {{detail}}",
+      "saveFailed": "Save failed: {{detail}}",
+      "saved": "Configuration saved with backup!",
+      "unknownError": "Unknown error"
+    }
+  },
+  "serversPage": {
+    "heading": "Server Manager",
+    "subtitle": "{{total}} servers registered — {{online}} online — {{players}} players",
+    "newServer": "New Server",
+    "refresh": "Refresh",
+    "stats": {
+      "online": "Online",
+      "offline": "Offline",
+      "players": "Players",
+      "total": "Total"
+    },
+    "form": {
+      "title": "New Server",
+      "serverKey": "Server Key",
+      "name": "Name",
+      "map": "Map",
+      "gameMode": "Game Mode",
+      "type": "Type",
+      "cluster": "Cluster",
+      "maxPlayers": "Max Players",
+      "create": "Create",
+      "cancel": "Cancel",
+      "keyPlaceholder": "e.g. Ragnarok_abc123",
+      "namePlaceholder": "e.g. Ragnarok",
+      "mapPlaceholder": "e.g. Ragnarok_WP"
+    },
+    "table": {
+      "name": "Name",
+      "map": "Map",
+      "mode": "Mode",
+      "type": "Type",
+      "cluster": "Cluster",
+      "max": "Max",
+      "online": "Online"
+    },
+    "loading": "Loading…",
+    "empty": "No server registered",
+    "tooltip": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "messages": {
+      "missingRequired": "Server key, name and map are required.",
+      "created": "Server created",
+      "updated": "Server updated",
+      "deleted": "Server deleted"
+    },
+    "confirmDelete": "Delete server \"{{name}}\"?\nAll configuration overrides will be removed as well."
+  },
+  "serverForge": {
+    "heading": "ServerForge",
+    "tokenSubtitle": "Configure the API token to connect to ServerForge",
+    "tokenCardTitle": "API Token",
+    "tokenCardBody": "Enter the Bearer Token from your ServerForge account. You can find it in the API section of the ServerForge dashboard. The token is stored encrypted in the local vault.",
+    "tokenLabel": "Bearer Token",
+    "tokenPlaceholder": "Paste your token here...",
+    "tokenSaving": "Saving...",
+    "tokenSaveTest": "Save and Test Token",
+    "loading": "Loading…",
+    "loadingServers": "Loading servers…",
+    "subtitle": "{{total}} servers · {{running}} running · {{stopped}} stopped",
+    "updatesBadge": "{{count}} updates",
+    "autoRefresh": "Auto-refresh 30s",
+    "refreshLoading": "Loading…",
+    "refresh": "Refresh",
+    "tabs": {
+      "containers": "Game Servers ({{count}})",
+      "machines": "Machines ({{count}})",
+      "clusters": "Clusters ({{count}})"
+    },
+    "empty": {
+      "noServers": "No servers found"
+    },
+    "machine": {
+      "locationCount": "{{location}} · {{count}} containers",
+      "ipLabel": "IP:",
+      "osLabel": "OS: {{os}}",
+      "locationLabel": "Location: {{location}}",
+      "countsLine": "{{containers}} containers, {{clusters}} clusters",
+      "fallback": "Machine #{{id}}"
+    },
+    "container": {
+      "mapFallback": "N/A",
+      "portLabel": "Port",
+      "rconLabel": "RCON",
+      "uptimeLabel": "Uptime",
+      "playersLabel": "Players",
+      "updateAvailable": "Update available",
+      "clusterLine": "Cluster: {{name}}",
+      "start": "▶ Start",
+      "restart": "↻ Restart",
+      "stop": "■ Stop",
+      "pending": "..."
+    },
+    "cluster": {
+      "serverCount": "{{count}} servers",
+      "syncActive": "Sync active",
+      "hostLabel": "Host: {{host}}"
+    },
+    "editTokenBtn": "Edit ServerForge Token",
+    "gauge": {
+      "placeholder": "--"
+    },
+    "confirm": {
+      "start": "Start server \"{{label}}\"?",
+      "stop": "Stop server \"{{label}}\"?",
+      "restart": "Restart server \"{{label}}\"?"
+    },
+    "action": {
+      "startSent": "Start sent for \"{{label}}\"",
+      "stopSent": "Stop sent for \"{{label}}\"",
+      "restartSent": "Restart sent for \"{{label}}\""
+    },
+    "errorPrefix": "Error: {{detail}}",
+    "ipFallback": "N/A"
+  },
+  "sqlConsole": {
+    "heading": "SQL Console",
+    "subtitle": "Execute queries directly against the MariaDB database",
+    "db": {
+      "panel": "Panel DB",
+      "plugin": "Plugin DB",
+      "panelTitle": "Query the ArkManiaGest panel database",
+      "pluginTitle": "Query the ArkMania plugin database"
+    },
+    "toggle": {
+      "tables": "Tables",
+      "tablesTitle": "Toggle table browser",
+      "history": "History ({{count}})",
+      "historyTitle": "Toggle query history"
+    },
+    "editor": {
+      "title": "Query Editor",
+      "shortcut": "Ctrl + Enter to execute",
+      "placeholder": "Type your SQL query here...",
+      "executing": "Executing…",
+      "execute": "Execute",
+      "clear": "Clear",
+      "clearTitle": "Clear editor and results"
+    },
+    "results": {
+      "title": "Results",
+      "summarySuccess": "{{message}} — {{time}} ms",
+      "summaryFailure": "Query failed",
+      "dmlSuccess": "{{message}} — {{time}} ms"
+    },
+    "browser": {
+      "title": "Tables",
+      "loading": "Loading…",
+      "selectTitle": "Double-click to SELECT from {{name}}",
+      "colTitle": "{{type}}{{suffix}}. Click to insert.",
+      "pkSuffix": " — PRIMARY KEY",
+      "autoIncSuffix": " AUTO_INCREMENT"
+    },
+    "history": {
+      "title": "History",
+      "clearTitle": "Clear history",
+      "empty": "No queries yet.",
+      "loadTitle": "Click to load this query into the editor",
+      "ms": "{{n}} ms"
+    },
+    "errors": {
+      "executeFailed": "Query execution failed."
+    }
+  },
   "database": {
     "title": "Database Configuration",
     "subtitle": "MariaDB connections — configured in the server .env file",

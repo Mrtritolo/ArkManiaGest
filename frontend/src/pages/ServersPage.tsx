@@ -6,6 +6,7 @@
  * design patterns as TransferRulesPage and BansPage.
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
 import {
   Server, Plus, Trash2, Edit2, Save, X, AlertCircle,
@@ -32,6 +33,7 @@ const EMPTY_NEW: ServerItem = {
 }
 
 export default function ServersPage() {
+  const { t } = useTranslation()
   const [servers, setServers] = useState<ServerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -56,13 +58,13 @@ export default function ServersPage() {
 
   useEffect(() => { loadData() }, [])
   useEffect(() => {
-    if (success) { const t = setTimeout(() => setSuccess(''), 3000); return () => clearTimeout(t) }
+    if (success) { const timer = setTimeout(() => setSuccess(''), 3000); return () => clearTimeout(timer) }
   }, [success])
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
   async function handleCreate() {
     if (!newServer.server_key || !newServer.display_name || !newServer.map_name) {
-      setError('Server key, nome e mappa sono obbligatori.')
+      setError(t('serversPage.messages.missingRequired'))
       return
     }
     try {
@@ -77,7 +79,7 @@ export default function ServersPage() {
       })
       setShowAdd(false)
       setNewServer({ ...EMPTY_NEW })
-      setSuccess('Server creato')
+      setSuccess(t('serversPage.messages.created'))
       await loadData()
     } catch (e: any) {
       setError(e.response?.data?.detail || e.message)
@@ -101,7 +103,7 @@ export default function ServersPage() {
     try {
       await arkmaniaApi.updateServer(editingKey, editData)
       setEditingKey(null)
-      setSuccess('Server aggiornato')
+      setSuccess(t('serversPage.messages.updated'))
       await loadData()
     } catch (e: any) {
       setError(e.response?.data?.detail || e.message)
@@ -109,10 +111,10 @@ export default function ServersPage() {
   }
 
   async function handleDelete(serverKey: string, displayName: string) {
-    if (!confirm(`Eliminare il server "${displayName}"?\nVerranno rimossi anche tutti gli override di configurazione.`)) return
+    if (!confirm(t('serversPage.confirmDelete', { name: displayName }))) return
     try {
       await arkmaniaApi.deleteServer(serverKey)
-      setSuccess('Server eliminato')
+      setSuccess(t('serversPage.messages.deleted'))
       await loadData()
     } catch (e: any) {
       setError(e.response?.data?.detail || e.message)
@@ -129,14 +131,14 @@ export default function ServersPage() {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Server size={22} /> Server Manager</h1>
-          <p className="page-subtitle">{servers.length} server registrati — {online} online — {totalPlayers} giocatori</p>
+          <h1 className="page-title"><Server size={22} /> {t('serversPage.heading')}</h1>
+          <p className="page-subtitle">{t('serversPage.subtitle', { total: servers.length, online, players: totalPlayers })}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
           <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
-            <Plus size={14} /> Nuovo Server
+            <Plus size={14} /> {t('serversPage.newServer')}
           </button>
-          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
+          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }} title={t('serversPage.refresh')}>
             <RefreshCw size={14} />
           </button>
         </div>
@@ -163,7 +165,7 @@ export default function ServersPage() {
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: '#16a34a', lineHeight: 1 }}>{online}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Online</div>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.online')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
@@ -172,7 +174,7 @@ export default function ServersPage() {
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: '#dc2626', lineHeight: 1 }}>{servers.length - online}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Offline</div>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.offline')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
@@ -181,7 +183,7 @@ export default function ServersPage() {
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: '#3b82f6', lineHeight: 1 }}>{totalPlayers}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Giocatori</div>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.players')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
@@ -190,7 +192,7 @@ export default function ServersPage() {
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{servers.length}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Totali</div>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.total')}</div>
           </div>
         </div>
       </div>
@@ -199,28 +201,28 @@ export default function ServersPage() {
       {showAdd && (
         <div className="card" style={{ padding: '1rem', marginBottom: '1rem', borderLeft: '3px solid var(--accent)' }}>
           <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700 }}>
-            <Plus size={14} style={{ verticalAlign: -2 }} /> Nuovo Server
+            <Plus size={14} style={{ verticalAlign: -2 }} /> {t('serversPage.form.title')}
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem' }}>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Server Key</label>
-              <input className="input" placeholder="es. Ragnarok_abc123" value={newServer.server_key}
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.serverKey')}</label>
+              <input className="input" placeholder={t('serversPage.form.keyPlaceholder')} value={newServer.server_key}
                 onChange={e => setNewServer({ ...newServer, server_key: e.target.value })} />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Nome</label>
-              <input className="input" placeholder="es. Ragnarok" value={newServer.display_name}
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.name')}</label>
+              <input className="input" placeholder={t('serversPage.form.namePlaceholder')} value={newServer.display_name}
                 onChange={e => setNewServer({ ...newServer, display_name: e.target.value })} />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Mappa</label>
-              <input className="input" placeholder="es. Ragnarok_WP" value={newServer.map_name}
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.map')}</label>
+              <input className="input" placeholder={t('serversPage.form.mapPlaceholder')} value={newServer.map_name}
                 onChange={e => setNewServer({ ...newServer, map_name: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px', gap: '0.6rem', marginTop: '0.5rem' }}>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Game Mode</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.gameMode')}</label>
               <select className="input" value={newServer.game_mode}
                 onChange={e => setNewServer({ ...newServer, game_mode: e.target.value })}>
                 <option value="PvE">PvE</option>
@@ -229,7 +231,7 @@ export default function ServersPage() {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Tipo</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.type')}</label>
               <select className="input" value={newServer.server_type}
                 onChange={e => setNewServer({ ...newServer, server_type: e.target.value })}>
                 <option value="PvE">PvE</option>
@@ -237,19 +239,19 @@ export default function ServersPage() {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Cluster</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.cluster')}</label>
               <input className="input" value={newServer.cluster_group}
                 onChange={e => setNewServer({ ...newServer, cluster_group: e.target.value })} />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>Max Players</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.maxPlayers')}</label>
               <input className="input" type="number" value={newServer.max_players}
                 onChange={e => setNewServer({ ...newServer, max_players: Number(e.target.value) })} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
-            <button onClick={handleCreate} className="btn btn-primary" style={{ fontSize: '0.82rem' }}>Crea</button>
-            <button onClick={() => { setShowAdd(false); setNewServer({ ...EMPTY_NEW }) }} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>Annulla</button>
+            <button onClick={handleCreate} className="btn btn-primary" style={{ fontSize: '0.82rem' }}>{t('serversPage.form.create')}</button>
+            <button onClick={() => { setShowAdd(false); setNewServer({ ...EMPTY_NEW }) }} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('serversPage.form.cancel')}</button>
           </div>
         </div>
       )}
@@ -257,11 +259,11 @@ export default function ServersPage() {
       {/* Server table */}
       <div className="card" style={{ minHeight: 200 }}>
         {loading ? (
-          <div className="pl-loading" style={{ padding: '3rem' }}>Caricamento...</div>
+          <div className="pl-loading" style={{ padding: '3rem' }}>{t('serversPage.loading')}</div>
         ) : servers.length === 0 ? (
           <div className="pl-empty" style={{ padding: '3rem' }}>
             <Server size={40} style={{ opacity: 0.12 }} />
-            <p>Nessun server registrato</p>
+            <p>{t('serversPage.empty')}</p>
           </div>
         ) : (
           <>
@@ -275,13 +277,13 @@ export default function ServersPage() {
               borderBottom: '2px solid var(--border)',
             }}>
               <span></span>
-              <span>Nome</span>
-              <span>Mappa</span>
-              <span>Modalita</span>
-              <span>Tipo</span>
-              <span>Cluster</span>
-              <span>Max</span>
-              <span>Online</span>
+              <span>{t('serversPage.table.name')}</span>
+              <span>{t('serversPage.table.map')}</span>
+              <span>{t('serversPage.table.mode')}</span>
+              <span>{t('serversPage.table.type')}</span>
+              <span>{t('serversPage.table.cluster')}</span>
+              <span>{t('serversPage.table.max')}</span>
+              <span>{t('serversPage.table.online')}</span>
               <span></span>
             </div>
 
@@ -384,20 +386,20 @@ export default function ServersPage() {
 
                   {/* Player count (read-only) */}
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    {s.last_heartbeat ? new Date(s.last_heartbeat).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                    {s.last_heartbeat ? new Date(s.last_heartbeat).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—'}
                   </span>
 
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'flex-end' }}>
                     {isEditing ? (
                       <>
-                        <button onClick={saveEdit} title="Salva" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
-                        <button onClick={() => setEditingKey(null)} title="Annulla" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
+                        <button onClick={saveEdit} title={t('serversPage.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
+                        <button onClick={() => setEditingKey(null)} title={t('serversPage.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startEdit(s)} title="Modifica" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(s.server_key, s.display_name)} title="Elimina" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
+                        <button onClick={() => startEdit(s)} title={t('serversPage.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
+                        <button onClick={() => handleDelete(s.server_key, s.display_name)} title={t('serversPage.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
                       </>
                     )}
                   </div>

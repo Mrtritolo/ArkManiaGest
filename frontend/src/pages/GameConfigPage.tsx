@@ -11,6 +11,7 @@
  */
 import './GameConfigPage.css'
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Settings, TrendingUp, Star, Sun, Swords, User, Bug, Heart,
   Building, Gamepad2, ShieldAlert, Snowflake, Timer, Crosshair,
@@ -33,6 +34,7 @@ interface GroupDef { label: string; icon: string; settings: Record<string, Setti
 interface ConfigData { values: Record<string, Record<string, string>>; overrides: Record<string, unknown[]>; mod_sections: { gus: Record<string, Record<string, string>>; game: Record<string, Record<string, string>> }; uncategorized: { gus: Record<string, { key: string; value: string }[]>; game: Record<string, { key: string; value: string }[]> }; raw: { gus: string; game: string } }
 
 export default function GameConfigPage() {
+  const { t } = useTranslation()
   const [containers, setContainers] = useState<Container[]>([])
   const [sel, setSel] = useState<Container | null>(null)
   const [groups, setGroups] = useState<Record<string, GroupDef>>({})
@@ -56,7 +58,7 @@ export default function GameConfigPage() {
   const [stackSearch, setStackSearch] = useState('')
 
   useEffect(() => { loadContainers(); loadDefinitions() }, [])
-  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(t) } }, [success])
+  useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
 
   async function loadContainers() {
     setLoading(true)
@@ -67,7 +69,7 @@ export default function GameConfigPage() {
         return paths?.gameusersettings_ini || paths?.game_ini
       })
       setContainers(valid)
-    } catch { setError('Failed to load containers') }
+    } catch { setError(t('gameConfig.messages.loadFailed')) }
     finally { setLoading(false) }
   }
 
@@ -95,7 +97,7 @@ export default function GameConfigPage() {
       setHasChanges(false)
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError('Failed to load config: ' + (detail || (e instanceof Error ? e.message : 'Unknown error')))
+      setError(t('gameConfig.messages.loadConfigFailed', { detail: detail || (e instanceof Error ? e.message : t('gameConfig.messages.unknownError')) }))
     }
     finally { setLoadingConfig(false) }
   }
@@ -103,7 +105,7 @@ export default function GameConfigPage() {
   function selectContainer(name: string) {
     const c = containers.find(x => `${x.machine_id}|${x.name}` === name)
     if (!c) return
-    if (hasChanges && !confirm('You have unsaved changes. Continue?')) return
+    if (hasChanges && !confirm(t('gameConfig.unsavedConfirm'))) return
     setSel(c); setActiveTab('general'); loadConfig(c)
   }
 
@@ -183,18 +185,18 @@ export default function GameConfigPage() {
             const d = g.settings[key]; if (!d) continue
             const orig = (configData.values as Record<string, Record<string, string>>)[gid]?.[key]
             if (value !== orig && value !== null && value !== '') {
-              const t = d.file === 'gus' ? gusC : gameC
-              if (!t[d.section]) t[d.section] = {}
-              t[d.section][key] = value
+              const bucket = d.file === 'gus' ? gusC : gameC
+              if (!bucket[d.section]) bucket[d.section] = {}
+              bucket[d.section][key] = value
             }
           }
         }
         await gameConfigApi.saveConfig(sel.machine_id, sel.name, { gus_changes: gusC, game_changes: gameC, backup: true })
       }
-      setSuccess('Configuration saved with backup!'); setHasChanges(false); loadConfig(sel)
+      setSuccess(t('gameConfig.messages.saved')); setHasChanges(false); loadConfig(sel)
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError('Save failed: ' + (detail || 'Unknown error'))
+      setError(t('gameConfig.messages.saveFailed', { detail: detail || t('gameConfig.messages.unknownError') }))
     }
     finally { setSaving(false) }
   }
@@ -202,16 +204,16 @@ export default function GameConfigPage() {
   // ── Tab definitions ──────────────────────────────────────────
   const groupTabs = Object.entries(groups).map(([id, g]) => ({ id, ...g }))
   const overrideTabs: { id: string; label: string; icon: LucideIcon }[] = [
-    { id: 'stacks', label: 'Stack Sizes', icon: Layers },
-    { id: 'supply_crates', label: 'Supply Crates', icon: Gift },
-    { id: 'crafting', label: 'Crafting Costs', icon: Package },
-    { id: 'npc_replace', label: 'NPC Replacements', icon: Replace },
-    { id: 'spawn_entries', label: 'Spawn Entries', icon: Bug },
+    { id: 'stacks', label: t('gameConfig.tabs.stacks'), icon: Layers },
+    { id: 'supply_crates', label: t('gameConfig.tabs.supply_crates'), icon: Gift },
+    { id: 'crafting', label: t('gameConfig.tabs.crafting'), icon: Package },
+    { id: 'npc_replace', label: t('gameConfig.tabs.npc_replace'), icon: Replace },
+    { id: 'spawn_entries', label: t('gameConfig.tabs.spawn_entries'), icon: Bug },
   ]
   const extraTabs: { id: string; label: string; icon: LucideIcon }[] = [
-    { id: 'mods', label: 'Mod Settings', icon: Package },
-    { id: 'uncategorized', label: 'Extra Keys', icon: FileText },
-    { id: 'raw', label: 'Raw Editor', icon: Code },
+    { id: 'mods', label: t('gameConfig.tabs.mods'), icon: Package },
+    { id: 'uncategorized', label: t('gameConfig.tabs.uncategorized'), icon: FileText },
+    { id: 'raw', label: t('gameConfig.tabs.raw'), icon: Code },
   ]
 
   // ── Render: single control ───────────────────────────────────
@@ -240,9 +242,9 @@ export default function GameConfigPage() {
           <div className="gc-ctrl-head"><span className="gc-ctrl-label">{label}</span>{dirty && <span className="gc-ctrl-dot" />}</div>
           <div className="gc-input-row">
             <input type="number" className="gc-input gc-input-num" value={value || ''} min={def.min} max={def.max} step={def.step || (def.type === 'int' ? 1 : 0.1)} onChange={e => updateValue(gid, key, e.target.value)} />
-            {def.default !== undefined && <button className="gc-reset" title={`Default: ${def.default}`} onClick={() => resetValue(gid, key)}><Undo2 size={12} /></button>}
+            {def.default !== undefined && <button className="gc-reset" title={t('gameConfig.defaultTitle', { value: String(def.default) })} onClick={() => resetValue(gid, key)}><Undo2 size={12} /></button>}
           </div>
-          {def.default !== undefined && <div className="gc-ctrl-default">default: {String(def.default)}</div>}
+          {def.default !== undefined && <div className="gc-ctrl-default">{t('gameConfig.defaultPrefix', { value: String(def.default) })}</div>}
         </div>
       )
     }
@@ -286,7 +288,7 @@ export default function GameConfigPage() {
         {others.length > 0 && <div className="gc-fields">{others.map(([k, d]) => renderControl(gid, k, d))}</div>}
         {bools.length > 0 && (
           <div className="gc-toggles">
-            <div className="gc-toggles-title">On/Off Toggles</div>
+            <div className="gc-toggles-title">{t('gameConfig.onOffToggles')}</div>
             <div className="gc-toggles-grid">{bools.map(([k, d]) => renderControl(gid, k, d))}</div>
           </div>
         )}
@@ -302,14 +304,14 @@ export default function GameConfigPage() {
     return (
       <div className="gc-override">
         <div className="gc-override-bar">
-          <div className="gc-override-count"><Layers size={14} /> {localStacks.length} stack overrides</div>
+          <div className="gc-override-count"><Layers size={14} /> {t('gameConfig.stacks.count', { count: localStacks.length })}</div>
           <div className="gc-override-tools">
-            <div className="gc-search-box"><Search size={13} /><input placeholder="Search class..." value={stackSearch} onChange={e => setStackSearch(e.target.value)} /></div>
-            <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalStacks(p => [...p, { class: '', max_quantity: 100, ignore_multiplier: true }]); setHasChanges(true) }}><Plus size={13} /> Add</button>
+            <div className="gc-search-box"><Search size={13} /><input placeholder={t('gameConfig.stacks.searchPlaceholder')} value={stackSearch} onChange={e => setStackSearch(e.target.value)} /></div>
+            <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalStacks(p => [...p, { class: '', max_quantity: 100, ignore_multiplier: true }]); setHasChanges(true) }}><Plus size={13} /> {t('gameConfig.stacks.add')}</button>
           </div>
         </div>
         <div className="gc-table">
-          <div className="gc-thead gc-thead-stacks"><span className="gc-th">Item Class</span><span className="gc-th">Max Qty</span><span className="gc-th">Ignore Multi</span><span className="gc-th" /></div>
+          <div className="gc-thead gc-thead-stacks"><span className="gc-th">{t('gameConfig.stacks.colItemClass')}</span><span className="gc-th">{t('gameConfig.stacks.colMaxQty')}</span><span className="gc-th">{t('gameConfig.stacks.colIgnoreMulti')}</span><span className="gc-th" /></div>
           {filtered.map((s: Record<string, unknown>, i: number) => {
             const oi = localStacks.indexOf(s)
             return (
@@ -323,7 +325,7 @@ export default function GameConfigPage() {
               </div>
             )
           })}
-          {filtered.length === 0 && <div className="gc-empty"><Layers size={24} /><span>No stack overrides{stackSearch ? ' matching search' : ''}</span></div>}
+          {filtered.length === 0 && <div className="gc-empty"><Layers size={24} /><span>{stackSearch ? t('gameConfig.stacks.emptyMatching') : t('gameConfig.stacks.empty')}</span></div>}
         </div>
       </div>
     )
@@ -334,27 +336,27 @@ export default function GameConfigPage() {
     return (
       <div className="gc-override">
         <div className="gc-override-bar">
-          <div className="gc-override-count"><Package size={14} /> {localCrafting.length} crafting cost overrides</div>
-          <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalCrafting(p => [...p, { item_class: '', resources: [{ resource_class: '', amount: 1, exact_type: false }] }]); setHasChanges(true) }}><Plus size={13} /> Add</button>
+          <div className="gc-override-count"><Package size={14} /> {t('gameConfig.crafting.count', { count: localCrafting.length })}</div>
+          <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalCrafting(p => [...p, { item_class: '', resources: [{ resource_class: '', amount: 1, exact_type: false }] }]); setHasChanges(true) }}><Plus size={13} /> {t('gameConfig.crafting.add')}</button>
         </div>
         {localCrafting.map((item: Record<string, unknown>, idx: number) => (
           <div key={idx} className="gc-card">
             <div className="gc-card-head">
-              <input className="gc-input gc-input-mono" placeholder="ItemClassString (e.g. PrimalItemAmmo_ArrowTranq_C)" value={(item.item_class as string) || ''} onChange={e => { const u = [...localCrafting]; u[idx] = { ...u[idx], item_class: e.target.value }; setLocalCrafting(u); setHasChanges(true) }} />
+              <input className="gc-input gc-input-mono" placeholder={t('gameConfig.crafting.itemClassPlaceholder')} value={(item.item_class as string) || ''} onChange={e => { const u = [...localCrafting]; u[idx] = { ...u[idx], item_class: e.target.value }; setLocalCrafting(u); setHasChanges(true) }} />
               <button className="gc-del" onClick={() => { setLocalCrafting(p => p.filter((_, i) => i !== idx)); setHasChanges(true) }}><Trash2 size={13} /></button>
             </div>
-            <div className="gc-card-label">Required Resources:</div>
+            <div className="gc-card-label">{t('gameConfig.crafting.requiredResources')}</div>
             {((item.resources as Record<string, unknown>[]) || []).map((res: Record<string, unknown>, ri: number) => (
               <div key={ri} className="gc-res-row">
-                <input className="gc-input gc-input-mono" style={{ flex: 1 }} placeholder="ResourceItemTypeString" value={(res.resource_class as string) || ''} onChange={e => { const u = [...localCrafting]; (u[idx].resources as Record<string, unknown>[])[ri] = { ...(u[idx].resources as Record<string, unknown>[])[ri], resource_class: e.target.value }; setLocalCrafting(u); setHasChanges(true) }} />
+                <input className="gc-input gc-input-mono" style={{ flex: 1 }} placeholder={t('gameConfig.crafting.resourcePlaceholder')} value={(res.resource_class as string) || ''} onChange={e => { const u = [...localCrafting]; (u[idx].resources as Record<string, unknown>[])[ri] = { ...(u[idx].resources as Record<string, unknown>[])[ri], resource_class: e.target.value }; setLocalCrafting(u); setHasChanges(true) }} />
                 <input type="number" className="gc-input gc-input-num" style={{ width: 80 }} value={res.amount as number} min={0} step={0.1} onChange={e => { const u = [...localCrafting]; (u[idx].resources as Record<string, unknown>[])[ri] = { ...(u[idx].resources as Record<string, unknown>[])[ri], amount: parseFloat(e.target.value) || 0 }; setLocalCrafting(u); setHasChanges(true) }} />
                 <button className="gc-del" onClick={() => { const u = [...localCrafting]; u[idx].resources = (u[idx].resources as Record<string, unknown>[]).filter((_, j) => j !== ri); setLocalCrafting(u); setHasChanges(true) }}><X size={12} /></button>
               </div>
             ))}
-            <button className="gc-add-btn" onClick={() => { const u = [...localCrafting]; u[idx].resources = [...((u[idx].resources as Record<string, unknown>[]) || []), { resource_class: '', amount: 1, exact_type: false }]; setLocalCrafting(u); setHasChanges(true) }}><Plus size={12} /> Add resource</button>
+            <button className="gc-add-btn" onClick={() => { const u = [...localCrafting]; u[idx].resources = [...((u[idx].resources as Record<string, unknown>[]) || []), { resource_class: '', amount: 1, exact_type: false }]; setLocalCrafting(u); setHasChanges(true) }}><Plus size={12} /> {t('gameConfig.crafting.addResource')}</button>
           </div>
         ))}
-        {localCrafting.length === 0 && <div className="gc-empty"><Package size={24} /><span>No crafting cost overrides</span></div>}
+        {localCrafting.length === 0 && <div className="gc-empty"><Package size={24} /><span>{t('gameConfig.crafting.empty')}</span></div>}
       </div>
     )
   }
@@ -364,11 +366,11 @@ export default function GameConfigPage() {
     return (
       <div className="gc-override">
         <div className="gc-override-bar">
-          <div className="gc-override-count"><Replace size={14} /> {localNpcRepl.length} NPC replacements</div>
-          <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalNpcRepl(p => [...p, { from_class: '', to_class: '' }]); setHasChanges(true) }}><Plus size={13} /> Add</button>
+          <div className="gc-override-count"><Replace size={14} /> {t('gameConfig.npc.count', { count: localNpcRepl.length })}</div>
+          <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalNpcRepl(p => [...p, { from_class: '', to_class: '' }]); setHasChanges(true) }}><Plus size={13} /> {t('gameConfig.npc.add')}</button>
         </div>
         <div className="gc-table">
-          <div className="gc-thead gc-thead-npc"><span className="gc-th">From Class</span><span className="gc-th">To Class</span><span className="gc-th" /></div>
+          <div className="gc-thead gc-thead-npc"><span className="gc-th">{t('gameConfig.npc.colFrom')}</span><span className="gc-th">{t('gameConfig.npc.colTo')}</span><span className="gc-th" /></div>
           {localNpcRepl.map((item: Record<string, unknown>, idx: number) => (
             <div key={idx} className="gc-row gc-row-npc">
               <input className="gc-input gc-input-mono" placeholder="Pegomastax_Character_BP_C" value={(item.from_class as string) || ''} onChange={e => { const u = [...localNpcRepl]; u[idx] = { ...u[idx], from_class: e.target.value }; setLocalNpcRepl(u); setHasChanges(true) }} />
@@ -377,7 +379,7 @@ export default function GameConfigPage() {
             </div>
           ))}
         </div>
-        {localNpcRepl.length === 0 && <div className="gc-empty"><Replace size={24} /><span>No NPC replacements configured</span></div>}
+        {localNpcRepl.length === 0 && <div className="gc-empty"><Replace size={24} /><span>{t('gameConfig.npc.empty')}</span></div>}
       </div>
     )
   }
@@ -387,16 +389,16 @@ export default function GameConfigPage() {
     return (
       <div className="gc-override">
         <div className="gc-override-bar">
-          <div className="gc-override-count"><Gift size={14} /> {localSupplyCrates.length} supply crate overrides</div>
-          <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalSupplyCrates(p => [...p, { crate_class: 'NEW', raw: '', item_sets_count: 0, item_entries_count: 0 }]); setHasChanges(true) }}><Plus size={13} /> Add</button>
+          <div className="gc-override-count"><Gift size={14} /> {t('gameConfig.supply.count', { count: localSupplyCrates.length })}</div>
+          <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalSupplyCrates(p => [...p, { crate_class: 'NEW', raw: '', item_sets_count: 0, item_entries_count: 0 }]); setHasChanges(true) }}><Plus size={13} /> {t('gameConfig.supply.add')}</button>
         </div>
-        <div className="gc-warn"><AlertCircle size={14} /> Supply crates have a complex structure. Edit the raw entry for each crate below.</div>
+        <div className="gc-warn"><AlertCircle size={14} /> {t('gameConfig.supply.warn')}</div>
         {localSupplyCrates.map((crate: Record<string, unknown>, idx: number) => (
           <div key={idx} className="gc-card">
             <div className="gc-card-head">
               <div className="gc-crate-info">
-                <span className="gc-crate-name">{(crate.crate_class as string) || 'New'}</span>
-                <span className="gc-crate-meta">{(crate.item_sets_count as number) || 0} sets, {(crate.item_entries_count as number) || 0} entries</span>
+                <span className="gc-crate-name">{(crate.crate_class as string) || t('gameConfig.supply.newLabel')}</span>
+                <span className="gc-crate-meta">{t('gameConfig.supply.metaCounts', { sets: (crate.item_sets_count as number) || 0, entries: (crate.item_entries_count as number) || 0 })}</span>
               </div>
               <button className="gc-del" onClick={() => { setLocalSupplyCrates(p => p.filter((_, i) => i !== idx)); setHasChanges(true) }}><Trash2 size={13} /></button>
             </div>
@@ -405,7 +407,7 @@ export default function GameConfigPage() {
             </div>
           </div>
         ))}
-        {localSupplyCrates.length === 0 && <div className="gc-empty"><Gift size={24} /><span>No supply crate overrides</span></div>}
+        {localSupplyCrates.length === 0 && <div className="gc-empty"><Gift size={24} /><span>{t('gameConfig.supply.empty')}</span></div>}
       </div>
     )
   }
@@ -413,29 +415,29 @@ export default function GameConfigPage() {
   // ── Render: Spawn Entries ─────────────────────────────────────
   function renderSpawnEntries() {
     const types = [
-      { key: 'add', label: 'ConfigAddNPCSpawnEntriesContainer', desc: 'Add creatures to spawn zones' },
-      { key: 'override', label: 'ConfigOverrideNPCSpawnEntriesContainer', desc: 'Override creatures in spawn zones' },
-      { key: 'subtract', label: 'ConfigSubtractNPCSpawnEntriesContainer', desc: 'Remove creatures from spawn zones' },
+      { key: 'add', label: 'ConfigAddNPCSpawnEntriesContainer', desc: t('gameConfig.spawn.addDesc') },
+      { key: 'override', label: 'ConfigOverrideNPCSpawnEntriesContainer', desc: t('gameConfig.spawn.overrideDesc') },
+      { key: 'subtract', label: 'ConfigSubtractNPCSpawnEntriesContainer', desc: t('gameConfig.spawn.subtractDesc') },
     ]
     return (
       <div className="gc-override">
-        <div className="gc-warn"><AlertCircle size={14} /> Spawn entries have a complex structure. Each row is a complete raw entry.</div>
-        {types.map(t => {
-          const entries = localSpawnEntries[t.key] || []
+        <div className="gc-warn"><AlertCircle size={14} /> {t('gameConfig.spawn.warn')}</div>
+        {types.map(tp => {
+          const entries = localSpawnEntries[tp.key] || []
           return (
-            <div key={t.key} className="gc-spawn-group">
+            <div key={tp.key} className="gc-spawn-group">
               <div className="gc-spawn-head">
-                <div><strong>{t.label}</strong><div className="gc-spawn-desc">{t.desc}</div></div>
-                <span className="gc-spawn-count">{entries.length} entries</span>
+                <div><strong>{tp.label}</strong><div className="gc-spawn-desc">{tp.desc}</div></div>
+                <span className="gc-spawn-count">{t('gameConfig.spawn.count', { count: entries.length })}</span>
               </div>
               {entries.map((e: Record<string, unknown>, idx: number) => (
                 <div key={idx} className="gc-card" style={{ marginBottom: '0.35rem' }}>
                   <div className="gc-card-head">
-                    <span className="gc-crate-name">{(e.container_class as string) || `Entry #${idx + 1}`}</span>
-                    <button className="gc-del" onClick={() => { const u = { ...localSpawnEntries }; u[t.key] = u[t.key].filter((_, i) => i !== idx); setLocalSpawnEntries(u); setHasChanges(true) }}><Trash2 size={13} /></button>
+                    <span className="gc-crate-name">{(e.container_class as string) || t('gameConfig.spawn.entryTitle', { num: idx + 1 })}</span>
+                    <button className="gc-del" onClick={() => { const u = { ...localSpawnEntries }; u[tp.key] = u[tp.key].filter((_, i) => i !== idx); setLocalSpawnEntries(u); setHasChanges(true) }}><Trash2 size={13} /></button>
                   </div>
                   <div className="gc-card-body">
-                    <textarea className="gc-raw-editor gc-raw-small" value={(e.raw as string) || ''} onChange={ev => { const u = { ...localSpawnEntries }; u[t.key] = [...u[t.key]]; u[t.key][idx] = { ...u[t.key][idx], raw: ev.target.value }; setLocalSpawnEntries(u); setHasChanges(true) }} spellCheck={false} rows={3} />
+                    <textarea className="gc-raw-editor gc-raw-small" value={(e.raw as string) || ''} onChange={ev => { const u = { ...localSpawnEntries }; u[tp.key] = [...u[tp.key]]; u[tp.key][idx] = { ...u[tp.key][idx], raw: ev.target.value }; setLocalSpawnEntries(u); setHasChanges(true) }} spellCheck={false} rows={3} />
                   </div>
                 </div>
               ))}
@@ -450,7 +452,7 @@ export default function GameConfigPage() {
   function renderMods() {
     if (!configData) return null
     const allMods = { ...configData.mod_sections.gus, ...configData.mod_sections.game }
-    if (Object.keys(allMods).length === 0) return <div className="gc-empty"><Package size={28} /><span>No mod sections detected</span></div>
+    if (Object.keys(allMods).length === 0) return <div className="gc-empty"><Package size={28} /><span>{t('gameConfig.mods.empty')}</span></div>
     return (
       <div className="gc-mods">{Object.entries(allMods).map(([name, data]) => (
         <div key={name} className="gc-mod">
@@ -467,18 +469,18 @@ export default function GameConfigPage() {
   function renderUncategorized() {
     if (!configData) return null
     const { gus, game } = configData.uncategorized
-    if (!Object.keys(gus).length && !Object.keys(game).length) return <div className="gc-empty"><CheckCircle size={28} /><span>All settings are categorised — nothing extra here.</span></div>
+    if (!Object.keys(gus).length && !Object.keys(game).length) return <div className="gc-empty"><CheckCircle size={28} /><span>{t('gameConfig.uncategorized.empty')}</span></div>
     return (
       <div className="gc-mods">
         {Object.entries(gus).map(([s, entries]) => (
           <div key={`g-${s}`} className="gc-mod">
-            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warn)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> GUS [{s}]</div>
+            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warn)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> {t('gameConfig.uncategorized.gusLabel', { section: s })}</div>
             <div className="gc-mod-rows">{entries.map((e, i) => <div className="gc-kv" key={i}><span className="gc-kv-key">{e.key}</span><span className="gc-kv-eq">=</span><span className="gc-kv-val">{e.value}</span></div>)}</div>
           </div>
         ))}
         {Object.entries(game).map(([s, entries]) => (
           <div key={`gm-${s}`} className="gc-mod">
-            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warn)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> Game.ini [{s}]</div>
+            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warn)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> {t('gameConfig.uncategorized.gameLabel', { section: s })}</div>
             <div className="gc-mod-rows">{entries.map((e, i) => <div className="gc-kv" key={i}><span className="gc-kv-key">{e.key}</span><span className="gc-kv-eq">=</span><span className="gc-kv-val">{e.value}</span></div>)}</div>
           </div>
         ))}
@@ -490,14 +492,14 @@ export default function GameConfigPage() {
   function renderRaw() {
     return (
       <>
-        <div className="gc-warn"><AlertCircle size={14} /> Advanced editor — direct INI file editing. Use with caution.</div>
+        <div className="gc-warn"><AlertCircle size={14} /> {t('gameConfig.raw.warn')}</div>
         <div className="gc-raw-grid">
           <div>
-            <div className="gc-raw-label"><FileText size={13} /> GameUserSettings.ini <span className="gc-raw-size">{rawGus.length.toLocaleString()} chars</span></div>
+            <div className="gc-raw-label"><FileText size={13} /> {t('gameConfig.raw.gusLabel')} <span className="gc-raw-size">{t('gameConfig.raw.chars', { count: rawGus.length.toLocaleString() })}</span></div>
             <textarea className="gc-raw-editor" value={rawGus} onChange={e => { setRawGus(e.target.value); setHasChanges(true) }} spellCheck={false} />
           </div>
           <div>
-            <div className="gc-raw-label"><FileText size={13} /> Game.ini <span className="gc-raw-size">{rawGame.length.toLocaleString()} chars</span></div>
+            <div className="gc-raw-label"><FileText size={13} /> {t('gameConfig.raw.gameLabel')} <span className="gc-raw-size">{t('gameConfig.raw.chars', { count: rawGame.length.toLocaleString() })}</span></div>
             <textarea className="gc-raw-editor" value={rawGame} onChange={e => { setRawGame(e.target.value); setHasChanges(true) }} spellCheck={false} />
           </div>
         </div>
@@ -506,19 +508,19 @@ export default function GameConfigPage() {
   }
 
   // ── Main render ───────────────────────────────────────────────
-  if (loading) return <div className="gc-empty-page"><Loader2 size={24} className="spin" /><p>Loading containers...</p></div>
-  if (!containers.length) return <div className="gc-empty-page"><Settings size={36} /><h3>No containers with INI files</h3><p>Scan your containers from the Containers page first.</p></div>
+  if (loading) return <div className="gc-empty-page"><Loader2 size={24} className="spin" /><p>{t('gameConfig.loadingContainers')}</p></div>
+  if (!containers.length) return <div className="gc-empty-page"><Settings size={36} /><h3>{t('gameConfig.noContainersTitle')}</h3><p>{t('gameConfig.noContainersHint')}</p></div>
 
   return (
     <div className="gc-page page-container">
       {/* Top bar: title + container selector + save */}
       <div className="gc-topbar">
         <div className="gc-topbar-left">
-          <span className="gc-topbar-title"><Settings size={18} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />Server Config</span>
+          <span className="gc-topbar-title"><Settings size={18} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />{t('gameConfig.topbarTitle')}</span>
           <div className="gc-topbar-sep" />
           <div className="gc-topbar-select">
             <select value={sel ? `${sel.machine_id}|${sel.name}` : ''} onChange={e => selectContainer(e.target.value)}>
-              <option value="">Select container...</option>
+              <option value="">{t('gameConfig.selectPlaceholder')}</option>
               {containers.map(c => (
                 <option key={`${c.machine_id}|${c.name}`} value={`${c.machine_id}|${c.name}`}>
                   {c.map_name || c.name} — {c.hostname}
@@ -529,10 +531,10 @@ export default function GameConfigPage() {
           {sel && <span className="gc-topbar-chip">{sel.map_name || sel.name}</span>}
         </div>
         <div className="gc-topbar-actions">
-          {sel && <button className="gc-btn gc-btn-ghost" onClick={() => loadConfig(sel)} title="Reload from server"><RefreshCw size={14} /></button>}
-          {hasChanges && <button className="gc-btn" onClick={() => { setHasChanges(false); if (sel) loadConfig(sel) }}><Undo2 size={14} /> Discard</button>}
+          {sel && <button className="gc-btn gc-btn-ghost" onClick={() => loadConfig(sel)} title={t('gameConfig.reloadTooltip')}><RefreshCw size={14} /></button>}
+          {hasChanges && <button className="gc-btn" onClick={() => { setHasChanges(false); if (sel) loadConfig(sel) }}><Undo2 size={14} /> {t('gameConfig.discard')}</button>}
           <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={!hasChanges || saving || !sel}>
-            {saving ? <><Loader2 size={14} className="spin" /> Saving...</> : <><Save size={14} /> Save</>}
+            {saving ? <><Loader2 size={14} className="spin" /> {t('gameConfig.saving')}</> : <><Save size={14} /> {t('gameConfig.save')}</>}
             {changeCount > 0 && !saving && <span className="gc-change-badge">{changeCount}</span>}
           </button>
         </div>
@@ -545,21 +547,21 @@ export default function GameConfigPage() {
         <div className="gc-editor">
           {/* Sidebar nav */}
           <div className="gc-nav">
-            <div className="gc-nav-label">Settings</div>
+            <div className="gc-nav-label">{t('gameConfig.navSettings')}</div>
             {groupTabs.map(tab => {
               const IC = ICONS[tab.icon] || Settings
               return <button key={tab.id} className={`gc-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><IC size={14} /><span>{tab.label}</span></button>
             })}
-            <div className="gc-nav-label" style={{ marginTop: '0.35rem' }}>Overrides</div>
+            <div className="gc-nav-label" style={{ marginTop: '0.35rem' }}>{t('gameConfig.navOverrides')}</div>
             {overrideTabs.map(tab => <button key={tab.id} className={`gc-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><tab.icon size={14} /><span>{tab.label}</span></button>)}
-            <div className="gc-nav-label" style={{ marginTop: '0.35rem' }}>Advanced</div>
+            <div className="gc-nav-label" style={{ marginTop: '0.35rem' }}>{t('gameConfig.navAdvanced')}</div>
             {extraTabs.map(tab => <button key={tab.id} className={`gc-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><tab.icon size={14} /><span>{tab.label}</span></button>)}
           </div>
 
           {/* Content area */}
           <div className="gc-content">
             {loadingConfig ? (
-              <div className="gc-empty"><Loader2 size={20} className="spin" /><span>Loading configuration...</span></div>
+              <div className="gc-empty"><Loader2 size={20} className="spin" /><span>{t('gameConfig.loadingConfig')}</span></div>
             ) : (
               <>
                 {groups[activeTab] && renderGroupContent(activeTab)}
@@ -575,10 +577,10 @@ export default function GameConfigPage() {
             )}
             {hasChanges && (
               <div className="gc-unsaved">
-                <span className="gc-unsaved-text">{changeCount > 0 ? `${changeCount} unsaved changes` : 'Unsaved changes'}</span>
+                <span className="gc-unsaved-text">{changeCount > 0 ? t('gameConfig.unsavedMulti', { count: changeCount }) : t('gameConfig.unsavedSingle')}</span>
                 <div className="gc-unsaved-actions">
-                  <button className="gc-btn" onClick={() => { if (sel) loadConfig(sel) }}><Undo2 size={13} /> Discard</button>
-                  <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={saving}><Save size={13} /> Save</button>
+                  <button className="gc-btn" onClick={() => { if (sel) loadConfig(sel) }}><Undo2 size={13} /> {t('gameConfig.discard')}</button>
+                  <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={saving}><Save size={13} /> {t('gameConfig.save')}</button>
                 </div>
               </div>
             )}

@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Database,
   Play,
@@ -75,6 +76,7 @@ interface HistoryEntry {
 // ---------------------------------------------------------------------------
 
 export default function SqlConsolePage() {
+  const { t } = useTranslation();
   // ── State ────────────────────────────────────────────────────────────────
 
   const [query, setQuery] = useState("SELECT 1");
@@ -171,7 +173,7 @@ export default function SqlConsolePage() {
       }
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Query execution failed.";
+        err instanceof Error ? err.message : t("sqlConsole.errors.executeFailed");
       setResult({
         success: false,
         query: trimmed,
@@ -185,7 +187,7 @@ export default function SqlConsolePage() {
     } finally {
       setExecuting(false);
     }
-  }, [query, executing]);
+  }, [query, executing, database, t]);
 
   // ── Keyboard shortcut: Ctrl+Enter to execute ────────────────────────────
 
@@ -261,10 +263,10 @@ export default function SqlConsolePage() {
       <div className="page-header">
         <div className="page-header-text">
           <h1 className="page-title">
-            <Database size={22} /> SQL Console
+            <Database size={22} /> {t("sqlConsole.heading")}
           </h1>
           <p className="page-subtitle">
-            Execute queries directly against the MariaDB database
+            {t("sqlConsole.subtitle")}
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -277,31 +279,31 @@ export default function SqlConsolePage() {
             <button
               className={`btn btn-sm ${database === "panel" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setDatabase("panel")}
-              title="Query the ArkManiaGest panel database"
+              title={t("sqlConsole.db.panelTitle")}
             >
-              Panel DB
+              {t("sqlConsole.db.panel")}
             </button>
             <button
               className={`btn btn-sm ${database === "plugin" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setDatabase("plugin")}
-              title="Query the ArkMania plugin database"
+              title={t("sqlConsole.db.pluginTitle")}
             >
-              Plugin DB
+              {t("sqlConsole.db.plugin")}
             </button>
           </div>
           <button
             className={`btn btn-sm ${browserOpen ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setBrowserOpen(!browserOpen)}
-            title="Toggle table browser"
+            title={t("sqlConsole.toggle.tablesTitle")}
           >
-            <Table2 size={14} /> Tables
+            <Table2 size={14} /> {t("sqlConsole.toggle.tables")}
           </button>
           <button
             className={`btn btn-sm ${historyOpen ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setHistoryOpen(!historyOpen)}
-            title="Toggle query history"
+            title={t("sqlConsole.toggle.historyTitle")}
           >
-            <Clock size={14} /> History ({history.length})
+            <Clock size={14} /> {t("sqlConsole.toggle.history", { count: history.length })}
           </button>
         </div>
       </div>
@@ -323,7 +325,7 @@ export default function SqlConsolePage() {
             >
               <h2 className="card-title" style={{ margin: 0 }}>
                 <span className="card-title-icon">&#x25B6;</span>
-                Query Editor
+                {t("sqlConsole.editor.title")}
               </h2>
               <span
                 style={{
@@ -331,7 +333,7 @@ export default function SqlConsolePage() {
                   color: "var(--text-muted)",
                 }}
               >
-                Ctrl + Enter to execute
+                {t("sqlConsole.editor.shortcut")}
               </span>
             </div>
 
@@ -341,7 +343,7 @@ export default function SqlConsolePage() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               spellCheck={false}
-              placeholder="Type your SQL query here..."
+              placeholder={t("sqlConsole.editor.placeholder")}
               style={{
                 width: "100%",
                 minHeight: "140px",
@@ -375,11 +377,11 @@ export default function SqlConsolePage() {
               >
                 {executing ? (
                   <>
-                    <Loader2 size={14} className="pl-spin" /> Executing…
+                    <Loader2 size={14} className="pl-spin" /> {t("sqlConsole.editor.executing")}
                   </>
                 ) : (
                   <>
-                    <Play size={14} /> Execute
+                    <Play size={14} /> {t("sqlConsole.editor.execute")}
                   </>
                 )}
               </button>
@@ -391,9 +393,9 @@ export default function SqlConsolePage() {
                   setResult(null);
                   textareaRef.current?.focus();
                 }}
-                title="Clear editor and results"
+                title={t("sqlConsole.editor.clearTitle")}
               >
-                <Trash2 size={14} /> Clear
+                <Trash2 size={14} /> {t("sqlConsole.editor.clear")}
               </button>
 
               {/* Execution summary */}
@@ -416,8 +418,8 @@ export default function SqlConsolePage() {
                     <AlertCircle size={14} />
                   )}
                   {result.success
-                    ? `${result.message} — ${result.execution_time_ms.toFixed(1)} ms`
-                    : "Query failed"}
+                    ? t("sqlConsole.results.summarySuccess", { message: result.message, time: result.execution_time_ms.toFixed(1) })
+                    : t("sqlConsole.results.summaryFailure")}
                 </span>
               )}
             </div>
@@ -428,7 +430,7 @@ export default function SqlConsolePage() {
             <div className="card" style={{ marginTop: "1rem" }}>
               <h2 className="card-title">
                 <span className="card-title-icon">&#x25C9;</span>
-                Results
+                {t("sqlConsole.results.title")}
               </h2>
 
               {/* Error display */}
@@ -532,7 +534,7 @@ export default function SqlConsolePage() {
                   }}
                 >
                   <CheckCircle size={14} />
-                  {result.message} — {result.execution_time_ms.toFixed(1)} ms
+                  {t("sqlConsole.results.dmlSuccess", { message: result.message, time: result.execution_time_ms.toFixed(1) })}
                 </p>
               )}
             </div>
@@ -555,7 +557,7 @@ export default function SqlConsolePage() {
                   <span className="card-title-icon">
                     <Table2 size={14} />
                   </span>
-                  Tables
+                  {t("sqlConsole.browser.title")}
                   {!tablesLoading && (
                     <span
                       style={{
@@ -577,7 +579,7 @@ export default function SqlConsolePage() {
                       fontSize: "0.82rem",
                     }}
                   >
-                    Loading…
+                    {t("sqlConsole.browser.loading")}
                   </p>
                 ) : (
                   <div
@@ -587,8 +589,8 @@ export default function SqlConsolePage() {
                       gap: "1px",
                     }}
                   >
-                    {tables.map((t) => (
-                      <div key={t.name}>
+                    {tables.map((tbl) => (
+                      <div key={tbl.name}>
                         {/* Table row */}
                         <div
                           style={{
@@ -602,15 +604,15 @@ export default function SqlConsolePage() {
                             fontFamily: "var(--font-mono)",
                             color: "var(--text-secondary)",
                             background:
-                              expandedTable === t.name
+                              expandedTable === tbl.name
                                 ? "var(--bg-active)"
                                 : "transparent",
                           }}
-                          onClick={() => handleTableClick(t.name)}
-                          onDoubleClick={() => handleTableSelect(t.name)}
-                          title={`Double-click to SELECT from ${t.name}`}
+                          onClick={() => handleTableClick(tbl.name)}
+                          onDoubleClick={() => handleTableSelect(tbl.name)}
+                          title={t("sqlConsole.browser.selectTitle", { name: tbl.name })}
                         >
-                          {expandedTable === t.name ? (
+                          {expandedTable === tbl.name ? (
                             <ChevronDown size={12} />
                           ) : (
                             <ChevronRight size={12} />
@@ -622,39 +624,43 @@ export default function SqlConsolePage() {
                               textOverflow: "ellipsis",
                             }}
                           >
-                            {t.name}
+                            {tbl.name}
                           </span>
-                          {t.row_count !== null && (
+                          {tbl.row_count !== null && (
                             <span
                               style={{
                                 fontSize: "0.7rem",
                                 color: "var(--text-muted)",
                               }}
                             >
-                              {t.row_count}
+                              {tbl.row_count}
                             </span>
                           )}
                         </div>
 
                         {/* Expanded column list */}
-                        {expandedTable === t.name && (
+                        {expandedTable === tbl.name && (
                           <div
                             style={{
                               paddingLeft: "1.2rem",
                               paddingBottom: "0.3rem",
                             }}
                           >
-                            {columnsLoading === t.name ? (
+                            {columnsLoading === tbl.name ? (
                               <span
                                 style={{
                                   fontSize: "0.75rem",
                                   color: "var(--text-muted)",
                                 }}
                               >
-                                Loading…
+                                {t("sqlConsole.browser.loading")}
                               </span>
                             ) : (
-                              (tableColumns[t.name] || []).map((col) => (
+                              (tableColumns[tbl.name] || []).map((col) => {
+                                const suffix =
+                                  (col.column_key === "PRI" ? t("sqlConsole.browser.pkSuffix") : "") +
+                                  (col.extra === "auto_increment" ? t("sqlConsole.browser.autoIncSuffix") : "");
+                                return (
                                 <div
                                   key={col.name}
                                   style={{
@@ -670,7 +676,7 @@ export default function SqlConsolePage() {
                                   onClick={() =>
                                     insertColumnName(col.name)
                                   }
-                                  title={`${col.data_type}${col.column_key === "PRI" ? " — PRIMARY KEY" : ""}${col.extra === "auto_increment" ? " AUTO_INCREMENT" : ""}. Click to insert.`}
+                                  title={t("sqlConsole.browser.colTitle", { type: col.data_type, suffix })}
                                   className="sql-col-row"
                                 >
                                   {/* Key badge */}
@@ -725,7 +731,8 @@ export default function SqlConsolePage() {
                                     {col.data_type}
                                   </span>
                                 </div>
-                              ))
+                                );
+                              })
                             )}
                           </div>
                         )}
@@ -753,13 +760,13 @@ export default function SqlConsolePage() {
                   <span className="card-title-icon">
                     <Clock size={14} />
                   </span>
-                  History
+                  {t("sqlConsole.history.title")}
                   {history.length > 0 && (
                     <button
                       className="btn btn-ghost btn-xs"
                       style={{ marginLeft: "auto" }}
                       onClick={() => setHistory([])}
-                      title="Clear history"
+                      title={t("sqlConsole.history.clearTitle")}
                     >
                       <Trash2 size={11} />
                     </button>
@@ -773,7 +780,7 @@ export default function SqlConsolePage() {
                       fontSize: "0.82rem",
                     }}
                   >
-                    No queries yet.
+                    {t("sqlConsole.history.empty")}
                   </p>
                 ) : (
                   <div
@@ -797,7 +804,7 @@ export default function SqlConsolePage() {
                           setQuery(entry.query);
                           textareaRef.current?.focus();
                         }}
-                        title="Click to load this query into the editor"
+                        title={t("sqlConsole.history.loadTitle")}
                       >
                         <div
                           style={{
@@ -836,7 +843,7 @@ export default function SqlConsolePage() {
                               color: "var(--text-muted)",
                             }}
                           >
-                            {entry.execution_time_ms.toFixed(0)} ms
+                            {t("sqlConsole.history.ms", { n: entry.execution_time_ms.toFixed(0) })}
                           </span>
                         </div>
                       </div>
