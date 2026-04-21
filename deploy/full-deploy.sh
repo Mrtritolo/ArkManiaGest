@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================
-# ArkManiaGest — Full Deploy (background-safe)
+# ArkManiaGest -- Full Deploy (background-safe)
 # All parameters are read from deploy.conf
 # ============================================
 export DEBIAN_FRONTEND=noninteractive
@@ -40,7 +40,7 @@ exec > >(tee -a "$LOG") 2>&1
 
 echo ""
 echo "================================================"
-echo "  ArkManiaGest — Full Production Deploy"
+echo "  ArkManiaGest -- Full Production Deploy"
 echo "  Dominio: ${DOMAIN}"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "================================================"
@@ -138,7 +138,7 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chown -R "$APP_USER:$APP_USER" "$LOG_DIR"
 chmod 750 "$APP_DIR/backend/data"
 
-# Strip Windows CRLF from all shell scripts in deploy/ — the tar archive was
+# Strip Windows CRLF from all shell scripts in deploy/ -- the tar archive was
 # created on Windows and every .sh will have \r\n line endings without this step.
 find "$APP_DIR/deploy" -name "*.sh" -exec sed -i 's/\r//g' {} \;
 echo "  Shell scripts: CRLF stripped"
@@ -203,7 +203,7 @@ if [ ! -f "backend/.env" ]; then
     chmod 600 backend/.env
     echo "  .env created in backend/"
 else
-    echo "  .env exists (backend/) — checking for missing keys"
+    echo "  .env exists (backend/) -- checking for missing keys"
     bash deploy/migrate-env.sh "$APP_DIR" || true
     chown "$APP_USER:$APP_USER" backend/.env
     chmod 600 backend/.env
@@ -234,7 +234,7 @@ sleep 3
 if systemctl is-active --quiet arkmaniagest; then
     echo "  Backend RUNNING"
 else
-    echo "  Backend ERROR — log:"
+    echo "  Backend ERROR -- log:"
     journalctl -u arkmaniagest --no-pager -n 10
 fi
 echo "  PHASE 6 OK"
@@ -279,7 +279,7 @@ if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
     echo "  SSL OTTENUTO"
     SSL_OK=1
 else
-    echo "  SSL FAILED — check DNS"
+    echo "  SSL FAILED -- check DNS"
     SSL_OK=0
 fi
 echo "  PHASE 7 OK"
@@ -308,7 +308,7 @@ for MONTH in "$(date +%Y-%m)" "$(date -d '-1 month' +%Y-%m 2>/dev/null || date +
 done
 
 if [ "$GEOIP_OK" = "0" ]; then
-    echo "  GeoIP DB non scaricato — geo-blocking non attivo"
+    echo "  GeoIP DB non scaricato -- geo-blocking non attivo"
 fi
 
 # Controlla se il modulo geoip2 e' disponibile
@@ -341,7 +341,7 @@ if [ "$SSL_OK" = "1" ]; then
             deploy/nginx-production.conf > /etc/nginx/sites-available/arkmaniagest
         echo "  Config: SSL + GeoIP + IP whitelist"
     else
-        # SSL senza GeoIP — creo config a mano
+        # SSL senza GeoIP -- creo config a mano
         echo "  GeoIP module not available, generating SSL config without geo-blocking"
         cat > /etc/nginx/sites-available/arkmaniagest << NGINX_SSL
 limit_req_zone \$binary_remote_addr zone=api:10m rate=30r/s;
@@ -462,7 +462,7 @@ echo "  Fail2ban attivo"
 
 # Cron backup + health
 cat > /etc/cron.d/arkmaniagest << 'CRONS'
-# Daily backup (vault removed in v2.2.0 — backs up .env + nginx config)
+# Daily backup (vault removed in v2.2.0 -- backs up .env + nginx config)
 0 3 * * * root bash /opt/arkmaniagest/deploy/backup.sh >> /var/log/arkmaniagest/backup-cron.log 2>&1
 # Health watchdog: restart backend if /health stops responding
 */5 * * * * root curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 || systemctl restart arkmaniagest

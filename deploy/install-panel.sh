@@ -402,28 +402,44 @@ run_ssh "find /tmp/arkmaniagest-deploy/deploy -name '*.sh' -exec sed -i 's/\r//g
 
 if [[ $DB_INSTALL -eq 1 ]]; then
     section "Installing MariaDB on the target"
-    # Writing the install script to a local temp file + scp-ing it to the
-    # server sidesteps the shell-quoting hell of nested `sudo -n bash -c
-    # '...single-quotes in SQL...'`.  The remote then runs it directly
-    # with sudo, no inner -c needed.
+    # The install script body reads $1/$2/$3 (db_name, db_user, db_pass)
+    # rather than embedding them in the heredoc.  That sidesteps all the
+    # quoting edge cases around identifiers/passwords and lets us pass
+    # the values as plain positional args at invocation time.
     local_script="${STAGING}/install-mariadb.sh"
-    cat > "$local_script" <<EOF
+    cat > "$local_script" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+DB_NAME="$1"
+DB_USER="$2"
+DB_PASS="$3"
+
+if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
+    echo "ERROR: MariaDB install script requires 3 args: db_name db_user db_pass" >&2
+    exit 2
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq mariadb-server
 systemctl enable --now mariadb
+
 mysql --user=root --execute="
-  CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-  GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+  CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
+  GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
   FLUSH PRIVILEGES;
 "
 EOF
     remote_script="/tmp/arkmaniagest-install-mariadb.sh"
     run_scp "$local_script" "$remote_script" || fail "scp of MariaDB install script failed"
-    if run_ssh "sudo -n bash $remote_script && rm -f $remote_script"; then
+
+    # Shell-escape each value for safe single-arg passing through ssh.
+    sq_name="'${DB_NAME//\'/\'\\\'\'}'"
+    sq_user="'${DB_USER//\'/\'\\\'\'}'"
+    sq_pass="'${DB_PASS//\'/\'\\\'\'}'"
+    if run_ssh "sudo -n bash $remote_script $sq_name $sq_user $sq_pass && rm -f $remote_script"; then
         ok "MariaDB installed and panel DB created"
     else
         warn "MariaDB install returned non-zero; may need manual grants before re-running."

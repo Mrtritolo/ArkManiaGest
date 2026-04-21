@@ -472,27 +472,50 @@ function Send-RemoteScript([string]$script, [string]$remote_path) {
 if ($db_install) {
     Write-Host ""
     Write-Host "-- Installing MariaDB on the target --" -ForegroundColor Cyan
-    $sql = @"
+
+    # The install script body uses BASH positional args ($1/$2/$3) — we pass
+    # db_name/user/pass when invoking it on the remote.  Using a *literal*
+    # (single-quoted) PowerShell here-string means PS does no variable
+    # expansion and no backtick escape gymnastics: what we send is exactly
+    # what bash sees.
+    $sql = @'
 #!/usr/bin/env bash
 set -euo pipefail
+
+DB_NAME="$1"
+DB_USER="$2"
+DB_PASS="$3"
+
+if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
+    echo "ERROR: MariaDB install script requires 3 args: db_name db_user db_pass" >&2
+    exit 2
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq mariadb-server
 systemctl enable --now mariadb
+
+# Backticks around the identifier are emitted as literal backticks because
+# they are inside a bash double-quoted string where `\`` is a literal `.
 mysql --user=root --execute="
-  CREATE DATABASE IF NOT EXISTS ``${db_name}`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  CREATE USER IF NOT EXISTS '${db_user}'@'localhost' IDENTIFIED BY '${db_pass}';
-  GRANT ALL PRIVILEGES ON ``${db_name}``.* TO '${db_user}'@'localhost';
+  CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
+  GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
   FLUSH PRIVILEGES;
 "
-"@
+'@
+
     $remote_script_path = "/tmp/arkmaniagest-install-mariadb.sh"
     $scp_rc = Send-RemoteScript $sql $remote_script_path
     if ($scp_rc -ne 0) {
         Fail "scp of MariaDB install script failed (rc=$scp_rc)"
     }
-    # Single-arg SSH invocation: the remote shell runs the line verbatim.
-    $rc = Invoke-SSH @("sudo -n bash $remote_script_path && rm -f $remote_script_path")
+    # Shell-escape the three arguments once (single quotes + replace any ' with '\'').
+    $sq_name = "'" + ($db_name -replace "'", "'\\''") + "'"
+    $sq_user = "'" + ($db_user -replace "'", "'\\''") + "'"
+    $sq_pass = "'" + ($db_pass -replace "'", "'\\''") + "'"
+    $rc = Invoke-SSH @("sudo -n bash $remote_script_path $sq_name $sq_user $sq_pass && rm -f $remote_script_path")
     if ($rc -ne 0) {
         Write-Host "  WARNING: MariaDB install returned non-zero ($rc)." -ForegroundColor Yellow
         Write-Host "           You may need to install and grant privileges manually before re-running." -ForegroundColor Yellow
