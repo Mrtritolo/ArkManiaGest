@@ -1,11 +1,19 @@
 # docs/
 
-External specifications and reference material used while developing
-ArkManiaGest.  These files are **not deployed to production** and are
-not bundled with the backend or frontend — they exist only to help
-contributors understand the external APIs ArkManiaGest talks to.
+End-user guides and external specifications kept close to the source.
 
-## Contents
+## Install guides (for release users)
+
+- **[INSTALL.en.md](INSTALL.en.md)** — installation guide in English.
+- **[INSTALL.it.md](INSTALL.it.md)** — guida all'installazione in
+  italiano.
+
+Both guides cover the full flow: download the release, run
+`install-panel.ps1` or `install-panel.sh` from your client PC,
+configure DNS + SSL, log in, and add game-server machines.  These
+files are shipped inside every release bundle.
+
+## External API references (for contributors)
 
 ### `ServerForge_OpenAPI_Spec.json`
 Captured copy of the [ServerForge](https://serverforge.cx/) public API

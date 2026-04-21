@@ -7,6 +7,47 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.1] - 2026-04-21
+
+First-class interactive installers and release-bundle cleanup.
+
+### Added
+
+- **`deploy/install-panel.ps1`** (Windows client) and
+  **`deploy/install-panel.sh`** (Linux client): interactive installers
+  that prompt for target server / domain / DB credentials / admin
+  user, probe SSH (default keys or `ssh-agent` first; fall back to
+  explicit key file or password), generate `deploy.conf` + `.env`
+  with random `JWT_SECRET` / `FIELD_ENCRYPTION_KEY`, upload the
+  release tree via SCP, and run `full-deploy.sh` on the remote host —
+  then seed the first admin user via the `/settings/setup` endpoint.
+- **`docs/INSTALL.en.md`** and **`docs/INSTALL.it.md`**: end-user
+  installation guides in English and Italian, shipped inside the
+  release bundle.
+- README section "Panel on a Windows server" documenting the
+  WSL2 + Ubuntu approach for hosting the panel on Windows VPSes.
+
+### Changed
+
+- Release bundles (`arkmaniagest-v*-windows.zip` /
+  `arkmaniagest-v*-linux.tar.gz`) now contain **only** the scripts an
+  end user needs to install or update the panel.  Maintainer scripts
+  (`release.ps1`, `package-release.ps1`) moved to
+  `deploy/maintainer/` and excluded from release artefacts via
+  `.deployignore`.
+- `.github/workflows/release.yml` keeps the user-facing `.ps1` / `.bat`
+  helpers inside the Windows zip (previously all `*.ps1 *.bat *.vbs`
+  were excluded because the shared exclude list served the Linux
+  tarball too).  The Linux tarball still strips them, as before.
+
+### Fixed
+
+- **v2.3.0 Windows zip**: shipped without any `.ps1` script, making
+  the interactive flow impossible from a Windows client.  Re-tagged
+  and re-built.
+
+---
+
 ## [2.3.0] - 2026-04-21
 
 First public release.  Consolidates the entire V2 work behind a single

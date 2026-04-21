@@ -30,6 +30,8 @@ _deprecated
 config
 tests
 reference
+# Maintainer-only tooling (release automation) — not shipped to end users.
+deploy/maintainer
 
 # --- Windows-only scripts (never needed on the Linux server) ---
 *.ps1

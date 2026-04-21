@@ -207,12 +207,72 @@ administrator.
 
 ## Production deploy
 
-### First deploy (from a Windows PC)
-```powershell
-.\deploy\deploy-remote.ps1
-```
+The admin panel itself runs on a **Linux server** (Debian 11+ / Ubuntu
+22.04+) with only OpenSSH pre-installed — everything else (Python,
+Node, Nginx, MariaDB optional, Let's Encrypt, systemd, UFW, Fail2ban)
+is set up by the installer.  The *client* that runs the installer can
+be either Windows or Linux, with no extra dependencies beyond a working
+`ssh`/`scp`/`tar`.
 
-### Update
+### First install (from a Windows client)
+
+1. Download the latest release zip from
+   [Releases](https://github.com/Mrtritolo/ArkManiaGest/releases/latest).
+2. Unzip it anywhere on your PC.
+3. Open PowerShell inside the extracted folder and run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\deploy\install-panel.ps1
+   ```
+
+4. Follow the interactive prompts (target server, domain, admin email,
+   MariaDB password, admin user/password).  The script probes your
+   existing SSH setup first — if you already have a key loaded in
+   `ssh-agent`, no auth prompt is required.
+
+### First install (from a Linux client)
+
+1. Download the latest release tarball from
+   [Releases](https://github.com/Mrtritolo/ArkManiaGest/releases/latest).
+2. Extract it anywhere on your dev machine.
+3. Run:
+
+   ```bash
+   bash ./deploy/install-panel.sh
+   ```
+
+4. Same interactive flow as above.  Both scripts reach the same remote
+   server state.
+
+### Panel on a Windows server
+
+The panel installer targets Linux only.  If your target VPS is
+Windows-based, the recommended path is:
+
+1. Install **WSL2** on the Windows host with an Ubuntu 22.04 distro:
+   ```powershell
+   wsl --install -d Ubuntu-22.04
+   ```
+2. Start the Ubuntu shell and enable SSH inside WSL (`sudo apt install
+   openssh-server && sudo systemctl enable --now ssh`), then forward
+   port 22 from the Windows host to the WSL instance (or use
+   `wsl --exec`).
+3. Point `install-panel.ps1` / `.sh` at that WSL-Ubuntu endpoint.
+
+The game-server machines can stay native Windows — `os_type="windows"`
+is fully supported via the built-in `PlatformAdapter` that wraps
+`docker` and `POK-manager` through `wsl.exe`.
+
+### Updating an existing install
+
+Re-run the same `install-panel.*` script against the same target: it
+is idempotent.  The server-side `backend/.env` is preserved, and
+`migrate-env.sh` backfills any new `.env` keys introduced by the new
+release.
+
+Alternatively, use the incremental update path that skips package
+installation:
+
 ```powershell
 .\deploy\update-remote.ps1            # full
 .\deploy\update-remote.ps1 -BackendOnly
@@ -220,14 +280,21 @@ administrator.
 ```
 
 ### Server-side DB check
+
 ```bash
 sudo -u arkmania /opt/arkmaniagest/backend/venv/bin/python \
     /opt/arkmaniagest/deploy/test_db.py
 ```
+
 Verifies connectivity and row counts for the core tables on both Panel
 and Plugin databases.
 
 Full guide: [deploy/README.md](deploy/README.md).
+
+**Step-by-step install guides for end users** (also shipped inside the
+release bundle under `docs/`):
+- [English](docs/INSTALL.en.md)
+- [Italiano](docs/INSTALL.it.md)
 
 ---
 
