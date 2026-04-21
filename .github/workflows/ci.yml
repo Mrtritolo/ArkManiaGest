@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12']
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Smoke import (without DB)
+        # Verifies all routes, models, and schemas import correctly.
+        # Does NOT require a running MariaDB; create_app_tables() is
+        # only called from the lifespan handler.
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from app.api.routes import router
+          from app import main
+          from app.db.models.app import (
+              AppUser, SSHMachine, AppSetting,
+              ARKMServerInstance, ARKMInstanceAction, ARKMMariaDBInstance,
+          )
+          from app.schemas.server_instance import ServerInstanceCreate
+          from app.schemas.mariadb_instance import MariaDBInstanceCreate
+          from app.schemas.instance_action import InstanceActionRead
+          from app.ssh.platform import PlatformAdapter
+          adapter = PlatformAdapter(os_type='windows', wsl_distro='Ubuntu')
+          assert adapter.docker('ps').startswith(\"wsl.exe -d Ubuntu -- bash -c 'docker ps'\")
+          print('Backend smoke OK')
+          "
+
+  frontend:
+    name: Frontend (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20']
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify dist
+        run: |
+          test -f dist/index.html
+          test -d dist/assets
+
+  shellcheck:
+    name: Shell scripts syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: |
+          for f in deploy/*.sh; do
+            echo "Checking $f"
+            bash -n "$f"
+          done
