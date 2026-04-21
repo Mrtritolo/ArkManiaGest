@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Database, Monitor, Users, Server, RefreshCw, WifiOff } from 'lucide-react'
 import { machinesApi, databaseApi, arkmaniaApi } from '../services/api'
 
@@ -33,6 +34,7 @@ function formatDuration(mins: number | null): string {
 }
 
 export default function DashboardPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [loading, setLoading]         = useState(true)
   const [refreshing, setRefreshing]   = useState(false)
@@ -76,10 +78,10 @@ export default function DashboardPage() {
   const serversOffline = servers.filter(s => !s.is_online)
 
   const statCards = [
-    { label: 'Online Players', value: totalOnline,                                   icon: Users,   color: 'var(--accent)',         nav: '/online' },
-    { label: 'Servers Online', value: `${serversOnline}/${servers.length}`,           icon: Server,  color: 'var(--success)',        nav: '/serverforge' },
-    { label: 'SSH Machines',   value: `${machineCount.online}/${machineCount.total}`, icon: Monitor, color: 'var(--text-secondary)', nav: '/settings/machines' },
-    { label: 'Database',       value: dbOk ? 'OK' : 'Offline',                       icon: Database,color: dbOk ? 'var(--success)' : 'var(--danger)', nav: '/settings/db' },
+    { label: t('dashboard.stat.onlinePlayers'), value: totalOnline,                                  icon: Users,   color: 'var(--accent)',         nav: '/online' },
+    { label: t('dashboard.stat.serversOnline'), value: `${serversOnline}/${servers.length}`,         icon: Server,  color: 'var(--success)',        nav: '/serverforge' },
+    { label: t('dashboard.stat.sshMachines'),   value: `${machineCount.online}/${machineCount.total}`, icon: Monitor, color: 'var(--text-secondary)', nav: '/settings/machines' },
+    { label: t('dashboard.stat.database'),      value: dbOk ? t('dashboard.stat.dbOk') : t('dashboard.stat.dbOffline'), icon: Database, color: dbOk ? 'var(--success)' : 'var(--danger)', nav: '/settings/db' },
   ]
 
   return (
@@ -109,7 +111,7 @@ export default function DashboardPage() {
             ArkMania<span style={{ color: '#60a5fa', fontWeight: 600 }}>Gest</span>
           </h1>
           <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.55)', margin: '0.15rem 0 0' }}>
-            Cluster management panel &middot; Ark: Survival Ascended
+            {t('dashboard.subtitle')}
           </p>
         </div>
         <button
@@ -122,7 +124,7 @@ export default function DashboardPage() {
           }}
         >
           <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-          Refresh
+          {t('common.refresh')}
         </button>
       </div>
 
@@ -168,18 +170,18 @@ export default function DashboardPage() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Users size={16} color="var(--accent)" />
-              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>Online Players</span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{t('dashboard.card.onlinePlayers')}</span>
               <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)' }}>{totalOnline}</span>
             </div>
             <button onClick={() => navigate('/online')} className="btn btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}>
-              View all →
+              {t('dashboard.card.viewAll')}
             </button>
           </div>
           <div style={{ maxHeight: 420, overflowY: 'auto' }}>
             {players.length === 0 ? (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 <Users size={32} style={{ opacity: 0.15, display: 'block', margin: '0 auto 0.5rem' }} />
-                No players connected
+                {t('dashboard.card.noPlayers')}
               </div>
             ) : players.map((p) => (
               <div key={p.eos_id} style={{
@@ -190,7 +192,7 @@ export default function DashboardPage() {
                               background: '#22c55e', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
                 <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)',
                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {p.player_name || 'Unknown'}
+                  {p.player_name || t('dashboard.card.unknown')}
                 </span>
                 <span style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 600,
                                background: 'var(--accent-glow)', padding: '0.1rem 0.45rem',
@@ -215,21 +217,21 @@ export default function DashboardPage() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Server size={16} color="var(--success)" />
-              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>Server Status</span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{t('dashboard.card.serverStatus')}</span>
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {serversOnline} online
-                {serversOffline.length > 0 && ` · ${serversOffline.length} offline`}
+                {t('dashboard.card.serversOnlineCount', { count: serversOnline })}
+                {serversOffline.length > 0 && ` · ${t('dashboard.card.serversOfflineCount', { count: serversOffline.length })}`}
               </span>
             </div>
             <button onClick={() => navigate('/serverforge')} className="btn btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}>
-              ServerForge →
+              {t('dashboard.card.serverforgeLink')}
             </button>
           </div>
           <div style={{ maxHeight: 420, overflowY: 'auto' }}>
             {servers.length === 0 ? (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 <Server size={32} style={{ opacity: 0.15, display: 'block', margin: '0 auto 0.5rem' }} />
-                No servers found
+                {t('dashboard.card.noServers')}
               </div>
             ) : servers.map(srv => (
               <div key={srv.server_key} style={{
@@ -258,12 +260,12 @@ export default function DashboardPage() {
                       <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)' }}>{srv.session_count}</span>
                     </div>
                   ) : (
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', flexShrink: 0 }}>empty</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', flexShrink: 0 }}>{t('dashboard.card.empty')}</span>
                   )
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexShrink: 0 }}>
                     <WifiOff size={12} color="#ef4444" />
-                    <span style={{ fontSize: '0.68rem', color: '#ef4444', fontWeight: 600 }}>offline</span>
+                    <span style={{ fontSize: '0.68rem', color: '#ef4444', fontWeight: 600 }}>{t('dashboard.card.offline')}</span>
                   </div>
                 )}
               </div>

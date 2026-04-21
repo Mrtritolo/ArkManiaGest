@@ -1,0 +1,191 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "duplicate": "Duplicate",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "search": "Search",
+    "yes": "Yes",
+    "no": "No",
+    "confirm": "Confirm",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "language": "Language"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "machines": "SSH Machines",
+    "containers": "Containers",
+    "servers": "Servers",
+    "instances": "ARK Instances",
+    "mariadb": "MariaDB Instances",
+    "players": "Players",
+    "online": "Online players",
+    "bans": "Bans",
+    "decay": "Decay",
+    "leaderboard": "Leaderboard",
+    "rareDinos": "Rare Dinos",
+    "transferRules": "Transfer Rules",
+    "blueprints": "Blueprints",
+    "arkmaniaConfig": "ArkMania Config",
+    "arkshop": "ArkShop",
+    "gameConfig": "Game Config",
+    "serverForge": "ServerForge",
+    "eventLog": "Event Log",
+    "users": "Users",
+    "database": "Database",
+    "settings": "Settings",
+    "sqlConsole": "SQL Console",
+    "logout": "Log out"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "username": "Username",
+      "password": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "errorInvalid": "Invalid username or password.",
+      "errorNetwork": "Cannot reach the backend. Please try again."
+    },
+    "logout": "Log out"
+  },
+  "setup": {
+    "title": "Initial Configuration",
+    "stepTitle": "Create Administrator Account",
+    "stepDesc": "This account will be used to access the management portal. The database connection is already configured in the server .env file.",
+    "username": "Username",
+    "displayName": "Display name",
+    "password": "Password (min. 6 characters)",
+    "passwordConfirm": "Confirm password",
+    "passwordMismatch": "Passwords do not match",
+    "appName": "Application name",
+    "submit": "Create Account & Start",
+    "submitting": "Creating…",
+    "errorGeneric": "Setup failed",
+    "errorAlreadyDone": "Setup already completed.",
+    "placeholder": {
+      "username": "e.g. admin",
+      "displayName": "e.g. Alessio",
+      "password": "Access password…",
+      "passwordConfirm": "Repeat password…"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Cluster management panel · Ark: Survival Ascended",
+    "stat": {
+      "onlinePlayers": "Online Players",
+      "serversOnline": "Servers Online",
+      "sshMachines": "SSH Machines",
+      "database": "Database",
+      "dbOk": "OK",
+      "dbOffline": "Offline"
+    },
+    "card": {
+      "onlinePlayers": "Online Players",
+      "serverStatus": "Server Status",
+      "viewAll": "View all →",
+      "serverforgeLink": "ServerForge →",
+      "noPlayers": "No players connected",
+      "noServers": "No servers found",
+      "serversOnlineCount": "{{count}} online",
+      "serversOfflineCount": "{{count}} offline",
+      "empty": "empty",
+      "offline": "offline",
+      "unknown": "Unknown"
+    }
+  },
+  "machines": {
+    "title": "SSH Machines",
+    "subtitle": "Manage remote machines for SSH connections and file transfers",
+    "subtitleCount": "— {{count}} configured",
+    "newMachine": "New machine",
+    "importServerForge": "Import from ServerForge",
+    "section": {
+      "identification": "Identification",
+      "sshConnection": "SSH connection",
+      "arkPaths": "ARK: Survival Ascended paths"
+    },
+    "field": {
+      "name": "Name",
+      "description": "Description",
+      "hostname": "Hostname",
+      "ip": "IP address",
+      "port": "Port",
+      "user": "SSH user",
+      "auth": "Auth method",
+      "password": "SSH password",
+      "passphrase": "Passphrase",
+      "keyPath": "SSH key path",
+      "arkRoot": "ARK root directory",
+      "arkConfig": "Config directory",
+      "arkPlugins": "Plugin directory",
+      "active": "Active",
+      "osType": "Host OS",
+      "wslDistro": "WSL distribution"
+    },
+    "auth": {
+      "password": "Password",
+      "key": "SSH key",
+      "keyPassword": "Key + passphrase"
+    },
+    "os": {
+      "linux": "Native Linux",
+      "windows": "Windows + WSL"
+    },
+    "osHint": "Determines how POK-manager and docker are invoked over SSH.",
+    "wslHint": "Name of the WSL distribution (check with {{cmd}}).",
+    "tag": {
+      "inactive": "disabled",
+      "linux": "Linux",
+      "windows": "Windows+WSL"
+    },
+    "status": {
+      "unknown": "Unknown",
+      "online": "Online",
+      "offline": "Offline",
+      "error": "Error",
+      "testing": "Testing…"
+    },
+    "action": {
+      "test": "Test connection",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "delete": "Delete"
+    },
+    "form": {
+      "createTitle": "New SSH machine",
+      "editTitle": "Edit: {{name}}",
+      "create": "Create machine",
+      "update": "Update machine"
+    },
+    "empty": {
+      "title": "No machines configured",
+      "text": "Add your first SSH machine to start managing ARK servers."
+    },
+    "errors": {
+      "load": "Failed to load machines",
+      "save": "Failed to save the machine",
+      "delete": "Failed to delete the machine",
+      "test": "Connection test failed"
+    },
+    "messages": {
+      "created": "Machine \"{{name}}\" created",
+      "updated": "Machine \"{{name}}\" updated",
+      "deleted": "\"{{name}}\" deleted",
+      "duplicated": "Duplicated as \"{{name}}\""
+    }
+  },
+  "validation": {
+    "required": "Required",
+    "invalidPort": "Invalid port",
+    "passwordRequired": "Password is required"
+  }
+}

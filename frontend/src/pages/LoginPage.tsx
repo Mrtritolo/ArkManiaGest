@@ -5,6 +5,7 @@
  * Authenticates the user and passes the resulting JWT + profile up to App.
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { authApi, setAuthToken } from '../services/api'
 import type { AuthUser } from '../types'
@@ -14,6 +15,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onLoggedIn }: LoginPageProps) {
+  const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -32,7 +34,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
     } catch (err: unknown) {
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Connection error'
+        ?? t('auth.login.errorNetwork')
       setError(detail)
     } finally {
       setLoading(false)
@@ -58,13 +60,13 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
           )}
 
           <div className="form-group">
-            <label className="form-label">Username</label>
+            <label className="form-label">{t('auth.login.username')}</label>
             <input
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
               className="form-input"
-              placeholder="Enter username"
+              placeholder={t('auth.login.username')}
               autoFocus
               autoComplete="username"
               disabled={loading}
@@ -72,14 +74,14 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Password</label>
+            <label className="form-label">{t('auth.login.password')}</label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="form-input"
-                placeholder="Enter password"
+                placeholder={t('auth.login.password')}
                 autoComplete="current-password"
                 disabled={loading}
               />
@@ -92,6 +94,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
                   background: 'none', border: 'none', cursor: 'pointer',
                   color: 'var(--text-muted)',
                 }}
+                aria-label={showPassword ? t('common.close') : t('common.confirm')}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -104,7 +107,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
             style={{ width: '100%', marginTop: '0.5rem', padding: '0.65rem' }}
             disabled={loading || !username.trim() || !password}
           >
-            {loading ? 'Signing in…' : <><LogIn size={16} /> Sign in</>}
+            {loading ? t('auth.login.submitting') : <><LogIn size={16} /> {t('auth.login.submit')}</>}
           </button>
         </form>
       </div>

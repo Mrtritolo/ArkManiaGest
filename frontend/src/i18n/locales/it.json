@@ -1,0 +1,191 @@
+{
+  "common": {
+    "save": "Salva",
+    "cancel": "Annulla",
+    "delete": "Elimina",
+    "edit": "Modifica",
+    "duplicate": "Duplica",
+    "close": "Chiudi",
+    "back": "Indietro",
+    "next": "Avanti",
+    "loading": "Caricamento…",
+    "saving": "Salvataggio…",
+    "search": "Cerca",
+    "yes": "Sì",
+    "no": "No",
+    "confirm": "Conferma",
+    "retry": "Riprova",
+    "refresh": "Aggiorna",
+    "language": "Lingua"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "machines": "Macchine SSH",
+    "containers": "Container",
+    "servers": "Server",
+    "instances": "Istanze ARK",
+    "mariadb": "Istanze MariaDB",
+    "players": "Giocatori",
+    "online": "Giocatori online",
+    "bans": "Ban",
+    "decay": "Decay",
+    "leaderboard": "Classifica",
+    "rareDinos": "Dino rari",
+    "transferRules": "Regole transfer",
+    "blueprints": "Blueprint",
+    "arkmaniaConfig": "Config ArkMania",
+    "arkshop": "ArkShop",
+    "gameConfig": "Config gioco",
+    "serverForge": "ServerForge",
+    "eventLog": "Log eventi",
+    "users": "Utenti",
+    "database": "Database",
+    "settings": "Impostazioni",
+    "sqlConsole": "Console SQL",
+    "logout": "Esci"
+  },
+  "auth": {
+    "login": {
+      "title": "Accedi",
+      "username": "Nome utente",
+      "password": "Password",
+      "submit": "Accedi",
+      "submitting": "Accesso in corso…",
+      "errorInvalid": "Nome utente o password non validi.",
+      "errorNetwork": "Impossibile contattare il backend. Riprova."
+    },
+    "logout": "Esci"
+  },
+  "setup": {
+    "title": "Configurazione iniziale",
+    "stepTitle": "Crea l'account amministratore",
+    "stepDesc": "Questo account servirà ad accedere al portale di gestione. La connessione al database è già configurata nel file .env del server.",
+    "username": "Nome utente",
+    "displayName": "Nome visualizzato",
+    "password": "Password (almeno 6 caratteri)",
+    "passwordConfirm": "Conferma password",
+    "passwordMismatch": "Le password non coincidono",
+    "appName": "Nome applicazione",
+    "submit": "Crea account e avvia",
+    "submitting": "Creazione…",
+    "errorGeneric": "Setup fallito",
+    "errorAlreadyDone": "Setup già completato.",
+    "placeholder": {
+      "username": "es. admin",
+      "displayName": "es. Alessio",
+      "password": "Password di accesso…",
+      "passwordConfirm": "Ripeti la password…"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Pannello gestione cluster · Ark: Survival Ascended",
+    "stat": {
+      "onlinePlayers": "Giocatori online",
+      "serversOnline": "Server online",
+      "sshMachines": "Macchine SSH",
+      "database": "Database",
+      "dbOk": "OK",
+      "dbOffline": "Offline"
+    },
+    "card": {
+      "onlinePlayers": "Giocatori online",
+      "serverStatus": "Stato server",
+      "viewAll": "Vedi tutti →",
+      "serverforgeLink": "ServerForge →",
+      "noPlayers": "Nessun giocatore connesso",
+      "noServers": "Nessun server trovato",
+      "serversOnlineCount": "{{count}} online",
+      "serversOfflineCount": "{{count}} offline",
+      "empty": "vuoto",
+      "offline": "offline",
+      "unknown": "Sconosciuto"
+    }
+  },
+  "machines": {
+    "title": "Macchine SSH",
+    "subtitle": "Gestisci le macchine remote per connessioni SSH e trasferimento file",
+    "subtitleCount": "— {{count}} configurate",
+    "newMachine": "Nuova macchina",
+    "importServerForge": "Importa da ServerForge",
+    "section": {
+      "identification": "Identificazione",
+      "sshConnection": "Connessione SSH",
+      "arkPaths": "Percorsi Ark: Survival Ascended"
+    },
+    "field": {
+      "name": "Nome",
+      "description": "Descrizione",
+      "hostname": "Hostname",
+      "ip": "Indirizzo IP",
+      "port": "Porta",
+      "user": "Utente SSH",
+      "auth": "Metodo Auth",
+      "password": "Password SSH",
+      "passphrase": "Passphrase",
+      "keyPath": "Percorso chiave SSH",
+      "arkRoot": "Root directory ARK",
+      "arkConfig": "Directory configurazione",
+      "arkPlugins": "Directory plugin",
+      "active": "Attiva",
+      "osType": "Sistema operativo host",
+      "wslDistro": "Distro WSL"
+    },
+    "auth": {
+      "password": "Password",
+      "key": "Chiave SSH",
+      "keyPassword": "Chiave + passphrase"
+    },
+    "os": {
+      "linux": "Linux nativo",
+      "windows": "Windows + WSL"
+    },
+    "osHint": "Determina come POK-manager e docker vengono invocati via SSH.",
+    "wslHint": "Nome della distribuzione WSL (verifica con {{cmd}}).",
+    "tag": {
+      "inactive": "disattivata",
+      "linux": "Linux",
+      "windows": "Windows+WSL"
+    },
+    "status": {
+      "unknown": "Sconosciuto",
+      "online": "Online",
+      "offline": "Offline",
+      "error": "Errore",
+      "testing": "Test in corso…"
+    },
+    "action": {
+      "test": "Test connessione",
+      "edit": "Modifica",
+      "duplicate": "Duplica",
+      "delete": "Elimina"
+    },
+    "form": {
+      "createTitle": "Nuova macchina SSH",
+      "editTitle": "Modifica: {{name}}",
+      "create": "Crea macchina",
+      "update": "Aggiorna macchina"
+    },
+    "empty": {
+      "title": "Nessuna macchina configurata",
+      "text": "Aggiungi la prima macchina SSH per iniziare a gestire i tuoi server Ark."
+    },
+    "errors": {
+      "load": "Impossibile caricare le macchine",
+      "save": "Errore durante il salvataggio",
+      "delete": "Errore durante l'eliminazione",
+      "test": "Test connessione fallito"
+    },
+    "messages": {
+      "created": "Macchina \"{{name}}\" creata",
+      "updated": "Macchina \"{{name}}\" aggiornata",
+      "deleted": "\"{{name}}\" eliminata",
+      "duplicated": "Duplicata come \"{{name}}\""
+    }
+  },
+  "validation": {
+    "required": "Obbligatorio",
+    "invalidPort": "Porta non valida",
+    "passwordRequired": "Password obbligatoria"
+  }
+}
