@@ -1,0 +1,53 @@
+# .gitignore - ArkManiaGest
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+*.vault
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# SSH Keys
+*.pem
+*.key
+id_rsa*
+
+# File deprecati
+_deprecated/
+
+# Cartelle vuote
+config/
+.claude/settings.local.json
+deploy/imports/s-dino-variants.json
+deploy/imports/hair-chairs-items.json
+deploy/imports/dododex-skins-test.json
+deploy/imports/_parse_dododex_items.py

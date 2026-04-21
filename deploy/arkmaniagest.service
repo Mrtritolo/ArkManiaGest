@@ -1,0 +1,31 @@
+[Unit]
+Description=ArkManiaGest Backend API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arkmania
+Group=arkmania
+WorkingDirectory=/opt/arkmaniagest/backend
+# Piu' worker possibili (no vault in-memory). 1 e' sufficiente per un pannello admin.
+ExecStart=/opt/arkmaniagest/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --log-level warning --access-log
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/arkmaniagest/backend.log
+StandardError=append:/var/log/arkmaniagest/backend-error.log
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=no
+ReadWritePaths=/opt/arkmaniagest /var/log/arkmaniagest
+PrivateTmp=yes
+PrivateDevices=yes
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/arkmaniagest/backend/.env
+
+[Install]
+WantedBy=multi-user.target

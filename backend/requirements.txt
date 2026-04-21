@@ -1,0 +1,38 @@
+# ArkManiaGest - Backend Dependencies
+# =====================================
+# Versioni flessibili per compatibilita con Python 3.12-3.14
+
+# --- Framework ---
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.10
+pydantic-settings>=2.7
+
+# --- Database (MariaDB) ---
+sqlalchemy>=2.0
+aiomysql>=0.2.0          # Driver async MySQL/MariaDB (pure Python, no Rust)
+pymysql>=1.1             # Driver sync (per Alembic e aiomysql)
+alembic>=1.14
+
+# --- SSH / SCP ---
+paramiko>=3.5
+scp>=0.15
+
+# --- Crittografia vault locale ---
+cryptography>=44
+
+# --- Config file parsing ---
+pyyaml>=6.0
+
+# --- Auth ---
+PyJWT>=2.9
+bcrypt>=4.2
+
+# --- Utility ---
+python-dotenv>=1.0
+python-multipart>=0.0.12
+httpx>=0.28
+
+# --- Testing ---
+pytest>=8.3
+pytest-asyncio>=0.25

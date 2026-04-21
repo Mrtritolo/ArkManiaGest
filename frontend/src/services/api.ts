@@ -1,0 +1,743 @@
+/**
+ * api.ts — Axios-based HTTP client for the ArkManiaGest FastAPI backend.
+ *
+ * All backend communication goes through the named API objects exported from
+ * this module (e.g. {@link authApi}, {@link machinesApi}, {@link playersApi}).
+ * Each object groups endpoints by domain, mirroring the backend router structure.
+ *
+ * Authentication:
+ *   The JWT token is stored in the module-level {@link _authToken} variable
+ *   (NOT in localStorage) to prevent XSS-based token theft.  Use
+ *   {@link setAuthToken} / {@link getAuthToken} to manage the token lifecycle.
+ *
+ * Error handling:
+ *   - 401 on a protected endpoint → token is cleared and {@link _onAuthError}
+ *     callback is invoked (triggers redirect to login in App.tsx).
+ *   - 503 → backend unreachable; same callback.
+ *   - All other errors are left for individual callers to handle.
+ */
+
+import axios from "axios";
+import type {
+  AppSettings,
+  AppSettingsUpdate,
+  DatabaseConfig,
+  DatabaseTestRequest,
+  DatabaseTestResult,
+  SSHMachine,
+  SSHMachineCreate,
+  SSHMachineUpdate,
+  SSHTestResult,
+  SFMachine,
+  SFContainer,
+  SFCluster,
+  SFImportPreview,
+  SFImportRequest,
+  PlayerListItem,
+  PlayerFull,
+  PlayersStats,
+  PermissionGroupItem,
+  AuthUser,
+  LoginResponse,
+} from "../types";
+
+// ---------------------------------------------------------------------------
+// Base URL
+// ---------------------------------------------------------------------------
+
+/**
+ * In production the frontend is served from the same origin as the API (via
+ * Nginx proxy), so we use a relative path.  In development the Vite dev server
+ * runs separately from FastAPI, so we point directly at localhost:8000.
+ */
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "/api/v1" : "http://localhost:8000/api/v1");
+
+const api = axios.create({
+  baseURL: API_BASE,
+  timeout: 30_000,
+  headers: { "Content-Type": "application/json" },
+});
+
+// ---------------------------------------------------------------------------
+// Token management
+// ---------------------------------------------------------------------------
+
+/** In-memory JWT — intentionally NOT persisted to localStorage. */
+let _authToken: string | null = null;
+/** Callback invoked when a 401 / 503 response clears the token. */
+let _onAuthError: (() => void) | null = null;
+
+/** Store the JWT after a successful login. */
+export function setAuthToken(token: string | null): void {
+  _authToken = token;
+}
+
+/** Read the current JWT (e.g. to inspect expiry in tests). */
+export function getAuthToken(): string | null {
+  return _authToken;
+}
+
+/**
+ * Register a callback that is invoked when the user's session expires or
+ * the backend becomes unavailable.  Typically used to redirect to the login page.
+ */
+export function setOnAuthError(callback: () => void): void {
+  _onAuthError = callback;
+}
+
+// ---------------------------------------------------------------------------
+// Interceptors
+// ---------------------------------------------------------------------------
+
+/** Attach the JWT to every outgoing request. */
+api.interceptors.request.use((config) => {
+  if (_authToken) {
+    config.headers.Authorization = `Bearer ${_authToken}`;
+  }
+  return config;
+});
+
+/**
+ * Response interceptor: handles session expiry and backend unavailability.
+ *
+ * Only 401 and 503 errors are handled here.  All other error statuses are
+ * passed through to the individual call-site handlers so pages can display
+ * context-specific messages.
+ */
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status: number | undefined = error.response?.status;
+    const url: string = error.config?.url ?? "";
+
+    // Log non-2xx errors in development for easier debugging
+    if (status && status >= 400) {
+      console.warn(
+        `[API ${status}] ${error.config?.method?.toUpperCase()} ${url}:`,
+        error.response?.data?.detail ?? error.message
+      );
+    }
+
+    // 401 on a protected endpoint = expired / invalid token → force re-login
+    const isLoginEndpoint = url.includes("/auth/login");
+    if (status === 401 && _authToken && !isLoginEndpoint) {
+      console.warn("[AUTH] Token expired or invalid — redirecting to login.");
+      _authToken = null;
+      _onAuthError?.();
+    }
+
+    // 503 = backend process is down
+    if (status === 503) {
+      console.warn("[AUTH] Backend unavailable (503).");
+      _authToken = null;
+      _onAuthError?.();
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+/** Endpoints for login and current-user operations. */
+export const authApi = {
+  /** Authenticate with username/password and receive a JWT. */
+  login: (username: string, password: string) =>
+    api.post<LoginResponse>("/auth/login", { username, password }),
+
+  /** Return the profile of the currently authenticated user. */
+  me: () => api.get<AuthUser>("/auth/me"),
+
+  /** Change the current user's own password. */
+  changePassword: (old_password: string, new_password: string) =>
+    api.put("/auth/me/password", { old_password, new_password }),
+};
+
+// ---------------------------------------------------------------------------
+// User management (admin only)
+// ---------------------------------------------------------------------------
+
+/** CRUD operations on application user accounts. */
+export const usersApi = {
+  list: () => api.get<AuthUser[]>("/users"),
+  create: (data: {
+    username: string;
+    password: string;
+    display_name: string;
+    role: string;
+  }) => api.post<AuthUser>("/users", data),
+  update: (
+    id: number,
+    data: { display_name?: string; role?: string; active?: boolean; password?: string }
+  ) => api.put<AuthUser>(`/users/${id}`, data),
+  delete: (id: number) => api.delete(`/users/${id}`),
+};
+
+// ---------------------------------------------------------------------------
+// App settings & setup
+// ---------------------------------------------------------------------------
+
+/** Application-level configuration and first-run setup. */
+export const settingsApi = {
+  /** Check whether the app has been configured (at least one user exists). */
+  status: () =>
+    api.get<{ configured: boolean; users_count: number; db_connected: boolean }>(
+      "/settings/status"
+    ),
+
+  /** First-run setup: create the initial admin user and basic settings. */
+  setup: (data: {
+    admin_username: string;
+    admin_password: string;
+    admin_display_name?: string;
+    app_name?: string;
+    log_level?: string;
+  }) => api.post("/settings/setup", data),
+
+  get: () => api.get<AppSettings>("/settings/app-settings"),
+  update: (data: AppSettingsUpdate) =>
+    api.put<AppSettings>("/settings/app-settings", data),
+};
+
+// ---------------------------------------------------------------------------
+// Database configuration
+// ---------------------------------------------------------------------------
+
+/** Read-only access to DB config and connectivity testing. */
+export const databaseApi = {
+  get: () => api.get<DatabaseConfig>("/settings/database"),
+  test: (data: DatabaseTestRequest) =>
+    api.post<DatabaseTestResult>("/settings/database/test", data),
+  testCurrent: () => api.post<DatabaseTestResult>("/settings/database/test-current"),
+};
+
+// ---------------------------------------------------------------------------
+// SSH machines
+// ---------------------------------------------------------------------------
+
+/** CRUD operations and connectivity testing for SSH machine records. */
+export const machinesApi = {
+  list: (activeOnly = false) =>
+    api.get<SSHMachine[]>("/machines", { params: { active_only: activeOnly } }),
+  get: (id: number) => api.get<SSHMachine>(`/machines/${id}`),
+  create: (data: SSHMachineCreate) => api.post<SSHMachine>("/machines", data),
+  update: (id: number, data: SSHMachineUpdate) =>
+    api.put<SSHMachine>(`/machines/${id}`, data),
+  delete: (id: number) => api.delete(`/machines/${id}`),
+  duplicate: (id: number) => api.post<SSHMachine>(`/machines/${id}/duplicate`),
+  test: (id: number) => api.post<SSHTestResult>(`/machines/${id}/test`),
+  count: () =>
+    api.get<{ total: number; active: number; online: number }>("/machines/count"),
+};
+
+// ---------------------------------------------------------------------------
+// Game servers (placeholder — CRUD not yet implemented)
+// ---------------------------------------------------------------------------
+
+export const serversApi = {
+  list: () => api.get("/servers"),
+  get: (id: number) => api.get(`/servers/${id}`),
+  create: (data: unknown) => api.post("/servers", data),
+  update: (id: number, data: unknown) => api.put(`/servers/${id}`, data),
+  delete: (id: number) => api.delete(`/servers/${id}`),
+};
+
+// ---------------------------------------------------------------------------
+// SSH direct execution (debug utilities)
+// ---------------------------------------------------------------------------
+
+export const sshApi = {
+  testConnection: (data: unknown) => api.post("/ssh/test-connection", data),
+  execute: (data: unknown) => api.post("/ssh/execute", data),
+  upload: (data: unknown) => api.post("/ssh/upload", data),
+};
+
+// ---------------------------------------------------------------------------
+// ServerForge
+// ---------------------------------------------------------------------------
+
+/** ServerForge API proxy endpoints for container / cluster management. */
+export const sfApi = {
+  getConfig: () =>
+    api.get<{ has_token: boolean; base_url: string }>("/sf/config"),
+  updateConfig: (token: string, base_url?: string) =>
+    api.put("/sf/config", { token, base_url }),
+  testToken: () =>
+    api.post<{ success: boolean; message: string }>("/sf/config/test"),
+
+  machines: () =>
+    api.get<{ success: boolean; data: SFMachine[]; total_count: number }>("/sf/machines"),
+  machine: (id: number) => api.get<{ success: boolean; data: unknown }>(`/sf/machines/${id}`),
+
+  containers: () =>
+    api.get<{ success: boolean; data: SFContainer[]; total_count: number }>("/sf/containers"),
+  container: (id: number) =>
+    api.get<{ success: boolean; data: unknown }>(`/sf/containers/${id}`),
+  containerStatus: (id: number) =>
+    api.get<{ success: boolean; data: unknown }>(`/sf/containers/${id}/status`),
+  startContainer: (id: number) => api.post(`/sf/containers/${id}/start`),
+  stopContainer: (id: number) => api.post(`/sf/containers/${id}/stop`),
+  restartContainer: (id: number) => api.post(`/sf/containers/${id}/restart`),
+
+  clusters: () =>
+    api.get<{ success: boolean; data: SFCluster[]; total_count: number }>("/sf/clusters"),
+  cluster: (id: number) => api.get<{ success: boolean; data: unknown }>(`/sf/clusters/${id}`),
+
+  previewImport: () =>
+    api.get<{ machines: SFImportPreview[]; total: number }>("/sf/machines/preview-import"),
+  importMachine: (data: SFImportRequest) => api.post("/sf/machines/import", data),
+};
+
+// ---------------------------------------------------------------------------
+// Players
+// ---------------------------------------------------------------------------
+
+/** Player management: list, points, permissions, name sync, character copy. */
+export const playersApi = {
+  list: (params?: {
+    search?: string;
+    group?: string;
+    limit?: number;
+    offset?: number;
+  }) => api.get<PlayerListItem[]>("/players", { params }),
+
+  stats: () => api.get<PlayersStats>("/players/stats"),
+
+  get: (id: number) => api.get<PlayerFull>(`/players/${id}`),
+
+  update: (
+    id: number,
+    data: { name?: string; permission_groups?: string; timed_permission_groups?: string }
+  ) => api.put(`/players/${id}`, data),
+
+  setPoints: (id: number, points: number) =>
+    api.put(`/players/${id}/points`, { points }),
+
+  addPoints: (id: number, amount: number) =>
+    api.post(`/players/${id}/points/add`, { amount }),
+
+  permissionGroups: () =>
+    api.get<PermissionGroupItem[]>("/players/permissions/groups"),
+
+  updatePermissionGroup: (id: number, permissions: string) =>
+    api.put(`/players/permissions/groups/${id}`, { permissions }),
+
+  /**
+   * Sync player character names from .arkprofile binary files via SSH.
+   *
+   * @param machineId    - Restrict to a single machine (omit for all machines).
+   * @param containerName - Restrict to a specific container (omit for all containers).
+   */
+  syncNames: (machineId?: number, containerName?: string) => {
+    const params: Record<string, unknown> = {};
+    if (machineId) params.machine_id = machineId;
+    if (containerName) params.container_name = containerName;
+    return api.post("/players/sync-names", null, { params, timeout: 120_000 });
+  },
+
+  /** Return containers eligible for the name sync operation. */
+  syncContainers: () => api.get("/players/sync-containers"),
+
+  /**
+   * Find all maps where a player's .arkprofile exists.
+   *
+   * @param eosId     - Player's EOS_Id.
+   * @param machineId - Restrict to a single machine (omit for all).
+   */
+  findPlayerMaps: (eosId: string, machineId?: number) => {
+    const params: Record<string, unknown> = { eos_id: eosId, debug: true };
+    if (machineId) params.machine_id = machineId;
+    return api.get("/players/find-maps", { params, timeout: 120_000 });
+  },
+
+  /** Copy a player's .arkprofile from one map/machine to another. */
+  copyCharacter: (data: {
+    source_machine_id: number;
+    source_container: string;
+    source_profile_path: string;
+    dest_machine_id: number;
+    dest_container: string;
+    dest_map_name: string;
+    backup?: boolean;
+  }) => api.post("/players/copy-character", data, { timeout: 120_000 }),
+};
+
+// ---------------------------------------------------------------------------
+// Blueprints
+// ---------------------------------------------------------------------------
+
+export const blueprintsApi = {
+  status: () =>
+    api.get<{
+      has_data: boolean;
+      total_blueprints: number;
+      last_sync: string | null;
+      sources: string[];
+      version: number;
+    }>("/blueprints/status"),
+  testConnection: () => api.get("/blueprints/test-connection"),
+  sync: () =>
+    api.post<{
+      success: boolean;
+      total_blueprints: number;
+      items_count: number;
+      dinos_count: number;
+      commands_count: number;
+      sources: string[];
+      errors: string[];
+    }>("/blueprints/sync", null, { timeout: 120_000 }),
+  list: (params?: {
+    search?: string;
+    category?: string;
+    type?: string;
+    limit?: number;
+    offset?: number;
+  }) => api.get<{ items: unknown[]; total: number }>("/blueprints", { params }),
+  categories: () =>
+    api.get<{ categories: { name: string; count: number }[] }>("/blueprints/categories"),
+  types: () =>
+    api.get<{ types: { name: string; count: number }[] }>("/blueprints/types"),
+  clear: () => api.delete("/blueprints"),
+
+  // Category management
+  allCategories: () =>
+    api.get<{ categories: string[] }>("/blueprints/categories/list"),
+  updateCategory: (bpId: string, category: string) =>
+    api.put(`/blueprints/${encodeURIComponent(bpId)}/category`, { category }),
+  bulkUpdateCategory: (ids: string[], category: string) =>
+    api.put("/blueprints/bulk-category", { ids, category }),
+
+  // Import / Export
+  exportAll: () =>
+    api.get<unknown[]>("/blueprints/export"),
+  importBlueprints: (blueprints: unknown[], mode: "merge" | "replace" = "merge") =>
+    api.post<{ success: boolean; added: number; updated: number; skipped: number; total: number }>(
+      "/blueprints/import", { blueprints, mode }
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// Containers
+// ---------------------------------------------------------------------------
+
+export const containersApi = {
+  scanMachine: (machineId: number, basePath?: string) =>
+    api.post(
+      `/containers/machines/${machineId}/scan`,
+      null,
+      basePath ? { params: { base_path: basePath } } : {}
+    ),
+  getMachineContainers: (machineId: number) =>
+    api.get(`/containers/machines/${machineId}/containers`),
+  getAllContainers: () => api.get("/containers/containers"),
+  rescanContainer: (machineId: number, containerName: string) =>
+    api.post(`/containers/machines/${machineId}/containers/${containerName}/rescan`),
+  readFile: (machineId: number, containerName: string, pathKey: string) =>
+    api.get(
+      `/containers/machines/${machineId}/containers/${containerName}/file`,
+      { params: { path_key: pathKey } }
+    ),
+  writeFile: (
+    machineId: number,
+    containerName: string,
+    pathKey: string,
+    content: string,
+    backup = true
+  ) =>
+    api.post(
+      `/containers/machines/${machineId}/containers/${containerName}/file`,
+      { content, backup },
+      { params: { path_key: pathKey } }
+    ),
+  browse: (machineId: number, containerName: string, subPath = "") =>
+    api.get(
+      `/containers/machines/${machineId}/containers/${containerName}/browse`,
+      { params: { sub_path: subPath } }
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// ArkShop
+// ---------------------------------------------------------------------------
+
+export const arkshopApi = {
+  servers: () => api.get("/arkshop/servers"),
+  pull: (machineId: number, containerName: string) =>
+    api.post("/arkshop/pull", null, {
+      params: { machine_id: machineId, container_name: containerName },
+      timeout: 60_000,
+    }),
+  deploy: (
+    versionId?: number,
+    machineId?: number,
+    containerName?: string,
+    force?: boolean
+  ) => {
+    const params: Record<string, unknown> = {};
+    if (versionId != null) params.version_id = versionId;
+    if (machineId != null) params.machine_id = machineId;
+    if (containerName) params.container_name = containerName;
+    if (force) params.force = true;
+    return api.post("/arkshop/deploy", null, { params, timeout: 120_000 });
+  },
+  listVersions: () => api.get("/arkshop/versions"),
+  saveVersion: (label: string) => api.post("/arkshop/versions", { label }),
+  restoreVersion: (id: number) => api.post(`/arkshop/versions/${id}/restore`),
+  deleteVersion: (id: number) => api.delete(`/arkshop/versions/${id}`),
+  getConfig: () => api.get("/arkshop/config"),
+  configStatus: () => api.get("/arkshop/config/status"),
+  uploadConfig: (config: unknown) => api.post("/arkshop/config", { config }),
+  deleteConfig: () => api.delete("/arkshop/config"),
+  exportConfig: () => api.get("/arkshop/config/export"),
+  getMysql: () => api.get("/arkshop/mysql"),
+  updateMysql: (mysql: unknown) => api.put("/arkshop/mysql", { mysql }),
+  getGeneral: () => api.get("/arkshop/general"),
+  updateGeneral: (general: unknown) => api.put("/arkshop/general", { general }),
+  listShopItems: () => api.get("/arkshop/shop-items"),
+  updateShopItem: (key: string, item: unknown) =>
+    api.put("/arkshop/shop-items", { key, item }),
+  deleteShopItem: (key: string) => api.delete(`/arkshop/shop-items/${key}`),
+  listKits: () => api.get("/arkshop/kits"),
+  updateKit: (key: string, kit: unknown) => api.put("/arkshop/kits", { key, kit }),
+  deleteKit: (key: string) => api.delete(`/arkshop/kits/${key}`),
+  listSellItems: () => api.get("/arkshop/sell-items"),
+  updateSellItem: (key: string, item: unknown) =>
+    api.put("/arkshop/sell-items", { key, item }),
+  deleteSellItem: (key: string) => api.delete(`/arkshop/sell-items/${key}`),
+  getMessages: () => api.get("/arkshop/messages"),
+  updateMessages: (messages: unknown) => api.put("/arkshop/messages", { messages }),
+};
+
+// ---------------------------------------------------------------------------
+// ArkMania plugin configuration
+// ---------------------------------------------------------------------------
+
+export const arkmaniaApi = {
+  listModules: () => api.get("/arkmania/modules"),
+  getModule: (module: string, serverKey = "*") =>
+    api.get(`/arkmania/modules/${module}`, { params: { server_key: serverKey } }),
+  updateModule: (
+    module: string,
+    serverKey: string,
+    items: { config_key: string; config_value: string; description?: string }[]
+  ) => api.put(`/arkmania/modules/${module}`, { server_key: serverKey, items }),
+
+  getConfig: (key: string, serverKey = "*") =>
+    api.get("/arkmania/config", { params: { key, server_key: serverKey } }),
+  setConfig: (data: {
+    config_key: string;
+    config_value: string;
+    description?: string;
+    server_key?: string;
+  }) => api.put("/arkmania/config", data),
+  addConfig: (data: {
+    config_key: string;
+    config_value: string;
+    description?: string;
+    server_key?: string;
+  }) => api.post("/arkmania/config", data),
+  deleteConfigOverride: (key: string, serverKey: string) =>
+    api.delete("/arkmania/config", { params: { key, server_key: serverKey } }),
+
+  listServers: () => api.get("/arkmania/servers"),
+  createServer: (data: {
+    server_key: string; display_name: string; map_name: string;
+    game_mode?: string; server_type?: string; cluster_group?: string; max_players?: number;
+  }) => api.post("/arkmania/servers", data),
+  updateServer: (serverKey: string, data: unknown) =>
+    api.put(`/arkmania/servers/${serverKey}`, data),
+  deleteServer: (serverKey: string) =>
+    api.delete(`/arkmania/servers/${serverKey}`),
+  getServerOverrides: (serverKey: string) =>
+    api.get(`/arkmania/servers/${serverKey}/overrides`),
+
+  search: (q: string) => api.get("/arkmania/search", { params: { q } }),
+  getOnlinePlayers: (serverKey?: string) =>
+    api.get("/arkmania/online", {
+      params: serverKey ? { server_key: serverKey } : {},
+    }),
+  getPermissionGroups: () => api.get("/arkmania/permission-groups"),
+
+  // Event log
+  getEvents: (params?: {
+    event_type?: string; server_key?: string; search?: string;
+    limit?: number; offset?: number;
+  }) => api.get("/arkmania/events", { params }),
+  getEventStats: () => api.get("/arkmania/events/stats"),
+  purgeEvents: (keepDays: number, eventType?: string) =>
+    api.delete("/arkmania/events", { params: { keep_days: keepDays, ...(eventType ? { event_type: eventType } : {}) } }),
+};
+
+// ---------------------------------------------------------------------------
+// ArkMania — Decay
+// ---------------------------------------------------------------------------
+
+export const arkDecayApi = {
+  overview: () => api.get("/arkmania/decay"),
+  tribes: (params?: { status?: string; search?: string; limit?: number }) =>
+    api.get("/arkmania/decay/tribes", { params }),
+  pending: () => api.get("/arkmania/decay/pending"),
+  log: (params?: { limit?: number; server_key?: string }) =>
+    api.get("/arkmania/decay/log", { params }),
+};
+
+// ---------------------------------------------------------------------------
+// ArkMania — Bans
+// ---------------------------------------------------------------------------
+
+export const arkBansApi = {
+  list: (params?: { active_only?: boolean; search?: string; limit?: number }) =>
+    api.get("/arkmania/bans", { params }),
+  get: (id: number) => api.get(`/arkmania/bans/${id}`),
+  create: (data: {
+    eos_id: string;
+    player_name?: string;
+    reason?: string;
+    banned_by?: string;
+    expire_time?: string;
+  }) => api.post("/arkmania/bans", data),
+  unban: (id: number, unbannedBy = "Admin") =>
+    api.put(`/arkmania/bans/${id}/unban`, null, {
+      params: { unbanned_by: unbannedBy },
+    }),
+};
+
+// ---------------------------------------------------------------------------
+// ArkMania — Rare Dinos
+// ---------------------------------------------------------------------------
+
+export const arkRareDinosApi = {
+  list: (params?: { map_name?: string; enabled_only?: boolean }) =>
+    api.get("/arkmania/rare-dinos", { params }),
+  create: (data: unknown) => api.post("/arkmania/rare-dinos", data),
+  update: (id: number, data: unknown) =>
+    api.put(`/arkmania/rare-dinos/${id}`, data),
+  delete: (id: number) => api.delete(`/arkmania/rare-dinos/${id}`),
+  bulkUpdate: (dinos: unknown[], replaceAll = false) =>
+    api.post("/arkmania/rare-dinos/bulk", dinos, {
+      params: { replace_all: replaceAll },
+    }),
+  spawns: (params?: {
+    limit?: number;
+    event_type?: string;
+    server_key?: string;
+  }) => api.get("/arkmania/rare-dinos/spawns", { params }),
+  generate: (params: {
+    count?: number;
+    map_name?: string;
+    stat_preset?: string;
+    exclude_existing?: boolean;
+  }) => api.post<{
+    generated: Record<string, unknown>[];
+    count: number;
+    available_dinos: number;
+    excluded_existing: number;
+  }>("/arkmania/rare-dinos/generate", params),
+};
+
+// ---------------------------------------------------------------------------
+// ArkMania — Transfer Rules
+// ---------------------------------------------------------------------------
+
+export const arkTransferRulesApi = {
+  list: () => api.get("/arkmania/transfer-rules"),
+  create: (data: {
+    source_server: string;
+    dest_server: string;
+    transfer_level: number;
+    notes?: string;
+  }) => api.post("/arkmania/transfer-rules", data),
+  update: (id: number, data: { transfer_level?: number; notes?: string }) =>
+    api.put(`/arkmania/transfer-rules/${id}`, data),
+  delete: (id: number) => api.delete(`/arkmania/transfer-rules/${id}`),
+};
+
+// ---------------------------------------------------------------------------
+// ArkMania — Leaderboard
+// ---------------------------------------------------------------------------
+
+export const arkLeaderboardApi = {
+  overview: () => api.get("/arkmania/leaderboard"),
+  scores: (params?: {
+    server_type?: string;
+    sort_by?: string;
+    limit?: number;
+    offset?: number;
+    search?: string;
+  }) => api.get("/arkmania/leaderboard/scores", { params }),
+  events: (params?: {
+    server_type?: string;
+    event_type?: number;
+    eos_id?: string;
+    limit?: number;
+  }) => api.get("/arkmania/leaderboard/events", { params }),
+  player: (eosId: string) => api.get(`/arkmania/leaderboard/player/${eosId}`),
+};
+
+// ---------------------------------------------------------------------------
+// Game config (INI editor)
+// ---------------------------------------------------------------------------
+
+export const gameConfigApi = {
+  getDefinitions: () => api.get("/game-config/definitions"),
+  loadConfig: (machineId: number, containerName: string) =>
+    api.get(
+      `/game-config/machines/${machineId}/containers/${containerName}/config`,
+      { timeout: 60_000 }
+    ),
+  saveConfig: (machineId: number, containerName: string, data: unknown) =>
+    api.post(
+      `/game-config/machines/${machineId}/containers/${containerName}/config`,
+      data
+    ),
+  saveRaw: (machineId: number, containerName: string, data: unknown) =>
+    api.post(
+      `/game-config/machines/${machineId}/containers/${containerName}/config/raw`,
+      data
+    ),
+  saveStacks: (machineId: number, containerName: string, data: unknown) =>
+    api.post(
+      `/game-config/machines/${machineId}/containers/${containerName}/config/stacks`,
+      data
+    ),
+  saveCrafting: (machineId: number, containerName: string, data: unknown) =>
+    api.post(
+      `/game-config/machines/${machineId}/containers/${containerName}/config/crafting`,
+      data
+    ),
+  saveNpcReplacements: (machineId: number, containerName: string, data: unknown) =>
+    api.post(
+      `/game-config/machines/${machineId}/containers/${containerName}/config/npc-replacements`,
+      data
+    ),
+  saveOverrideRaw: (machineId: number, containerName: string, data: unknown) =>
+    api.post(
+      `/game-config/machines/${machineId}/containers/${containerName}/config/override-raw`,
+      data
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// SQL Console (admin only)
+// ---------------------------------------------------------------------------
+
+/** Direct SQL query execution against the configured MariaDB database. */
+export const sqlConsoleApi = {
+  /** Execute an arbitrary SQL query (SELECT, INSERT, UPDATE, DDL, etc.). */
+  execute: (query: string) =>
+    api.post("/sql/execute", { query }),
+
+  /** List all tables in the configured database with size information. */
+  tables: () =>
+    api.get("/sql/tables"),
+
+  /** Return column-level metadata for a specific table. */
+  tableSchema: (tableName: string) =>
+    api.get(`/sql/tables/${tableName}/schema`),
+};
+
+export default api;

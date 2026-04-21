@@ -1,0 +1,104 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Server Forge",
+    "version": "0.0.1"
+  },
+  "servers": [
+    {
+      "url": "https://serverforge.cx/api"
+    }
+  ],
+  "security": [
+    {
+      "http": []
+    }
+  ],
+  "paths": {
+    "/user/machines": {
+      "get": {
+        "operationId": "user.machines",
+        "summary": "Get all machines accessible by the authenticated user",
+        "tags": ["UserResource"]
+      }
+    },
+    "/user/containers": {
+      "get": {
+        "operationId": "user.containers",
+        "summary": "Get all containers accessible by the authenticated user",
+        "tags": ["UserResource"]
+      }
+    },
+    "/user/clusters": {
+      "get": {
+        "operationId": "user.clusters",
+        "summary": "Get all clusters accessible by the authenticated user",
+        "tags": ["UserResource"]
+      }
+    },
+    "/machines/{machine}": {
+      "get": {
+        "operationId": "machines.show",
+        "summary": "Get a specific machine with detailed information",
+        "tags": ["UserResource"],
+        "parameters": [
+          {
+            "name": "machine",
+            "in": "path",
+            "required": true,
+            "description": "The machine ID",
+            "schema": { "type": "integer" }
+          }
+        ]
+      }
+    },
+    "/containers/{container}": {
+      "get": {
+        "operationId": "containers.show",
+        "summary": "Get a specific container with detailed information",
+        "tags": ["UserResource"],
+        "parameters": [
+          {
+            "name": "container",
+            "in": "path",
+            "required": true,
+            "description": "The container ID",
+            "schema": { "type": "integer" }
+          }
+        ]
+      }
+    },
+    "/clusters/{cluster}": {
+      "get": {
+        "operationId": "clusters.show",
+        "summary": "Get a specific cluster with detailed information",
+        "tags": ["UserResource"],
+        "parameters": [
+          {
+            "name": "cluster",
+            "in": "path",
+            "required": true,
+            "description": "The cluster ID",
+            "schema": { "type": "integer" }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "http": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "responses": {
+      "AuthenticationException": {
+        "description": "Unauthenticated"
+      },
+      "ModelNotFoundException": {
+        "description": "Not found"
+      }
+    }
+  }
+}

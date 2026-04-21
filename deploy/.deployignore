@@ -1,0 +1,49 @@
+# =============================================================================
+# .deployignore - Shared exclusion list for ArkManiaGest deployment archives
+# =============================================================================
+# Used by: deploy-remote.ps1, update-remote.ps1 (tar --exclude-from)
+# Also mirrored in: full-deploy.sh, server-update.sh (rsync --exclude-from)
+#
+# NOTE: This file uses tar/rsync exclusion syntax.  Patterns are relative to
+# the archive root (the project directory).
+# =============================================================================
+
+# --- Version control ---
+.git
+.gitignore
+.gitattributes
+
+# --- Runtime / build artifacts ---
+node_modules
+venv
+__pycache__
+frontend/dist
+
+# --- Secrets & environment ---
+.env
+*.vault
+data/arkmaniagest.vault
+
+# --- Development-only directories ---
+Specifiche
+_deprecated
+config
+tests
+
+# --- Windows-only scripts (never needed on the Linux server) ---
+*.ps1
+*.bat
+*.vbs
+
+# --- Documentation not needed in production ---
+CHANGELOG.md
+README.md
+
+# --- IDE / OS artifacts ---
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

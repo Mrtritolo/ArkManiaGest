@@ -1,0 +1,517 @@
+"""
+Data-access layer — wrappers around the application database.
+
+Replaces the old local vault (encrypted JSON file) with direct DB access.
+Exposes a consistent interface to minimise changes in the route handlers.
+
+Sensitive fields (SSH passwords, passphrases) are stored AES-256-GCM
+encrypted in the database and decrypted transparently here.
+
+Two flavours of every function are provided:
+  *_sync  — synchronous (PyMySQL); used by SSH code that cannot be async.
+  *_async — async (SQLAlchemy); used by FastAPI route handlers.
+"""
+import json
+import logging
+import pymysql.cursors
+from contextlib import contextmanager
+from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import server_settings
+from app.core.encryption import encrypt_value, decrypt_value
+
+log = logging.getLogger("arkmaniagest")
+
+# Columns that update_user() is allowed to write — defined once at module level
+# to avoid recreating the frozenset on every call.
+_USER_ALLOWED_COLUMNS: frozenset[str] = frozenset(
+    ("username", "password_hash", "display_name", "role", "active", "last_login")
+)
+
+
+# =============================================
+#  Internal helpers
+# =============================================
+
+@contextmanager
+def _sync_db_connection():
+    """
+    Context manager that yields a synchronous PyMySQL connection.
+
+    The connection is always closed in the finally block, regardless of errors.
+
+    Yields:
+        A ``pymysql.connections.Connection`` object.
+    """
+    s = server_settings
+    conn = pymysql.connect(
+        host=s.DB_HOST,
+        port=s.DB_PORT,
+        user=s.DB_USER,
+        password=s.DB_PASSWORD,
+        database=s.DB_NAME,
+        charset="utf8mb4",
+    )
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _row_to_machine_dict(row: dict) -> dict:
+    """
+    Convert a raw database row for a machine into a normalised dict.
+
+    Actions performed:
+      - Decrypt ``ssh_password_enc`` → ``ssh_password``
+      - Decrypt ``ssh_passphrase_enc`` → ``ssh_passphrase``
+      - Remove the ``*_enc`` columns from the result
+      - Convert ``datetime`` values to ISO-8601 strings
+      - Convert integer booleans (0/1) to Python booleans
+
+    Args:
+        row: Raw dict as returned by the database driver.
+
+    Returns:
+        Processed machine dict safe to return from the API.
+    """
+    m = dict(row)
+
+    # Decrypt SSH credentials (silently fall back to None on errors)
+    for enc_field, plain_field in [
+        ("ssh_password_enc", "ssh_password"),
+        ("ssh_passphrase_enc", "ssh_passphrase"),
+    ]:
+        if m.get(enc_field):
+            try:
+                m[plain_field] = decrypt_value(m[enc_field])
+            except Exception:
+                m[plain_field] = None
+        else:
+            m[plain_field] = None
+        m.pop(enc_field, None)
+
+    # Normalise datetime objects to ISO-8601 strings for JSON serialisation
+    for field in ("created_at", "updated_at", "last_connection"):
+        if m.get(field) and hasattr(m[field], "isoformat"):
+            m[field] = m[field].isoformat()
+
+    # Normalise integer booleans
+    for field in ("is_active", "active"):
+        if field in m:
+            m[field] = bool(m[field])
+
+    return m
+
+
+# =============================================
+#  Machines — synchronous
+# =============================================
+
+def get_machine_sync(machine_id: int) -> Optional[dict]:
+    """
+    Fetch a single SSH machine record (sync).
+
+    Used by SSH code that runs outside of an async context.
+
+    Args:
+        machine_id: Primary key of the machine.
+
+    Returns:
+        Decrypted machine dict, or None if not found.
+    """
+    with _sync_db_connection() as conn:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(
+            "SELECT * FROM arkmaniagest_machines WHERE id = %s",
+            (machine_id,),
+        )
+        row = cursor.fetchone()
+        return _row_to_machine_dict(row) if row else None
+
+
+def get_all_machines_sync() -> List[dict]:
+    """
+    Fetch all SSH machine records ordered by name (sync).
+
+    Returns:
+        List of decrypted machine dicts.
+    """
+    with _sync_db_connection() as conn:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(
+            "SELECT * FROM arkmaniagest_machines ORDER BY name"
+        )
+        return [_row_to_machine_dict(r) for r in cursor.fetchall()]
+
+
+# =============================================
+#  Settings — synchronous
+# =============================================
+
+def get_setting_sync(key: str) -> Optional[str]:
+    """
+    Read a single application setting by key (sync).
+
+    Encrypted values are transparently decrypted before being returned.
+
+    Args:
+        key: The setting key (e.g. ``"sf_token"``).
+
+    Returns:
+        Setting value as a string, or None if the key does not exist.
+    """
+    with _sync_db_connection() as conn:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(
+            "SELECT `value`, `encrypted` FROM arkmaniagest_settings WHERE `key` = %s",
+            (key,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return decrypt_value(row["value"]) if row["encrypted"] else row["value"]
+
+
+def set_setting_sync(
+    key: str,
+    value: str,
+    encrypted: bool = False,
+    description: str = None,
+) -> None:
+    """
+    Write (upsert) an application setting (sync).
+
+    Args:
+        key:         Setting key.
+        value:       String value to store.
+        encrypted:   If True the value is AES-256-GCM encrypted before storage.
+        description: Optional human-readable description stored alongside.
+    """
+    store_value = encrypt_value(value) if encrypted else value
+    with _sync_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO arkmaniagest_settings (`key`, `value`, `encrypted`, `description`) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `encrypted`=VALUES(`encrypted`)",
+            (key, store_value, encrypted, description),
+        )
+        conn.commit()
+
+
+# =============================================
+#  Plugin config — synchronous
+# =============================================
+
+def get_plugin_config_sync(plugin_name: str) -> Optional[dict]:
+    """
+    Retrieve a plugin's JSON configuration from the settings table (sync).
+
+    Args:
+        plugin_name: Plugin identifier (used as key prefix ``plugin.<n>``).
+
+    Returns:
+        Parsed config dict, or None if not found or JSON is malformed.
+    """
+    raw = get_setting_sync(f"plugin.{plugin_name}")
+    if raw:
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def save_plugin_config_sync(plugin_name: str, config: dict) -> None:
+    """
+    Persist a plugin's JSON configuration in the settings table (sync).
+
+    Args:
+        plugin_name: Plugin identifier.
+        config:      Config dict to serialise and store.
+    """
+    set_setting_sync(
+        f"plugin.{plugin_name}",
+        json.dumps(config, ensure_ascii=False),
+        encrypted=False,
+        description=f"Config plugin: {plugin_name}",
+    )
+
+
+# =============================================
+#  Machines — async
+# =============================================
+
+async def get_machine_async(db: AsyncSession, machine_id: int) -> Optional[dict]:
+    """
+    Fetch a single SSH machine record (async).
+
+    Args:
+        db:         SQLAlchemy async session.
+        machine_id: Primary key of the machine.
+
+    Returns:
+        Decrypted machine dict, or None if not found.
+    """
+    result = await db.execute(
+        text("SELECT * FROM arkmaniagest_machines WHERE id = :mid"),
+        {"mid": machine_id},
+    )
+    row = result.mappings().fetchone()
+    return _row_to_machine_dict(dict(row)) if row else None
+
+
+async def get_all_machines_async(
+    db: AsyncSession,
+    active_only: bool = False,
+) -> List[dict]:
+    """
+    Fetch all SSH machine records (async).
+
+    Args:
+        db:          SQLAlchemy async session.
+        active_only: When True, only return machines where ``is_active = 1``.
+
+    Returns:
+        List of decrypted machine dicts ordered by name.
+    """
+    q = "SELECT * FROM arkmaniagest_machines"
+    if active_only:
+        q += " WHERE is_active = 1"
+    q += " ORDER BY name"
+    result = await db.execute(text(q))
+    return [_row_to_machine_dict(dict(r)) for r in result.mappings().fetchall()]
+
+
+# =============================================
+#  Settings — async
+# =============================================
+
+async def get_setting_async(db: AsyncSession, key: str) -> Optional[str]:
+    """
+    Read a single application setting (async).
+
+    Args:
+        db:  SQLAlchemy async session.
+        key: Setting key.
+
+    Returns:
+        Setting value string (decrypted if necessary), or None.
+    """
+    result = await db.execute(
+        text(
+            "SELECT `value`, `encrypted` FROM arkmaniagest_settings "
+            "WHERE `key` = :k"
+        ),
+        {"k": key},
+    )
+    row = result.fetchone()
+    if not row:
+        return None
+    value, is_encrypted = row
+    return decrypt_value(value) if is_encrypted else value
+
+
+async def set_setting_async(
+    db: AsyncSession,
+    key: str,
+    value: str,
+    encrypted: bool = False,
+    description: str = None,
+) -> None:
+    """
+    Write (upsert) an application setting (async).
+
+    The calling route's ``get_db`` dependency will commit the transaction.
+
+    Args:
+        db:          SQLAlchemy async session.
+        key:         Setting key.
+        value:       String value to store.
+        encrypted:   If True the value is AES-256-GCM encrypted before storage.
+        description: Optional human-readable description.
+    """
+    store_value = encrypt_value(value) if encrypted else value
+    await db.execute(
+        text(
+            "INSERT INTO arkmaniagest_settings (`key`, `value`, `encrypted`, `description`) "
+            "VALUES (:k, :v, :e, :d) "
+            "ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `encrypted`=VALUES(`encrypted`)"
+        ),
+        {"k": key, "v": store_value, "e": encrypted, "d": description},
+    )
+
+
+# =============================================
+#  Plugin config — async
+# =============================================
+
+async def get_plugin_config_async(
+    db: AsyncSession,
+    plugin_name: str,
+) -> Optional[dict]:
+    """Retrieve a plugin's JSON configuration (async)."""
+    raw = await get_setting_async(db, f"plugin.{plugin_name}")
+    if raw:
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+async def save_plugin_config_async(
+    db: AsyncSession,
+    plugin_name: str,
+    config: dict,
+) -> None:
+    """Persist a plugin's JSON configuration (async)."""
+    await set_setting_async(
+        db,
+        f"plugin.{plugin_name}",
+        json.dumps(config, ensure_ascii=False),
+        encrypted=False,
+        description=f"Config plugin: {plugin_name}",
+    )
+
+
+# =============================================
+#  Users — async
+# =============================================
+
+async def get_user_by_username(
+    db: AsyncSession,
+    username: str,
+) -> Optional[dict]:
+    """
+    Find a user by username (async).
+
+    The returned dict includes the ``password_hash`` field.
+
+    Args:
+        db:       SQLAlchemy async session.
+        username: Case-sensitive login name.
+
+    Returns:
+        User dict, or None if not found.
+    """
+    result = await db.execute(
+        text("SELECT * FROM arkmaniagest_users WHERE username = :u"),
+        {"u": username},
+    )
+    row = result.mappings().fetchone()
+    return dict(row) if row else None
+
+
+async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[dict]:
+    """Find a user by primary key (async)."""
+    result = await db.execute(
+        text("SELECT * FROM arkmaniagest_users WHERE id = :uid"),
+        {"uid": user_id},
+    )
+    row = result.mappings().fetchone()
+    return dict(row) if row else None
+
+
+async def get_all_users(db: AsyncSession) -> List[dict]:
+    """
+    Return all user records ordered by id (async).
+
+    The ``password_hash`` field is excluded from the query result for safety.
+    """
+    result = await db.execute(
+        text(
+            "SELECT id, username, display_name, role, active, created_at, last_login "
+            "FROM arkmaniagest_users ORDER BY id"
+        )
+    )
+    return [dict(r) for r in result.mappings().fetchall()]
+
+
+async def create_user(db: AsyncSession, user_data: dict) -> dict:
+    """
+    Insert a new user record and return the newly created user (async).
+
+    Args:
+        db:        SQLAlchemy async session.
+        user_data: Dict with keys: username, password_hash, display_name,
+                   role, active, created_at.
+
+    Returns:
+        The freshly created user dict (fetched from the DB).
+    """
+    await db.execute(
+        text(
+            "INSERT INTO arkmaniagest_users "
+            "(username, password_hash, display_name, role, active, created_at) "
+            "VALUES (:u, :ph, :dn, :r, :a, :ca)"
+        ),
+        {
+            "u":  user_data["username"],
+            "ph": user_data["password_hash"],
+            "dn": user_data.get("display_name", user_data["username"]),
+            "r":  user_data.get("role", "viewer"),
+            "a":  1 if user_data.get("active", True) else 0,
+            "ca": user_data.get("created_at", datetime.now(timezone.utc)),
+        },
+    )
+    return await get_user_by_username(db, user_data["username"])
+
+
+async def update_user(
+    db: AsyncSession,
+    user_id: int,
+    updates: dict,
+) -> Optional[dict]:
+    """
+    Apply partial updates to a user record (async).
+
+    Only columns present in :data:`_USER_ALLOWED_COLUMNS` are updated;
+    any other keys in *updates* are silently ignored to prevent column
+    injection.
+
+    Args:
+        db:       SQLAlchemy async session.
+        user_id:  Primary key of the user to update.
+        updates:  Dict of field → new value pairs.
+
+    Returns:
+        The updated user dict, or None if no valid fields were provided.
+    """
+    set_clauses: list[str] = []
+    params: dict = {"uid": user_id}
+
+    for key, value in updates.items():
+        if key in _USER_ALLOWED_COLUMNS:
+            set_clauses.append(f"{key} = :{key}")
+            params[key] = value
+
+    if not set_clauses:
+        return None
+
+    await db.execute(
+        text(
+            f"UPDATE arkmaniagest_users SET {', '.join(set_clauses)} WHERE id = :uid"
+        ),
+        params,
+    )
+    return await get_user_by_id(db, user_id)
+
+
+async def delete_user(db: AsyncSession, user_id: int) -> bool:
+    """
+    Delete a user record by primary key (async).
+
+    Returns:
+        True if a row was deleted, False if the user was not found.
+    """
+    result = await db.execute(
+        text("DELETE FROM arkmaniagest_users WHERE id = :uid"),
+        {"uid": user_id},
+    )
+    return result.rowcount > 0
