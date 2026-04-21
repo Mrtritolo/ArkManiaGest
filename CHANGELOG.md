@@ -7,6 +7,87 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.0] - 2026-04-21
+
+First public release.  Consolidates the entire V2 work behind a single
+source-available repository: split panel/plugin databases, cross-platform
+SSH support, the schema for managed Docker ARK ASA instances, a fully
+bilingual (IT/EN) UI, release packaging, and an in-panel update checker.
+
+### Added
+
+- **Dual database architecture**: panel DB (users, SSH machines,
+  settings, managed Docker instances) kept separate from the plugin DB
+  (ArkMania game tables).  Configure with `DB_*` and `PLUGIN_DB_*` in
+  `.env`; `PLUGIN_DB_*` empty → plugin falls back to the panel DSN, so
+  legacy single-database installs keep working.
+- **Managed instances schema** in the panel DB: `ARKM_server_instances`,
+  `ARKM_instance_actions`, `ARKM_mariadb_instances`.  REST routes to
+  manipulate these land in a follow-up release.
+- **Cross-platform SSH layer** (`backend/app/ssh/platform.py`): a
+  `PlatformAdapter` that wraps `docker`, `docker compose`, and
+  `POK-manager.sh` invocations so they work transparently on native
+  Linux hosts *and* Windows + WSL Ubuntu hosts.
+- **i18n (IT/EN)**: every user-facing string on every page now goes
+  through `react-i18next`.  Language toggle in the sidebar, default
+  from the browser, persisted in `localStorage`.
+- **SQL Console dual-DB toggle**: Panel DB / Plugin DB switch in the
+  toolbar.
+- **In-panel update checker**: `GET /settings/version-check` polls the
+  GitHub Releases API (cached 1 h) and a card in General Settings shows
+  the running version, the latest release, and a link to its notes.
+- **Release packaging**:
+  - `deploy/package-release.ps1` builds self-contained Linux and
+    Windows bundles locally.
+  - `.github/workflows/release.yml` publishes the same two artefacts
+    plus `SHA256SUMS.txt` to a GitHub Release whenever a `v*` tag is
+    pushed.  The release body is auto-populated from this CHANGELOG.
+- **Community files**: `LICENSE` (source-available, non-commercial),
+  `CONTRIBUTING.md` (contribution assignment clause), `SECURITY.md`,
+  `.github/ISSUE_TEMPLATE/*`, `.github/PULL_REQUEST_TEMPLATE.md`, CI
+  workflow.
+- **`deploy/migrate-env.sh`**: idempotent backfill of new `.env`
+  keys on upgrade.
+
+### Changed
+
+- README + CHANGELOG + all deploy scripts rewritten in English.
+- `Specifiche/` → `docs/` with an English walkthrough of the ServerForge
+  API reference.
+- `deploy/deploy.conf` is no longer tracked; `deploy/deploy.conf.example`
+  ships as the template.  Scripts fall back to the template with a
+  warning when the real config is missing.
+- History rewrite: earlier internal development has been squashed into
+  a single "V2 baseline" commit; the git log now starts with V2.
+
+### Security
+
+- Sensitive IPs previously tracked in the repo (production server IP +
+  admin office IP) have been scrubbed from git history via
+  `git-filter-repo`.
+- SSH passwords and passphrases stored AES-256-GCM encrypted in the
+  panel DB (unchanged, documented).
+
+### Licensing
+
+- Project released as **source-available** under the **ArkManiaGest
+  Source-Available License v1.0** (see `LICENSE`).  Commercial use is
+  prohibited; deployment / redistribution require prior written
+  authorisation from Lomatek / ArkMania.it (`info@arkmania.it`).
+
+### Upgrade notes
+
+- Run `deploy/migrations/001_arkmania_config_unique.sql` and
+  `deploy/migrations/002_ssh_machines_os_type.sql` once on the live DB.
+- If you upgrade an existing install: `deploy/migrate-env.sh` will
+  add the new `PLUGIN_DB_*`, `GITHUB_REPO`, `GITHUB_TOKEN` keys to
+  your `.env` with safe empty defaults.
+- POK integration (container lifecycle routes, bootstrap endpoint,
+  frontend management page) is deliberately NOT in 2.3.0 — it is the
+  headline feature of the upcoming 2.4 line.
+
+---
+
 ## [Unreleased] — Phase 2: Cross-platform SSH (Linux / Windows+WSL)
 
 ### New `PlatformAdapter` abstraction

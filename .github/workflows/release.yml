@@ -51,32 +51,36 @@ jobs:
           npm ci
           npm run build
 
-      - name: Stage bundle
+      - name: Stage build tree (reusable base)
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          STAGE="release-build/arkmaniagest-v${VERSION}"
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE"
+          # Shared base that both artefacts will copy from.  The two tarballs
+          # differ only in whether .ps1 helpers are included, so we stage
+          # once and prune afterwards.
+          BASE="release-build/_stage"
+          rm -rf release-build
+          mkdir -p "$BASE"
 
-          # Copy everything respecting .deployignore, but KEEP the built frontend/dist.
-          # We use rsync with the same excludes as deploy/.deployignore.
+          # Build the rsync --exclude list from .deployignore.
           if [ -f deploy/.deployignore ]; then
-            RSYNC_EXCLUDES=$(grep -v '^\s*#' deploy/.deployignore | grep -v '^\s*$' \
-                              | awk '{print "--exclude="$0}' | tr '\n' ' ')
+            mapfile -t EX < <(grep -v '^\s*#' deploy/.deployignore | grep -v '^\s*$')
           else
-            RSYNC_EXCLUDES="--exclude=node_modules --exclude=venv --exclude=__pycache__ --exclude=.git --exclude=reference --exclude=release-build"
+            EX=(node_modules venv __pycache__ .git reference release-build)
           fi
+          EX+=("release-build" "dist/")
+          EX_ARGS=()
+          for e in "${EX[@]}"; do EX_ARGS+=("--exclude=$e"); done
 
-          # shellcheck disable=SC2086
-          rsync -a $RSYNC_EXCLUDES --exclude='release-build' --exclude='dist/' ./ "$STAGE/"
-          # Force-include the built dist
-          mkdir -p "$STAGE/frontend"
-          cp -r frontend/dist "$STAGE/frontend/dist"
+          rsync -a "${EX_ARGS[@]}" ./ "$BASE/"
+
+          # Force-include the freshly built frontend dist
+          mkdir -p "$BASE/frontend/dist"
+          cp -r frontend/dist/. "$BASE/frontend/dist/"
 
           # Write VERSION manifest
-          cat > "$STAGE/VERSION.json" <<EOF
+          cat > "$BASE/VERSION.json" <<EOF
           {
             "version": "${VERSION}",
             "commit": "${GITHUB_SHA}",
@@ -91,53 +95,31 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
+          DIR_NAME="arkmaniagest-v${VERSION}"
           cd release-build
-          # Linux artefact: strip Windows-only helpers
-          cp -r "arkmaniagest-v${VERSION}" "arkmaniagest-v${VERSION}-linux-tmp"
-          find "arkmaniagest-v${VERSION}-linux-tmp" -type f \( -name '*.ps1' -o -name '*.bat' -o -name '*.vbs' \) -delete
-          mv "arkmaniagest-v${VERSION}-linux-tmp" "arkmaniagest-v${VERSION}"
-          tar -czf "arkmaniagest-v${VERSION}-linux.tar.gz" "arkmaniagest-v${VERSION}"
-          rm -rf "arkmaniagest-v${VERSION}"
+          cp -r _stage "$DIR_NAME"
+          # Linux servers don't need the Windows deploy helpers.
+          find "$DIR_NAME" -type f \( -name '*.ps1' -o -name '*.bat' -o -name '*.vbs' \) -delete
+          tar -czf "${DIR_NAME}-linux.tar.gz" "$DIR_NAME"
+          rm -rf "$DIR_NAME"
 
       - name: Create Windows zip
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # Re-stage for the Windows artefact (keep .ps1 scripts)
           set -euo pipefail
+          DIR_NAME="arkmaniagest-v${VERSION}"
           cd release-build
-          # Re-checkout a fresh stage because the Linux step consumed the previous one
-          rsync -a --exclude='*.tar.gz' --exclude='*.zip' "../" "./arkmaniagest-v${VERSION}/"
-          # But that re-copies everything; replace with a clean approach:
-          rm -rf "arkmaniagest-v${VERSION}"
-          mkdir "arkmaniagest-v${VERSION}"
-          if [ -f ../deploy/.deployignore ]; then
-            RSYNC_EXCLUDES=$(grep -v '^\s*#' ../deploy/.deployignore | grep -v '^\s*$' \
-                              | grep -v -E '\.(ps1|bat|vbs)$' \
-                              | awk '{print "--exclude="$0}' | tr '\n' ' ')
-          else
-            RSYNC_EXCLUDES="--exclude=node_modules --exclude=venv --exclude=__pycache__ --exclude=.git --exclude=reference --exclude=release-build"
-          fi
-          # shellcheck disable=SC2086
-          rsync -a $RSYNC_EXCLUDES --exclude='release-build' --exclude='dist/' "../" "./arkmaniagest-v${VERSION}/"
-          mkdir -p "arkmaniagest-v${VERSION}/frontend"
-          cp -r ../frontend/dist "arkmaniagest-v${VERSION}/frontend/dist"
-          # Re-create VERSION.json inside the Windows stage too
-          cat > "arkmaniagest-v${VERSION}/VERSION.json" <<EOF
-          {
-            "version": "${VERSION}",
-            "commit": "${GITHUB_SHA}",
-            "branch": "${GITHUB_REF_NAME}",
-            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "pre_release": false
-          }
-          EOF
-          zip -rq "arkmaniagest-v${VERSION}-windows.zip" "arkmaniagest-v${VERSION}"
-          rm -rf "arkmaniagest-v${VERSION}"
+          cp -r _stage "$DIR_NAME"
+          # Full tree including .ps1/.bat helpers for deploy-remote.ps1 etc.
+          zip -rq "${DIR_NAME}-windows.zip" "$DIR_NAME"
+          rm -rf "$DIR_NAME"
 
       - name: Generate SHA256SUMS
         working-directory: release-build
         run: |
+          set -euo pipefail
+          rm -rf _stage
           sha256sum *.tar.gz *.zip > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -146,15 +128,27 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # Very simple CHANGELOG slicer: pulls the first block from the top
-          # of CHANGELOG.md up to (but not including) the second horizontal rule.
+          set -euo pipefail
+          # Pull the section for this version from CHANGELOG.md.  Matches the
+          # heading "## [X.Y.Z]" and captures everything until the next "## "
+          # heading or end of file.
           if [ -f CHANGELOG.md ]; then
-            awk '/^---$/{c++; if (c==2) exit} c==1 || /^# /' CHANGELOG.md > release-build/BODY.md
-          else
-            echo "Release v${VERSION}" > release-build/BODY.md
+            awk -v v="$VERSION" '
+              /^## \[/ {
+                if (printing) exit
+                if ($0 ~ "\\[" v "\\]") { printing=1; print; next }
+              }
+              printing { print }
+            ' CHANGELOG.md > release-build/BODY.md
           fi
-          # Append download guidance
+          if [ ! -s release-build/BODY.md ]; then
+            echo "## ArkManiaGest v${VERSION}" > release-build/BODY.md
+            echo "" >> release-build/BODY.md
+            echo "See [CHANGELOG.md](CHANGELOG.md) for the full list of changes." >> release-build/BODY.md
+          fi
           {
+            echo ""
+            echo "---"
             echo ""
             echo "### Downloads"
             echo ""
@@ -164,6 +158,11 @@ jobs:
             echo "| Windows dev PC | \`arkmaniagest-v${VERSION}-windows.zip\` | Unzip, then run \`deploy\\deploy-remote.ps1\` |"
             echo ""
             echo "Verify with \`SHA256SUMS.txt\`."
+            echo ""
+            echo "> **License reminder:** ArkManiaGest is distributed under the"
+            echo "> [ArkManiaGest Source-Available License v1.0](LICENSE)."
+            echo "> Commercial use is prohibited; deployment requires written"
+            echo "> authorisation from Lomatek / ArkMania.it (info@arkmania.it)."
           } >> release-build/BODY.md
 
       - name: Publish release
