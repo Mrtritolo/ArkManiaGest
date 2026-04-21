@@ -224,19 +224,30 @@ if ($ssh_key_path) {
 }
 
 function Invoke-SSH([string[]]$remote_cmd) {
-    $args = $ssh_common_args + @("${ssh_user}@${target_host}") + $remote_cmd
-    & ssh.exe @args
+    # IMPORTANT: redirect ssh output to the host stream so the function's
+    # pipeline doesn't mix stdout (banner lines, remote command output)
+    # with the integer exit code.  Without Out-Host, PowerShell would
+    # return ["stdout lines...", $LASTEXITCODE] as a merged array.
+    $ssh_args = $ssh_common_args + @("${ssh_user}@${target_host}") + $remote_cmd
+    & ssh.exe @ssh_args 2>&1 | Out-Host
     return $LASTEXITCODE
 }
 
-$test_rc = Invoke-SSH @("echo", "ArkManiaGest-SSH-OK")
+function Invoke-SSH-Quiet([string[]]$remote_cmd) {
+    # Like Invoke-SSH but discards ssh output (used for connectivity probes).
+    $ssh_args = $ssh_common_args + @("${ssh_user}@${target_host}") + $remote_cmd
+    & ssh.exe @ssh_args 2>&1 | Out-Null
+    return $LASTEXITCODE
+}
+
+$test_rc = Invoke-SSH-Quiet @("echo", "ArkManiaGest-SSH-OK")
 if ($test_rc -ne 0) {
     Fail "SSH test failed (exit $test_rc).  Verify host, port, user, key/password and that sshd is listening."
 }
 Write-Host "  [OK] SSH reachable" -ForegroundColor Green
 
 # sudo check
-$sudo_rc = Invoke-SSH @("sudo", "-n", "true")
+$sudo_rc = Invoke-SSH-Quiet @("sudo", "-n", "true")
 if ($sudo_rc -ne 0) {
     Write-Host "  WARNING: the user '$ssh_user' cannot run sudo without a password." -ForegroundColor Yellow
     Write-Host "           The remote install step may prompt for a password interactively." -ForegroundColor Yellow
@@ -361,7 +372,9 @@ $scp_common = @(
 if ($ssh_key_path) { $scp_common += @("-i", $ssh_key_path) }
 
 function Invoke-SCP([string]$src, [string]$dst) {
-    & scp.exe @scp_common $src "${ssh_user}@${target_host}:${dst}"
+    # Same exit-code-only discipline as Invoke-SSH.
+    $remote = "${ssh_user}@${target_host}:${dst}"
+    & scp.exe @scp_common $src $remote 2>&1 | Out-Host
     return $LASTEXITCODE
 }
 

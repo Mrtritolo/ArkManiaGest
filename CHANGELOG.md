@@ -7,6 +7,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.3] - 2026-04-21
+
+### Fixed
+
+- **`install-panel.ps1` SSH test always failing** with
+  `SSH test failed (exit ArkManiaGest-SSH-OK 0)`.  The helper
+  functions `Invoke-SSH` / `Invoke-SCP` were returning
+  `[stdout lines..., $LASTEXITCODE]` as a merged PowerShell pipeline,
+  so the caller's `$test_rc` was an array, not an integer, and the
+  `-ne 0` comparison was always truthy.
+  Fix: every helper now routes the external-process output to
+  `Out-Host` (or `Out-Null` for silent probes) and returns ONLY
+  `$LASTEXITCODE`.  Added a second helper `Invoke-SSH-Quiet` for
+  connectivity probes that must not echo to the console.
+
+---
+
 ## [2.3.2] - 2026-04-21
 
 ### Fixed
