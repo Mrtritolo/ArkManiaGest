@@ -35,7 +35,11 @@ param(
     [switch]$DryRun
 )
 
-$ErrorActionPreference = "Stop"
+# NOTE: we deliberately use "Continue" (not "Stop") so that stderr output
+# from native tools like ssh.exe / scp.exe (host-key warnings, apt install
+# progress, journalctl chatter) does NOT abort the whole script.  Every
+# path that must halt on failure calls the explicit `Fail` helper below.
+$ErrorActionPreference = "Continue"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -134,14 +138,44 @@ $ssh_password = ""
 # that case we skip the auth prompts entirely.
 Write-Host ""
 Write-Host "-- Probing SSH (using default keys / ssh-agent) --" -ForegroundColor Cyan
-$probe_args = @(
-    "-p", $ssh_port,
-    "-o", "BatchMode=yes",
-    "-o", "StrictHostKeyChecking=accept-new",
-    "-o", "ConnectTimeout=8"
-)
-& ssh.exe @probe_args "${ssh_user}@${target_host}" "echo ArkManiaGest-SSH-OK" 2>$null | Out-Null
-$probe_ok = ($LASTEXITCODE -eq 0)
+
+# Handle the common "server was reinstalled, host key changed" case up
+# front.  We capture ssh stderr and, if the warning is detected, offer
+# to run `ssh-keygen -R <host>` to purge the stale fingerprint and retry.
+function Invoke-SSHProbe {
+    $probe_args = @(
+        "-p", $ssh_port,
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ConnectTimeout=8"
+    )
+    $tmp_err = [System.IO.Path]::GetTempFileName()
+    try {
+        & ssh.exe @probe_args "${ssh_user}@${target_host}" "echo ArkManiaGest-SSH-OK" 1>$null 2>$tmp_err
+        $rc = $LASTEXITCODE
+        $err = ""
+        if (Test-Path $tmp_err) { $err = Get-Content -Raw -Path $tmp_err }
+        return @{ rc = $rc; err = $err }
+    } finally {
+        if (Test-Path $tmp_err) { Remove-Item -Force $tmp_err -ErrorAction SilentlyContinue }
+    }
+}
+
+$probe = Invoke-SSHProbe
+$probe_ok = ($probe.rc -eq 0)
+
+if (-not $probe_ok -and $probe.err -and ($probe.err -match "REMOTE HOST IDENTIFICATION HAS CHANGED" -or $probe.err -match "Host key verification failed")) {
+    Write-Host "  WARNING: the server's SSH host key has changed (reinstall?)." -ForegroundColor Yellow
+    Write-Host "  A stale fingerprint is stored in ~/.ssh/known_hosts for '$target_host'." -ForegroundColor Yellow
+    $fix = AskYesNo "  Remove the stale key now and retry the probe?" $true
+    if ($fix) {
+        & ssh-keygen.exe -R $target_host 1>$null 2>$null
+        $probe = Invoke-SSHProbe
+        $probe_ok = ($probe.rc -eq 0)
+    } else {
+        Fail "Aborted due to host key mismatch.  Run: ssh-keygen -R $target_host"
+    }
+}
 
 if ($probe_ok) {
     Write-Host "  [OK] SSH already works with your default identities -- no extra auth needed." -ForegroundColor Green

@@ -164,10 +164,40 @@ SSH_PASSWORD=""
 # Probe first: if the user already has ssh-agent and/or a default
 # ~/.ssh/id_* key that works against the target, skip the auth prompts
 # entirely.  BatchMode=yes disables password/interactive auth so the
-# probe fails cleanly when no usable key is found.
+# probe fails cleanly when no usable key is found.  We capture stderr
+# to detect "host key changed" after a server reinstall and offer an
+# auto-fix via ssh-keygen -R.
 section "Probing SSH (using default keys / ssh-agent)"
-if ssh -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
-        "${SSH_USER}@${TARGET_HOST}" "echo ArkManiaGest-SSH-OK" >/dev/null 2>&1; then
+
+ssh_probe() {
+    ssh -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+        "${SSH_USER}@${TARGET_HOST}" "echo ArkManiaGest-SSH-OK" \
+        >/dev/null 2>"$1"
+    return $?
+}
+
+probe_err="$(mktemp)"
+probe_ok=0
+if ssh_probe "$probe_err"; then
+    probe_ok=1
+fi
+
+if [[ $probe_ok -eq 0 ]] && grep -qE "REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed" "$probe_err" 2>/dev/null; then
+    warn "the server's SSH host key has changed (reinstall?)."
+    warn "A stale fingerprint is stored in ~/.ssh/known_hosts for '${TARGET_HOST}'."
+    if yesno "Remove the stale key now and retry the probe?" "y"; then
+        ssh-keygen -R "$TARGET_HOST" >/dev/null 2>&1 || true
+        if ssh_probe "$probe_err"; then
+            probe_ok=1
+        fi
+    else
+        rm -f "$probe_err"
+        fail "Aborted due to host key mismatch.  Run: ssh-keygen -R ${TARGET_HOST}"
+    fi
+fi
+rm -f "$probe_err"
+
+if [[ $probe_ok -eq 1 ]]; then
     ok "SSH already works with your default identities - no extra auth needed."
 else
     warn "SSH is not usable yet with default identities.  Let's configure it."
