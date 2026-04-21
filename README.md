@@ -227,6 +227,46 @@ Guida completa: [deploy/README.md](deploy/README.md).
 
 ---
 
-## Licenza
+## Crediti e progetti esterni
 
-Proprietary — ArkMania.it
+ArkManiaGest orchestra e automatizza container ARK: Survival Ascended
+sfruttando il progetto open source
+**[Ark-Survival-Ascended-Server](https://github.com/Acekorneya/Ark-Survival-Ascended-Server)**
+di **Acekorneya**, distribuito sotto [licenza MIT](https://opensource.org/license/mit/).
+Ringraziamo l'autore per il lavoro di manutenzione dell'immagine Docker,
+degli script POK-manager e del template di `docker-compose.yaml` che usiamo
+come base per le nostre istanze ARK ASA.
+
+Il codice di POK-manager resta proprietà dei suoi autori e mantiene la
+propria licenza MIT: quando cloniamo la loro repo in `reference/` (non
+inclusa nel tarball di questo progetto), il relativo `LICENSE.txt` viene
+con sé.
+
+Altre dipendenze di terze parti (FastAPI, SQLAlchemy, React, Vite,
+Paramiko, cryptography, ecc.) sono usate sotto le rispettive licenze
+open source — vedi `backend/requirements.txt` e `frontend/package.json`.
+
+---
+
+## Licenza d'uso di ArkManiaGest
+
+Repository **pubblico ma non open source**.
+
+Il codice sorgente di ArkManiaGest è rilasciato con la licenza
+**ArkManiaGest Source-Available License v1.0** (vedi [LICENSE](LICENSE)).
+
+In sintesi:
+
+- Il sorgente è pubblicamente consultabile per trasparenza e scopo
+  dimostrativo.
+- **Qualsiasi deploy o redistribuzione richiede autorizzazione scritta
+  di Lomatek / ArkMania.it.**
+- **L'uso commerciale è espressamente vietato** in tutte le sue forme
+  (SaaS, rivendita, integrazione in prodotti a pagamento, ecc.) — anche
+  se hai ottenuto un'autorizzazione per uso non commerciale.
+- È permesso clonare la repo per uso personale di valutazione su
+  ambiente di test.
+
+Per richiedere un'autorizzazione scrivi a **info@arkmania.it**.
+
+Copyright © 2024–2026 Lomatek / ArkMania.it — All rights reserved.

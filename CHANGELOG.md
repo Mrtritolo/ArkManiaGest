@@ -7,6 +7,48 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 
 ---
 
+## [Unreleased] — Fase 2: SSH cross-platform Linux / Windows+WSL
+
+### Nuova astrazione `PlatformAdapter`
+
+Preparazione al bootstrap POK: tutte le invocazioni `docker`,
+`docker compose` e `POK-manager.sh` passano attraverso un wrapper che
+traduce i comandi bash nell'equivalente compatibile con il sistema
+operativo del server di gioco.
+
+### Backend
+
+- **`arkmaniagest_machines`**: nuove colonne `os_type` (`linux`/`windows`,
+  default `linux`) e `wsl_distro` (default `Ubuntu`). Il `server_default`
+  copre trasparentemente le righe pre-esistenti.
+- **`deploy/migrations/002_ssh_machines_os_type.sql`**: ALTER TABLE
+  idempotente per le installazioni che upgradano il DB esistente.
+- **`app/schemas/ssh_machine.py`**: nuovo enum `OSTypeEnum` + campi
+  `os_type`/`wsl_distro` su Create/Update/Read.
+- **`app/ssh/platform.py`**: nuovo modulo con classe `PlatformAdapter`
+  (metodi `wrap_shell`, `docker`, `compose`, `pok`, `prereqs_check_cmd`,
+  `default_pok_base_dir`, `join_path`). Escape corretto dei single quote
+  bash per il wrapping `wsl.exe -d <distro> -- bash -c '...'` su host
+  Windows. `from_machine(dict)` con fallback a `linux` per righe legacy.
+- **`app/api/routes/machines.py`**: create/update/duplicate persistono
+  `os_type`/`wsl_distro`; la read li restituisce normalizzati.
+
+### Frontend
+
+- **`types/index.ts`**: aggiunto `OSType = "linux" | "windows"` +
+  `os_type`/`wsl_distro` sugli interfaccia `SSHMachine`/`SSHMachineCreate`.
+- **`MachinesPage`**: selettore "Sistema operativo host" (Linux nativo /
+  Windows + WSL), campo "Distro WSL" mostrato solo per Windows, badge
+  OS nell'intestazione della card e dettaglio "Host OS" nel pannello
+  espanso.
+
+### Nessuna nuova route in Fase 2
+
+Bootstrap POK + endpoint prereqs check arriveranno in Fase 3, riusando
+`PlatformAdapter.prereqs_check_cmd()` già pronto.
+
+---
+
 ## [Unreleased] — Fase 1: schema istanze Docker POK
 
 ### Nuove tabelle (Panel DB)

@@ -65,6 +65,16 @@ class SSHMachine(Base):
     ark_config_path     = Column(String(512), nullable=True)
     ark_plugins_path    = Column(String(512), nullable=True)
 
+    # Host OS — selects which shell / container runtime wrapper is applied.
+    #   * "linux"   → POK-manager and docker invoked directly in bash
+    #   * "windows" → POK-manager invoked through WSL (``wsl.exe -d <distro>``),
+    #                 because POK-manager.sh is bash-only and the ASA image
+    #                 runs in a Linux container regardless of host OS.
+    os_type             = Column(String(16), nullable=False, default="linux",
+                                 server_default="linux")
+    # WSL distribution name to target on Windows hosts.  Ignored on Linux.
+    wsl_distro          = Column(String(64), nullable=True, default="Ubuntu")
+
     # Status fields
     is_active           = Column(Boolean, nullable=False, default=True)
     last_connection     = Column(DateTime, nullable=True)

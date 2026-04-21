@@ -20,6 +20,13 @@ class AuthMethodEnum(str, Enum):
     KEY_PASSWORD = "key_password"
 
 
+class OSTypeEnum(str, Enum):
+    """Supported host operating systems."""
+
+    LINUX = "linux"
+    WINDOWS = "windows"
+
+
 class SSHMachineCreate(BaseModel):
     """Fields required to register a new SSH machine."""
 
@@ -41,6 +48,13 @@ class SSHMachineCreate(BaseModel):
     ark_config_path: str = "/opt/ark/ShooterGame/Saved/Config/LinuxServer"
     ark_plugins_path: str = "/opt/ark/ShooterGame/Binaries/Linux/Plugins"
 
+    # Host platform — controls how POK-manager and docker are invoked.
+    os_type: OSTypeEnum = OSTypeEnum.LINUX
+    wsl_distro: Optional[str] = Field(
+        default="Ubuntu", max_length=64,
+        description="WSL distribution name; only used when os_type = 'windows'.",
+    )
+
     is_active: bool = True
 
 
@@ -60,6 +74,8 @@ class SSHMachineUpdate(BaseModel):
     ark_root_path: Optional[str] = None
     ark_config_path: Optional[str] = None
     ark_plugins_path: Optional[str] = None
+    os_type: Optional[OSTypeEnum] = None
+    wsl_distro: Optional[str] = Field(default=None, max_length=64)
     is_active: Optional[bool] = None
 
 
@@ -83,6 +99,8 @@ class SSHMachineRead(BaseModel):
     ark_root_path: str = "/opt/ark"
     ark_config_path: str = "/opt/ark/ShooterGame/Saved/Config/LinuxServer"
     ark_plugins_path: str = "/opt/ark/ShooterGame/Binaries/Linux/Plugins"
+    os_type: OSTypeEnum = OSTypeEnum.LINUX
+    wsl_distro: Optional[str] = "Ubuntu"
     is_active: bool = True
     last_connection: Optional[datetime] = None
     # Status values: "unknown" | "online" | "offline" | "error"

@@ -20,6 +20,8 @@ const emptyMachine: SSHMachineCreate = {
   ark_root_path: '/opt/ark',
   ark_config_path: '/opt/ark/ShooterGame/Saved/Config/LinuxServer',
   ark_plugins_path: '/opt/ark/ShooterGame/Binaries/Linux/Plugins',
+  os_type: 'linux',
+  wsl_distro: 'Ubuntu',
   is_active: true,
 }
 
@@ -174,7 +176,10 @@ export default function MachinesPage() {
       ip_address: machine.ip_address || '', ssh_port: machine.ssh_port, ssh_user: machine.ssh_user,
       auth_method: machine.auth_method, ssh_password: '', ssh_key_path: machine.ssh_key_path || '',
       ssh_passphrase: '', ark_root_path: machine.ark_root_path, ark_config_path: machine.ark_config_path,
-      ark_plugins_path: machine.ark_plugins_path, is_active: machine.is_active,
+      ark_plugins_path: machine.ark_plugins_path,
+      os_type: machine.os_type || 'linux',
+      wsl_distro: machine.wsl_distro || 'Ubuntu',
+      is_active: machine.is_active,
     })
     setEditingId(machine.id); setShowForm(true); setShowImport(false); setError(''); setValidationErrors({})
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
@@ -386,6 +391,26 @@ export default function MachinesPage() {
                   Attiva
                 </label>
               </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">Sistema operativo host</label>
+                <select name="os_type" value={form.os_type} onChange={handleChange} className="form-input">
+                  <option value="linux">Linux nativo</option>
+                  <option value="windows">Windows + WSL</option>
+                </select>
+                <span className="form-hint">
+                  Determina come POK-manager e docker vengono invocati via SSH.
+                </span>
+              </div>
+              {form.os_type === 'windows' && (
+                <div className="form-group form-group-2">
+                  <label className="form-label">Distro WSL</label>
+                  <input type="text" name="wsl_distro" value={form.wsl_distro || ''}
+                    onChange={handleChange} className="form-input" placeholder="Ubuntu" />
+                  <span className="form-hint">
+                    Nome della distribuzione WSL (verifica con <code>wsl -l -q</code>).
+                  </span>
+                </div>
+              )}
             </div>
           </fieldset>
 
@@ -492,6 +517,9 @@ export default function MachinesPage() {
                   <div className="machine-card-info">
                     <h3 className="machine-card-name">
                       {machine.name}
+                      <span className="machine-card-tag" title={machine.os_type === 'windows' ? `Windows + WSL (${machine.wsl_distro || 'Ubuntu'})` : 'Linux nativo'}>
+                        {machine.os_type === 'windows' ? 'Windows+WSL' : 'Linux'}
+                      </span>
                       {!machine.is_active && <span className="machine-card-tag">disattivata</span>}
                     </h3>
                     <p className="machine-card-host">{machine.ssh_user}@{machine.hostname}:{machine.ssh_port}</p>
@@ -506,6 +534,12 @@ export default function MachinesPage() {
                 {isExpanded && (
                   <div className="machine-card-body">
                     <div className="machine-card-details">
+                      <div className="machine-card-detail"><span className="detail-label">Host OS</span>
+                        <span className="detail-value">
+                          {machine.os_type === 'windows'
+                            ? `Windows + WSL (${machine.wsl_distro || 'Ubuntu'})`
+                            : 'Linux nativo'}
+                        </span></div>
                       <div className="machine-card-detail"><span className="detail-label">Auth</span>
                         <span className="detail-value">{machine.auth_method === 'password' ? 'Password' : machine.auth_method === 'key' ? 'Chiave SSH' : 'Chiave + Passphrase'}</span></div>
                       {machine.ip_address && <div className="machine-card-detail"><span className="detail-label">IP</span><span className="detail-value detail-value-mono">{machine.ip_address}</span></div>}

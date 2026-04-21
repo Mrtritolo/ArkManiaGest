@@ -67,6 +67,8 @@ export interface DatabaseTestResult {
 
 export type AuthMethod = "password" | "key" | "key_password";
 
+export type OSType = "linux" | "windows";
+
 export interface SSHMachine {
   id: number;
   name: string;
@@ -80,6 +82,8 @@ export interface SSHMachine {
   ark_root_path: string;
   ark_config_path: string;
   ark_plugins_path: string;
+  os_type: OSType;
+  wsl_distro: string | null;
   is_active: boolean;
   last_connection: string | null;
   last_status: string;
@@ -101,6 +105,8 @@ export interface SSHMachineCreate {
   ark_root_path: string;
   ark_config_path: string;
   ark_plugins_path: string;
+  os_type: OSType;
+  wsl_distro?: string;
   is_active: boolean;
 }
 

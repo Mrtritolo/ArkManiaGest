@@ -1,0 +1,97 @@
+ArkManiaGest Source-Available License v1.0
+
+Copyright (c) 2024-2026 Lomatek / ArkMania.it
+All rights reserved.
+
+The source code contained in this repository (the "Software") is made
+publicly available for transparency and reference purposes only.  No
+rights are granted except as expressly described below.
+
+
+1. PERMITTED USES (no separate authorisation required)
+
+   a. Viewing and reading the Software.
+   b. Cloning the repository and running the Software locally for
+      personal, non-commercial evaluation on a test environment.
+   c. Citing or linking to this repository in articles, talks, or
+      academic material, provided that attribution to "Lomatek /
+      ArkMania.it" and a link to the original repository are included.
+
+
+2. USES REQUIRING PRIOR WRITTEN AUTHORISATION
+
+   Any of the following uses is prohibited unless the person or legal
+   entity performing them has obtained specific prior written
+   authorisation from the copyright holder:
+
+   a. Deploying the Software (in whole or in part) to manage third-party
+      ARK: Survival Ascended servers, clusters, or communities.
+   b. Redistributing the Software in source or binary form, whether
+      modified or unmodified.
+   c. Creating and distributing derivative works based on the Software.
+   d. Incorporating any part of the Software into another product,
+      service, tool, or codebase.
+   e. Publicly hosting a running instance of the Software.
+
+
+3. COMMERCIAL USE PROHIBITED
+
+   Commercial use of the Software is expressly prohibited in all forms,
+   including but not limited to: selling the Software or access to it,
+   offering it as a paid service (SaaS), bundling it with a commercial
+   product, or using it to operate infrastructure whose primary purpose
+   is to generate revenue.
+
+   This prohibition applies even to authorised users under Section 2:
+   an authorisation for non-commercial deployment does NOT imply any
+   commercial right.
+
+
+4. THIRD-PARTY COMPONENTS
+
+   This Software integrates with, and is designed to orchestrate, the
+   independent project "Ark-Survival-Ascended-Server" by Acekorneya
+   (https://github.com/Acekorneya/Ark-Survival-Ascended-Server),
+   distributed under the MIT License.  That project retains its own
+   licence and copyright notice; nothing in this file alters or
+   supersedes those terms.
+
+   Other third-party libraries (listed in `backend/requirements.txt` and
+   `frontend/package.json`) are used under their respective open-source
+   licences.
+
+
+5. TRADEMARKS
+
+   "ArkManiaGest", "ArkMania", and "Lomatek" are trademarks of their
+   respective owners.  This license does not grant any trademark rights.
+
+
+6. REQUESTING AUTHORISATION
+
+   Authorisation requests must be sent in writing to:
+
+       info@arkmania.it
+
+   The copyright holder may grant, refuse, or condition such
+   authorisation at their sole discretion, and may revoke it at any
+   time for breach of these terms.
+
+
+7. DISCLAIMER OF WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT.  IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
+   FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+   CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+8. TERMINATION
+
+   Any breach of Sections 2 or 3 immediately and automatically
+   terminates every permission granted under this license, including
+   those of Section 1, for the infringing party.  The copyright holder
+   retains all remedies available at law or in equity.

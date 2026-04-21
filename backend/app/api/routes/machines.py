@@ -58,6 +58,8 @@ def _machine_to_read(machine: dict) -> SSHMachineRead:
         ark_root_path=machine.get("ark_root_path", "/opt/ark"),
         ark_config_path=machine.get("ark_config_path", ""),
         ark_plugins_path=machine.get("ark_plugins_path", ""),
+        os_type=machine.get("os_type") or "linux",
+        wsl_distro=machine.get("wsl_distro") or "Ubuntu",
         is_active=machine.get("is_active", True),
         last_connection=machine.get("last_connection"),
         last_status=machine.get("last_status", "unknown"),
@@ -152,10 +154,12 @@ async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_
                 "(name, description, hostname, ip_address, ssh_port, ssh_user, auth_method, "
                 "ssh_password_enc, ssh_key_path, ssh_passphrase_enc, "
                 "ark_root_path, ark_config_path, ark_plugins_path, "
+                "os_type, wsl_distro, "
                 "is_active, last_status, created_at, updated_at) "
                 "VALUES (:name, :desc, :host, :ip, :port, :user, :auth, "
                 ":pw_enc, :key_path, :pp_enc, "
                 ":ark_root, :ark_config, :ark_plugins, "
+                ":os_type, :wsl_distro, "
                 ":active, 'unknown', :now, :now)"
             ),
             {
@@ -172,6 +176,8 @@ async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_
                 "ark_root":    raw.get("ark_root_path", "/opt/ark"),
                 "ark_config":  raw.get("ark_config_path", ""),
                 "ark_plugins": raw.get("ark_plugins_path", ""),
+                "os_type":     raw.get("os_type", "linux"),
+                "wsl_distro":  raw.get("wsl_distro") or "Ubuntu",
                 "active":      1 if raw.get("is_active", True) else 0,
                 "now":         now,
             },
@@ -228,6 +234,7 @@ async def update_machine(
         "name", "description", "hostname", "ip_address", "ssh_port",
         "ssh_user", "auth_method", "ssh_key_path",
         "ark_root_path", "ark_config_path", "ark_plugins_path",
+        "os_type", "wsl_distro",
     }
     for field in simple_columns:
         if field in raw and raw[field] is not None:
@@ -323,10 +330,12 @@ async def duplicate_machine(machine_id: int, db: AsyncSession = Depends(get_db))
             "(name, description, hostname, ip_address, ssh_port, ssh_user, auth_method, "
             "ssh_password_enc, ssh_key_path, ssh_passphrase_enc, "
             "ark_root_path, ark_config_path, ark_plugins_path, "
+            "os_type, wsl_distro, "
             "is_active, last_status, created_at, updated_at) "
             "VALUES (:name, :desc, :host, :ip, :port, :user, :auth, "
             ":pw_enc, :key_path, :pp_enc, "
             ":ark_root, :ark_config, :ark_plugins, "
+            ":os_type, :wsl_distro, "
             ":active, 'unknown', :now, :now)"
         ),
         {
@@ -343,6 +352,8 @@ async def duplicate_machine(machine_id: int, db: AsyncSession = Depends(get_db))
             "ark_root":    source.get("ark_root_path", "/opt/ark"),
             "ark_config":  source.get("ark_config_path", ""),
             "ark_plugins": source.get("ark_plugins_path", ""),
+            "os_type":     source.get("os_type", "linux"),
+            "wsl_distro":  source.get("wsl_distro") or "Ubuntu",
             "active":      1 if source.get("is_active", True) else 0,
             "now":         now,
         },
