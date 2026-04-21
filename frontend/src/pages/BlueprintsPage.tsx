@@ -4,6 +4,7 @@
  * JSON import/export, bulk category edit, copy blueprint to clipboard.
  */
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Database, Download, Upload, Search, RefreshCw, Loader2, CheckCircle,
   AlertCircle, X, Copy, Box, Sword, Shield, Home, Utensils,
@@ -28,6 +29,7 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 export default function BlueprintsPage() {
+  const { t } = useTranslation()
   // DB state
   const [hasData, setHasData] = useState(false)
   const [totalBp, setTotalBp] = useState(0)
@@ -69,8 +71,8 @@ export default function BlueprintsPage() {
 
   // Effects
   useEffect(() => { loadStatus() }, [])
-  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 5000); return () => clearTimeout(t) } }, [success])
-  useEffect(() => { if (copied) { const t = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(t) } }, [copied])
+  useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 5000); return () => clearTimeout(timer) } }, [success])
+  useEffect(() => { if (copied) { const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) } }, [copied])
 
   // ── Data loading ──────────────────────────────────────────────
   async function loadStatus() {
@@ -95,7 +97,7 @@ export default function BlueprintsPage() {
       })
       setItems(res.data.items as BpItem[])
       setTotal(res.data.total)
-    } catch { setError('Failed to load blueprints') }
+    } catch { setError(t('blueprints.messages.loadError')) }
   }
 
   async function loadFilters() {
@@ -116,17 +118,17 @@ export default function BlueprintsPage() {
     try {
       const res = await blueprintsApi.sync()
       const d = res.data
-      const errMsg = d.errors.length > 0 ? ' | Errors: ' + d.errors.join('; ') : ''
+      const errMsg = d.errors.length > 0 ? t('blueprints.messages.syncErrorsPrefix', { list: d.errors.join('; ') }) : ''
       if (d.total_blueprints > 0) {
-        setSuccess(`Sync complete: ${d.total_blueprints} blueprints (${d.items_count} items, ${d.dinos_count} dinos, ${d.commands_count} commands)${errMsg}`)
+        setSuccess(t('blueprints.messages.syncComplete', { total: d.total_blueprints, items: d.items_count, dinos: d.dinos_count, commands: d.commands_count, errors: errMsg }))
       } else {
-        setError(`No blueprints downloaded. Sources: ${d.sources.join(', ') || 'none'}`)
+        setError(t('blueprints.messages.syncNone', { sources: d.sources.join(', ') || t('blueprints.messages.syncNoneSourcesNone') }))
       }
       setHasData(true); setTotalBp(d.total_blueprints); setSources(d.sources); setLastSync(new Date().toISOString())
       resetFilters(); loadData('', '', '', 0); loadFilters(); loadAllCategories()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Sync failed')
+      setError(detail || t('blueprints.messages.syncFailed'))
     } finally { setSyncing(false) }
   }
 
@@ -138,7 +140,7 @@ export default function BlueprintsPage() {
   function handlePage(p: number) { setPage(p); loadData(search, catFilter, typeFilter, p) }
 
   function copyBp(bp: string) { navigator.clipboard.writeText(bp); setCopied(bp) }
-  function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString() : 'Never' }
+  function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString(undefined) : t('blueprints.never') }
 
   // ── Category editing ──────────────────────────────────────────
   async function saveCategoryEdit(bpId: string) {
@@ -148,17 +150,17 @@ export default function BlueprintsPage() {
       setEditingCat(null)
       setItems(prev => prev.map(i => i.id === bpId ? { ...i, category: editCatValue.trim() } : i))
       loadFilters(); loadAllCategories()
-    } catch { setError('Failed to update category') }
+    } catch { setError(t('blueprints.messages.updateCategoryError')) }
   }
 
   async function handleBulkCategory() {
     if (!bulkCat.trim() || selected.size === 0) return
     try {
       const res = await blueprintsApi.bulkUpdateCategory([...selected], bulkCat.trim())
-      setSuccess(`Updated category for ${res.data.updated} blueprints`)
+      setSuccess(t('blueprints.messages.bulkSuccess', { count: res.data.updated }))
       setSelected(new Set()); setBulkCat('')
       loadData(); loadFilters(); loadAllCategories()
-    } catch { setError('Bulk category update failed') }
+    } catch { setError(t('blueprints.messages.bulkError')) }
   }
 
   // ── Selection ─────────────────────────────────────────────────
@@ -178,8 +180,8 @@ export default function BlueprintsPage() {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
       a.download = `blueprints_${new Date().toISOString().slice(0, 10)}.json`; a.click()
       URL.revokeObjectURL(a.href)
-      setSuccess('Exported ' + totalBp + ' blueprints as JSON')
-    } catch { setError('Export failed') }
+      setSuccess(t('blueprints.messages.exportSuccess', { count: totalBp }))
+    } catch { setError(t('blueprints.messages.exportError')) }
   }
 
   // ── Import ────────────────────────────────────────────────────
@@ -196,11 +198,11 @@ export default function BlueprintsPage() {
         // Support both array format and {blueprints: [...]} wrapper
         if (!Array.isArray(parsed)) {
           if (Array.isArray(parsed.blueprints)) parsed = parsed.blueprints
-          else { setError('Invalid JSON: expected an array of blueprints'); return }
+          else { setError(t('blueprints.messages.invalidArray')); return }
         }
         setImportPreview({ data: parsed, filename: file.name })
       } catch (err) {
-        setError('Invalid JSON file: ' + (err instanceof Error ? err.message : 'parse error'))
+        setError(t('blueprints.messages.invalidFile', { reason: err instanceof Error ? err.message : t('blueprints.messages.parseError') }))
       }
     }
     reader.readAsText(file)
@@ -212,12 +214,12 @@ export default function BlueprintsPage() {
     setImporting(true); setError('')
     try {
       const res = await blueprintsApi.importBlueprints(importPreview.data, importMode)
-      setSuccess(`Import complete: ${res.data.added} added, ${res.data.updated} updated (${res.data.total} total)`)
+      setSuccess(t('blueprints.messages.importSuccess', { added: res.data.added, updated: res.data.updated, total: res.data.total }))
       setImportPreview(null); setHasData(true)
       loadStatus()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError('Import failed: ' + (detail || 'Unknown error'))
+      setError(t('blueprints.messages.importError', { reason: detail || t('blueprints.messages.unknownError') }))
     } finally { setImporting(false) }
   }
 
@@ -229,23 +231,23 @@ export default function BlueprintsPage() {
       <div className="page-container">
         <div className="page-header">
           <div className="page-header-text">
-            <h1 className="page-title"><Database size={22} /> Blueprint Database</h1>
-            <p className="page-subtitle">Local ARK: Survival Ascended blueprint database</p>
+            <h1 className="page-title"><Database size={22} /> {t('blueprints.heading')}</h1>
+            <p className="page-subtitle">{t('blueprints.subtitleEmpty')}</p>
           </div>
         </div>
         {error && <div className="pl-alert pl-alert-err"><AlertCircle size={14} /> {error}<button onClick={() => setError('')} className="pl-alert-x"><X size={14} /></button></div>}
         {success && <div className="pl-alert pl-alert-ok"><CheckCircle size={14} /> {success}</div>}
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
           <Database size={44} style={{ color: 'var(--text-muted)', marginBottom: '1rem' }} />
-          <h3 style={{ marginBottom: '0.5rem' }}>No blueprint database</h3>
+          <h3 style={{ marginBottom: '0.5rem' }}>{t('blueprints.noData.title')}</h3>
           <p style={{ marginBottom: '1.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-            Download blueprints from Dododex + ARK Wiki, or import your own JSON file.
+            {t('blueprints.noData.hint')}
           </p>
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button onClick={handleSync} disabled={syncing} className="btn btn-primary">
-              {syncing ? <><Loader2 size={16} className="pl-spin" /> Syncing...</> : <><Download size={16} /> Sync from Dododex + Wiki</>}
+              {syncing ? <><Loader2 size={16} className="pl-spin" /> {t('blueprints.noData.syncing')}</> : <><Download size={16} /> {t('blueprints.noData.syncButton')}</>}
             </button>
-            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary"><Upload size={16} /> Import JSON</button>
+            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary"><Upload size={16} /> {t('blueprints.noData.importButton')}</button>
           </div>
           <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileSelected} />
         </div>
@@ -260,25 +262,24 @@ export default function BlueprintsPage() {
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
         <div className="card" style={{ width: 440, maxWidth: '90vw', padding: '1.5rem' }}>
-          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}><Upload size={18} /> Import Blueprints</h3>
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            File: <strong>{importPreview.filename}</strong> — {importPreview.data.length} entries
-          </p>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}><Upload size={18} /> {t('blueprints.importDialog.title')}</h3>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}
+             dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.fileLine', { name: importPreview.filename, count: importPreview.data.length }) }} />
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.35rem 0.7rem', borderRadius: 6, border: importMode === 'merge' ? '2px solid var(--accent)' : '1px solid var(--border)', background: importMode === 'merge' ? 'var(--accent-glow)' : 'transparent' }}>
               <input type="radio" name="mode" checked={importMode === 'merge'} onChange={() => setImportMode('merge')} style={{ display: 'none' }} />
-              <strong>Merge</strong> — add new, update existing
+              <span dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.mergeLabel') }} />
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.35rem 0.7rem', borderRadius: 6, border: importMode === 'replace' ? '2px solid var(--danger)' : '1px solid var(--border)', background: importMode === 'replace' ? 'rgba(239,68,68,0.06)' : 'transparent' }}>
               <input type="radio" name="mode" checked={importMode === 'replace'} onChange={() => setImportMode('replace')} style={{ display: 'none' }} />
-              <strong>Replace</strong> — wipe and replace all
+              <span dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.replaceLabel') }} />
             </label>
           </div>
-          {importMode === 'replace' && <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginBottom: '0.75rem', padding: '0.4rem 0.6rem', background: 'rgba(239,68,68,0.06)', borderRadius: 6 }}><AlertCircle size={13} style={{ verticalAlign: 'text-bottom' }} /> This will delete all existing blueprints!</div>}
+          {importMode === 'replace' && <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginBottom: '0.75rem', padding: '0.4rem 0.6rem', background: 'rgba(239,68,68,0.06)', borderRadius: 6 }}><AlertCircle size={13} style={{ verticalAlign: 'text-bottom' }} /> {t('blueprints.importDialog.replaceWarning')}</div>}
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-            <button onClick={() => setImportPreview(null)} className="btn btn-ghost">Cancel</button>
+            <button onClick={() => setImportPreview(null)} className="btn btn-ghost">{t('blueprints.importDialog.cancel')}</button>
             <button onClick={confirmImport} disabled={importing} className="btn btn-primary">
-              {importing ? <><Loader2 size={14} className="pl-spin" /> Importing...</> : <><Upload size={14} /> Import {importPreview.data.length} entries</>}
+              {importing ? <><Loader2 size={14} className="pl-spin" /> {t('blueprints.importDialog.importing')}</> : <><Upload size={14} /> {t('blueprints.importDialog.importEntries', { count: importPreview.data.length })}</>}
             </button>
           </div>
         </div>
@@ -291,16 +292,16 @@ export default function BlueprintsPage() {
     <div className="page-container">
       <div className="page-header">
         <div className="page-header-text">
-          <h1 className="page-title"><Database size={22} /> Blueprint Database</h1>
+          <h1 className="page-title"><Database size={22} /> {t('blueprints.heading')}</h1>
           <p className="page-subtitle">
-            {totalBp.toLocaleString()} blueprints &middot; Last sync: {fmtDate(lastSync)}
+            {t('blueprints.subtitleFilled', { count: totalBp.toLocaleString(undefined), date: fmtDate(lastSync) })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleExport} className="btn btn-ghost btn-sm" title="Export all as JSON"><Download size={14} /> Export</button>
-          <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost btn-sm" title="Import from JSON"><Upload size={14} /> Import</button>
+          <button onClick={handleExport} className="btn btn-ghost btn-sm" title={t('blueprints.actions.exportTitle')}><Download size={14} /> {t('blueprints.actions.export')}</button>
+          <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost btn-sm" title={t('blueprints.actions.importTitle')}><Upload size={14} /> {t('blueprints.actions.import')}</button>
           <button onClick={handleSync} disabled={syncing} className="btn btn-primary btn-sm">
-            {syncing ? <><Loader2 size={14} className="pl-spin" /> Syncing...</> : <><RefreshCw size={14} /> Sync</>}
+            {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('blueprints.actions.syncing')}</> : <><RefreshCw size={14} /> {t('blueprints.actions.sync')}</>}
           </button>
         </div>
       </div>
@@ -311,15 +312,15 @@ export default function BlueprintsPage() {
 
       {/* Type chips */}
       <div className="bp-type-chips">
-        {types.map(t => {
-          const Icon = TYPE_ICONS[t.name] || Package
-          const color = TYPE_COLORS[t.name] || 'var(--text-muted)'
-          const isActive = typeFilter === t.name
+        {types.map(ty => {
+          const Icon = TYPE_ICONS[ty.name] || Package
+          const color = TYPE_COLORS[ty.name] || 'var(--text-muted)'
+          const isActive = typeFilter === ty.name
           return (
-            <button key={t.name} className={`bp-type-chip ${isActive ? 'bp-type-chip-active' : ''}`}
+            <button key={ty.name} className={`bp-type-chip ${isActive ? 'bp-type-chip-active' : ''}`}
               style={{ '--chip-color': color } as React.CSSProperties}
-              onClick={() => handleTypeChange(isActive ? '' : t.name)}>
-              <Icon size={13} /> {t.name} <span className="bp-type-count">{t.count}</span>
+              onClick={() => handleTypeChange(isActive ? '' : ty.name)}>
+              <Icon size={13} /> {ty.name} <span className="bp-type-count">{ty.count}</span>
             </button>
           )
         })}
@@ -331,36 +332,36 @@ export default function BlueprintsPage() {
           <Search size={16} className="pl-search-icon" />
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && doSearch()}
-            className="pl-search-input" placeholder="Search name, blueprint, GFI..." />
+            className="pl-search-input" placeholder={t('blueprints.filters.searchPlaceholder')} />
         </div>
         <select value={catFilter} onChange={e => handleCatChange(e.target.value)} className="dc-select">
-          <option value="">All categories</option>
-          {categories.map(c => <option key={c.name} value={c.name}>{c.name} ({c.count})</option>)}
+          <option value="">{t('blueprints.filters.allCategories')}</option>
+          {categories.map(c => <option key={c.name} value={c.name}>{t('blueprints.filters.categoryOption', { name: c.name, count: c.count })}</option>)}
         </select>
-        <button onClick={doSearch} className="pl-btn-search">Search</button>
+        <button onClick={doSearch} className="pl-btn-search">{t('blueprints.filters.searchButton')}</button>
       </div>
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.85rem', marginBottom: '0.6rem', background: 'var(--accent-glow)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-lg)' }}>
-          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent)' }}>{selected.size} selected</span>
+          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent)' }}>{t('blueprints.bulk.selected', { count: selected.size })}</span>
           <select value={bulkCat} onChange={e => setBulkCat(e.target.value)} className="dc-select" style={{ fontSize: '0.78rem', padding: '0.3rem 0.5rem' }}>
-            <option value="">Set category...</option>
+            <option value="">{t('blueprints.bulk.setCategory')}</option>
             {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          {bulkCat && <button onClick={handleBulkCategory} className="btn btn-primary btn-sm"><Check size={13} /> Apply</button>}
-          <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm"><X size={13} /> Clear</button>
+          {bulkCat && <button onClick={handleBulkCategory} className="btn btn-primary btn-sm"><Check size={13} /> {t('blueprints.bulk.apply')}</button>}
+          <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm"><X size={13} /> {t('blueprints.bulk.clear')}</button>
         </div>
       )}
 
       {/* Results header */}
       <div className="bp-results-header">
-        <span>{total.toLocaleString()} results</span>
+        <span>{t('blueprints.results.count', { count: total.toLocaleString(undefined) })}</span>
         {totalPages > 1 && (
           <div className="bp-pagination">
-            <button onClick={() => handlePage(page - 1)} disabled={page === 0} className="btn btn-sm btn-ghost">&laquo; Prev</button>
-            <span className="bp-page-info">Page {page + 1} / {totalPages}</span>
-            <button onClick={() => handlePage(page + 1)} disabled={page >= totalPages - 1} className="btn btn-sm btn-ghost">Next &raquo;</button>
+            <button onClick={() => handlePage(page - 1)} disabled={page === 0} className="btn btn-sm btn-ghost">{t('blueprints.results.prev')}</button>
+            <span className="bp-page-info">{t('blueprints.results.pageInfo', { page: page + 1, total: totalPages })}</span>
+            <button onClick={() => handlePage(page + 1)} disabled={page >= totalPages - 1} className="btn btn-sm btn-ghost">{t('blueprints.results.next')}</button>
           </div>
         )}
       </div>
@@ -372,12 +373,12 @@ export default function BlueprintsPage() {
             <tr>
               <th style={{ width: 36 }}>
                 <input type="checkbox" checked={selected.size === items.length && items.length > 0}
-                  onChange={toggleSelectAll} title="Select all" />
+                  onChange={toggleSelectAll} title={t('blueprints.table.selectAll')} />
               </th>
-              <th style={{ width: '28%' }}>Name</th>
-              <th style={{ width: '8%' }}>Type</th>
-              <th style={{ width: '14%' }}>Category</th>
-              <th>Blueprint Path</th>
+              <th style={{ width: '28%' }}>{t('blueprints.table.name')}</th>
+              <th style={{ width: '8%' }}>{t('blueprints.table.type')}</th>
+              <th style={{ width: '14%' }}>{t('blueprints.table.category')}</th>
+              <th>{t('blueprints.table.blueprintPath')}</th>
             </tr>
           </thead>
           <tbody>
@@ -408,7 +409,7 @@ export default function BlueprintsPage() {
                     ) : (
                       <span className="bp-cell-cat" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
                         onClick={() => { setEditingCat(item.id); setEditCatValue(item.category) }}
-                        title="Click to change category">
+                        title={t('blueprints.table.changeCategoryTip')}>
                         {item.category} <Edit3 size={10} style={{ opacity: 0.3 }} />
                       </span>
                     )}
@@ -416,7 +417,7 @@ export default function BlueprintsPage() {
                   <td>
                     <div className="bp-cell-bp-wrap">
                       <span className="bp-cell-bp">{item.blueprint}</span>
-                      <button onClick={() => copyBp(item.blueprint)} className="bp-copy-btn" title="Copy blueprint">
+                      <button onClick={() => copyBp(item.blueprint)} className="bp-copy-btn" title={t('blueprints.table.copyTip')}>
                         {copied === item.blueprint ? <CheckCircle size={13} style={{ color: 'var(--success)' }} /> : <Copy size={13} />}
                       </button>
                     </div>
@@ -431,9 +432,9 @@ export default function BlueprintsPage() {
       {/* Bottom pagination */}
       {totalPages > 1 && (
         <div className="bp-pagination" style={{ justifyContent: 'center', marginTop: '1rem' }}>
-          <button onClick={() => handlePage(page - 1)} disabled={page === 0} className="btn btn-sm btn-ghost">&laquo; Prev</button>
-          <span className="bp-page-info">Page {page + 1} / {totalPages}</span>
-          <button onClick={() => handlePage(page + 1)} disabled={page >= totalPages - 1} className="btn btn-sm btn-ghost">Next &raquo;</button>
+          <button onClick={() => handlePage(page - 1)} disabled={page === 0} className="btn btn-sm btn-ghost">{t('blueprints.results.prev')}</button>
+          <span className="bp-page-info">{t('blueprints.results.pageInfo', { page: page + 1, total: totalPages })}</span>
+          <button onClick={() => handlePage(page + 1)} disabled={page >= totalPages - 1} className="btn btn-sm btn-ghost">{t('blueprints.results.next')}</button>
         </div>
       )}
 

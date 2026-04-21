@@ -3,6 +3,7 @@
  * Row-based layout, modal dialog for editing, blueprint search from local DB.
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   ShoppingBag, Settings, Package, MessageSquare, Database,
   Upload, Download, Save, Plus, Trash2, Edit3, X, Search,
@@ -21,6 +22,7 @@ function bpName(bp: string) {
 
 // ===== Blueprint Search Component =====
 function BlueprintSearch({ value, onChange }: { value: string; onChange: (bp: string) => void }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<{ name: string; blueprint: string; type: string; category?: string; gfi?: string }[]>([])
   const [open, setOpen] = useState(false)
@@ -42,15 +44,15 @@ function BlueprintSearch({ value, onChange }: { value: string; onChange: (bp: st
   }, [])
 
   useEffect(() => {
-    const t = setTimeout(() => doSearch(query), 300)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => doSearch(query), 300)
+    return () => clearTimeout(timer)
   }, [query, doSearch])
 
   return (
     <div className="bp-search-wrap" ref={ref}>
       <input type="text" value={value} onChange={e => { onChange(e.target.value); setQuery(e.target.value); setOpen(true) }}
         onFocus={() => { if (query.length >= 2) setOpen(true) }}
-        className="as-edit-field-input" placeholder="Cerca o incolla blueprint..." />
+        className="as-edit-field-input" placeholder={t('arkshop.bpSearch.placeholder')} />
       <button type="button" className="bp-search-btn" onClick={() => { setQuery(value ? bpName(value) : ''); setOpen(true) }}>
         <Search size={12} />
       </button>
@@ -87,6 +89,7 @@ function EditDialog({ title, children, onClose }: { title: string; children: Rea
 
 // ===== Sub-Item Editor inside Dialog =====
 function SubItemEditor({ items, onChange }: { items: any[]; onChange: (items: any[]) => void }) {
+  const { t } = useTranslation()
   function update(idx: number, field: string, val: any) {
     const n = [...items]; n[idx] = { ...n[idx], [field]: val }; onChange(n)
   }
@@ -104,38 +107,38 @@ function SubItemEditor({ items, onChange }: { items: any[]; onChange: (items: an
             {isCmd ? (
               <div className="as-sub-fields">
                 <div className="as-sub-field" style={{ flex: 2 }}>
-                  <label>Command</label>
+                  <label>{t('arkshop.sub.command')}</label>
                   <input type="text" value={it.Command ?? ''} onChange={e => update(idx, 'Command', e.target.value)} />
                 </div>
                 <div className="as-sub-field" style={{ flex: 1 }}>
-                  <label>DisplayAs</label>
+                  <label>{t('arkshop.sub.displayAs')}</label>
                   <input type="text" value={it.DisplayAs ?? ''} onChange={e => update(idx, 'DisplayAs', e.target.value)} />
                 </div>
                 <div className="as-sub-field" style={{ width: 70 }}>
-                  <label>Admin</label>
+                  <label>{t('arkshop.sub.admin')}</label>
                   <select value={it.ExecuteAsAdmin ? '1' : '0'} onChange={e => update(idx, 'ExecuteAsAdmin', e.target.value === '1')}>
-                    <option value="0">No</option><option value="1">Si</option>
+                    <option value="0">{t('arkshop.sub.no')}</option><option value="1">{t('arkshop.sub.yes')}</option>
                   </select>
                 </div>
               </div>
             ) : (
               <div className="as-sub-fields">
                 <div className="as-sub-field" style={{ flex: 3 }}>
-                  <label>Blueprint</label>
+                  <label>{t('arkshop.sub.blueprint')}</label>
                   <BlueprintSearch value={it.Blueprint ?? ''} onChange={v => update(idx, 'Blueprint', v)} />
                 </div>
                 <div className="as-sub-field" style={{ width: 65 }}>
-                  <label>Qty</label>
+                  <label>{t('arkshop.sub.qty')}</label>
                   <input type="number" value={it.Amount ?? 1} onChange={e => update(idx, 'Amount', parseInt(e.target.value) || 1)} />
                 </div>
                 <div className="as-sub-field" style={{ width: 60 }}>
-                  <label>Quality</label>
+                  <label>{t('arkshop.sub.quality')}</label>
                   <input type="number" value={it.Quality ?? 0} onChange={e => update(idx, 'Quality', parseInt(e.target.value) || 0)} />
                 </div>
                 <div className="as-sub-field" style={{ width: 50 }}>
-                  <label>BP</label>
+                  <label>{t('arkshop.sub.bp')}</label>
                   <select value={it.ForceBlueprint ? '1' : '0'} onChange={e => update(idx, 'ForceBlueprint', e.target.value === '1')}>
-                    <option value="0">No</option><option value="1">Si</option>
+                    <option value="0">{t('arkshop.sub.no')}</option><option value="1">{t('arkshop.sub.yes')}</option>
                   </select>
                 </div>
               </div>
@@ -145,8 +148,8 @@ function SubItemEditor({ items, onChange }: { items: any[]; onChange: (items: an
         )
       })}
       <div className="as-sub-add">
-        <button className="btn btn-sm btn-secondary" onClick={addItem}><Plus size={12} /> Item</button>
-        <button className="btn btn-sm btn-ghost" onClick={addCmd}><Plus size={12} /> Comando</button>
+        <button className="btn btn-sm btn-secondary" onClick={addItem}><Plus size={12} /> {t('arkshop.sub.addItem')}</button>
+        <button className="btn btn-sm btn-ghost" onClick={addCmd}><Plus size={12} /> {t('arkshop.sub.addCmd')}</button>
       </div>
     </div>
   )
@@ -154,6 +157,7 @@ function SubItemEditor({ items, onChange }: { items: any[]; onChange: (items: an
 
 // ===== MAIN =====
 export default function ArkShopPage() {
+  const { t } = useTranslation()
   const [configLoaded, setConfigLoaded] = useState(false)
   const [tab, setTab] = useState<Tab>('shop')
   const [loading, setLoading] = useState(false)
@@ -194,18 +198,18 @@ export default function ArkShopPage() {
   const [showVersions, setShowVersions] = useState(false)
   const [deployVersionId, setDeployVersionId] = useState<number | null>(null)
 
-  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(t) } }, [success])
+  useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
 
   // Lifecycle
   async function handleReset() {
-    if (!confirm('Resettare tutta la configurazione ArkShop? Dovrai ricaricarla da un server.')) return
+    if (!confirm(t('arkshop.messagesResult.resetConfirm'))) return
     try {
       await arkshopApi.deleteConfig()
       setConfigLoaded(false)
       setShopItems([]); setKits([]); setSellItems([])
       setMysql({}); setGeneral({}); setMessages({})
-      setSuccess('Configurazione resettata')
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore reset') }
+      setSuccess(t('arkshop.messagesResult.resetSuccess'))
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.resetError')) }
   }
 
   function handleUploadClick() { fileInputRef.current?.click() }
@@ -231,16 +235,16 @@ export default function ArkShopPage() {
       const raw = await file.text()
       const clean = cleanJsonComments(raw)
       await arkshopApi.uploadConfig(JSON.parse(clean))
-      setConfigLoaded(true); setSuccess('Configurazione caricata'); loadAll()
-    } catch (err: any) { setError(err.message?.includes('JSON') ? 'JSON non valido (controlla formato)' : (err.response?.data?.detail || err.message)) }
+      setConfigLoaded(true); setSuccess(t('arkshop.messagesResult.uploadSuccess')); loadAll()
+    } catch (err: any) { setError(err.message?.includes('JSON') ? t('arkshop.messagesResult.invalidJson') : (err.response?.data?.detail || err.message)) }
     finally { setLoading(false); e.target.value = '' }
   }
   async function handleExport() {
     try {
       const res = await arkshopApi.exportConfig()
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })); a.download = 'ArkShop.json'; a.click()
-      setSuccess('Esportato')
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore') }
+      setSuccess(t('arkshop.messagesResult.exportSuccess'))
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.genericError')) }
   }
   async function loadAll() {
     const [my, gen, shop, kit, sell, msg] = await Promise.allSettled([
@@ -274,10 +278,10 @@ export default function ArkShopPage() {
     setPulling(true); setError('')
     try {
       const res = await arkshopApi.pull(machineId, containerName)
-      setSuccess(`Config caricata da ${res.data.source}: ${res.data.shop_items} items, ${res.data.kits} kits`)
+      setSuccess(t('arkshop.messagesResult.pullSuccess', { source: res.data.source, items: res.data.shop_items, kits: res.data.kits }))
       setConfigLoaded(true)
       loadAll()
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore pull') }
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.pullError')) }
     finally { setPulling(false) }
   }
 
@@ -288,15 +292,15 @@ export default function ArkShopPage() {
       setPushResults(res.data)
       const d = res.data
       if (d.deployed > 0 && d.failed === 0 && d.skipped_running === 0) {
-        setSuccess(`${d.version}: deployata su ${d.deployed}/${d.total} server`)
+        setSuccess(t('arkshop.messagesResult.deployAllSuccess', { version: d.version, deployed: d.deployed, total: d.total }))
       } else if (d.deployed > 0) {
-        setSuccess(`${d.version}: ${d.deployed} OK, ${d.skipped_running} attivi (saltati), ${d.failed} errori`)
+        setSuccess(t('arkshop.messagesResult.deployPartial', { version: d.version, deployed: d.deployed, skipped: d.skipped_running, failed: d.failed }))
       } else if (d.skipped_running > 0) {
-        setError(`Nessun deploy: ${d.skipped_running} container attivi. Spegnili prima.`)
+        setError(t('arkshop.messagesResult.deployNone', { skipped: d.skipped_running }))
       } else {
-        setError(`Deploy fallito: ${d.failed} errori`)
+        setError(t('arkshop.messagesResult.deployFailed', { failed: d.failed }))
       }
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore deploy') }
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.deployError')) }
     finally { setPushing(false) }
   }
 
@@ -308,32 +312,32 @@ export default function ArkShopPage() {
   }
 
   async function handleSaveVersion() {
-    if (!versionLabel.trim()) { setError('Inserisci un nome per la versione'); return }
+    if (!versionLabel.trim()) { setError(t('arkshop.messagesResult.versionNameRequired')); return }
     setSavingVersion(true); setError('')
     try {
       const res = await arkshopApi.saveVersion(versionLabel.trim())
-      setSuccess(`Versione "${res.data.label}" salvata (${res.data.total_versions} totali)`)
+      setSuccess(t('arkshop.messagesResult.versionSaved', { label: res.data.label, total: res.data.total_versions }))
       setVersionLabel('')
       loadVersions()
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore salvataggio versione') }
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.versionSaveError')) }
     finally { setSavingVersion(false) }
   }
 
   async function handleRestoreVersion(id: number) {
     try {
       const res = await arkshopApi.restoreVersion(id)
-      setSuccess(`Versione "${res.data.label}" ripristinata: ${res.data.shop_items} items, ${res.data.kits} kits`)
+      setSuccess(t('arkshop.messagesResult.versionRestored', { label: res.data.label, items: res.data.shop_items, kits: res.data.kits }))
       loadAll()
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore ripristino') }
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.versionRestoreError')) }
   }
 
   async function handleDeleteVersion(id: number) {
-    if (!confirm('Eliminare questa versione?')) return
+    if (!confirm(t('arkshop.messagesResult.versionDeleteConfirm'))) return
     try {
       await arkshopApi.deleteVersion(id)
-      setSuccess('Versione eliminata')
+      setSuccess(t('arkshop.messagesResult.versionDeleted'))
       loadVersions()
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore') }
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.versionDeleteError')) }
   }
 
   // ===== Dialog open helpers =====
@@ -355,7 +359,7 @@ export default function ArkShopPage() {
 
   // ===== Save from dialog =====
   async function handleDialogSave() {
-    if (!dialogData?.key) { setError('Chiave obbligatoria'); return }
+    if (!dialogData?.key) { setError(t('arkshop.messagesResult.keyRequired')); return }
     try {
       const { key, ...data } = dialogData
       if (dialogType === 'shop') {
@@ -368,25 +372,25 @@ export default function ArkShopPage() {
         await arkshopApi.updateSellItem(key, data)
         const res = await arkshopApi.listSellItems(); setSellItems(res.data)
       }
-      setSuccess(`"${key}" salvato`); setDialogOpen(false)
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore salvataggio') }
+      setSuccess(t('arkshop.messagesResult.saved', { key })); setDialogOpen(false)
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.saveError')) }
   }
 
   // ===== Delete =====
   async function handleDelete(type: string, key: string) {
-    if (!confirm(`Eliminare "${key}"?`)) return
+    if (!confirm(t('arkshop.messagesResult.deleteConfirm', { key }))) return
     try {
       if (type === 'shop') { await arkshopApi.deleteShopItem(key); setShopItems(p => p.filter(i => i.key !== key)) }
       else if (type === 'kit') { await arkshopApi.deleteKit(key); setKits(p => p.filter(i => i.key !== key)) }
       else { await arkshopApi.deleteSellItem(key); setSellItems(p => p.filter(i => i.key !== key)) }
-      setSuccess(`"${key}" eliminato`); setDialogOpen(false)
-    } catch (err: any) { setError(err.response?.data?.detail || 'Errore') }
+      setSuccess(t('arkshop.messagesResult.deleted', { key })); setDialogOpen(false)
+    } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.deleteError')) }
   }
 
   // General/MySQL/Messages saves
-  async function saveMysql() { try { await arkshopApi.updateMysql(mysql); setSuccess('MySQL salvato') } catch (err: any) { setError(err.response?.data?.detail || 'Errore') } }
-  async function saveGeneral() { try { await arkshopApi.updateGeneral(general); setSuccess('Generali salvate') } catch (err: any) { setError(err.response?.data?.detail || 'Errore') } }
-  async function saveMessages() { try { await arkshopApi.updateMessages(messages); setSuccess('Messaggi salvati') } catch (err: any) { setError(err.response?.data?.detail || 'Errore') } }
+  async function saveMysql() { try { await arkshopApi.updateMysql(mysql); setSuccess(t('arkshop.messagesResult.mysqlSaved')) } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.genericError')) } }
+  async function saveGeneral() { try { await arkshopApi.updateGeneral(general); setSuccess(t('arkshop.messagesResult.generalSaved')) } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.genericError')) } }
+  async function saveMessages() { try { await arkshopApi.updateMessages(messages); setSuccess(t('arkshop.messagesResult.messagesSaved')) } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.genericError')) } }
 
   // Filters
   const filteredShop = shopItems.filter(item => {
@@ -398,23 +402,23 @@ export default function ArkShopPage() {
   if (!configLoaded) return (
     <div>
       <div className="page-header"><div>
-        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ShoppingBag size={24} style={{ color: 'var(--accent)' }} /> ArkShop</h1>
-        <p className="page-subtitle">Editor configurazione plugin ArkShop</p>
+        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ShoppingBag size={24} style={{ color: 'var(--accent)' }} /> {t('arkshop.heading')}</h1>
+        <p className="page-subtitle">{t('arkshop.subtitleNoConfig')}</p>
       </div></div>
       {error && <div className="pl-alert pl-alert-err"><AlertCircle size={14} /> {error}<button onClick={() => setError('')} className="pl-alert-x"><X size={14}/></button></div>}
       {success && <div className="pl-alert pl-alert-ok"><CheckCircle size={14} /> {success}</div>}
 
       <div className="card" style={{ padding: '2rem' }}>
         <h3 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <CloudDownload size={18} /> Carica config da un server
+          <CloudDownload size={18} /> {t('arkshop.loadFromServer.title')}
         </h3>
-        <p className="card-text" style={{ marginBottom: '1rem' }}>Seleziona un container con ArkShop per importare automaticamente la configurazione.</p>
+        <p className="card-text" style={{ marginBottom: '1rem' }}>{t('arkshop.loadFromServer.hint')}</p>
 
         {loadingServers ? (
-          <p style={{ color: 'var(--text-muted)' }}><Loader2 size={14} className="pl-spin" /> Ricerca server...</p>
+          <p style={{ color: 'var(--text-muted)' }}><Loader2 size={14} className="pl-spin" /> {t('arkshop.loadFromServer.searching')}</p>
         ) : arkServers.length > 0 ? (
           <table className="pl-sync-table">
-            <thead><tr><th>Container</th><th>Server</th><th>Mappa</th><th>Host</th><th style={{ width: 80 }}></th></tr></thead>
+            <thead><tr><th>{t('arkshop.loadFromServer.columnContainer')}</th><th>{t('arkshop.loadFromServer.columnServer')}</th><th>{t('arkshop.loadFromServer.columnMap')}</th><th>{t('arkshop.loadFromServer.columnHost')}</th><th style={{ width: 80 }}></th></tr></thead>
             <tbody>
               {arkServers.map((s, i) => (
                 <tr key={i}>
@@ -425,7 +429,7 @@ export default function ArkShopPage() {
                   <td>
                     <button onClick={() => handlePull(s.machine_id, s.container_name)}
                       disabled={pulling} className="btn btn-primary btn-sm" style={{ padding: '0.2rem 0.5rem' }}>
-                      {pulling ? <Loader2 size={12} className="pl-spin" /> : <CloudDownload size={12} />} Pull
+                      {pulling ? <Loader2 size={12} className="pl-spin" /> : <CloudDownload size={12} />} {t('arkshop.loadFromServer.pullButton')}
                     </button>
                   </td>
                 </tr>
@@ -433,14 +437,14 @@ export default function ArkShopPage() {
             </tbody>
           </table>
         ) : (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nessun container con ArkShop trovato. Esegui prima una scansione dalla pagina Container.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('arkshop.loadFromServer.empty')}</p>
         )}
 
         <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-          <p className="card-text" style={{ marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Oppure carica manualmente:</p>
+          <p className="card-text" style={{ marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('arkshop.loadFromServer.manualHint')}</p>
           <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileUpload} style={{ display: 'none' }} />
           <button onClick={handleUploadClick} disabled={loading} className="btn btn-secondary btn-sm">
-            <Upload size={14} /> {loading ? 'Caricamento...' : 'Carica file JSON'}
+            <Upload size={14} /> {loading ? t('arkshop.loadFromServer.uploading') : t('arkshop.loadFromServer.uploadButton')}
           </button>
         </div>
       </div>
@@ -452,15 +456,15 @@ export default function ArkShopPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ShoppingBag size={24} style={{ color: 'var(--accent)' }} /> ArkShop</h1>
-          <p className="page-subtitle">{shopItems.length} articoli &middot; {kits.length} kit &middot; {sellItems.length} vendibili</p>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ShoppingBag size={24} style={{ color: 'var(--accent)' }} /> {t('arkshop.heading')}</h1>
+          <p className="page-subtitle">{t('arkshop.subtitleStats', { items: shopItems.length, kits: kits.length, sell: sellItems.length })}</p>
         </div>
         <div className="page-header-actions">
-          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: '#dc2626' }}><RotateCcw size={14} /> Reset</button>
-          <button onClick={handleUploadClick} className="btn btn-secondary btn-sm"><Upload size={14} /> Ricarica</button>
-          <button onClick={handleExport} className="btn btn-secondary btn-sm"><Download size={14} /> Esporta</button>
+          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: '#dc2626' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>
+          <button onClick={handleUploadClick} className="btn btn-secondary btn-sm"><Upload size={14} /> {t('arkshop.actions.reload')}</button>
+          <button onClick={handleExport} className="btn btn-secondary btn-sm"><Download size={14} /> {t('arkshop.actions.export')}</button>
           <button onClick={() => setShowDeploy(!showDeploy)} className="btn btn-primary btn-sm" disabled={pushing}>
-            {pushing ? <Loader2 size={14} className="pl-spin" /> : <CloudUpload size={14} />} Deploy
+            {pushing ? <Loader2 size={14} className="pl-spin" /> : <CloudUpload size={14} />} {t('arkshop.actions.deploy')}
           </button>
         </div>
       </div>
@@ -472,9 +476,9 @@ export default function ArkShopPage() {
       {showDeploy && (
         <div className="pl-sync-panel" style={{ marginBottom: '1rem' }}>
           <div className="pl-sync-header">
-            <span className="pl-sync-title"><CloudUpload size={14} /> Deploy su Server</span>
+            <span className="pl-sync-title"><CloudUpload size={14} /> {t('arkshop.deploy.title')}</span>
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-              <button onClick={() => { loadArkServers(); setPushResults(null) }} className="pl-btn-icon" style={{ width: 22, height: 22 }} title="Aggiorna lista">
+              <button onClick={() => { loadArkServers(); setPushResults(null) }} className="pl-btn-icon" style={{ width: 22, height: 22 }} title={t('arkshop.deploy.refreshList')}>
                 <RefreshCw size={12} />
               </button>
               <button onClick={() => setShowDeploy(false)} className="pl-btn-icon" style={{ width: 22, height: 22 }}><X size={12} /></button>
@@ -486,12 +490,12 @@ export default function ArkShopPage() {
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.8rem', padding: '0.6rem', background: 'var(--bg-hover)', borderRadius: '8px' }}>
               <Archive size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
               <input type="text" value={versionLabel} onChange={e => setVersionLabel(e.target.value)}
-                placeholder="Nome versione (es. v1.2 promo estate)" className="form-input"
+                placeholder={t('arkshop.deploy.versionPlaceholder')} className="form-input"
                 style={{ flex: 1, padding: '0.3rem 0.5rem', fontSize: '0.8rem' }}
                 onKeyDown={e => e.key === 'Enter' && handleSaveVersion()} />
               <button onClick={handleSaveVersion} disabled={savingVersion || !versionLabel.trim()}
                 className="btn btn-secondary btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                {savingVersion ? <Loader2 size={12} className="pl-spin" /> : <Save size={12} />} Salva
+                {savingVersion ? <Loader2 size={12} className="pl-spin" /> : <Save size={12} />} {t('arkshop.deploy.saveVersion')}
               </button>
               <button onClick={() => setShowVersions(!showVersions)} className="btn btn-secondary btn-sm" style={{ whiteSpace: 'nowrap' }}>
                 <Clock size={12} /> {versions.length}
@@ -502,7 +506,7 @@ export default function ArkShopPage() {
             {showVersions && versions.length > 0 && (
               <div style={{ marginBottom: '0.8rem' }}>
                 <table className="pl-sync-table">
-                  <thead><tr><th>Versione</th><th>Data</th><th>Items</th><th>Kits</th><th style={{ width: 160 }}></th></tr></thead>
+                  <thead><tr><th>{t('arkshop.deploy.versionColumn')}</th><th>{t('arkshop.deploy.dateColumn')}</th><th>{t('arkshop.deploy.itemsColumn')}</th><th>{t('arkshop.deploy.kitsColumn')}</th><th style={{ width: 160 }}></th></tr></thead>
                   <tbody>
                     {versions.map(v => (
                       <tr key={v.id} style={deployVersionId === v.id ? { background: 'rgba(37,99,235,0.06)' } : {}}>
@@ -511,7 +515,7 @@ export default function ArkShopPage() {
                           <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>#{v.id}</span>
                         </td>
                         <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                          {new Date(v.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(v.created_at).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td style={{ fontSize: '0.78rem' }}>{v.shop_items}</td>
                         <td style={{ fontSize: '0.78rem' }}>{v.kits}</td>
@@ -519,15 +523,15 @@ export default function ArkShopPage() {
                           <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
                             <button onClick={() => setDeployVersionId(deployVersionId === v.id ? null : v.id)}
                               className={`btn btn-sm ${deployVersionId === v.id ? 'btn-primary' : 'btn-secondary'}`}
-                              style={{ padding: '0.15rem 0.4rem' }} title="Seleziona per deploy">
+                              style={{ padding: '0.15rem 0.4rem' }} title={t('arkshop.deploy.selectForDeploy')}>
                               <Play size={10} />
                             </button>
                             <button onClick={() => handleRestoreVersion(v.id)}
-                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem' }} title="Ripristina come corrente">
+                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem' }} title={t('arkshop.deploy.restoreCurrent')}>
                               <RotateCcw size={10} />
                             </button>
                             <button onClick={() => handleDeleteVersion(v.id)}
-                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: '#dc2626' }} title="Elimina">
+                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: '#dc2626' }} title={t('arkshop.deploy.deleteTitle')}>
                               <Trash2 size={10} />
                             </button>
                           </div>
@@ -541,8 +545,8 @@ export default function ArkShopPage() {
 
             {/* Sorgente deploy */}
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-              Deploy: <strong>{deployVersionId ? `Versione #${deployVersionId} - ${versions.find(v => v.id === deployVersionId)?.label || '?'}` : 'Config corrente'}</strong>
-              {deployVersionId && <button onClick={() => setDeployVersionId(null)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.7rem', marginLeft: '0.3rem' }}>(usa corrente)</button>}
+              {t('arkshop.deploy.source')} <strong>{deployVersionId ? t('arkshop.deploy.sourceVersion', { id: deployVersionId, label: versions.find(v => v.id === deployVersionId)?.label || '?' }) : t('arkshop.deploy.sourceCurrent')}</strong>
+              {deployVersionId && <button onClick={() => setDeployVersionId(null)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.7rem', marginLeft: '0.3rem' }}>{t('arkshop.deploy.useCurrent')}</button>}
             </div>
 
             {/* Tabella server con deploy */}
@@ -552,11 +556,11 @@ export default function ArkShopPage() {
                   <button onClick={() => handleDeploy(deployVersionId ?? undefined)}
                     disabled={pushing || arkServers.length === 0}
                     className="btn btn-primary btn-sm">
-                    {pushing ? <Loader2 size={12} className="pl-spin" /> : <CloudUpload size={12} />} Deploy su tutti (solo spenti)
+                    {pushing ? <Loader2 size={12} className="pl-spin" /> : <CloudUpload size={12} />} {t('arkshop.deploy.deployAll')}
                   </button>
                 </div>
                 <table className="pl-sync-table">
-                  <thead><tr><th>Container</th><th>Server</th><th>Mappa</th><th>Host</th><th style={{ width: 130 }}></th></tr></thead>
+                  <thead><tr><th>{t('arkshop.loadFromServer.columnContainer')}</th><th>{t('arkshop.loadFromServer.columnServer')}</th><th>{t('arkshop.loadFromServer.columnMap')}</th><th>{t('arkshop.loadFromServer.columnHost')}</th><th style={{ width: 130 }}></th></tr></thead>
                   <tbody>
                     {arkServers.map((s, i) => {
                       const result = pushResults?.results?.find((r: any) => r.container === s.container_name && r.machine === s.machine_name)
@@ -569,14 +573,14 @@ export default function ArkShopPage() {
                           <td style={{ textAlign: 'right' }}>
                             {result ? (
                               result.status === 'deployed'
-                                ? <span style={{ color: 'var(--success)', fontSize: '0.75rem' }}><CheckCircle size={11} /> Deployato</span>
+                                ? <span style={{ color: 'var(--success)', fontSize: '0.75rem' }}><CheckCircle size={11} /> {t('arkshop.deploy.deployed')}</span>
                                 : result.status === 'running'
-                                  ? <span style={{ color: '#d97706', fontSize: '0.75rem' }}><Play size={11} /> Attivo</span>
-                                  : <span style={{ color: 'var(--danger)', fontSize: '0.75rem' }} title={result.message}><AlertCircle size={11} /> Errore</span>
+                                  ? <span style={{ color: '#d97706', fontSize: '0.75rem' }}><Play size={11} /> {t('arkshop.deploy.active')}</span>
+                                  : <span style={{ color: 'var(--danger)', fontSize: '0.75rem' }} title={result.message}><AlertCircle size={11} /> {t('arkshop.deploy.errorStatus')}</span>
                             ) : (
                               <button onClick={() => handleDeploy(deployVersionId ?? undefined, s.machine_id, s.container_name)}
                                 disabled={pushing} className="btn btn-secondary btn-sm" style={{ padding: '0.2rem 0.5rem' }}>
-                                {pushing ? <Loader2 size={11} className="pl-spin" /> : <CloudUpload size={11} />} Deploy
+                                {pushing ? <Loader2 size={11} className="pl-spin" /> : <CloudUpload size={11} />} {t('arkshop.deploy.deploySingle')}
                               </button>
                             )}
                           </td>
@@ -588,16 +592,16 @@ export default function ArkShopPage() {
               </>
             ) : (
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Nessun container con ArkShop trovato.
+                {t('arkshop.deploy.noServers')}
               </p>
             )}
             {pushResults && (
               <div className={`pl-alert ${pushResults.failed === 0 && pushResults.skipped_running === 0 ? 'pl-alert-ok' : 'pl-alert-err'}`} style={{ marginTop: '0.5rem' }}>
                 {pushResults.failed === 0 && pushResults.skipped_running === 0 ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
-                {' '}{pushResults.deployed} deployati
-                {pushResults.skipped_running > 0 && <>, {pushResults.skipped_running} saltati (attivi)</>}
-                {pushResults.failed > 0 && <>, {pushResults.failed} errori</>}
-                {' '}/ {pushResults.total} totali
+                {' '}{t('arkshop.deploy.resultDeployed', { count: pushResults.deployed })}
+                {pushResults.skipped_running > 0 && <>{t('arkshop.deploy.resultSkipped', { count: pushResults.skipped_running })}</>}
+                {pushResults.failed > 0 && <>{t('arkshop.deploy.resultFailed', { count: pushResults.failed })}</>}
+                {' '}{t('arkshop.deploy.resultSuffix', { total: pushResults.total })}
               </div>
             )}
           </div>
@@ -607,16 +611,16 @@ export default function ArkShopPage() {
       {/* Tabs */}
       <div className="sf-tabs">
         {([
-          { id: 'shop', label: 'Shop Items', icon: ShoppingBag, count: shopItems.length },
-          { id: 'kits', label: 'Kits', icon: Package, count: kits.length },
-          { id: 'sell', label: 'Vendita', icon: DollarSign, count: sellItems.length },
-          { id: 'general', label: 'Generale', icon: Settings },
-          { id: 'mysql', label: 'MySQL', icon: Database },
-          { id: 'messages', label: 'Messaggi', icon: MessageSquare },
-        ] as { id: Tab; label: string; icon: any; count?: number }[]).map(t => (
-          <button key={t.id} className={`sf-tab ${tab === t.id ? 'sf-tab-active' : ''}`} onClick={() => setTab(t.id)}>
-            <t.icon size={14} style={{ marginRight: '0.3rem', verticalAlign: '-2px' }} />
-            {t.label} {t.count != null && <span style={{ opacity: 0.6, marginLeft: '0.2rem' }}>({t.count})</span>}
+          { id: 'shop', label: t('arkshop.tabs.shop'), icon: ShoppingBag, count: shopItems.length },
+          { id: 'kits', label: t('arkshop.tabs.kits'), icon: Package, count: kits.length },
+          { id: 'sell', label: t('arkshop.tabs.sell'), icon: DollarSign, count: sellItems.length },
+          { id: 'general', label: t('arkshop.tabs.general'), icon: Settings },
+          { id: 'mysql', label: t('arkshop.tabs.mysql'), icon: Database },
+          { id: 'messages', label: t('arkshop.tabs.messages'), icon: MessageSquare },
+        ] as { id: Tab; label: string; icon: any; count?: number }[]).map(tb => (
+          <button key={tb.id} className={`sf-tab ${tab === tb.id ? 'sf-tab-active' : ''}`} onClick={() => setTab(tb.id)}>
+            <tb.icon size={14} style={{ marginRight: '0.3rem', verticalAlign: '-2px' }} />
+            {tb.label} {tb.count != null && <span style={{ opacity: 0.6, marginLeft: '0.2rem' }}>({tb.count})</span>}
           </button>
         ))}
       </div>
@@ -625,26 +629,26 @@ export default function ArkShopPage() {
       {tab === 'shop' && (<div>
         <div className="dc-filters" style={{ marginBottom: '0.75rem' }}>
           <div className="pl-search-input-wrap"><Search size={16} className="pl-search-icon" />
-            <input type="text" value={shopSearch} onChange={e => setShopSearch(e.target.value)} className="pl-search-input" placeholder="Cerca item..." /></div>
+            <input type="text" value={shopSearch} onChange={e => setShopSearch(e.target.value)} className="pl-search-input" placeholder={t('arkshop.shop.searchPlaceholder')} /></div>
           <select value={shopTypeFilter} onChange={e => setShopTypeFilter(e.target.value)} className="dc-select">
-            <option value="">Tutti</option><option value="item">Item</option><option value="command">Command</option><option value="dino">Dino</option>
+            <option value="">{t('arkshop.shop.filterAll')}</option><option value="item">{t('arkshop.shop.filterItem')}</option><option value="command">{t('arkshop.shop.filterCommand')}</option><option value="dino">{t('arkshop.shop.filterDino')}</option>
           </select>
-          <button onClick={() => openShopDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> Nuovo</button>
+          <button onClick={() => openShopDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.shop.new')}</button>
         </div>
         <div className="as-list">
           {filteredShop.map(item => (
             <div key={item.key} className="as-list-item">
               <div className="as-list-row" onClick={() => setExpandedItem(expandedItem === item.key ? null : item.key)}>
                 <span className="as-list-title">{item.Title || item.key}</span>
-                <span className="as-list-type">{item.Type || 'item'}</span>
+                <span className="as-list-type">{item.Type || t('arkshop.shop.defaultType')}</span>
                 <span className="as-list-price"><DollarSign size={11} /> {item.Price}</span>
                 <div className="as-list-perms">
                   {(item.Permissions || '').split(',').map((p: string) => p.trim()).filter(Boolean).slice(0, 3).map((p: string) => <span key={p} className="pl-chip">{p}</span>)}
                 </div>
-                <span className="as-list-count">{item.Items?.length || 0} obj</span>
+                <span className="as-list-count">{t('arkshop.shop.objectsShort', { count: item.Items?.length || 0 })}</span>
                 <div className="as-list-actions">
-                  <button onClick={e => { e.stopPropagation(); openShopDialog(item) }} className="btn btn-sm btn-ghost" title="Modifica"><Edit3 size={13} /></button>
-                  <button onClick={e => { e.stopPropagation(); handleDelete('shop', item.key) }} className="btn btn-sm btn-danger" title="Elimina"><Trash2 size={13} /></button>
+                  <button onClick={e => { e.stopPropagation(); openShopDialog(item) }} className="btn btn-sm btn-ghost" title={t('arkshop.shop.editTooltip')}><Edit3 size={13} /></button>
+                  <button onClick={e => { e.stopPropagation(); handleDelete('shop', item.key) }} className="btn btn-sm btn-danger" title={t('arkshop.shop.deleteTooltip')}><Trash2 size={13} /></button>
                 </div>
                 {expandedItem === item.key ? <ChevronUp size={14} className="as-list-chevron" /> : <ChevronDown size={14} className="as-list-chevron" />}
               </div>
@@ -656,11 +660,11 @@ export default function ArkShopPage() {
                         <span className="as-bp-amount">{it.Amount}x</span>
                         <span className="as-bp-name">{bpName(it.Blueprint)}</span>
                         {it.Quality > 0 && <span className="as-bp-quality">Q{it.Quality}</span>}
-                        {it.ForceBlueprint && <span className="as-bp-tag">BP</span>}
+                        {it.ForceBlueprint && <span className="as-bp-tag">{t('arkshop.sub.bp')}</span>}
                       </>) : (<>
-                        <span className="as-bp-amount" style={{ color: '#64748b' }}>CMD</span>
+                        <span className="as-bp-amount" style={{ color: '#64748b' }}>{t('arkshop.shop.bpCommandTag')}</span>
                         <span className="as-bp-name">{it.Command || it.DisplayAs || '?'}</span>
-                        {it.ExecuteAsAdmin && <span className="as-bp-tag" style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>Admin</span>}
+                        {it.ExecuteAsAdmin && <span className="as-bp-tag" style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>{t('arkshop.shop.bpAdminTag')}</span>}
                       </>)}
                     </div>
                   ))}
@@ -673,18 +677,18 @@ export default function ArkShopPage() {
 
       {/* ==================== KITS - Lista a righe ==================== */}
       {tab === 'kits' && (<div>
-        <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openKitDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> Nuovo Kit</button></div>
+        <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openKitDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.kits.new')}</button></div>
         <div className="as-list">
           {kits.map(kit => (
             <div key={kit.key} className="as-list-item">
               <div className="as-list-row" onClick={() => setExpandedItem(expandedItem === kit.key ? null : kit.key)}>
                 <span className="as-list-title">{kit.key}</span>
-                <span className="as-list-type">Kit</span>
+                <span className="as-list-type">{t('arkshop.kits.kitTypeLabel')}</span>
                 <span className="as-list-price"><DollarSign size={11} /> {kit.Price}</span>
                 <div className="as-list-perms">
                   {(kit.Permissions || '').split(',').map((p: string) => p.trim()).filter(Boolean).slice(0, 3).map((p: string) => <span key={p} className="pl-chip">{p}</span>)}
                 </div>
-                <span className="as-list-count">{kit.Items?.length || 0} items</span>
+                <span className="as-list-count">{t('arkshop.kits.itemsShort', { count: kit.Items?.length || 0 })}</span>
                 <div className="as-list-actions">
                   <button onClick={e => { e.stopPropagation(); openKitDialog(kit) }} className="btn btn-sm btn-ghost"><Edit3 size={13} /></button>
                   <button onClick={e => { e.stopPropagation(); handleDelete('kit', kit.key) }} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
@@ -694,12 +698,12 @@ export default function ArkShopPage() {
               {expandedItem === kit.key && (
                 <div className="as-list-expand">
                   <div className="as-kit-meta" style={{ marginBottom: '0.4rem' }}>
-                    {kit.DefaultAmount != null && <span>Qty: {kit.DefaultAmount}</span>}
-                    {kit.MaxLevel != null && <span>MaxLv: {kit.MaxLevel}</span>}
-                    {kit.OnlyFromSpawn && <span>Solo spawn</span>}
+                    {kit.DefaultAmount != null && <span>{t('arkshop.kits.qty', { count: kit.DefaultAmount })}</span>}
+                    {kit.MaxLevel != null && <span>{t('arkshop.kits.maxLv', { level: kit.MaxLevel })}</span>}
+                    {kit.OnlyFromSpawn && <span>{t('arkshop.kits.onlyFromSpawn')}</span>}
                   </div>
                   {kit.Items?.map((it: any, idx: number) => (
-                    <div key={idx} className="as-bp-row"><span className="as-bp-amount">{it.Amount}x</span><span className="as-bp-name">{bpName(it.Blueprint)}</span>{it.Quality > 0 && <span className="as-bp-quality">Q{it.Quality}</span>}{it.ForceBlueprint && <span className="as-bp-tag">BP</span>}</div>
+                    <div key={idx} className="as-bp-row"><span className="as-bp-amount">{it.Amount}x</span><span className="as-bp-name">{bpName(it.Blueprint)}</span>{it.Quality > 0 && <span className="as-bp-quality">Q{it.Quality}</span>}{it.ForceBlueprint && <span className="as-bp-tag">{t('arkshop.sub.bp')}</span>}</div>
                   ))}
                 </div>
               )}
@@ -710,14 +714,14 @@ export default function ArkShopPage() {
 
       {/* ==================== SELL ITEMS - Lista a righe ==================== */}
       {tab === 'sell' && (<div>
-        <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openSellDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> Nuovo</button></div>
+        <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openSellDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.sell.new')}</button></div>
         <div className="as-list">
           {sellItems.map(item => (
             <div key={item.key} className="as-list-item">
               <div className="as-list-row">
                 <span className="as-list-title">{item.key}</span>
-                <span className="as-list-type">{item.Type || 'item'}</span>
-                <span className="as-list-price"><DollarSign size={11} /> {item.Price} pts</span>
+                <span className="as-list-type">{item.Type || t('arkshop.shop.defaultType')}</span>
+                <span className="as-list-price"><DollarSign size={11} /> {t('arkshop.sell.pricePts', { price: item.Price })}</span>
                 <span className="as-list-count">{item.Amount}x {bpName(item.Blueprint)}</span>
                 <div className="as-list-actions">
                   <button onClick={() => openSellDialog(item)} className="btn btn-sm btn-ghost"><Edit3 size={13} /></button>
@@ -731,132 +735,132 @@ export default function ArkShopPage() {
 
       {/* ==================== GENERAL ==================== */}
       {tab === 'general' && (<div className="card">
-        <h3 className="card-title"><Settings size={16} style={{color:'var(--accent)'}} /> Impostazioni Generali</h3>
+        <h3 className="card-title"><Settings size={16} style={{color:'var(--accent)'}} /> {t('arkshop.general.title')}</h3>
         <div className="as-general-grid">
-          <div className="as-gen-section">Shop Display</div>
-          <div className="as-gen-field"><label>Items per Pagina</label><input type="number" value={general.ItemsPerPage??10} onChange={e=>setGeneral({...general,ItemsPerPage:parseInt(e.target.value)||10})} /></div>
-          <div className="as-gen-field"><label>Shop Text Size</label><input type="number" step="0.1" value={general.ShopTextSize??1.5} onChange={e=>setGeneral({...general,ShopTextSize:parseFloat(e.target.value)||1.5})} /></div>
-          <div className="as-gen-field"><label>Shop Display Time</label><input type="number" value={general.ShopDisplayTime??15} onChange={e=>setGeneral({...general,ShopDisplayTime:parseInt(e.target.value)||15})} /></div>
-          <div className="as-gen-field"><label>Default Kit</label><input type="text" value={general.DefaultKit??''} onChange={e=>setGeneral({...general,DefaultKit:e.target.value})} /></div>
-          <div className="as-gen-field"><label>DbPath Override</label><input type="text" value={general.DbPathOverride??''} onChange={e=>setGeneral({...general,DbPathOverride:e.target.value})} /></div>
-          <div className="as-gen-section">Opzioni</div>
-          {[['GiveDinosInCryopods','Give Dinos in Cryopods'],['CryoLimitedTime','Cryo Limited Time'],['PreventUseCarried','Prevent Use Carried'],
-            ['PreventUseHandcuffed','Prevent Use Handcuffed'],['PreventUseNoglin','Prevent Use Noglin'],['PreventUseUnconscious','Prevent Use Unconscious'],
-            ['UseOriginalTradeCommandWithUI','Use Original Trade Cmd With UI']].map(([k,l])=>(
+          <div className="as-gen-section">{t('arkshop.general.sectionDisplay')}</div>
+          <div className="as-gen-field"><label>{t('arkshop.general.itemsPerPage')}</label><input type="number" value={general.ItemsPerPage??10} onChange={e=>setGeneral({...general,ItemsPerPage:parseInt(e.target.value)||10})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.shopTextSize')}</label><input type="number" step="0.1" value={general.ShopTextSize??1.5} onChange={e=>setGeneral({...general,ShopTextSize:parseFloat(e.target.value)||1.5})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.shopDisplayTime')}</label><input type="number" value={general.ShopDisplayTime??15} onChange={e=>setGeneral({...general,ShopDisplayTime:parseInt(e.target.value)||15})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.defaultKit')}</label><input type="text" value={general.DefaultKit??''} onChange={e=>setGeneral({...general,DefaultKit:e.target.value})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.dbPathOverride')}</label><input type="text" value={general.DbPathOverride??''} onChange={e=>setGeneral({...general,DbPathOverride:e.target.value})} /></div>
+          <div className="as-gen-section">{t('arkshop.general.sectionOptions')}</div>
+          {[['GiveDinosInCryopods',t('arkshop.general.optGiveDinosInCryopods')],['CryoLimitedTime',t('arkshop.general.optCryoLimitedTime')],['PreventUseCarried',t('arkshop.general.optPreventUseCarried')],
+            ['PreventUseHandcuffed',t('arkshop.general.optPreventUseHandcuffed')],['PreventUseNoglin',t('arkshop.general.optPreventUseNoglin')],['PreventUseUnconscious',t('arkshop.general.optPreventUseUnconscious')],
+            ['UseOriginalTradeCommandWithUI',t('arkshop.general.optUseOriginalTradeCommandWithUI')]].map(([k,l])=>(
             <div key={k} className="as-gen-check"><label><input type="checkbox" checked={general[k]??false} onChange={e=>setGeneral({...general,[k]:e.target.checked})} /> {l}</label></div>))}
-          <div className="as-gen-section">Discord</div>
-          <div className="as-gen-check"><label><input type="checkbox" checked={general.Discord?.Enabled??false} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),Enabled:e.target.checked}})} /> Abilitato</label></div>
-          <div className="as-gen-field"><label>Sender Name</label><input type="text" value={general.Discord?.SenderName??''} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),SenderName:e.target.value}})} /></div>
-          <div className="as-gen-field" style={{gridColumn:'span 2'}}><label>Webhook URL</label><input type="text" value={general.Discord?.URL??''} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),URL:e.target.value}})} /></div>
-          <div className="as-gen-section">Timed Points Reward</div>
-          <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.Enabled??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),Enabled:e.target.checked}})} /> Abilitato</label></div>
-          <div className="as-gen-field"><label>Intervallo (min)</label><input type="number" value={general.TimedPointsReward?.Interval??10} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),Interval:parseInt(e.target.value)||10}})} /></div>
-          <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.AlwaysSendNotifications??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),AlwaysSendNotifications:e.target.checked}})} /> Always Send Notifications</label></div>
-          <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.StackRewards??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),StackRewards:e.target.checked}})} /> Stack Rewards</label></div>
+          <div className="as-gen-section">{t('arkshop.general.sectionDiscord')}</div>
+          <div className="as-gen-check"><label><input type="checkbox" checked={general.Discord?.Enabled??false} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),Enabled:e.target.checked}})} /> {t('arkshop.general.discordEnabled')}</label></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.discordSenderName')}</label><input type="text" value={general.Discord?.SenderName??''} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),SenderName:e.target.value}})} /></div>
+          <div className="as-gen-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.general.discordWebhookUrl')}</label><input type="text" value={general.Discord?.URL??''} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),URL:e.target.value}})} /></div>
+          <div className="as-gen-section">{t('arkshop.general.sectionTimedPoints')}</div>
+          <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.Enabled??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),Enabled:e.target.checked}})} /> {t('arkshop.general.timedEnabled')}</label></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.timedInterval')}</label><input type="number" value={general.TimedPointsReward?.Interval??10} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),Interval:parseInt(e.target.value)||10}})} /></div>
+          <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.AlwaysSendNotifications??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),AlwaysSendNotifications:e.target.checked}})} /> {t('arkshop.general.timedAlwaysSend')}</label></div>
+          <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.StackRewards??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),StackRewards:e.target.checked}})} /> {t('arkshop.general.timedStack')}</label></div>
           {general.TimedPointsReward?.Groups && Object.entries(general.TimedPointsReward.Groups).map(([g,v]:any)=>(
-            <div key={g} className="as-gen-field"><label>Punti "{g}"</label><input type="number" value={v.Amount??0} onChange={e=>setGeneral({...general,TimedPointsReward:{...general.TimedPointsReward,Groups:{...general.TimedPointsReward.Groups,[g]:{Amount:parseInt(e.target.value)||0}}}})} /></div>))}
+            <div key={g} className="as-gen-field"><label>{t('arkshop.general.timedGroupPoints', { group: g })}</label><input type="number" value={v.Amount??0} onChange={e=>setGeneral({...general,TimedPointsReward:{...general.TimedPointsReward,Groups:{...general.TimedPointsReward.Groups,[g]:{Amount:parseInt(e.target.value)||0}}}})} /></div>))}
         </div>
-        <button onClick={saveGeneral} className="btn btn-primary mt-4"><Save size={14} /> Salva</button>
+        <button onClick={saveGeneral} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
       </div>)}
 
       {/* ==================== MYSQL ==================== */}
       {tab === 'mysql' && (<div className="card">
-        <h3 className="card-title"><Database size={16} style={{color:'var(--accent)'}} /> MySQL</h3>
+        <h3 className="card-title"><Database size={16} style={{color:'var(--accent)'}} /> {t('arkshop.mysql.title')}</h3>
         <div className="as-general-grid">
-          <div className="as-gen-check"><label><input type="checkbox" checked={mysql.UseMysql??true} onChange={e=>setMysql({...mysql,UseMysql:e.target.checked})} /> Usa MySQL</label></div>
-          <div className="as-gen-field"><label>Host</label><input type="text" value={mysql.MysqlHost??''} onChange={e=>setMysql({...mysql,MysqlHost:e.target.value})} /></div>
-          <div className="as-gen-field"><label>Porta</label><input type="number" value={mysql.MysqlPort??3306} onChange={e=>setMysql({...mysql,MysqlPort:parseInt(e.target.value)||3306})} /></div>
-          <div className="as-gen-field"><label>Database</label><input type="text" value={mysql.MysqlDB??''} onChange={e=>setMysql({...mysql,MysqlDB:e.target.value})} /></div>
-          <div className="as-gen-field"><label>Utente</label><input type="text" value={mysql.MysqlUser??''} onChange={e=>setMysql({...mysql,MysqlUser:e.target.value})} /></div>
-          <div className="as-gen-field"><label>Password</label><input type="password" value={mysql.MysqlPass??''} onChange={e=>setMysql({...mysql,MysqlPass:e.target.value})} /></div>
+          <div className="as-gen-check"><label><input type="checkbox" checked={mysql.UseMysql??true} onChange={e=>setMysql({...mysql,UseMysql:e.target.checked})} /> {t('arkshop.mysql.useMysql')}</label></div>
+          <div className="as-gen-field"><label>{t('arkshop.mysql.host')}</label><input type="text" value={mysql.MysqlHost??''} onChange={e=>setMysql({...mysql,MysqlHost:e.target.value})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.mysql.port')}</label><input type="number" value={mysql.MysqlPort??3306} onChange={e=>setMysql({...mysql,MysqlPort:parseInt(e.target.value)||3306})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.mysql.database')}</label><input type="text" value={mysql.MysqlDB??''} onChange={e=>setMysql({...mysql,MysqlDB:e.target.value})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.mysql.user')}</label><input type="text" value={mysql.MysqlUser??''} onChange={e=>setMysql({...mysql,MysqlUser:e.target.value})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.mysql.password')}</label><input type="password" value={mysql.MysqlPass??''} onChange={e=>setMysql({...mysql,MysqlPass:e.target.value})} /></div>
         </div>
-        <button onClick={saveMysql} className="btn btn-primary mt-4"><Save size={14} /> Salva</button>
+        <button onClick={saveMysql} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
       </div>)}
 
       {/* ==================== MESSAGES ==================== */}
       {tab === 'messages' && (<div className="card">
-        <h3 className="card-title"><MessageSquare size={16} style={{color:'var(--accent)'}} /> Messaggi</h3>
+        <h3 className="card-title"><MessageSquare size={16} style={{color:'var(--accent)'}} /> {t('arkshop.messages.title')}</h3>
         <div className="as-msg-grid">
           {Object.entries(messages).sort(([a],[b])=>a.localeCompare(b)).map(([key,val])=>(
             <div key={key} className="as-msg-row"><label className="as-msg-key">{key}</label>
               <input type="text" value={String(val)} className="as-msg-input" onChange={e=>setMessages({...messages,[key]:e.target.value})} /></div>))}
         </div>
-        <button onClick={saveMessages} className="btn btn-primary mt-4"><Save size={14} /> Salva</button>
+        <button onClick={saveMessages} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
       </div>)}
 
       {/* ==================== EDIT DIALOG ==================== */}
       {dialogOpen && dialogData && (
-        <EditDialog title={dialogIsNew ? `Nuovo ${dialogType === 'shop' ? 'Shop Item' : dialogType === 'kit' ? 'Kit' : 'Sell Item'}` : `Modifica: ${dialogData.key}`}
+        <EditDialog title={dialogIsNew ? (dialogType === 'shop' ? t('arkshop.dialog.newShop') : dialogType === 'kit' ? t('arkshop.dialog.newKit') : t('arkshop.dialog.newSell')) : t('arkshop.dialog.editPrefix', { key: dialogData.key })}
           onClose={() => setDialogOpen(false)}>
 
           {/* Shop Item dialog */}
           {dialogType === 'shop' && (<>
             <div className="as-dlg-grid">
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Chiave ID</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.keyId')}</label>
                 <input type="text" value={dialogData.key} disabled={!dialogIsNew} onChange={e => setDialogData({...dialogData, key: e.target.value})} /></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Titolo</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.title')}</label>
                 <input type="text" value={dialogData.Title ?? ''} onChange={e => setDialogData({...dialogData, Title: e.target.value})} /></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 4'}}><label>Descrizione</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 4'}}><label>{t('arkshop.dialog.description')}</label>
                 <input type="text" value={dialogData.Description ?? ''} onChange={e => setDialogData({...dialogData, Description: e.target.value})} /></div>
-              <div className="as-dlg-field"><label>Prezzo</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.price')}</label>
                 <input type="number" value={dialogData.Price ?? 0} onChange={e => setDialogData({...dialogData, Price: parseInt(e.target.value)||0})} /></div>
-              <div className="as-dlg-field"><label>Tipo</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.type')}</label>
                 <select value={dialogData.Type ?? 'item'} onChange={e => setDialogData({...dialogData, Type: e.target.value})}>
-                  <option value="item">item</option><option value="command">command</option><option value="dino">dino</option></select></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Permessi</label>
-                <input type="text" value={dialogData.Permissions ?? ''} onChange={e => setDialogData({...dialogData, Permissions: e.target.value})} placeholder="WL, VIP" /></div>
+                  <option value="item">{t('arkshop.dialog.optItem')}</option><option value="command">{t('arkshop.dialog.optCommand')}</option><option value="dino">{t('arkshop.dialog.optDino')}</option></select></div>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.permissions')}</label>
+                <input type="text" value={dialogData.Permissions ?? ''} onChange={e => setDialogData({...dialogData, Permissions: e.target.value})} placeholder={t('arkshop.dialog.permissionsPlaceholder')} /></div>
             </div>
-            <div className="as-dlg-section">Contenuto ({(dialogData.Items||[]).length} elementi)</div>
+            <div className="as-dlg-section">{t('arkshop.dialog.contentCount', { count: (dialogData.Items||[]).length })}</div>
             <SubItemEditor items={dialogData.Items || []} onChange={items => setDialogData({...dialogData, Items: items})} />
           </>)}
 
           {/* Kit dialog */}
           {dialogType === 'kit' && (<>
             <div className="as-dlg-grid">
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Chiave ID</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.keyId')}</label>
                 <input type="text" value={dialogData.key} disabled={!dialogIsNew} onChange={e => setDialogData({...dialogData, key: e.target.value})} /></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Descrizione</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.description')}</label>
                 <input type="text" value={dialogData.Description ?? ''} onChange={e => setDialogData({...dialogData, Description: e.target.value})} /></div>
-              <div className="as-dlg-field"><label>Prezzo</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.price')}</label>
                 <input type="number" value={dialogData.Price ?? 0} onChange={e => setDialogData({...dialogData, Price: parseInt(e.target.value)||0})} /></div>
-              <div className="as-dlg-field"><label>Default Amount</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.defaultAmount')}</label>
                 <input type="number" value={dialogData.DefaultAmount ?? 1} onChange={e => setDialogData({...dialogData, DefaultAmount: parseInt(e.target.value)||1})} /></div>
-              <div className="as-dlg-field"><label>Max Level</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.maxLevel')}</label>
                 <input type="number" value={dialogData.MaxLevel ?? 0} onChange={e => setDialogData({...dialogData, MaxLevel: parseInt(e.target.value)||0})} /></div>
-              <div className="as-dlg-field"><label>Solo da Spawn</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.onlyFromSpawn')}</label>
                 <select value={dialogData.OnlyFromSpawn ? '1' : '0'} onChange={e => setDialogData({...dialogData, OnlyFromSpawn: e.target.value==='1'})}>
-                  <option value="0">No</option><option value="1">Si</option></select></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 4'}}><label>Permessi</label>
+                  <option value="0">{t('arkshop.dialog.selectNo')}</option><option value="1">{t('arkshop.dialog.selectYes')}</option></select></div>
+              <div className="as-dlg-field" style={{gridColumn:'span 4'}}><label>{t('arkshop.dialog.permissions')}</label>
                 <input type="text" value={dialogData.Permissions ?? ''} onChange={e => setDialogData({...dialogData, Permissions: e.target.value})} /></div>
             </div>
-            <div className="as-dlg-section">Items ({(dialogData.Items||[]).length})</div>
+            <div className="as-dlg-section">{t('arkshop.dialog.itemsCount', { count: (dialogData.Items||[]).length })}</div>
             <SubItemEditor items={dialogData.Items || []} onChange={items => setDialogData({...dialogData, Items: items})} />
           </>)}
 
           {/* Sell Item dialog */}
           {dialogType === 'sell' && (<>
             <div className="as-dlg-grid">
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Chiave ID</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.keyId')}</label>
                 <input type="text" value={dialogData.key} disabled={!dialogIsNew} onChange={e => setDialogData({...dialogData, key: e.target.value})} /></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Descrizione</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.description')}</label>
                 <input type="text" value={dialogData.Description ?? ''} onChange={e => setDialogData({...dialogData, Description: e.target.value})} /></div>
-              <div className="as-dlg-field"><label>Prezzo (punti)</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.pricePts')}</label>
                 <input type="number" value={dialogData.Price ?? 0} onChange={e => setDialogData({...dialogData, Price: parseInt(e.target.value)||0})} /></div>
-              <div className="as-dlg-field"><label>Quantita'</label>
+              <div className="as-dlg-field"><label>{t('arkshop.dialog.amount')}</label>
                 <input type="number" value={dialogData.Amount ?? 1} onChange={e => setDialogData({...dialogData, Amount: parseInt(e.target.value)||1})} /></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>Tipo</label>
+              <div className="as-dlg-field" style={{gridColumn:'span 2'}}><label>{t('arkshop.dialog.type')}</label>
                 <select value={dialogData.Type ?? 'item'} onChange={e => setDialogData({...dialogData, Type: e.target.value})}>
-                  <option value="item">item</option><option value="dino">dino</option></select></div>
-              <div className="as-dlg-field" style={{gridColumn:'span 4'}}><label>Blueprint</label>
+                  <option value="item">{t('arkshop.dialog.optItem')}</option><option value="dino">{t('arkshop.dialog.optDino')}</option></select></div>
+              <div className="as-dlg-field" style={{gridColumn:'span 4'}}><label>{t('arkshop.dialog.blueprint')}</label>
                 <BlueprintSearch value={dialogData.Blueprint ?? ''} onChange={v => setDialogData({...dialogData, Blueprint: v})} /></div>
             </div>
           </>)}
 
           {/* Dialog footer */}
           <div className="as-dlg-footer">
-            <button onClick={handleDialogSave} className="btn btn-primary"><Save size={14} /> Salva</button>
-            <button onClick={() => setDialogOpen(false)} className="btn btn-secondary"><X size={14} /> Annulla</button>
-            {!dialogIsNew && <button onClick={() => handleDelete(dialogType, dialogData.key)} className="btn btn-danger" style={{marginLeft:'auto'}}><Trash2 size={14} /> Elimina</button>}
+            <button onClick={handleDialogSave} className="btn btn-primary"><Save size={14} /> {t('arkshop.dialog.save')}</button>
+            <button onClick={() => setDialogOpen(false)} className="btn btn-secondary"><X size={14} /> {t('arkshop.dialog.cancel')}</button>
+            {!dialogIsNew && <button onClick={() => handleDelete(dialogType, dialogData.key)} className="btn btn-danger" style={{marginLeft:'auto'}}><Trash2 size={14} /> {t('arkshop.dialog.delete')}</button>}
           </div>
         </EditDialog>
       )}

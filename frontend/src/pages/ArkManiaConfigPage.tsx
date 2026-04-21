@@ -3,6 +3,7 @@
  * Dedicated GUIs for: permission groups (chips), group rules (table), blueprint arrays, key-value maps.
  */
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
 import { arkmaniaApi, blueprintsApi } from '../services/api'
 import {
@@ -33,7 +34,9 @@ interface ServerItem { server_key: string; display_name: string; map_name: strin
 // ============================================================
 // Intelligent auto-description derived from the config key name
 // ============================================================
-function autoDescription(shortKey: string): string {
+type TFn = (key: string, options?: Record<string, unknown>) => string
+
+function autoDescription(shortKey: string, t: TFn): string {
   const k = shortKey.toLowerCase()
   const last = shortKey.split('.').pop() || ''
   const lastLow = last.toLowerCase()
@@ -42,40 +45,40 @@ function autoDescription(shortKey: string): string {
   if (k.includes('cmd.')) {
     const parts = shortKey.split('.')
     const cmd = parts.length >= 2 ? parts[1] : ''
-    if (lastLow === 'cooldown') return `Cooldown comando /${cmd} (secondi)`
-    if (lastLow === 'range') return `Raggio d'azione /${cmd} (unità)`
-    if (lastLow === 'value') return `Valore effetto /${cmd}`
+    if (lastLow === 'cooldown') return t('arkmaniaConfig.autoDesc.cmdCooldown', { cmd })
+    if (lastLow === 'range') return t('arkmaniaConfig.autoDesc.cmdRange', { cmd })
+    if (lastLow === 'value') return t('arkmaniaConfig.autoDesc.cmdValue', { cmd })
     if (lastLow === 'cost') {
       const group = parts.length >= 3 ? parts[parts.length - 2] : ''
-      return `Costo punti /${cmd} per ${group}`
+      return t('arkmaniaConfig.autoDesc.cmdCost', { cmd, group })
     }
   }
 
   // Pattern comuni
-  if (lastLow === 'enabled') return `Abilita/disabilita questa funzione`
-  if (lastLow === 'cooldown' || lastLow === 'cooldownsec') return 'Tempo di attesa tra utilizzi (secondi)'
-  if (lastLow === 'range') return "Raggio d'azione (unità di gioco)"
-  if (lastLow === 'cost') return 'Costo in punti'
-  if (lastLow.includes('interval')) return 'Intervallo di esecuzione'
-  if (lastLow.includes('max')) return 'Valore massimo'
-  if (lastLow.includes('min') && !lastLow.includes('admin')) return 'Valore minimo'
-  if (lastLow.includes('color')) return 'Colore RGBA (0-1)'
-  if (lastLow.includes('prefix')) return 'Prefisso testo'
-  if (lastLow.includes('message') || lastLow.includes('msg')) return 'Testo messaggio'
-  if (lastLow.includes('webhook')) return 'URL Webhook'
-  if (lastLow.includes('channel')) return 'ID canale'
-  if (lastLow.includes('url')) return 'Indirizzo URL'
-  if (lastLow.includes('timeout') || lastLow.includes('sec')) return 'Durata (secondi)'
-  if (lastLow.includes('days') || lastLow.includes('day')) return 'Durata (giorni)'
-  if (lastLow.includes('hours') || lastLow.includes('hour')) return 'Durata (ore)'
-  if (lastLow.includes('limit')) return 'Limite massimo'
-  if (lastLow.includes('radius')) return 'Raggio'
-  if (lastLow.includes('multiplier') || lastLow.includes('mult')) return 'Moltiplicatore'
-  if (lastLow.includes('percent') || lastLow.includes('pct')) return 'Percentuale'
-  if (lastLow.includes('count')) return 'Conteggio'
-  if (lastLow.includes('level')) return 'Livello'
-  if (lastLow.includes('weight')) return 'Peso'
-  if (lastLow.includes('speed')) return 'Velocità'
+  if (lastLow === 'enabled') return t('arkmaniaConfig.autoDesc.enabled')
+  if (lastLow === 'cooldown' || lastLow === 'cooldownsec') return t('arkmaniaConfig.autoDesc.cooldown')
+  if (lastLow === 'range') return t('arkmaniaConfig.autoDesc.range')
+  if (lastLow === 'cost') return t('arkmaniaConfig.autoDesc.cost')
+  if (lastLow.includes('interval')) return t('arkmaniaConfig.autoDesc.interval')
+  if (lastLow.includes('max')) return t('arkmaniaConfig.autoDesc.max')
+  if (lastLow.includes('min') && !lastLow.includes('admin')) return t('arkmaniaConfig.autoDesc.min')
+  if (lastLow.includes('color')) return t('arkmaniaConfig.autoDesc.color')
+  if (lastLow.includes('prefix')) return t('arkmaniaConfig.autoDesc.prefix')
+  if (lastLow.includes('message') || lastLow.includes('msg')) return t('arkmaniaConfig.autoDesc.message')
+  if (lastLow.includes('webhook')) return t('arkmaniaConfig.autoDesc.webhook')
+  if (lastLow.includes('channel')) return t('arkmaniaConfig.autoDesc.channel')
+  if (lastLow.includes('url')) return t('arkmaniaConfig.autoDesc.url')
+  if (lastLow.includes('timeout') || lastLow.includes('sec')) return t('arkmaniaConfig.autoDesc.timeout')
+  if (lastLow.includes('days') || lastLow.includes('day')) return t('arkmaniaConfig.autoDesc.days')
+  if (lastLow.includes('hours') || lastLow.includes('hour')) return t('arkmaniaConfig.autoDesc.hours')
+  if (lastLow.includes('limit')) return t('arkmaniaConfig.autoDesc.limit')
+  if (lastLow.includes('radius')) return t('arkmaniaConfig.autoDesc.radius')
+  if (lastLow.includes('multiplier') || lastLow.includes('mult')) return t('arkmaniaConfig.autoDesc.multiplier')
+  if (lastLow.includes('percent') || lastLow.includes('pct')) return t('arkmaniaConfig.autoDesc.percent')
+  if (lastLow.includes('count')) return t('arkmaniaConfig.autoDesc.count')
+  if (lastLow.includes('level')) return t('arkmaniaConfig.autoDesc.level')
+  if (lastLow.includes('weight')) return t('arkmaniaConfig.autoDesc.weight')
+  if (lastLow.includes('speed')) return t('arkmaniaConfig.autoDesc.speed')
 
   return ''
 }
@@ -133,6 +136,7 @@ function detectEditorType(key: string, value: string): EditorType {
 
 /** Chip-based editor for permission groups */
 function GroupsEditor({ value, onChange, availableGroups }: { value: string; onChange: (v: string) => void; availableGroups: string[] }) {
+  const { t } = useTranslation()
   let groups: string[] = []
   try { groups = JSON.parse(value) } catch { groups = [] }
   const [showAdd, setShowAdd] = useState(false)
@@ -167,7 +171,7 @@ function GroupsEditor({ value, onChange, availableGroups }: { value: string; onC
         <div style={{ position: 'relative' }}>
           <select autoFocus onChange={e => { if (e.target.value) addGroup(e.target.value) }} onBlur={() => setShowAdd(false)}
             className="input" style={{ fontSize: '0.78rem', height: 28, width: 140, padding: '0 0.4rem' }}>
-            <option value="">Select...</option>
+            <option value="">{t('arkmaniaConfig.editors.selectPlaceholder')}</option>
             {remaining.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
         </div>
@@ -177,7 +181,7 @@ function GroupsEditor({ value, onChange, availableGroups }: { value: string; onC
           borderRadius: 6, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
           background: 'var(--bg-card-muted)', border: '1px dashed var(--border)', color: 'var(--text-muted)',
         }}>
-          <Plus size={11} /> Add
+          <Plus size={11} /> {t('arkmaniaConfig.editors.addLabel')}
         </button>
       )}
     </div>
@@ -186,6 +190,7 @@ function GroupsEditor({ value, onChange, availableGroups }: { value: string; onC
 
 /** Table editor for group rules (e.g. DecayManager.GroupRules) */
 function GroupRulesEditor({ value, onChange, availableGroups }: { value: string; onChange: (v: string) => void; availableGroups: string[] }) {
+  const { t } = useTranslation()
   let rules: { Group: string; DecayDays: number }[] = []
   try { rules = JSON.parse(value) } catch { rules = [] }
 
@@ -213,7 +218,7 @@ function GroupRulesEditor({ value, onChange, availableGroups }: { value: string;
               {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Days:</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('arkmaniaConfig.editors.daysLabel')}</span>
               <input type="number" className="input" value={rule.DecayDays} onChange={e => updateRule(i, 'DecayDays', Number(e.target.value))}
                 style={{ width: 60, fontSize: '0.8rem', height: 30, textAlign: 'center', fontFamily: 'var(--font-mono)' }} />
             </div>
@@ -228,7 +233,7 @@ function GroupRulesEditor({ value, onChange, availableGroups }: { value: string;
         padding: '0.25rem 0.55rem', borderRadius: 6, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
         background: 'transparent', border: '1px dashed var(--border)', color: 'var(--text-muted)',
       }}>
-        <Plus size={11} /> Add rule
+        <Plus size={11} /> {t('arkmaniaConfig.editors.addRule')}
       </button>
     </div>
   )
@@ -236,6 +241,7 @@ function GroupRulesEditor({ value, onChange, availableGroups }: { value: string;
 
 /** Blueprint list editor with DB search, type filters, and manual paste */
 function BlueprintListEditor({ value, onChange, configKey }: { value: string; onChange: (v: string) => void; configKey?: string }) {
+  const { t } = useTranslation()
   let items: string[] = []
   try { items = JSON.parse(value) } catch { items = [] }
 
@@ -253,7 +259,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
   useEffect(() => {
     if (bpSearch.length < 2) { setBpResults([]); return }
     setBpLoading(true)
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         const params: Record<string, string | number> = { search: bpSearch, limit: 12 }
         if (typeFilter) params.type = typeFilter
@@ -265,7 +271,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
       } catch { setBpResults([]) }
       finally { setBpLoading(false) }
     }, 300)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [bpSearch, typeFilter])
 
   function addBp(bp: string) {
@@ -287,32 +293,32 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
   }
 
   function getTypeBadge(type: string) {
-    const map: Record<string, { bg: string; color: string; label: string }> = {
-      dino:      { bg: 'rgba(34,197,94,0.12)', color: '#16a34a', label: 'Dino' },
-      armor:     { bg: 'rgba(37,99,235,0.1)', color: '#2563eb', label: 'Armor' },
-      weapon:    { bg: 'rgba(239,68,68,0.1)', color: '#dc2626', label: 'Weapon' },
-      resource:  { bg: 'rgba(217,119,6,0.1)', color: '#d97706', label: 'Resource' },
-      consumable:{ bg: 'rgba(168,85,247,0.1)', color: '#a855f7', label: 'Consumable' },
-      structure: { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', label: 'Structure' },
-      item:      { bg: 'rgba(107,114,128,0.08)', color: '#9ca3af', label: 'Item' },
+    const map: Record<string, { bg: string; color: string; labelKey: string }> = {
+      dino:      { bg: 'rgba(34,197,94,0.12)', color: '#16a34a', labelKey: 'arkmaniaConfig.typeBadge.dino' },
+      armor:     { bg: 'rgba(37,99,235,0.1)', color: '#2563eb', labelKey: 'arkmaniaConfig.typeBadge.armor' },
+      weapon:    { bg: 'rgba(239,68,68,0.1)', color: '#dc2626', labelKey: 'arkmaniaConfig.typeBadge.weapon' },
+      resource:  { bg: 'rgba(217,119,6,0.1)', color: '#d97706', labelKey: 'arkmaniaConfig.typeBadge.resource' },
+      consumable:{ bg: 'rgba(168,85,247,0.1)', color: '#a855f7', labelKey: 'arkmaniaConfig.typeBadge.consumable' },
+      structure: { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', labelKey: 'arkmaniaConfig.typeBadge.structure' },
+      item:      { bg: 'rgba(107,114,128,0.08)', color: '#9ca3af', labelKey: 'arkmaniaConfig.typeBadge.item' },
     }
     const m = map[type] || map.item
     return (
       <span style={{ fontSize: '0.58rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
         padding: '0.1rem 0.35rem', borderRadius: 3, background: m.bg, color: m.color, whiteSpace: 'nowrap' }}>
-        {m.label}
+        {t(m.labelKey)}
       </span>
     )
   }
 
   const TYPE_FILTERS = [
-    { value: '', label: 'All' },
-    { value: 'item', label: 'Items' },
-    { value: 'armor', label: 'Armor' },
-    { value: 'weapon', label: 'Weapons' },
-    { value: 'dino', label: 'Dino' },
-    { value: 'resource', label: 'Resources' },
-    { value: 'consumable', label: 'Consumable' },
+    { value: '', label: t('arkmaniaConfig.typeFilter.all') },
+    { value: 'item', label: t('arkmaniaConfig.typeFilter.items') },
+    { value: 'armor', label: t('arkmaniaConfig.typeFilter.armor') },
+    { value: 'weapon', label: t('arkmaniaConfig.typeFilter.weapons') },
+    { value: 'dino', label: t('arkmaniaConfig.typeFilter.dino') },
+    { value: 'resource', label: t('arkmaniaConfig.typeFilter.resources') },
+    { value: 'consumable', label: t('arkmaniaConfig.typeFilter.consumable') },
   ]
 
   return (
@@ -328,7 +334,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
             <span style={{ fontSize: '0.58rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }} title={bp}>
               {bp.split('/').pop()?.replace("'", '')}
             </span>
-            <button onClick={() => copyBp(bp)} title="Copy BP" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
+            <button onClick={() => copyBp(bp)} title={t('arkmaniaConfig.editors.copyBp')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
               <Search size={11} />
             </button>
             <button onClick={() => removeBp(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, flexShrink: 0 }}>
@@ -336,7 +342,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
             </button>
           </div>
         ))}
-        {items.length === 0 && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.2rem 0' }}>No blueprints configured</div>}
+        {items.length === 0 && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.2rem 0' }}>{t('arkmaniaConfig.editors.noBlueprints')}</div>}
       </div>
 
       {/* Azioni */}
@@ -348,14 +354,14 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
               padding: '0.25rem 0.55rem', borderRadius: 6, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
               background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--accent)',
             }}>
-              <Search size={11} /> Search DB
+              <Search size={11} /> {t('arkmaniaConfig.editors.searchDb')}
             </button>
             <button onClick={() => { setShowPaste(true); setShowSearch(false) }} style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
               padding: '0.25rem 0.55rem', borderRadius: 6, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
               background: 'transparent', border: '1px dashed var(--border)', color: 'var(--text-muted)',
             }}>
-              <Plus size={11} /> Paste BP
+              <Plus size={11} /> {t('arkmaniaConfig.editors.pasteBp')}
             </button>
           </>
         )}
@@ -384,9 +390,9 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
           <div style={{ padding: '0.4rem', position: 'relative' }}>
             <div style={{ position: 'relative' }}>
               <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input autoFocus className="input" placeholder="Cerca per nome, blueprint, GFI..." value={bpSearch} onChange={e => setBpSearch(e.target.value)}
+              <input autoFocus className="input" placeholder={t('arkmaniaConfig.editors.bpSearchPlaceholder')} value={bpSearch} onChange={e => setBpSearch(e.target.value)}
                 style={{ paddingLeft: 28, fontSize: '0.8rem', height: 32 }} />
-              {bpLoading && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.68rem', color: 'var(--text-muted)' }}>Searching...</span>}
+              {bpLoading && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.68rem', color: 'var(--text-muted)' }}>{t('arkmaniaConfig.editors.searching')}</span>}
             </div>
           </div>
           {/* Risultati */}
@@ -421,7 +427,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
           )}
           {bpSearch.length >= 2 && bpResults.length === 0 && !bpLoading && (
             <div style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              No results found — use "Paste BP" to enter manually
+              {t('arkmaniaConfig.editors.noBpResults')}
             </div>
           )}
         </div>
@@ -430,11 +436,11 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
       {/* Incolla manuale */}
       {showPaste && (
         <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-          <input autoFocus className="input" placeholder="Blueprint'/Game/...'" value={pasteValue} onChange={e => setPasteValue(e.target.value)}
+          <input autoFocus className="input" placeholder={t('arkmaniaConfig.editors.pastePlaceholder')} value={pasteValue} onChange={e => setPasteValue(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && pasteValue.trim()) addBp(pasteValue) }}
             style={{ flex: 1, fontSize: '0.78rem', fontFamily: 'var(--font-mono)', height: 30 }} />
           <button onClick={() => { if (pasteValue.trim()) addBp(pasteValue) }} className="btn btn-primary" style={{ fontSize: '0.72rem', padding: '0.3rem 0.6rem', height: 30 }}>
-            <Plus size={12} /> Add
+            <Plus size={12} /> {t('arkmaniaConfig.editors.addLabel')}
           </button>
           <button onClick={() => { setShowPaste(false); setPasteValue('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
             <X size={14} />
@@ -447,6 +453,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
 
 /** Key-value editor (e.g. MapDisplayNames) */
 function KeyValueEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { t } = useTranslation()
   let obj: Record<string, string> = {}
   try { obj = JSON.parse(value) } catch {}
   const entries = Object.entries(obj)
@@ -471,10 +478,10 @@ function KeyValueEditor({ value, onChange }: { value: string; onChange: (v: stri
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {entries.map(([k, v], i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <input value={k} onChange={e => updateEntry(k, e.target.value, v)} placeholder="key"
+            <input value={k} onChange={e => updateEntry(k, e.target.value, v)} placeholder={t('arkmaniaConfig.editors.keyPlaceholder')}
               style={{ flex: 1, fontSize: '0.78rem', height: 30, fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '0 0.5rem', outline: 'none' }} />
             <span style={{ color: 'var(--green)', fontSize: '0.8rem', flexShrink: 0 }}>→</span>
-            <input value={v} onChange={e => updateEntry(k, k, e.target.value)} placeholder="value"
+            <input value={v} onChange={e => updateEntry(k, k, e.target.value)} placeholder={t('arkmaniaConfig.editors.valuePlaceholder')}
               style={{ flex: 1, fontSize: '0.78rem', height: 30, background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '0 0.5rem', outline: 'none' }} />
             <button onClick={() => removeEntry(k)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2 }}>
               <X size={12} />
@@ -487,7 +494,7 @@ function KeyValueEditor({ value, onChange }: { value: string; onChange: (v: stri
         padding: '0.2rem 0.5rem', borderRadius: 6, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
         background: 'transparent', border: '1px dashed var(--border)', color: 'var(--text-muted)',
       }}>
-        <Plus size={11} /> Add
+        <Plus size={11} /> {t('arkmaniaConfig.editors.addLabel')}
       </button>
     </div>
   )
@@ -495,6 +502,7 @@ function KeyValueEditor({ value, onChange }: { value: string; onChange: (v: stri
 
 /** Ordered list of permission groups — priority matters (↑↓ reorder) */
 function OrderedGroupsEditor({ value, onChange, availableGroups }: { value: string; onChange: (v: string) => void; availableGroups: string[] }) {
+  const { t } = useTranslation()
   let groups: string[] = []
   try { groups = JSON.parse(value) } catch { groups = [] }
   const [showAdd, setShowAdd] = useState(false)
@@ -537,7 +545,7 @@ function OrderedGroupsEditor({ value, onChange, availableGroups }: { value: stri
       {showAdd ? (
         <select autoFocus onChange={e => { if (e.target.value) add(e.target.value) }} onBlur={() => setShowAdd(false)}
           className="input" style={{ marginTop: 4, fontSize: '0.78rem', height: 28, width: 160, padding: '0 0.4rem' }}>
-          <option value="">Select group...</option>
+          <option value="">{t('arkmaniaConfig.editors.selectGroupPlaceholder')}</option>
           {remaining.map(g => <option key={g} value={g}>{g}</option>)}
         </select>
       ) : (
@@ -546,7 +554,7 @@ function OrderedGroupsEditor({ value, onChange, availableGroups }: { value: stri
           padding: '0.2rem 0.5rem', borderRadius: 6, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
           background: 'transparent', border: '1px dashed var(--border)', color: 'var(--text-muted)',
         }}>
-          <Plus size={11} /> Add group
+          <Plus size={11} /> {t('arkmaniaConfig.editors.addGroup')}
         </button>
       )}
     </div>
@@ -558,6 +566,7 @@ interface CraftLimit { CraftingSpeedMultiplier: number; MaxItemCount: number }
 interface CraftRule { Name: string; Blueprint: string; Groups: Record<string, CraftLimit> }
 
 function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: string; onChange: (v: string) => void; availableGroups: string[] }) {
+  const { t } = useTranslation()
   let rules: CraftRule[] = []
   try { rules = JSON.parse(value) } catch { rules = [] }
 
@@ -604,14 +613,14 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
   useEffect(() => {
     if (bpSearchIdx === null || bpQuery.length < 2) { setBpResults([]); return }
     setBpLoading(true)
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         const res = await blueprintsApi.list({ search: bpQuery, type: 'structure', limit: 10 })
         setBpResults(res.data.items?.map((i: Record<string, string>) => ({ name: i.name, blueprint: i.blueprint })) || [])
       } catch { setBpResults([]) }
       finally { setBpLoading(false) }
     }, 300)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [bpQuery, bpSearchIdx])
 
   function extractName(bp: string) {
@@ -625,18 +634,18 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
       {rules.map((rule, i) => {
         const isOpen = expandedIdx === i
         const groupNames = Object.keys(rule.Groups)
-        const bpShort = rule.Blueprint ? rule.Blueprint.split('/').pop()?.replace("'", '') : '— no blueprint —'
+        const bpShort = rule.Blueprint ? rule.Blueprint.split('/').pop()?.replace("'", '') : t('arkmaniaConfig.editors.noBlueprintTag')
         return (
           <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-card-muted)', overflow: 'hidden' }}>
             {/* Header row (always visible) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.6rem', cursor: 'pointer' }} onClick={() => setExpandedIdx(isOpen ? null : i)}>
               <Hammer size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{rule.Name || '(unnamed)'}</div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{rule.Name || t('arkmaniaConfig.editors.unnamed')}</div>
                 <div style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rule.Blueprint}>{bpShort}</div>
               </div>
               <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '0.1rem 0.4rem', borderRadius: 4, border: '1px solid var(--border)', flexShrink: 0 }}>
-                {groupNames.length} group{groupNames.length !== 1 ? 's' : ''}
+                {t('arkmaniaConfig.editors.groupCount', { count: groupNames.length })}
               </span>
               <button onClick={e => { e.stopPropagation(); removeRule(i) }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, flexShrink: 0 }}>
@@ -650,27 +659,27 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
               <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--border)', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {/* Name */}
                 <div>
-                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>Name</label>
+                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>{t('arkmaniaConfig.editors.nameLabel')}</label>
                   <input value={rule.Name} onChange={e => updateRule(i, { Name: e.target.value })}
                     style={{ fontSize: '0.82rem', height: 30, padding: '0.25rem 0.5rem', width: '100%', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, outline: 'none', marginTop: 2 }} />
                 </div>
 
                 {/* Blueprint + picker */}
                 <div>
-                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>Blueprint</label>
+                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>{t('arkmaniaConfig.editors.blueprintLabel')}</label>
                   <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-                    <input value={rule.Blueprint} onChange={e => updateRule(i, { Blueprint: e.target.value })} placeholder="Blueprint'/Game/...'"
+                    <input value={rule.Blueprint} onChange={e => updateRule(i, { Blueprint: e.target.value })} placeholder={t('arkmaniaConfig.editors.blueprintPlaceholder')}
                       style={{ flex: 1, fontSize: '0.72rem', fontFamily: 'var(--font-mono)', height: 30, padding: '0.25rem 0.5rem', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, outline: 'none' }} />
                     <button onClick={() => { setBpSearchIdx(bpSearchIdx === i ? null : i); setBpQuery(''); setBpResults([]) }}
                       className="btn btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.5rem', height: 30 }}>
-                      <Search size={12} /> Find
+                      <Search size={12} /> {t('arkmaniaConfig.editors.findButton')}
                     </button>
                   </div>
                   {bpSearchIdx === i && (
                     <div style={{ marginTop: 4, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-card-muted)' }}>
                       <div style={{ padding: 4, position: 'relative' }}>
                         <Search size={12} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                        <input autoFocus value={bpQuery} onChange={e => setBpQuery(e.target.value)} placeholder="Search structures..."
+                        <input autoFocus value={bpQuery} onChange={e => setBpQuery(e.target.value)} placeholder={t('arkmaniaConfig.editors.searchStructuresPlaceholder')}
                           style={{ paddingLeft: 26, fontSize: '0.78rem', height: 28, width: '100%', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, outline: 'none' }} />
                         {bpLoading && <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: '0.65rem', color: 'var(--text-muted)' }}>...</span>}
                       </div>
@@ -693,13 +702,13 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
 
                 {/* Groups table */}
                 <div>
-                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>Limits per group</label>
+                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>{t('arkmaniaConfig.editors.limitsPerGroup')}</label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 }}>
                     {/* Header */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px 24px', gap: 6, padding: '0 0.3rem', fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
-                      <span>Group</span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Gauge size={10} /> Speed %</span>
-                      <span><Package size={10} style={{ verticalAlign: 'middle' }} /> Max</span>
+                      <span>{t('arkmaniaConfig.editors.columnGroup')}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Gauge size={10} /> {t('arkmaniaConfig.editors.columnSpeed')}</span>
+                      <span><Package size={10} style={{ verticalAlign: 'middle' }} /> {t('arkmaniaConfig.editors.columnMax')}</span>
                       <span></span>
                     </div>
                     {groupNames.map(gname => {
@@ -727,7 +736,7 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
                     return (
                       <select value="" onChange={e => { if (e.target.value) addGroup(i, e.target.value) }}
                         style={{ marginTop: 4, fontSize: '0.72rem', height: 26, padding: '0 0.4rem', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px dashed var(--border)', borderRadius: 6, cursor: 'pointer', outline: 'none' }}>
-                        <option value="">+ Add group limit...</option>
+                        <option value="">{t('arkmaniaConfig.editors.addGroupLimit')}</option>
                         {remaining.map(g => <option key={g} value={g}>{g}</option>)}
                       </select>
                     )
@@ -739,14 +748,14 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
         )
       })}
       {rules.length === 0 && (
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.3rem 0' }}>No craft rules configured</div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.3rem 0' }}>{t('arkmaniaConfig.editors.noCraftRules')}</div>
       )}
       <button onClick={addRule} style={{
         display: 'inline-flex', alignItems: 'center', gap: '0.2rem', alignSelf: 'flex-start',
         padding: '0.3rem 0.6rem', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
         background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--accent)',
       }}>
-        <Plus size={12} /> Add structure
+        <Plus size={12} /> {t('arkmaniaConfig.editors.addStructure')}
       </button>
     </div>
   )
@@ -756,6 +765,7 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
 // Main page component
 // ============================================================
 export default function ArkManiaConfigPage() {
+  const { t } = useTranslation()
   const { module: urlModule } = useParams()
   const navigate = useNavigate()
 
@@ -874,16 +884,16 @@ export default function ArkManiaConfigPage() {
     })
   }
 
-  if (loading) return <div className="page-container"><div className="pl-loading">Loading...</div></div>
+  if (loading) return <div className="page-container"><div className="pl-loading">{t('arkmaniaConfig.loading')}</div></div>
 
   return (
     <div className="page-container">
       {/* Header */}
       <div className="page-header" style={{ marginBottom: '0.5rem' }}>
         <div className="page-header-text">
-          <h1 className="page-title"><Settings size={22} /> Plugin Config</h1>
+          <h1 className="page-title"><Settings size={22} /> {t('arkmaniaConfig.heading')}</h1>
           <p className="page-subtitle">
-            Centralised configuration — {modules.reduce((s, m) => s + m.key_count, 0)} settings, {servers.filter(s => s.is_online).length} servers online
+            {t('arkmaniaConfig.subtitle', { keys: modules.reduce((s, m) => s + m.key_count, 0), online: servers.filter(s => s.is_online).length })}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -891,20 +901,20 @@ export default function ArkManiaConfigPage() {
             <Server size={14} style={{ color: 'var(--text-muted)' }} />
             <select value={selectedServer} onChange={e => setSelectedServer(e.target.value)}
               style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-              <option value="*">Global (all servers)</option>
-              {servers.map(s => <option key={s.server_key} value={s.server_key}>{s.is_online ? '● ' : '○ '}{s.display_name}</option>)}
+              <option value="*">{t('arkmaniaConfig.server.global')}</option>
+              {servers.map(s => <option key={s.server_key} value={s.server_key}>{s.is_online ? t('arkmaniaConfig.server.onlinePrefix') : t('arkmaniaConfig.server.offlinePrefix')}{s.display_name}</option>)}
             </select>
           </div>
-          <button onClick={handleExportJSON} className="btn btn-ghost" style={{ fontSize: '0.8rem' }} title="Export current module config as JSON">
-            <Download size={14} /> Export
+          <button onClick={handleExportJSON} className="btn btn-ghost" style={{ fontSize: '0.8rem' }} title={t('arkmaniaConfig.actions.exportTooltip')}>
+            <Download size={14} /> {t('arkmaniaConfig.actions.export')}
           </button>
           {hasChanges && (
             <button onClick={() => setEditedValues({})} className="btn btn-ghost" style={{ fontSize: '0.8rem' }}>
-              <RotateCcw size={14} /> Discard
+              <RotateCcw size={14} /> {t('arkmaniaConfig.actions.discard')}
             </button>
           )}
           <button onClick={handleSave} className="btn btn-primary" disabled={!hasChanges || saving} style={{ fontSize: '0.8rem' }}>
-            {saving ? 'Saving...' : saved ? <><Check size={14} /> Saved</> : <><Save size={14} /> Save ({Object.keys(editedValues).length})</>}
+            {saving ? t('arkmaniaConfig.actions.saving') : saved ? <><Check size={14} /> {t('arkmaniaConfig.actions.saved')}</> : <><Save size={14} /> {t('arkmaniaConfig.actions.save', { count: Object.keys(editedValues).length })}</>}
           </button>
         </div>
       </div>
@@ -920,7 +930,7 @@ export default function ArkManiaConfigPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '210px 1fr', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', minHeight: 'calc(100vh - 200px)', background: 'var(--bg-card)' }}>
         {/* Left sidebar — plugin list */}
         <div style={{ background: 'var(--bg-card-muted)', borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '0.4rem' }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 3, fontFamily: 'var(--font-mono)', color: 'var(--green)', padding: '0.6rem 0.6rem 0.3rem', fontWeight: 600 }}>Plugins</div>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 3, fontFamily: 'var(--font-mono)', color: 'var(--green)', padding: '0.6rem 0.6rem 0.3rem', fontWeight: 600 }}>{t('arkmaniaConfig.plugins')}</div>
           {modules.map(m => {
             const Icon = MODULE_ICONS[m.prefix] || Settings
             const isActive = activeModule === m.prefix
@@ -953,14 +963,14 @@ export default function ArkManiaConfigPage() {
               </span>
               {selectedServer !== '*' && (
                 <span style={{ fontSize: '0.65rem', background: 'var(--warning-bg)', color: 'var(--warning)', padding: '0.1rem 0.4rem', borderRadius: 4, fontWeight: 600 }}>
-                  Override: {servers.find(s => s.server_key === selectedServer)?.display_name}
+                  {t('arkmaniaConfig.toolbar.override', { name: servers.find(s => s.server_key === selectedServer)?.display_name })}
                 </span>
               )}
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{filteredItems.length} keys</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('arkmaniaConfig.toolbar.keysCount', { count: filteredItems.length })}</span>
             </div>
             <div style={{ position: 'relative', width: 220 }}>
               <Search size={13} style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input type="text" placeholder="Filter..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              <input type="text" placeholder={t('arkmaniaConfig.toolbar.filterPlaceholder')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 style={{ paddingLeft: 26, fontSize: '0.78rem', height: 30, width: '100%', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, outline: 'none' }} />
             </div>
           </div>
@@ -968,7 +978,7 @@ export default function ArkManiaConfigPage() {
           {/* Config items */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {moduleLoading ? (
-              <div className="pl-loading">Loading module...</div>
+              <div className="pl-loading">{t('arkmaniaConfig.loadingModule')}</div>
             ) : Object.entries(groupedItems).map(([group, groupItems]) => (
               <div key={group}>
                 {group !== '_general' && (
@@ -988,7 +998,7 @@ export default function ArkManiaConfigPage() {
                         const currentValue = editedValues[item.config_key] ?? item.value
                         const isEdited = item.config_key in editedValues
                         const isOn = currentValue.toLowerCase() === 'true'
-                        const desc = item.description || autoDescription(item.short_key)
+                        const desc = item.description || autoDescription(item.short_key, t)
                         return (
                           <div key={item.config_key} onClick={() => handleValueChange(item.config_key, isOn ? 'false' : 'true')}
                             style={{
@@ -1010,7 +1020,7 @@ export default function ArkManiaConfigPage() {
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ fontSize: '0.82rem', fontWeight: 600, color: isOn ? 'var(--text-primary)' : 'var(--text-muted)', lineHeight: 1.2 }}>
                                 {item.short_key}
-                                {isEdited && <span style={{ fontSize: '0.55rem', color: 'var(--green)', fontWeight: 700, background: 'rgba(74,222,128,0.12)', padding: '0.05rem 0.25rem', borderRadius: 3, marginLeft: 4, verticalAlign: 'middle' }}>MOD</span>}
+                                {isEdited && <span style={{ fontSize: '0.55rem', color: 'var(--green)', fontWeight: 700, background: 'rgba(74,222,128,0.12)', padding: '0.05rem 0.25rem', borderRadius: 3, marginLeft: 4, verticalAlign: 'middle' }}>{t('arkmaniaConfig.badges.mod')}</span>}
                               </div>
                               {desc && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.1, marginTop: 1 }}>{desc}</div>}
                             </div>
@@ -1028,7 +1038,7 @@ export default function ArkManiaConfigPage() {
                         const editorType = detectEditorType(item.short_key, item.value)
                         const isWide = ['groups', 'group_rules', 'blueprints', 'key_value', 'json'].includes(editorType)
                         const isExpanded = expandedJsonKeys.has(item.config_key)
-                        const desc = item.description || autoDescription(item.short_key)
+                        const desc = item.description || autoDescription(item.short_key, t)
                         return (
                           <div key={item.config_key} style={{
                             padding: '0.45rem 0.75rem', borderBottom: '1px solid var(--border)',
@@ -1038,8 +1048,8 @@ export default function ArkManiaConfigPage() {
                           }}>
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.3rem', marginBottom: '0.2rem' }}>
                               <span style={{ fontSize: '0.78rem', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-primary)' }}>{item.short_key}</span>
-                              {item.is_overridden && <span style={{ fontSize: '0.55rem', color: 'var(--warning)', fontWeight: 700, background: 'var(--warning-bg)', padding: '0.05rem 0.25rem', borderRadius: 3 }}>OVR</span>}
-                              {isEdited && <span style={{ fontSize: '0.55rem', color: 'var(--green)', fontWeight: 700, background: 'rgba(74,222,128,0.12)', padding: '0.05rem 0.25rem', borderRadius: 3 }}>MOD</span>}
+                              {item.is_overridden && <span style={{ fontSize: '0.55rem', color: 'var(--warning)', fontWeight: 700, background: 'var(--warning-bg)', padding: '0.05rem 0.25rem', borderRadius: 3 }}>{t('arkmaniaConfig.badges.ovr')}</span>}
+                              {isEdited && <span style={{ fontSize: '0.55rem', color: 'var(--green)', fontWeight: 700, background: 'rgba(74,222,128,0.12)', padding: '0.05rem 0.25rem', borderRadius: 3 }}>{t('arkmaniaConfig.badges.mod')}</span>}
                             </div>
                             {desc && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.25rem', lineHeight: 1.1 }}>{desc}</div>}
                             <div>
@@ -1063,7 +1073,7 @@ export default function ArkManiaConfigPage() {
                                     setExpandedJsonKeys(next)
                                   }} className="btn btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.4rem' }}>
                                     <ChevronDown size={12} style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: '0.15s' }} />
-                                    JSON ({item.value.length} char)
+                                    {t('arkmaniaConfig.editors.jsonLabel', { count: item.value.length })}
                                   </button>
                                   {isExpanded && (
                                     <textarea value={currentValue} onChange={e => handleValueChange(item.config_key, e.target.value)}
@@ -1085,7 +1095,7 @@ export default function ArkManiaConfigPage() {
             </div>
           ))}
           {filteredItems.length === 0 && !moduleLoading && (
-            <div className="pl-empty"><Search size={32} style={{ opacity: 0.3 }} /><p>{searchQuery ? 'No results' : 'No settings'}</p></div>
+            <div className="pl-empty"><Search size={32} style={{ opacity: 0.3 }} /><p>{searchQuery ? t('arkmaniaConfig.empty.noResults') : t('arkmaniaConfig.empty.noSettings')}</p></div>
           )}
           </div>
         </div>
