@@ -51,24 +51,33 @@ jobs:
           npm ci
           npm run build
 
-      - name: Stage build tree (reusable base)
+      - name: Stage build tree (reusable base — keeps .ps1/.bat helpers)
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          # Shared base that both artefacts will copy from.  The two tarballs
-          # differ only in whether .ps1 helpers are included, so we stage
-          # once and prune afterwards.
+          # Shared base that both artefacts copy from.  We deliberately DO NOT
+          # apply the Windows-only script excludes here: the Windows zip needs
+          # .ps1/.bat so deploy-remote.ps1 works.  The Linux tarball step
+          # prunes those files right before tar-ing.
           BASE="release-build/_stage"
           rm -rf release-build
           mkdir -p "$BASE"
 
-          # Build the rsync --exclude list from .deployignore.
+          # Build the rsync exclude list from .deployignore, BUT strip any
+          # patterns that target Windows-only scripts (those are kept for
+          # the Windows artefact and pruned later for Linux).
           if [ -f deploy/.deployignore ]; then
-            mapfile -t EX < <(grep -v '^\s*#' deploy/.deployignore | grep -v '^\s*$')
+            mapfile -t EX < <(
+              grep -v '^\s*#' deploy/.deployignore \
+                | grep -v '^\s*$' \
+                | grep -Ev '\*\.(ps1|bat|vbs)$'
+            )
           else
             EX=(node_modules venv __pycache__ .git reference release-build)
           fi
+          # Always exclude the build cache + the freshly-built frontend/dist
+          # (we re-copy the latter straight after).
           EX+=("release-build" "dist/")
           EX_ARGS=()
           for e in "${EX[@]}"; do EX_ARGS+=("--exclude=$e"); done
@@ -89,6 +98,9 @@ jobs:
             "pre_release": false
           }
           EOF
+
+          echo "Staged files: $(find "$BASE" -type f | wc -l)"
+          echo "PowerShell scripts in deploy/: $(find "$BASE/deploy" -maxdepth 1 -name '*.ps1' | wc -l)"
 
       - name: Create Linux tarball
         env:
