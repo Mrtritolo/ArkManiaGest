@@ -492,9 +492,22 @@ for attempt in $(seq 1 15); do
     sleep 3
 done
 if [[ $health_ok -ne 1 ]]; then
-    warn "backend did not answer on :8000. Dumping systemd status + logs:"
+    warn "backend did not answer on :8000. Dumping diagnostics:"
+    echo ""
+    echo "  --- systemctl status ---"
     run_ssh "sudo -n systemctl --no-pager status arkmaniagest | tail -n 40" || true
-    run_ssh "sudo -n journalctl -u arkmaniagest --no-pager -n 60" || true
+    echo ""
+    # The Python traceback goes to /var/log/arkmaniagest/backend-error.log,
+    # not to journalctl, because the systemd unit redirects StandardError
+    # to a file.  journalctl will only show "Main process exited" noise.
+    echo "  --- /var/log/arkmaniagest/backend-error.log (last 100 lines) ---"
+    run_ssh "sudo -n tail -n 100 /var/log/arkmaniagest/backend-error.log 2>/dev/null || echo '(file missing)'" || true
+    echo ""
+    echo "  --- /var/log/arkmaniagest/backend.log (last 40 lines) ---"
+    run_ssh "sudo -n tail -n 40 /var/log/arkmaniagest/backend.log 2>/dev/null || echo '(file missing)'" || true
+    echo ""
+    echo "  --- journalctl (last 30 lines) ---"
+    run_ssh "sudo -n journalctl -u arkmaniagest --no-pager -n 30" || true
     fail "Backend not answering on :8000; cannot seed admin user."
 fi
 

@@ -593,9 +593,22 @@ foreach ($attempt in 1..15) {
     Start-Sleep -Seconds 3
 }
 if (-not $health_ok) {
-    Write-Host "  WARNING: backend did not answer on :8000.  Dumping systemd status + logs:" -ForegroundColor Yellow
+    Write-Host "  WARNING: backend did not answer on :8000.  Dumping diagnostics:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  --- systemctl status ---" -ForegroundColor DarkYellow
     Invoke-SSH @("sudo -n systemctl --no-pager status arkmaniagest | tail -n 40") | Out-Null
-    Invoke-SSH @("sudo -n journalctl -u arkmaniagest --no-pager -n 60") | Out-Null
+    Write-Host ""
+    # The Python traceback goes to /var/log/arkmaniagest/backend-error.log,
+    # not to journalctl, because the systemd unit redirects StandardError
+    # to a file.  journalctl will only show "Main process exited" noise.
+    Write-Host "  --- /var/log/arkmaniagest/backend-error.log (last 100 lines) ---" -ForegroundColor DarkYellow
+    Invoke-SSH @("sudo -n tail -n 100 /var/log/arkmaniagest/backend-error.log 2>/dev/null || echo '(file missing)'") | Out-Null
+    Write-Host ""
+    Write-Host "  --- /var/log/arkmaniagest/backend.log (last 40 lines) ---" -ForegroundColor DarkYellow
+    Invoke-SSH @("sudo -n tail -n 40 /var/log/arkmaniagest/backend.log 2>/dev/null || echo '(file missing)'") | Out-Null
+    Write-Host ""
+    Write-Host "  --- journalctl (last 30 lines) ---" -ForegroundColor DarkYellow
+    Invoke-SSH @("sudo -n journalctl -u arkmaniagest --no-pager -n 30") | Out-Null
     Fail "Backend is not answering on :8000; cannot seed admin user."
 }
 
