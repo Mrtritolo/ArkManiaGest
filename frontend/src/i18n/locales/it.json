@@ -1646,5 +1646,94 @@
       "title": "Configurazione",
       "body": "Le credenziali sono salvate nel file <code>.env</code> del backend. Per modificarle edita <code>.env</code> (chiavi <code>DB_*</code> per il pannello, <code>PLUGIN_DB_*</code> per il plugin) e riavvia il backend. Le password SSH delle macchine sono cifrate AES-256-GCM nel Panel DB."
     }
+  },
+  "instances": {
+    "title": "Istanze server ARK",
+    "subtitle": "Gestisci i container ARK: Survival Ascended tramite POK-manager sulle tue macchine SSH.",
+    "newButton": "Nuova istanza",
+    "noInstances": "Nessuna istanza configurata.",
+    "loading": "Caricamento istanze…",
+    "filterMachine": "Macchina",
+    "filterAll": "Tutte le macchine",
+    "columns": {
+      "name": "Nome",
+      "machine": "Macchina",
+      "map": "Mappa",
+      "status": "Stato",
+      "ports": "Porte",
+      "cluster": "Cluster",
+      "actions": "Azioni"
+    },
+    "status": {
+      "created": "Creata",
+      "starting": "In avvio",
+      "running": "In esecuzione",
+      "stopping": "In arresto",
+      "stopped": "Ferma",
+      "updating": "In aggiornamento",
+      "error": "Errore"
+    },
+    "actions": {
+      "start": "Avvia",
+      "stop": "Ferma",
+      "restart": "Riavvia",
+      "update": "Aggiorna",
+      "backup": "Backup",
+      "probe": "Aggiorna stato",
+      "edit": "Modifica",
+      "delete": "Elimina",
+      "viewLog": "Log azioni",
+      "running": "In corso…"
+    },
+    "form": {
+      "newTitle": "Crea istanza server ARK",
+      "editTitle": "Modifica istanza server ARK",
+      "machine": "Macchina",
+      "name": "Nome istanza",
+      "nameHint": "Usato per il nome del container e per la directory sul filesystem. Solo lettere, cifre, _ e -.",
+      "displayName": "Nome visualizzato",
+      "description": "Descrizione",
+      "map": "Mappa",
+      "sessionName": "Nome sessione",
+      "maxPlayers": "Slot massimi",
+      "cluster": "ID cluster",
+      "gamePort": "Porta gioco",
+      "rconPort": "Porta RCON",
+      "adminPassword": "Password admin",
+      "adminPasswordEditHint": "Lascia vuoto per mantenere la password corrente.",
+      "serverPassword": "Password server (opzionale)",
+      "image": "Immagine Docker",
+      "memLimit": "Limite memoria (MB)",
+      "timezone": "Fuso orario",
+      "mods": "Mod (separate da virgole)",
+      "passiveMods": "Mod passive",
+      "customArgs": "Argomenti custom",
+      "flags": "Opzioni",
+      "modApi": "Abilita ModAPI",
+      "battleye": "Abilita BattlEye",
+      "updateServer": "Auto-aggiorna all'avvio",
+      "cpuOptimization": "Ottimizzazione CPU",
+      "pokBaseDir": "Directory base POK (override opzionale)",
+      "updateRole": "Ruolo update",
+      "updatePriority": "Priorità update",
+      "save": "Salva",
+      "saving": "Salvataggio…",
+      "cancel": "Annulla"
+    },
+    "errors": {
+      "load": "Caricamento istanze fallito.",
+      "create": "Creazione istanza fallita.",
+      "update": "Aggiornamento istanza fallito.",
+      "delete": "Eliminazione istanza fallita.",
+      "action": "Azione fallita."
+    },
+    "confirmDelete": "Eliminare l'istanza '{{name}}'? Verrà rimosso solo il record dal pannello. I file del container sull'host NON vengono cancellati.",
+    "confirmDeleteWithPurge": "Fermare il container sull'host prima di eliminare?",
+    "log": {
+      "title": "Azioni recenti per {{name}}",
+      "empty": "Nessuna azione registrata per questa istanza.",
+      "noStdout": "(nessun output)",
+      "exitCode": "Codice di uscita"
+    }
   }
 }

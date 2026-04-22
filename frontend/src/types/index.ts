@@ -321,3 +321,153 @@ export interface LoginResponse {
   token: string;
   user: AuthUser;
 }
+
+// ---------------------------------------------------------------------------
+// Server instances (ARK game servers managed via POK-manager in Docker)
+// ---------------------------------------------------------------------------
+
+export type InstanceStatus =
+  | "created"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "updating"
+  | "error";
+
+export type UpdateCoordinationRole = "MASTER" | "FOLLOWER";
+
+export interface ServerInstance {
+  id: number;
+  machine_id: number;
+  name: string;
+  display_name: string;
+  description: string | null;
+
+  map_name: string;
+  session_name: string;
+  max_players: number;
+  cluster_id: string | null;
+  mods: string | null;
+  passive_mods: string | null;
+  custom_args: string | null;
+
+  game_port: number;
+  rcon_port: number;
+
+  container_name: string;
+  image: string;
+  mem_limit_mb: number;
+  timezone: string;
+
+  pok_base_dir: string;
+  instance_dir: string;
+
+  mod_api: boolean;
+  battleye: boolean;
+  update_server: boolean;
+  update_coordination_role: UpdateCoordinationRole;
+  update_coordination_priority: number;
+  cpu_optimization: boolean;
+
+  is_active: boolean;
+  status: InstanceStatus;
+  last_status_at: string | null;
+  last_started_at: string | null;
+  last_stopped_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+
+  has_admin_password: boolean;
+  has_server_password: boolean;
+}
+
+export interface ServerInstanceCreate {
+  machine_id: number;
+  name: string;
+  display_name?: string;
+  description?: string | null;
+
+  map_name?: string;
+  session_name?: string;
+  max_players?: number;
+  cluster_id?: string | null;
+  mods?: string | null;
+  passive_mods?: string | null;
+  custom_args?: string | null;
+
+  admin_password: string;
+  server_password?: string | null;
+
+  game_port?: number;
+  rcon_port?: number;
+
+  image?: string;
+  mem_limit_mb?: number;
+  timezone?: string;
+
+  mod_api?: boolean;
+  battleye?: boolean;
+  update_server?: boolean;
+  update_coordination_role?: UpdateCoordinationRole;
+  update_coordination_priority?: number;
+  cpu_optimization?: boolean;
+
+  pok_base_dir?: string | null;
+}
+
+export interface ServerInstanceUpdate extends Partial<Omit<ServerInstanceCreate, "machine_id" | "name">> {
+  is_active?: boolean;
+}
+
+// Response shape of any lifecycle action endpoint (/start, /stop, ...).
+export interface InstanceActionResult {
+  instance_id: number;
+  action_id: number;
+  status: "success" | "failed";
+  exit_code: number;
+  duration_ms: number;
+  stdout_tail: string;
+  stderr_tail: string;
+}
+
+// ---------------------------------------------------------------------------
+// Instance action audit log
+// ---------------------------------------------------------------------------
+
+export type InstanceActionKind =
+  | "bootstrap"
+  | "create"
+  | "start"
+  | "stop"
+  | "restart"
+  | "update"
+  | "backup"
+  | "delete"
+  | "rcon"
+  | "pok_sync"
+  | "prereqs_check";
+
+export type InstanceActionStatus = "pending" | "running" | "success" | "failed";
+
+export interface InstanceAction {
+  id: number;
+  instance_id: number | null;
+  machine_id: number | null;
+  instance_name: string | null;
+
+  action: InstanceActionKind;
+  status: InstanceActionStatus;
+
+  stdout: string | null;
+  stderr: string | null;
+  exit_code: number | null;
+  meta: string | null;
+
+  user_id: number | null;
+  username: string | null;
+
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+}

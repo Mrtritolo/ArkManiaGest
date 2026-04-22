@@ -45,6 +45,7 @@ import LeaderboardPage from "./pages/LeaderboardPage";
 import UsersPage from "./pages/UsersPage";
 import SqlConsolePage from "./pages/SqlConsolePage";
 import ServersPage from "./pages/ServersPage";
+import ServerInstancesPage from "./pages/ServerInstancesPage";
 import EventLogPage from "./pages/EventLogPage";
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,10 @@ function App() {
               <Route path="/containers" element={<ContainersPage />} />
               <Route path="/game-config" element={<GameConfigPage />} />
               <Route path="/servers-manager" element={<ServersPage />} />
+              <Route
+                path="/instances"
+                element={<ServerInstancesPage currentUser={currentUser} />}
+              />
               <Route path="/event-log" element={<EventLogPage />} />
 
               {/* Plugin management */}

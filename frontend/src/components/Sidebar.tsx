@@ -72,6 +72,7 @@ const NAV_MAIN: NavItem[] = [
   { to: "/online",          i18nKey: "nav.online",     icon: Users },
   { to: "/players",         i18nKey: "nav.players",    icon: Database },
   { to: "/containers",      i18nKey: "nav.containers", icon: HardDrive },
+  { to: "/instances",       i18nKey: "nav.instances",  icon: Server },
   { to: "/game-config",     i18nKey: "nav.gameConfig", icon: Sliders },
   { to: "/servers-manager", i18nKey: "nav.servers",    icon: Server },
   { to: "/event-log",       i18nKey: "nav.eventLog",   icon: ScrollText },

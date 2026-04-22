@@ -1646,5 +1646,94 @@
       "title": "Configuration",
       "body": "Credentials live in the backend's <code>.env</code> file. To change them, edit <code>.env</code> (use <code>DB_*</code> for the panel and <code>PLUGIN_DB_*</code> for the plugin) and restart the backend. SSH machine passwords are stored AES-256-GCM encrypted in the Panel DB."
     }
+  },
+  "instances": {
+    "title": "ARK Server Instances",
+    "subtitle": "Manage ARK: Survival Ascended containers via POK-manager on your SSH machines.",
+    "newButton": "New instance",
+    "noInstances": "No instances configured yet.",
+    "loading": "Loading instances…",
+    "filterMachine": "Machine",
+    "filterAll": "All machines",
+    "columns": {
+      "name": "Name",
+      "machine": "Machine",
+      "map": "Map",
+      "status": "Status",
+      "ports": "Ports",
+      "cluster": "Cluster",
+      "actions": "Actions"
+    },
+    "status": {
+      "created": "Created",
+      "starting": "Starting",
+      "running": "Running",
+      "stopping": "Stopping",
+      "stopped": "Stopped",
+      "updating": "Updating",
+      "error": "Error"
+    },
+    "actions": {
+      "start": "Start",
+      "stop": "Stop",
+      "restart": "Restart",
+      "update": "Update",
+      "backup": "Backup",
+      "probe": "Refresh status",
+      "edit": "Edit",
+      "delete": "Delete",
+      "viewLog": "Action log",
+      "running": "Running…"
+    },
+    "form": {
+      "newTitle": "Create ARK server instance",
+      "editTitle": "Edit ARK server instance",
+      "machine": "Machine",
+      "name": "Instance name",
+      "nameHint": "Used for container name and filesystem dir. Letters, digits, _ and - only.",
+      "displayName": "Display name",
+      "description": "Description",
+      "map": "Map",
+      "sessionName": "Session name",
+      "maxPlayers": "Max players",
+      "cluster": "Cluster ID",
+      "gamePort": "Game port",
+      "rconPort": "RCON port",
+      "adminPassword": "Admin password",
+      "adminPasswordEditHint": "Leave blank to keep the current password.",
+      "serverPassword": "Server password (optional)",
+      "image": "Docker image",
+      "memLimit": "Memory limit (MB)",
+      "timezone": "Timezone",
+      "mods": "Mods (comma-separated)",
+      "passiveMods": "Passive mods",
+      "customArgs": "Custom arguments",
+      "flags": "Flags",
+      "modApi": "Enable ModAPI",
+      "battleye": "Enable BattlEye",
+      "updateServer": "Auto-update server on start",
+      "cpuOptimization": "CPU optimization",
+      "pokBaseDir": "POK base directory (optional override)",
+      "updateRole": "Update role",
+      "updatePriority": "Update priority",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel"
+    },
+    "errors": {
+      "load": "Failed to load instances.",
+      "create": "Failed to create instance.",
+      "update": "Failed to update instance.",
+      "delete": "Failed to delete instance.",
+      "action": "Action failed."
+    },
+    "confirmDelete": "Delete instance '{{name}}'? This removes the panel record. The container files on the host are NOT deleted.",
+    "confirmDeleteWithPurge": "Also stop the container on the host before deleting?",
+    "log": {
+      "title": "Recent actions for {{name}}",
+      "empty": "No actions recorded for this instance yet.",
+      "noStdout": "(no output)",
+      "exitCode": "Exit code"
+    }
   }
 }

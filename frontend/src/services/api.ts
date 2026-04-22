@@ -40,6 +40,13 @@ import type {
   PermissionGroupItem,
   AuthUser,
   LoginResponse,
+  ServerInstance,
+  ServerInstanceCreate,
+  ServerInstanceUpdate,
+  InstanceActionResult,
+  InstanceAction,
+  InstanceActionKind,
+  InstanceActionStatus,
 } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -250,15 +257,51 @@ export const machinesApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Game servers (placeholder — CRUD not yet implemented)
+// Server instances (ARK game server Docker containers managed via POK-manager)
 // ---------------------------------------------------------------------------
 
-export const serversApi = {
-  list: () => api.get("/servers"),
-  get: (id: number) => api.get(`/servers/${id}`),
-  create: (data: unknown) => api.post("/servers", data),
-  update: (id: number, data: unknown) => api.put(`/servers/${id}`, data),
-  delete: (id: number) => api.delete(`/servers/${id}`),
+export const serverInstancesApi = {
+  list: (params?: { machine_id?: number; active_only?: boolean }) =>
+    api.get<ServerInstance[]>("/servers", { params }),
+  get: (id: number) => api.get<ServerInstance>(`/servers/${id}`),
+  create: (data: ServerInstanceCreate) =>
+    api.post<ServerInstance>("/servers", data),
+  update: (id: number, data: ServerInstanceUpdate) =>
+    api.put<ServerInstance>(`/servers/${id}`, data),
+  delete: (id: number, purgeOnHost = false) =>
+    api.delete(`/servers/${id}`, { params: { purge_on_host: purgeOnHost } }),
+
+  // Lifecycle actions (all return an InstanceActionResult)
+  start:   (id: number) => api.post<InstanceActionResult>(`/servers/${id}/start`),
+  stop:    (id: number) => api.post<InstanceActionResult>(`/servers/${id}/stop`),
+  restart: (id: number) => api.post<InstanceActionResult>(`/servers/${id}/restart`),
+  update_: (id: number) => api.post<InstanceActionResult>(`/servers/${id}/update`),
+  backup:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/backup`),
+  status:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/status`),
+  rcon:    (id: number, command: string) =>
+    api.post<InstanceActionResult>(`/servers/${id}/rcon`, { command }),
+
+  // Per-instance action log (most recent first)
+  actions: (id: number, params?: { limit?: number; offset?: number }) =>
+    api.get<InstanceAction[]>(`/servers/${id}/actions`, { params }),
+};
+
+// Back-compat alias so legacy imports of `serversApi` keep working.
+export const serversApi = serverInstancesApi;
+
+// ---------------------------------------------------------------------------
+// Instance action log (global view with filters)
+// ---------------------------------------------------------------------------
+
+export const instanceActionsApi = {
+  list: (params?: {
+    instance_id?: number;
+    machine_id?: number;
+    action?: InstanceActionKind;
+    status?: InstanceActionStatus;
+    limit?: number;
+    offset?: number;
+  }) => api.get<InstanceAction[]>("/instance-actions", { params }),
 };
 
 // ---------------------------------------------------------------------------
