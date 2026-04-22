@@ -7,6 +7,52 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.7] - 2026-04-22
+
+Hotfix release for two regressions surfaced by the first real-world
+end-to-end test of the in-UI self-updater introduced in 2.3.5/2.3.6.
+
+### Fixed
+
+- **`server-update.sh` misread the GitHub release tarball layout**,
+  wiping most of `/opt/arkmaniagest/` in the process.  The release
+  workflow packs the code under a single top-level
+  `arkmaniagest-vX.Y.Z/` directory; the old sync logic ran
+  `rsync --delete $TMP/ $APP/` which saw only that one dir in source,
+  interpreted every existing dir at the destination as "obsolete",
+  and tried to delete `backend/`, `frontend/`, `deploy/` and friends.
+  Partial success left the host unreachable (`deploy/` gone,
+  `find: '/opt/arkmaniagest/deploy': No such file or directory`).
+
+  Fix: detect when `$TMP` contains exactly one project-root-shaped
+  directory and rsync FROM that inner dir instead.  A follow-up sweep
+  also removes any `arkmaniagest-v*/` leftover from a botched prior
+  run so the tree is self-healing.
+- **F5 on any panel page kicked the operator back to the login
+  screen**.  The JWT was held in a module-level variable with no
+  persistence, so the in-memory state was wiped by every page reload.
+  The token is now kept in `sessionStorage` (survives F5 inside the
+  same tab, wiped on tab close) and `App.tsx` restores the session on
+  boot via `authApi.me()` before falling back to the login route.
+  The proper long-term fix is an httpOnly cookie + CSRF token;
+  sessionStorage is a pragmatic middle ground with the same narrow
+  XSS exposure as the old in-memory approach.
+
+### Upgrade note
+
+The 2.3.6 release tarball, if installed via the in-UI updater,
+leaves `/opt/arkmaniagest/` in a half-broken state.  Recovery path:
+
+```powershell
+.\deploy\update-panel.ps1 -Server root@<panel-host>
+```
+
+which pushes a correctly-shaped (root-level) tarball of the dev
+working tree and runs the new `server-update.sh` that cleans up the
+orphan `arkmaniagest-v2.3.6/` directory on its way through.
+
+---
+
 ## [2.3.6] - 2026-04-22
 
 First release where the in-UI self-update actually works end-to-end --
