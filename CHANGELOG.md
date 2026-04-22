@@ -7,6 +7,65 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.6] - 2026-04-22
+
+First release where the in-UI self-update actually works end-to-end --
+2.3.5 shipped the UI button and the endpoint, but the systemd service
+unit + the sudo probe + the restart race each silently broke the flow
+in a different place.  All fixed here.
+
+### Fixed
+
+- **systemd unit contradicted the self-update path**: shipped with
+  `NoNewPrivileges=yes`, which makes `sudo` refuse to elevate from
+  inside the service with `sudo: The "no new privileges" flag is set,
+  which prevents sudo from running as root`.  Flipped to `no`, plus
+  `PrivateTmp=no` and `/tmp` added to `ReadWritePaths` so the detached
+  update child and the post-restart backend see the same status /
+  log files.  Threat-model compensation: the sudoers snippet still
+  whitelists only a single literal path (`bash server-update.sh *`),
+  so a panel compromise cannot escalate beyond (re-)running the
+  already-trusted update pipeline.
+- **Preflight sudo probe returned a false negative**: used
+  `sudo -n -l bash <script>` which, on recent sudo versions, does not
+  match a sudoers rule ending with `*` when no argument is supplied.
+  Probe now runs `sudo -n -l` (without a command) and grep-checks for
+  `server-update.sh` + `NOPASSWD`, matching the manual verification
+  operators run in the README.
+- **Preflight banner was uninformative**: the hint now surfaces the
+  concrete reason (`no sudoers rule at all`, `NOPASSWD missing`,
+  `sudo binary not in PATH`, ...) instead of a generic "Sudoers entry
+  missing".
+- **`server-update.sh` got SIGTERM-ed mid-restart**: the script runs
+  inside the panel's own cgroup, and `systemctl restart arkmaniagest`
+  is synchronous, so when systemd stops the old service it kills the
+  still-running script -- the UI status poll could never transition
+  to `success`.  The script now writes the final status JSON *before*
+  the restart, and installs an `ERR` trap that writes `failed` on any
+  non-zero exit earlier in the run, so the browser gets a clean
+  terminal state regardless.
+- **GitHub 429 / 403 rate-limit errors** now translate to a
+  human-readable `"Try again in ~N minute(s). Add GITHUB_TOKEN to
+  backend/.env to lift the limit from 60/h anonymous to 5000/h
+  authenticated"` message in both `/version-check` and
+  `/system-update/install`, and the `/version-check` cache honours
+  `X-RateLimit-Reset` so the panel does not keep pounding GitHub
+  during the lockout window.
+- **Admin panel lockout via internal rate limiter**: the per-IP
+  120 req/min window was eaten by `/settings/status` (pre-login
+  polling), `/system-update/status` (install progress drawer) and
+  `/health` (dashboard auto-refresh) combined, so an active admin
+  could 429-lock themselves on a normal session.  Those three
+  polling paths are now exempt from the counter, and the general
+  quota is raised from 120 to 300/min.
+
+### Tooling
+
+- `deploy/update-panel.ps1` / `.sh`: fixed a PS 5.1 trailing-comma
+  parse error in the `WriteAllText` invocation.
+
+---
+
 ## [2.3.5] - 2026-04-22
 
 ### Added

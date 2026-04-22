@@ -38,7 +38,7 @@ class AppSettingsRead(BaseModel):
     """Application settings as returned by the read endpoint."""
 
     app_name: str = "ArkManiaGest"
-    version: str = "2.3.5"
+    version: str = "2.3.6"
     log_level: str = "INFO"
     auto_backup: bool = True
     backup_interval_hours: int = 6
