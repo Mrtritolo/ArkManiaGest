@@ -20,6 +20,7 @@ import {
   Square,
   RotateCw,
   Download,
+  DownloadCloud,
   Activity,
   Pencil,
   Trash2,
@@ -358,6 +359,17 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   // Delete
   // -------------------------------------------------------------------------
 
+  // POK "update" pulls a fresh ASA build from Steam; on slow hosts this
+  // can exceed 15 minutes.  The backend call is blocking -- the button
+  // is disabled via busyId until the response comes back, and the user
+  // is warned up front.
+  async function handleUpdate(inst: ServerInstance) {
+    if (!window.confirm(t("instances.confirmUpdate", { name: inst.name }))) {
+      return;
+    }
+    await runAction(inst.id, "update");
+  }
+
   async function handleDelete(inst: ServerInstance) {
     if (!window.confirm(t("instances.confirmDelete", { name: inst.name }))) return;
     const purge = window.confirm(t("instances.confirmDeleteWithPurge"));
@@ -551,6 +563,13 @@ export default function ServerInstancesPage({ currentUser }: Props) {
                           label={t("instances.actions.backup")}
                           onClick={() => runAction(inst.id, "backup")}
                           busy={busyId?.id === inst.id && busyId?.action === "backup"}
+                          disabled={!!busyId}
+                        />
+                        <ActionBtn
+                          icon={<DownloadCloud size={14} />}
+                          label={t("instances.actions.update")}
+                          onClick={() => handleUpdate(inst)}
+                          busy={busyId?.id === inst.id && busyId?.action === "update"}
                           disabled={!!busyId}
                         />
                         <button

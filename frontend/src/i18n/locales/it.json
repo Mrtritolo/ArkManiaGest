@@ -1729,6 +1729,7 @@
     },
     "confirmDelete": "Eliminare l'istanza '{{name}}'? Verrà rimosso solo il record dal pannello. I file del container sull'host NON vengono cancellati.",
     "confirmDeleteWithPurge": "Fermare il container sull'host prima di eliminare?",
+    "confirmUpdate": "Aggiornare i binari ARK su '{{name}}'?\n\nIl server verrà fermato mentre Steam scarica la nuova build. Può durare 5–15 minuti su un host veloce, di più su dischi o connessioni lente. La pagina sembrerà bloccata fino alla fine — non chiuderla.",
     "log": {
       "title": "Azioni recenti per {{name}}",
       "empty": "Nessuna azione registrata per questa istanza.",

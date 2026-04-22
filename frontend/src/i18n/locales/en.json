@@ -1729,6 +1729,7 @@
     },
     "confirmDelete": "Delete instance '{{name}}'? This removes the panel record. The container files on the host are NOT deleted.",
     "confirmDeleteWithPurge": "Also stop the container on the host before deleting?",
+    "confirmUpdate": "Update ARK binaries on '{{name}}'?\n\nThe server will be stopped while Steam downloads the new build. This can take 5–15 minutes on a fast host, longer on slow disks or slow connections. The page will appear frozen until the update finishes — do not close it.",
     "log": {
       "title": "Recent actions for {{name}}",
       "empty": "No actions recorded for this instance yet.",

@@ -275,7 +275,15 @@ export const serverInstancesApi = {
   start:   (id: number) => api.post<InstanceActionResult>(`/servers/${id}/start`),
   stop:    (id: number) => api.post<InstanceActionResult>(`/servers/${id}/stop`),
   restart: (id: number) => api.post<InstanceActionResult>(`/servers/${id}/restart`),
-  update_: (id: number) => api.post<InstanceActionResult>(`/servers/${id}/update`),
+  // POK update pulls the latest ASA build from Steam; it can run for
+  // 10+ minutes, well past axios' 30s default, so we bump the per-call
+  // timeout to 30 minutes.  The backend also respects SSH_TIMEOUT.
+  update_: (id: number) =>
+    api.post<InstanceActionResult>(
+      `/servers/${id}/update`,
+      null,
+      { timeout: 30 * 60 * 1000 },
+    ),
   backup:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/backup`),
   status:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/status`),
   rcon:    (id: number, command: string) =>
