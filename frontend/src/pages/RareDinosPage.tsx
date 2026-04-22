@@ -55,6 +55,17 @@ export default function RareDinosPage() {
   const [bpSearch, setBpSearch] = useState('')
   const [bpResults, setBpResults] = useState<BpItem[]>([])
   const [bpLoading, setBpLoading] = useState(false)
+  // Status of the local blueprint DB.  null = not yet probed; populated
+  // by the bp-status useEffect below.  Drives the "DB empty" warning so
+  // users don't stare at a silent autocomplete that returns nothing.
+  const [bpDbStatus, setBpDbStatus] = useState<{
+    has_data: boolean
+    total: number
+    last_sync: string | null
+  } | null>(null)
+  // Did the most recent search return zero results?  Used together with
+  // bpDbStatus to render the right empty-state message in the dropdown.
+  const [bpSearched, setBpSearched] = useState(false)
 
   // Generator
   const [showGenerator, setShowGenerator] = useState(false)
@@ -103,16 +114,32 @@ export default function RareDinosPage() {
 
   useEffect(() => { loadDinos() }, [])
 
+  // Probe the blueprint DB once on mount so we can warn the user up
+  // front when it's empty (the autocomplete would otherwise return zero
+  // matches forever and look broken).
+  useEffect(() => {
+    blueprintsApi.status()
+      .then(r => setBpDbStatus({
+        has_data:  r.data.has_data,
+        total:     r.data.total_blueprints,
+        last_sync: r.data.last_sync,
+      }))
+      .catch(() => setBpDbStatus({ has_data: false, total: 0, last_sync: null }))
+  }, [])
+
   // Blueprint search with debounce
   useEffect(() => {
-    if (bpSearch.length < 2) { setBpResults([]); return }
+    if (bpSearch.length < 2) { setBpResults([]); setBpSearched(false); return }
     const timer = setTimeout(async () => {
       setBpLoading(true)
       try {
         const res = await blueprintsApi.list({ search: bpSearch, type: 'dino', limit: 10 })
         setBpResults(res.data.items?.map((i: Record<string, string>) => ({ name: i.name, blueprint: i.blueprint, category: i.category })) || [])
       } catch { setBpResults([]) }
-      finally { setBpLoading(false) }
+      finally {
+        setBpLoading(false)
+        setBpSearched(true)
+      }
     }, 300)
     return () => clearTimeout(timer)
   }, [bpSearch])
@@ -457,29 +484,67 @@ export default function RareDinosPage() {
                         }
                       }}
                       style={{ fontSize: '0.82rem', fontFamily: form.dino_bp.includes("'") ? 'var(--font-mono)' : 'inherit' }} />
-                    {/* Blueprint autocomplete dropdown */}
-                    {bpResults.length > 0 && (
+                    {/* Blueprint autocomplete dropdown.
+                         Renders one of three states for non-edit mode:
+                          1. results found  -> the picker list
+                          2. searched, no results, DB has data -> "no matches"
+                          3. searched, no results, DB empty    -> "sync first" hint
+                       */}
+                    {!editingDino && (bpResults.length > 0 ||
+                      (bpSearched && !bpLoading && bpSearch.length >= 2)) && (
                       <div style={{
                         position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
                         background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
                         boxShadow: 'var(--shadow-lg)', maxHeight: 200, overflowY: 'auto',
                       }}>
-                        {bpResults.map((bp, i) => (
-                          <button key={i} onClick={() => selectBp(bp)}
-                            style={{
-                              display: 'block', width: '100%', padding: '0.45rem 0.75rem', border: 'none',
-                              background: 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: '0.82rem',
-                            }}
-                            onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                            onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
-                            <span style={{ fontWeight: 600 }}>{bp.name}</span>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 8 }}>{bp.category}</span>
-                          </button>
-                        ))}
+                        {bpResults.length > 0 ? (
+                          bpResults.map((bp, i) => (
+                            <button key={i} onClick={() => selectBp(bp)}
+                              style={{
+                                display: 'block', width: '100%', padding: '0.45rem 0.75rem', border: 'none',
+                                background: 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: '0.82rem',
+                              }}
+                              onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                              onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
+                              <span style={{ fontWeight: 600 }}>{bp.name}</span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 8 }}>{bp.category}</span>
+                            </button>
+                          ))
+                        ) : bpDbStatus && !bpDbStatus.has_data ? (
+                          <div style={{ padding: '0.55rem 0.75rem', fontSize: '0.78rem', color: 'var(--warning)' }}>
+                            <strong>{t('rareDinos.modal.bpDbEmpty')}</strong>
+                            <div style={{ marginTop: 3, color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                              {t('rareDinos.modal.bpDbEmptyHint')}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ padding: '0.55rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                            {t('rareDinos.modal.bpNoMatches')}
+                          </div>
+                        )}
                       </div>
                     )}
                     {bpLoading && <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>...</div>}
                   </div>
+                  {/* Persistent banner above the input when the DB is empty,
+                      so the user notices BEFORE typing 2 characters. */}
+                  {!editingDino && bpDbStatus && !bpDbStatus.has_data && (
+                    <div style={{
+                      marginTop: 6, padding: '0.4rem 0.55rem', fontSize: '0.72rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      background: 'var(--warning-bg)', color: 'var(--warning)',
+                      border: '1px solid color-mix(in srgb, var(--warning) 35%, transparent)',
+                      display: 'flex', alignItems: 'flex-start', gap: 6,
+                    }}>
+                      <AlertCircle size={13} style={{ marginTop: 1, flexShrink: 0 }} />
+                      <span>
+                        {t('rareDinos.modal.bpDbEmpty')}{' '}
+                        <a href="/settings/blueprints" style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 600 }}>
+                          {t('rareDinos.modal.bpDbGoToSettings')}
+                        </a>
+                      </span>
+                    </div>
+                  )}
                   {form.dino_bp && form.dino_bp.includes("'") && (
                     <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {form.dino_bp}
