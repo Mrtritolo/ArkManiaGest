@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ============================================
 # ArkManiaGest - Server-side update script
-# Eseguito dal PC locale via update-remote.ps1
-# Argomenti: $1=MODE (FULL|BACKEND|FRONTEND)  $2=DEPS (AUTO|FORCE|SKIP)
+# Run locally by update-panel.{ps1,sh} OR by the in-UI self-updater
+# (POST /api/v1/system-update/install).  Argomenti:
+#   $1=MODE  (FULL|BACKEND|FRONTEND)
+#   $2=DEPS  (AUTO|FORCE|SKIP)
 # ============================================
 set -e
 
@@ -11,6 +13,42 @@ DEPS=${2:-AUTO}
 APP=/opt/arkmaniagest
 TMP=/tmp/arkmaniagest-update
 USR=arkmania
+
+# When the in-UI updater launches this script it pre-creates a status
+# JSON file at $STATUS_FILE; we overwrite the `state` / `message` /
+# `finished_at` keys on our way through so the browser poll can show
+# success/failed even though systemd kills THIS process when we restart
+# the panel at the end of the run.  (server-update.sh runs inside the
+# panel's cgroup; `systemctl restart` is synchronous, so when systemd
+# stops the old unit it SIGTERMs us -- anything AFTER the restart line
+# never executes.)  Writing the final status BEFORE the restart is the
+# simplest way to get the UI to transition cleanly.
+STATUS_FILE="/tmp/arkmaniagest-update-status.json"
+finalise_status() {
+    local state="$1"
+    local msg="$2"
+    [ -f "$STATUS_FILE" ] || return 0
+    python3 - "$STATUS_FILE" "$state" "$msg" <<'PYEOF' 2>/dev/null || true
+import json, os, sys, datetime
+path, state, msg = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path) as f:
+        d = json.load(f)
+except Exception:
+    d = {}
+d["state"]        = state
+d["message"]      = msg
+d["finished_at"]  = datetime.datetime.now(datetime.timezone.utc).isoformat()
+if state == "success":
+    d["progress_pct"] = 100
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(d, f, indent=2)
+os.replace(tmp, path)
+PYEOF
+}
+# Any non-zero exit from this point on is reported as a failed update.
+trap 'rc=$?; finalise_status failed "server-update.sh exited with code $rc"' ERR
 
 echo ""
 echo "=== ArkManiaGest Update ==="
@@ -102,6 +140,10 @@ fi
 
 # Restart
 echo "[4/4] Restart..."
+# Write "success" into the status JSON BEFORE the restart.  systemd will
+# SIGTERM this script as soon as the old unit starts stopping, so any
+# status write after `systemctl restart` is unreliable.
+finalise_status success "Update applied; restarting backend..."
 systemctl restart arkmaniagest
 sleep 2
 

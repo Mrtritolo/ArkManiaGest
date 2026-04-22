@@ -16,11 +16,28 @@ StandardOutput=append:/var/log/arkmaniagest/backend.log
 StandardError=append:/var/log/arkmaniagest/backend-error.log
 
 # Security hardening
-NoNewPrivileges=yes
+#
+# NoNewPrivileges MUST stay at "no" because the panel's in-UI self-update
+# feature (POST /system-update/install) relies on sudo to run the
+# whitelisted server-update.sh as root.  Keeping NoNewPrivileges=yes
+# here would silently disable that codepath with the opaque error
+# `sudo: The "no new privileges" flag is set, which prevents sudo from
+# running as root.`  The attack surface is limited by the matching
+# /etc/sudoers.d/arkmaniagest snippet, which only whitelists:
+#   /usr/bin/bash /opt/arkmaniagest/deploy/server-update.sh *
+# so compromising the panel user still does not give arbitrary root
+# shell access -- only the ability to (re)install an already-trusted
+# update pipeline.
+#
+# PrivateTmp is also disabled because the self-update workflow hands
+# the tarball to server-update.sh via /tmp/arkmaniagest-update.tar.gz
+# and reads progress via /tmp/arkmaniagest-update.log; both files need
+# to be visible to both the parent (panel) and the detached sudo child.
+NoNewPrivileges=no
 ProtectSystem=strict
 ProtectHome=no
-ReadWritePaths=/opt/arkmaniagest /var/log/arkmaniagest
-PrivateTmp=yes
+ReadWritePaths=/opt/arkmaniagest /var/log/arkmaniagest /tmp
+PrivateTmp=no
 PrivateDevices=yes
 
 # Environment
