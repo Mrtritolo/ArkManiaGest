@@ -12,13 +12,13 @@
 #   7. Create annotated tag vX.Y.Z and push it (fires the Release workflow).
 #   8. Poll the GitHub Actions run until the release is published (or fail).
 #
-# Examples:
+# Examples (run from anywhere; the script cd's to the repo root itself):
 #
-#   .\deploy\release.ps1 -Bump patch
-#   .\deploy\release.ps1 -Bump minor -Notes "i18n polish + bug fixes"
-#   .\deploy\release.ps1 -Version 3.0.0 -NotesFile .\next-release-notes.md
-#   .\deploy\release.ps1 -Bump patch -DryRun      # print plan, change nothing
-#   .\deploy\release.ps1 -Version 2.4.0-rc1       # pre-release; sets prerelease=true on GH
+#   .\deploy\maintainer\release.ps1 -Bump patch
+#   .\deploy\maintainer\release.ps1 -Bump minor -Notes "i18n polish + bug fixes"
+#   .\deploy\maintainer\release.ps1 -Version 3.0.0 -NotesFile .\next-release-notes.md
+#   .\deploy\maintainer\release.ps1 -Bump patch -DryRun      # print plan, change nothing
+#   .\deploy\maintainer\release.ps1 -Version 2.4.0-rc1       # pre-release; sets prerelease=true on GH
 #
 # Flags:
 #   -SkipBuild        do NOT run "npx vite build" (faster; CI will build anyway)
@@ -52,7 +52,11 @@ $ErrorActionPreference = "Stop"
 # Paths + helpers
 # ---------------------------------------------------------------------------
 
-$PROJECT = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+# This script lives under deploy\maintainer\, two levels below the repo
+# root.  Earlier iterations lived at deploy\release.ps1, so any update that
+# re-uses $PSScriptRoot\.. will silently resolve to deploy\ (and Select-String
+# will fail with "cannot find path deploy\backend\..." — very confusing).
+$PROJECT = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $PROJECT
 
 function Write-Section([string]$text) {

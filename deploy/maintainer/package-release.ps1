@@ -12,10 +12,10 @@
 #                                        (use deploy/deploy-remote.ps1)
 #
 # Usage:
-#   .\deploy\package-release.ps1                        # auto-detect version
-#   .\deploy\package-release.ps1 -Version 2.3.0         # explicit version
-#   .\deploy\package-release.ps1 -Publish               # run gh release create
-#   .\deploy\package-release.ps1 -Notes "See CHANGELOG" # custom release body
+#   .\deploy\maintainer\package-release.ps1                        # auto-detect version
+#   .\deploy\maintainer\package-release.ps1 -Version 2.3.0         # explicit version
+#   .\deploy\maintainer\package-release.ps1 -Publish               # run gh release create
+#   .\deploy\maintainer\package-release.ps1 -Notes "See CHANGELOG" # custom release body
 #
 # Output lands in   release-build/<VERSION>/
 # =============================================================================
@@ -32,7 +32,10 @@ $ErrorActionPreference = "Stop"
 
 # ── Resolve paths ────────────────────────────────────────────────────────────
 
-$PROJECT   = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+# Two levels up: this script sits at deploy\maintainer\, PROJECT is the
+# repo root.  A plain $PSScriptRoot\.. would give deploy\, which then
+# breaks every downstream path (backend\, frontend\, deploy\release.conf).
+$PROJECT   = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $OUT_ROOT  = Join-Path $PROJECT "release-build"
 $TAR       = if (Test-Path "C:\Windows\System32\tar.exe") { "C:\Windows\System32\tar.exe" } else { "tar" }
 
