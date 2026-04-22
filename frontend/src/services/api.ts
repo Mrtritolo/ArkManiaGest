@@ -71,15 +71,50 @@ const api = axios.create({
 // ---------------------------------------------------------------------------
 // Token management
 // ---------------------------------------------------------------------------
+//
+// The JWT is kept in sessionStorage (NOT localStorage) and mirrored in a
+// module-level variable.  sessionStorage survives F5 inside the same tab
+// -- which the old in-memory-only approach did not, and which forced the
+// operator back to the login page on every single page reload.  It does
+// NOT survive closing the tab, so the attack surface is still narrower
+// than localStorage: an attacker who lands an XSS on the panel only gets
+// the token while the tab is open anyway.
+//
+// The proper long-term fix is an httpOnly cookie issued by the backend,
+// but that needs a CSRF token on every mutating request which is a much
+// bigger change; sessionStorage is the pragmatic middle ground.
 
-/** In-memory JWT — intentionally NOT persisted to localStorage. */
-let _authToken: string | null = null;
+const _AUTH_TOKEN_KEY = "arkmaniagest.authToken";
+
+function _loadToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(_AUTH_TOKEN_KEY);
+  } catch {
+    // Sandbox / privacy mode: sessionStorage may throw.  Fall back to memory.
+    return null;
+  }
+}
+
+function _storeToken(token: string | null): void {
+  try {
+    if (token) {
+      window.sessionStorage.setItem(_AUTH_TOKEN_KEY, token);
+    } else {
+      window.sessionStorage.removeItem(_AUTH_TOKEN_KEY);
+    }
+  } catch {
+    /* sessionStorage unavailable -- we still have the in-memory copy. */
+  }
+}
+
+let _authToken: string | null = _loadToken();
 /** Callback invoked when a 401 / 503 response clears the token. */
 let _onAuthError: (() => void) | null = null;
 
 /** Store the JWT after a successful login. */
 export function setAuthToken(token: string | null): void {
   _authToken = token;
+  _storeToken(token);
 }
 
 /** Read the current JWT (e.g. to inspect expiry in tests). */

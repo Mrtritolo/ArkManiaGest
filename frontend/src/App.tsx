@@ -14,7 +14,13 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { settingsApi, setAuthToken, setOnAuthError } from "./services/api";
+import {
+  settingsApi,
+  authApi,
+  setAuthToken,
+  getAuthToken,
+  setOnAuthError,
+} from "./services/api";
 import type { AuthUser } from "./types";
 
 // Layout
@@ -74,7 +80,30 @@ function App() {
 
     try {
       const { data } = await settingsApi.status();
-      setAuthState(data.configured ? "login" : "setup");
+      if (!data.configured) {
+        setAuthState("setup");
+        return;
+      }
+
+      // If we have a JWT in sessionStorage from a previous page (e.g. the
+      // user just hit F5), try to resolve it via /auth/me before falling
+      // back to the login screen.  The axios interceptor already attaches
+      // the Bearer header, so we just need to call authApi.me and let a
+      // 401 bounce us into "login" state.
+      if (getAuthToken()) {
+        try {
+          const { data: user } = await authApi.me();
+          setCurrentUser(user);
+          setAuthState("ready");
+          return;
+        } catch {
+          // Invalid / expired token -- wipe and fall through to login.
+          setAuthToken(null);
+          setCurrentUser(null);
+        }
+      }
+
+      setAuthState("login");
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Cannot reach the backend.";

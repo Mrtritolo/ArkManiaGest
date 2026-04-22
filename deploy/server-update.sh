@@ -55,11 +55,29 @@ echo "=== ArkManiaGest Update ==="
 echo "Mode: $MODE  Deps: $DEPS"
 echo ""
 
-# Estrai
+# Extract
 rm -rf $TMP
 mkdir -p $TMP
 tar -xzf /tmp/arkmaniagest-update.tar.gz -C $TMP
 rm -f /tmp/arkmaniagest-update.tar.gz
+
+# Tarballs come in two flavours:
+#   (a) GitHub release bundle: `arkmaniagest-vX.Y.Z/` as a single top-level
+#       directory, code inside it.
+#   (b) dev push via update-panel.{ps1,sh}: files at the archive root.
+# rsync --delete from the wrong root is catastrophic -- it would wipe
+# every project dir at the destination, then drop a nested
+# arkmaniagest-vX.Y.Z/ into /opt/arkmaniagest.  Detect (a) and shift
+# ROOT one level deeper.
+ROOT="$TMP"
+TMP_ENTRIES=$(find "$TMP" -mindepth 1 -maxdepth 1 | wc -l)
+if [ "$TMP_ENTRIES" = "1" ]; then
+    INNER=$(find "$TMP" -mindepth 1 -maxdepth 1)
+    if [ -d "$INNER" ] && [ -d "$INNER/backend" ] && [ -d "$INNER/frontend" ]; then
+        echo "  Detected release-bundle layout, using $INNER as source root"
+        ROOT="$INNER"
+    fi
+fi
 
 # Sync file
 echo "[1/4] Sync file..."
@@ -67,6 +85,8 @@ echo "[1/4] Sync file..."
 # keeping the production directory clean from leftovers of old deploys.
 # Runtime directories (venv, node_modules, dist, data) and secrets (.env)
 # are protected via --exclude so they are never touched.
+# arkmaniagest-v*/ is explicitly excluded to clean up the orphan directory
+# that a previous botched update may have left behind.
 rsync -a --delete \
     --exclude=venv \
     --exclude=node_modules \
@@ -80,7 +100,16 @@ rsync -a --delete \
     --exclude='tests/' \
     --exclude='Specifiche/' \
     --exclude='reference/' \
-    $TMP/ $APP/
+    "$ROOT"/ $APP/
+
+# Clean up orphan release-bundle directory if it was dropped by a
+# previous broken update run.  Check on the literal pattern, not via
+# glob, so shell globbing expansion doesn't break set -e.
+for ORPHAN in "$APP"/arkmaniagest-v*/; do
+    [ -d "$ORPHAN" ] || continue
+    echo "  Removing orphan bundle dir: $ORPHAN"
+    rm -rf "$ORPHAN"
+done
 chown -R $USR:$USR $APP
 
 # Strip Windows CRLF from all shell scripts synced from the Windows tar archive.
