@@ -420,7 +420,7 @@ server {
     ssl_stapling_verify on;
     resolver 8.8.8.8 8.8.4.4 valid=300s;
 
-    client_max_body_size 10M;
+    client_max_body_size 100M;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
