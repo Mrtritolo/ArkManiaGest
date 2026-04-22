@@ -35,6 +35,7 @@ from app.core.store import (
     get_all_instances_async,
     get_instance_async,
     get_machine_async,
+    get_plugin_config_sync,
     list_actions_async,
     update_instance_async,
 )
@@ -304,6 +305,154 @@ async def create_instance(
             raise HTTPException(
                 status_code=409,
                 detail="Duplicate instance name or container name on this machine.",
+            )
+        raise
+
+    created = await _get_instance_or_404(db, new_id)
+    return _instance_to_read(created)
+
+
+# ── Import from a scanned container ──────────────────────────────────────────
+#
+# When the operator clicks "Scan machines" on the new consolidated Instances
+# page, the SSH scanner discovers ARK containers under the host's POK base
+# directory and caches them in the panel DB under the ``containers_map``
+# plugin-config key.  Discovered containers without a matching
+# ARKM_server_instances row are surfaced as "orphans" in the UI; the
+# import button below promotes them to a real managed instance.
+
+class ImportFromContainerRequest(BaseModel):
+    """Body payload for :func:`import_from_container`."""
+
+    machine_id:      int             = Field(..., ge=1)
+    container_name:  str             = Field(..., min_length=1, max_length=128)
+    admin_password:  str             = Field(..., min_length=4, max_length=128)
+    server_password: Optional[str]   = Field(default=None, max_length=128)
+    # Operator-supplied overrides; everything is optional and falls back to
+    # the value discovered during the SSH scan (see _find_container in
+    # routes/containers.py).
+    display_name:    Optional[str]   = Field(default=None, max_length=128)
+    map_name:        Optional[str]   = Field(default=None, max_length=64)
+    game_port:       Optional[int]   = Field(default=None, ge=1, le=65_535)
+    rcon_port:       Optional[int]   = Field(default=None, ge=1, le=65_535)
+
+
+@router.post(
+    "/import-from-container",
+    response_model=ServerInstanceRead,
+    status_code=201,
+    dependencies=[Depends(require_operator)],
+)
+async def import_from_container(
+    data: ImportFromContainerRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Promote a scanned-but-unregistered container into an ARKM_server_instances row.
+
+    Looks the container up in the cached ``containers_map`` (populated by
+    ``POST /containers/machines/{id}/scan``), pulls sensible defaults from
+    the discovery payload (map name, paths, container name), then creates
+    the instance row using the same conflict checks as the regular create
+    endpoint.
+
+    Raises:
+        404: machine or container not found.
+        409: name / port collision with an existing instance.
+    """
+    machine = await _get_machine_or_404(db, data.machine_id)
+
+    containers_map = get_plugin_config_sync("containers_map") or {}
+    machine_data   = (containers_map.get("machines") or {}).get(str(data.machine_id)) or {}
+    discovered = next(
+        (c for c in (machine_data.get("containers") or [])
+         if c.get("name") == data.container_name),
+        None,
+    )
+    if not discovered:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Container '{data.container_name}' has not been scanned "
+                f"on machine #{data.machine_id}.  Re-run the machine scan first."
+            ),
+        )
+
+    # Build the instance row.  We reuse the host paths reported by the
+    # scanner verbatim -- pok_base_dir is the parent of the discovered
+    # server_root, instance_dir IS the server_root.  When the scanner
+    # didn't return a server_root we fall back to the platform default
+    # (same logic as the manual create path).
+    server_root = (discovered.get("server_root") or "").rstrip("/")
+    if server_root:
+        pok_base_dir = posixpath.dirname(server_root) or server_root
+        instance_dir = server_root
+    else:
+        pok_base_dir, instance_dir = _derive_host_paths(
+            machine=machine,
+            instance_name=data.container_name,
+            pok_base_dir_override=None,
+        )
+
+    # Conflict check against existing rows (same machine).
+    container_name = data.container_name
+    conflict = await _port_or_name_conflict(
+        db,
+        machine_id=data.machine_id,
+        name=data.container_name,
+        container_name=container_name,
+        game_port=data.game_port or 7777,
+        rcon_port=data.rcon_port or 27020,
+    )
+    if conflict:
+        raise HTTPException(status_code=409, detail=conflict)
+
+    admin_pw_enc = encrypt_value(data.admin_password)
+    srv_pw_enc = encrypt_value(data.server_password) if data.server_password else None
+
+    now = datetime.now(timezone.utc)
+    fields = {
+        "machine_id":           data.machine_id,
+        "name":                 data.container_name,
+        "display_name":         data.display_name or discovered.get("server_name") or data.container_name,
+        "description":          f"Imported from scan on {now.date().isoformat()}",
+        "map_name":             data.map_name or discovered.get("map_name") or "TheIsland_WP",
+        "session_name":         discovered.get("server_name") or data.container_name,
+        "max_players":          70,
+        "admin_password_enc":   admin_pw_enc,
+        "server_password_enc":  srv_pw_enc,
+        "game_port":            data.game_port or 7777,
+        "rcon_port":            data.rcon_port or 27020,
+        "container_name":       container_name,
+        "image":                "acekorneya/asa_server:2_1_latest",
+        "mem_limit_mb":         16_384,
+        "timezone":             "Europe/Rome",
+        "pok_base_dir":         pok_base_dir,
+        "instance_dir":         instance_dir,
+        "mod_api":              False,
+        "battleye":             False,
+        "update_server":        True,
+        "update_coordination_role":     UpdateCoordinationRole.FOLLOWER.value,
+        "update_coordination_priority": 1,
+        "cpu_optimization":     False,
+        "is_active":            True,
+        # Mark as "stopped" until the next status probe -- the scanner
+        # already knows whether the container is currently running, but
+        # we trust the live docker inspect more than a cached scan.
+        "status":               "stopped" if discovered.get("status") != "running" else "running",
+        "created_at":           now,
+        "updated_at":           now,
+    }
+
+    try:
+        new_id = await create_instance_async(db, fields)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        if "Duplicate" in str(exc):
+            raise HTTPException(
+                status_code=409,
+                detail=f"An instance named '{data.container_name}' already exists on this machine.",
             )
         raise
 

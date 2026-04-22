@@ -33,8 +33,11 @@ import {
   Terminal,
   ScrollText,
   Globe,
+  Sun,
+  Moon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
 import type { AuthUser } from "../types";
 import {
   SUPPORTED_LANGUAGES,
@@ -43,6 +46,7 @@ import {
   getCurrentLanguage,
   type SupportedLanguage,
 } from "../i18n";
+import { getCurrentTheme, toggleTheme, type Theme } from "../theme";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,13 +70,16 @@ interface NavItem {
 // Navigation data
 // ---------------------------------------------------------------------------
 
+// "Containers" is no longer surfaced in the sidebar -- the Instances page
+// merges container discovery + import into a single workflow.  The
+// /containers route still resolves (back-compat for bookmarks and the
+// in-page file editor) via a Navigate redirect in App.tsx.
 const NAV_MAIN: NavItem[] = [
   { to: "/",                i18nKey: "nav.dashboard",  icon: LayoutDashboard },
   { to: "/serverforge",     i18nKey: "nav.serverForge", icon: Server },
   { to: "/online",          i18nKey: "nav.online",     icon: Users },
   { to: "/players",         i18nKey: "nav.players",    icon: Database },
-  { to: "/containers",      i18nKey: "nav.containers", icon: HardDrive },
-  { to: "/instances",       i18nKey: "nav.instances",  icon: Server },
+  { to: "/instances",       i18nKey: "nav.instances",  icon: HardDrive },
   { to: "/game-config",     i18nKey: "nav.gameConfig", icon: Sliders },
   { to: "/servers-manager", i18nKey: "nav.servers",    icon: Server },
   { to: "/event-log",       i18nKey: "nav.eventLog",   icon: ScrollText },
@@ -111,6 +118,10 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
   const { t, i18n } = useTranslation();
   const role = currentUser?.role ?? "viewer";
   const currentLang = getCurrentLanguage();
+  // Local mirror of the active theme so the icon updates as soon as the
+  // user clicks the toggle (the actual source of truth lives on
+  // <html data-theme="...">; we just trigger a re-render here).
+  const [theme, setTheme] = useState<Theme>(getCurrentTheme());
 
   /** Build the active-state class string for NavLink. */
   function navClass({ isActive }: { isActive: boolean }): string {
@@ -122,6 +133,10 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
     setLanguage(next);
     // useTranslation re-renders consumers automatically when i18n.language changes.
     void i18n;
+  }
+
+  function handleThemeToggle(): void {
+    setTheme(toggleTheme());
   }
 
   return (
@@ -206,40 +221,61 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
           className="sidebar-actions"
           style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
         >
-          {/* Language toggle */}
-          <label
-            className="sidebar-lang"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.4rem",
-              fontSize: "0.78rem",
-              color: "var(--text-muted)",
-            }}
-            title={t("common.language")}
-          >
-            <Globe size={13} />
-            <select
-              value={currentLang}
-              onChange={handleLanguageChange}
+          {/* Language + theme toggle row */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <label
+              className="sidebar-lang"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                fontSize: "0.78rem",
+                color: "var(--text-muted)",
+                flex: 1,
+              }}
+              title={t("common.language")}
+            >
+              <Globe size={13} />
+              <select
+                value={currentLang}
+                onChange={handleLanguageChange}
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm, 4px)",
+                  color: "var(--text-primary)",
+                  padding: "0.15rem 0.35rem",
+                  fontSize: "0.78rem",
+                  cursor: "pointer",
+                  width: "100%",
+                }}
+                aria-label={t("common.language")}
+              >
+                {SUPPORTED_LANGUAGES.map((code) => (
+                  <option key={code} value={code}>
+                    {LANGUAGE_LABELS[code]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={handleThemeToggle}
+              title={t(theme === "dark" ? "common.themeLight" : "common.themeDark")}
+              aria-label={t(theme === "dark" ? "common.themeLight" : "common.themeDark")}
               style={{
                 background: "transparent",
                 border: "1px solid var(--border)",
                 borderRadius: "var(--radius-sm, 4px)",
-                color: "var(--text-primary)",
-                padding: "0.15rem 0.35rem",
-                fontSize: "0.78rem",
+                color: "var(--text-muted)",
+                padding: "0.2rem 0.35rem",
                 cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
               }}
-              aria-label={t("common.language")}
             >
-              {SUPPORTED_LANGUAGES.map((code) => (
-                <option key={code} value={code}>
-                  {LANGUAGE_LABELS[code]}
-                </option>
-              ))}
-            </select>
-          </label>
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+          </div>
 
           {onLogout && (
             <button

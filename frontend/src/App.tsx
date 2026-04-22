@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import {
   settingsApi,
   authApi,
@@ -39,7 +39,6 @@ import ServerForgePage from "./pages/ServerForgePage";
 import PlayersPage from "./pages/PlayersPage";
 import ArkShopPage from "./pages/ArkShopPage";
 import BlueprintsPage from "./pages/BlueprintsPage";
-import ContainersPage from "./pages/ContainersPage";
 import GameConfigPage from "./pages/GameConfigPage";
 import OnlinePlayersPage from "./pages/OnlinePlayersPage";
 import ArkManiaConfigPage from "./pages/ArkManiaConfigPage";
@@ -218,7 +217,10 @@ function App() {
               <Route path="/serverforge" element={<ServerForgePage />} />
               <Route path="/online" element={<OnlinePlayersPage />} />
               <Route path="/players" element={<PlayersPage />} />
-              <Route path="/containers" element={<ContainersPage />} />
+              {/* /containers is no longer a sidebar entry; the new
+                  Instances page subsumes container discovery + import.
+                  We keep a redirect for old bookmarks. */}
+              <Route path="/containers" element={<Navigate to="/instances" replace />} />
               <Route path="/game-config" element={<GameConfigPage />} />
               <Route path="/servers-manager" element={<ServersPage />} />
               <Route

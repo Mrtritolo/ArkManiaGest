@@ -55,6 +55,90 @@
   --font-heading: 'Rajdhani', sans-serif;
   --font-body: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Text colour used ON TOP of the bright green accent (e.g. .btn-primary,
+     ::selection).  Stays dark in both themes because the accent itself
+     is bright green either way. */
+  --text-on-accent: #060a06;
+}
+
+/* ---------------------------------------------------------------------------
+   Light theme overrides
+   ---------------------------------------------------------------------------
+   Triggered by `<html data-theme="light">` set by src/theme.ts.  Only the
+   values that need to differ from the dark default are listed here -- the
+   :root block above stays as the source of truth for every variable, so
+   any new var added in the future is automatically inherited by both
+   themes.  Override only what would actively look wrong on white. */
+[data-theme="light"] {
+  --bg-root:        #f5f7fa;        /* page background  */
+  --bg-sidebar:     #ffffff;        /* clean white side */
+  --bg-card:        #ffffff;
+  --bg-card-muted:  #f8fafc;
+  --bg-input:       #ffffff;
+  --bg-hover:       rgba(22,163,74,0.06);
+  --bg-active:      rgba(22,163,74,0.12);
+
+  --border:         #e2e8f0;        /* slate-200 */
+  --border-focus:   #16a34a;        /* green-600 -- darker for contrast */
+  --border-input:   #cbd5e1;        /* slate-300 */
+
+  --text-primary:   #0f172a;        /* slate-900 */
+  --text-secondary: #475569;        /* slate-600 */
+  --text-muted:     #94a3b8;        /* slate-400 */
+  --text-accent:    #16a34a;
+
+  --accent:         #16a34a;
+  --accent-bright:  #0891b2;
+  --accent-glow:    rgba(22,163,74,0.10);
+  --accent-light:   rgba(22,163,74,0.14);
+  --green:          #16a34a;
+  --cyan:           #0891b2;
+  --orange:         #ea580c;
+  --danger:         #dc2626;
+  --danger-bg:      rgba(220,38,38,0.08);
+  --warning:        #d97706;
+  --warning-bg:     rgba(217,119,6,0.08);
+  --success:        #16a34a;
+  --success-bg:     rgba(22,163,74,0.08);
+
+  --shadow-sm:      0 1px 3px rgba(15,23,42,0.06);
+  --shadow-md:      0 2px 10px rgba(15,23,42,0.08);
+  --shadow-lg:      0 4px 20px rgba(15,23,42,0.10);
+  --glow-green:     0 0 25px rgba(22,163,74,0.18);
+}
+
+[data-theme="light"] html { color-scheme: light; }
+[data-theme="light"] body { background: var(--bg-root); }
+
+/* Scrollbar track -- the dark-theme value (#0a0f0a) clashes on light pages. */
+[data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-card-muted); }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Card hover border was a hardcoded green-rgba; tone it down for light. */
+[data-theme="light"] .card:hover         { border-color: rgba(22,163,74,0.30); }
+[data-theme="light"] .stat-card:hover    { border-color: rgba(22,163,74,0.30); }
+[data-theme="light"] .form-input:focus,
+[data-theme="light"] .pl-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
+}
+
+/* Table row hover (PlayersPage / DecayPage / BlueprintsPage) — the
+   green-on-dark rgba reads as black on white; use a paler tint instead. */
+[data-theme="light"] .pl-table tbody tr:hover,
+[data-theme="light"] .dc-table tbody tr:hover,
+[data-theme="light"] .bp-table tbody tr:hover { background: rgba(22,163,74,0.05); }
+
+/* Sidebar lock button hover background was a hardcoded dark-mode rgba. */
+[data-theme="light"] .sidebar-lock-btn:hover { background: rgba(22,163,74,0.08); }
+
+/* Dashboard hero gradient -- the original dark gradient turns the
+   dashboard pitch black; replace with a soft pale wash on light. */
+[data-theme="light"] .dashboard-hero,
+[data-theme="light"] .dc-hero {
+  background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 50%, #ffffff 100%);
 }
 
 /* --- Reset & Base --- */
@@ -77,7 +161,7 @@ code {
 }
 
 /* --- Selection --- */
-::selection { background: var(--green); color: #060a06; }
+::selection { background: var(--green); color: var(--text-on-accent); }
 
 /* --- Native form elements dark mode --- */
 select, option { background: #0d1117; color: var(--text-primary); }
@@ -159,8 +243,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--g
 }
 .sidebar-user-avatar {
   width: 32px; height: 32px; border-radius: 8px;
-  background: linear-gradient(135deg, #4ade80, #22d3ee);
-  color: #060a06; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-bright));
+  color: var(--text-on-accent); display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 0.85rem; flex-shrink: 0;
 }
 .sidebar-user-info { display: flex; flex-direction: column; min-width: 0; }
@@ -226,6 +310,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--g
 .card-text { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.65; }
 .card-actions { display: flex; gap: 0.65rem; margin-top: 1.15rem; }
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.card-grid-1col { grid-template-columns: 1fr; }
+.card-grid-2col { grid-template-columns: repeat(2, 1fr); }
 
 /* --- Stat Cards --- */
 .stat-card {
@@ -326,7 +412,7 @@ select.form-input {
   transition: all 0.15s; text-decoration: none; white-space: nowrap;
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background: linear-gradient(135deg, #4ade80, #22d3ee); color: #060a06; font-weight: 700; }
+.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-bright)); color: var(--text-on-accent); font-weight: 700; }
 .btn-primary:hover:not(:disabled) { box-shadow: var(--glow-green); filter: brightness(1.1); }
 .btn-secondary { background: var(--bg-card); color: var(--text-primary); border-color: var(--border); }
 .btn-secondary:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-input); }

@@ -16,7 +16,9 @@
     "confirm": "Conferma",
     "retry": "Riprova",
     "refresh": "Aggiorna",
-    "language": "Lingua"
+    "language": "Lingua",
+    "themeLight": "Passa al tema chiaro",
+    "themeDark": "Passa al tema scuro"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -1666,11 +1668,23 @@
   "instances": {
     "title": "Istanze server ARK",
     "subtitle": "Gestisci i container ARK: Survival Ascended tramite POK-manager sulle tue macchine SSH.",
+    "subtitleCount": "({{count}} registrate)",
     "newButton": "Nuova istanza",
-    "noInstances": "Nessuna istanza configurata.",
+    "noInstances": "Nessuna istanza configurata. Usa \"Scansiona macchine\" per scoprire container già esistenti, oppure clicca \"Nuova istanza\" per crearne una da zero.",
     "loading": "Caricamento istanze…",
     "filterMachine": "Macchina",
     "filterAll": "Tutte le macchine",
+    "scanAll": "Scansiona macchine",
+    "scanning": "Scansione…",
+    "scanDone": "Scansionate {{count}} macchina/e.",
+    "orphansTitle": "Container scoperti ({{count}})",
+    "orphansHint": "Container trovati via SSH ma NON ancora registrati come istanze gestite. Clicca Importa per promuoverne uno nel DB del pannello.",
+    "orphanPlugins": "Plugin: {{plugins}}",
+    "importButton": "Importa",
+    "importTitle": "Importa container '{{name}}'",
+    "importHint": "Scoperto su {{machine}}. Imposta la password admin (obbligatoria) e gli eventuali override; il resto è dedotto dallo scan.",
+    "importConfirm": "Importa",
+    "importDone": "Container '{{name}}' importato come istanza gestita.",
     "columns": {
       "name": "Nome",
       "machine": "Macchina",
@@ -1741,7 +1755,8 @@
       "create": "Creazione istanza fallita.",
       "update": "Aggiornamento istanza fallito.",
       "delete": "Eliminazione istanza fallita.",
-      "action": "Azione fallita."
+      "action": "Azione fallita.",
+      "import": "Importazione container fallita."
     },
     "confirmDelete": "Eliminare l'istanza '{{name}}'? Verrà rimosso solo il record dal pannello. I file del container sull'host NON vengono cancellati.",
     "confirmDeleteWithPurge": "Fermare il container sull'host prima di eliminare?",

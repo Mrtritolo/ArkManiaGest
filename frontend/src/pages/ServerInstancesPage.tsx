@@ -1,19 +1,22 @@
 /**
- * ServerInstancesPage.tsx — ARK server instance management.
+ * ServerInstancesPage.tsx -- Unified ARK server management.
  *
- * Lists Docker-hosted ARK: Survival Ascended containers (one row per
- * ``ARKM_server_instances`` record), grouped/filterable by SSH machine.
- * Operators can run lifecycle actions (start / stop / restart / update /
- * backup / status probe), admins can delete records.  Creation opens a
- * modal form; the action log for a given instance is shown in an
- * expandable drawer below the row.
+ * Replaces the old "ARK Instances" + "Containers" duo with a single page
+ * that:
  *
- * This page intentionally does NOT cover:
- *   * creating the machine itself  -> Settings -> SSH Machines
- *   * editing game config files    -> Game Config page
- *   * the global action log        -> Event Log / Instance Actions (Fase D)
+ *   - Lists every ``ARKM_server_instances`` row registered in the panel DB.
+ *   - Lets the operator scan SSH machines for ARK containers that are NOT
+ *     yet in the DB (orphans) and IMPORT them as managed instances with
+ *     one click.
+ *   - Surfaces the lifecycle actions (start / stop / restart / update /
+ *     backup / probe / rcon) and the per-instance audit log.
+ *
+ * Visual style follows the design-system classes from index.css
+ * (.page-header / .card / .form-grid / .badge / .machine-card etc.) so
+ * fonts, spacing and colours are consistent with Machines / Players /
+ * GameConfig pages.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Play,
@@ -25,14 +28,22 @@ import {
   Pencil,
   Trash2,
   Plus,
-  ChevronDown,
-  ChevronRight,
   Server,
+  RefreshCw,
+  Search,
+  PackagePlus,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
-import { serverInstancesApi, machinesApi } from "../services/api";
+import {
+  serverInstancesApi,
+  machinesApi,
+  containersApi,
+} from "../services/api";
 import type {
   AuthUser,
+  DiscoveredContainer,
   InstanceAction,
   InstanceActionResult,
   InstanceStatus,
@@ -44,15 +55,14 @@ import type {
 } from "../types";
 
 // ---------------------------------------------------------------------------
-// Props + local types
+// Props + helpers
 // ---------------------------------------------------------------------------
 
 interface Props {
-  /** Passed in from App.tsx so we can gate the Delete button for non-admins. */
+  /** Passed in from App.tsx so the Delete button is gated for non-admins. */
   currentUser?: AuthUser | null;
 }
 
-/** Create form default values. */
 const emptyForm: ServerInstanceCreate = {
   machine_id: 0,
   name: "",
@@ -81,6 +91,26 @@ const emptyForm: ServerInstanceCreate = {
   pok_base_dir: "",
 };
 
+interface ImportFormState {
+  display_name:    string;
+  map_name:        string;
+  game_port:       number;
+  rcon_port:       number;
+  admin_password:  string;
+  server_password: string;
+}
+
+function emptyImportForm(c: DiscoveredContainer): ImportFormState {
+  return {
+    display_name:    c.server_name || c.name,
+    map_name:        c.map_name || "TheIsland_WP",
+    game_port:       7777,
+    rcon_port:       27020,
+    admin_password:  "",
+    server_password: "",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -89,26 +119,32 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   const { t } = useTranslation();
   const isAdmin = currentUser?.role === "admin";
 
-  const [instances, setInstances] = useState<ServerInstance[]>([]);
-  const [machines, setMachines] = useState<SSHMachine[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [instances, setInstances]   = useState<ServerInstance[]>([]);
+  const [machines, setMachines]     = useState<SSHMachine[]>([]);
+  const [discovered, setDiscovered] = useState<DiscoveredContainer[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState("");
+  const [success, setSuccess]       = useState("");
 
   // Filter
   const [filterMachineId, setFilterMachineId] = useState<number | "all">("all");
 
-  // Per-row action state (loading button, expanded log drawer)
+  // Per-row action state
   const [busyId, setBusyId] = useState<{ id: number; action: string } | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [actionLog, setActionLog] = useState<Record<number, InstanceAction[]>>({});
 
-  // Create / edit modal
+  // Create / edit modal-as-card
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ServerInstanceCreate>({ ...emptyForm });
   const [saving, setSaving] = useState(false);
-  const formRef = useRef<HTMLDivElement>(null);
+
+  // Scan + import-orphan flow
+  const [scanningMachineId, setScanningMachineId] = useState<number | null>(null);
+  const [importingFor, setImportingFor] = useState<DiscoveredContainer | null>(null);
+  const [importForm, setImportForm] = useState<ImportFormState | null>(null);
+  const [importing, setImporting] = useState(false);
 
   // -------------------------------------------------------------------------
   // Loaders
@@ -129,19 +165,30 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     }
   }, [filterMachineId, t]);
 
-  useEffect(() => {
-    machinesApi
-      .list(true)
-      .then((r) => setMachines(r.data))
-      .catch(() => {
-        /* non-fatal — the list just won't filter */
-      });
+  const loadMachines = useCallback(async () => {
+    try {
+      const r = await machinesApi.list(true);
+      setMachines(r.data);
+    } catch {
+      /* non-fatal */
+    }
   }, []);
 
-  useEffect(() => {
-    loadInstances();
-  }, [loadInstances]);
+  // Load any cached scan results so the page can render orphan rows
+  // without forcing the operator to hit "Scan" first on every visit.
+  const loadDiscoveredCache = useCallback(async () => {
+    try {
+      const res = await containersApi.getAllContainers();
+      // The endpoint returns `{ containers: [...], last_scan: ... }`.
+      const list = (res.data as { containers?: DiscoveredContainer[] })?.containers ?? [];
+      setDiscovered(list);
+    } catch {
+      setDiscovered([]);
+    }
+  }, []);
 
+  useEffect(() => { loadMachines(); loadDiscoveredCache(); }, [loadMachines, loadDiscoveredCache]);
+  useEffect(() => { loadInstances(); }, [loadInstances]);
   useEffect(() => {
     if (!success) return;
     const tm = setTimeout(() => setSuccess(""), 4000);
@@ -149,13 +196,41 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   }, [success]);
 
   // -------------------------------------------------------------------------
-  // Helpers
+  // Derived data
   // -------------------------------------------------------------------------
 
-  const machineName = useCallback(
-    (id: number) => machines.find((m) => m.id === id)?.name ?? `#${id}`,
+  const machineById = useMemo(
+    () => Object.fromEntries(machines.map((m) => [m.id, m])),
     [machines],
   );
+  const machineName = useCallback(
+    (id: number) => machineById[id]?.name ?? `#${id}`,
+    [machineById],
+  );
+
+  // Container is an "orphan" if no ARKM_server_instances row uses its
+  // container_name on the same machine.
+  const orphans = useMemo(() => {
+    const known = new Set(instances.map((i) => `${i.machine_id}:${i.container_name}`));
+    return discovered.filter((c) => {
+      if (filterMachineId !== "all" && c.machine_id !== filterMachineId) return false;
+      return !known.has(`${c.machine_id}:${c.name}`);
+    });
+  }, [discovered, instances, filterMachineId]);
+
+  // -------------------------------------------------------------------------
+  // Status helpers
+  // -------------------------------------------------------------------------
+
+  const statusBadgeClass = (status: InstanceStatus): string => {
+    if (status === "running") return "badge badge-md badge-online";
+    if (status === "error")   return "badge badge-md badge-error";
+    if (status === "stopped" || status === "created" || status === "stopping")
+      return "badge badge-md badge-offline";
+    if (status === "starting" || status === "updating")
+      return "badge badge-md badge-testing";
+    return "badge badge-md badge-unknown";
+  };
 
   function showActionFeedback(result: InstanceActionResult) {
     if (result.status === "success") {
@@ -163,13 +238,8 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     } else {
       setError(
         `rc=${result.exit_code}: ${(
-          result.stderr_tail ||
-          result.stdout_tail ||
-          t("instances.errors.action")
-        )
-          .split("\n")
-          .slice(-5)
-          .join(" | ")}`,
+          result.stderr_tail || result.stdout_tail || t("instances.errors.action")
+        ).split("\n").slice(-5).join(" | ")}`,
       );
     }
   }
@@ -178,9 +248,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     try {
       const res = await serverInstancesApi.get(id);
       setInstances((prev) => prev.map((i) => (i.id === id ? res.data : i)));
-    } catch {
-      /* fall back to full reload on next tick */
-    }
+    } catch { /* ignore */ }
   }
 
   // -------------------------------------------------------------------------
@@ -188,17 +256,11 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   // -------------------------------------------------------------------------
 
   type LifecycleAction =
-    | "start"
-    | "stop"
-    | "restart"
-    | "update"
-    | "backup"
-    | "probe";
+    | "start" | "stop" | "restart" | "update" | "backup" | "probe";
 
   async function runAction(id: number, action: LifecycleAction) {
     setBusyId({ id, action });
-    setError("");
-    setSuccess("");
+    setError(""); setSuccess("");
     try {
       const call =
         action === "start"   ? serverInstancesApi.start(id) :
@@ -210,19 +272,21 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       const res = await call;
       showActionFeedback(res.data);
       await refreshOne(id);
-      // If the drawer is already open, reload the log too.
       if (expandedId === id) await loadActionLog(id);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : t("instances.errors.action"),
-      );
+      setError(e instanceof Error ? e.message : t("instances.errors.action"));
     } finally {
       setBusyId(null);
     }
   }
 
+  async function handleUpdate(inst: ServerInstance) {
+    if (!window.confirm(t("instances.confirmUpdate", { name: inst.name }))) return;
+    await runAction(inst.id, "update");
+  }
+
   // -------------------------------------------------------------------------
-  // Action log drawer
+  // Per-instance log drawer
   // -------------------------------------------------------------------------
 
   async function loadActionLog(id: number) {
@@ -244,17 +308,13 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   }
 
   // -------------------------------------------------------------------------
-  // Create / edit
+  // Create / edit form
   // -------------------------------------------------------------------------
 
   function openCreate() {
     setEditingId(null);
-    setForm({
-      ...emptyForm,
-      machine_id: machines[0]?.id ?? 0,
-    });
+    setForm({ ...emptyForm, machine_id: machines[0]?.id ?? 0 });
     setShowForm(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }
 
   function openEdit(inst: ServerInstance) {
@@ -271,7 +331,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       mods: inst.mods ?? "",
       passive_mods: inst.passive_mods ?? "",
       custom_args: inst.custom_args ?? "",
-      admin_password: "",            // never returned — blank = keep
+      admin_password: "",
       server_password: "",
       game_port: inst.game_port,
       rcon_port: inst.rcon_port,
@@ -287,7 +347,6 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       pok_base_dir: inst.pok_base_dir,
     });
     setShowForm(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }
 
   function closeForm() {
@@ -296,25 +355,19 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     setForm({ ...emptyForm });
   }
 
-  function updateField<K extends keyof ServerInstanceCreate>(
-    key: K,
-    value: ServerInstanceCreate[K],
+  function setField<K extends keyof ServerInstanceCreate>(
+    key: K, value: ServerInstanceCreate[K],
   ): void {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   async function submitForm(evt: React.FormEvent) {
     evt.preventDefault();
-    setSaving(true);
-    setError("");
+    setSaving(true); setError("");
     try {
       if (editingId === null) {
-        // Create path — the form's admin_password is required.
         await serverInstancesApi.create(form);
-        setSuccess(t("instances.form.save"));
       } else {
-        // Update path — strip empty passwords so they're not overwritten,
-        // and omit machine_id / name (immutable via PUT).
         const payload: ServerInstanceUpdate = {
           display_name: form.display_name,
           description: form.description,
@@ -337,37 +390,19 @@ export default function ServerInstancesPage({ currentUser }: Props) {
           update_coordination_priority: form.update_coordination_priority,
           cpu_optimization: form.cpu_optimization,
         };
-        if (form.admin_password) payload.admin_password = form.admin_password;
+        if (form.admin_password)  payload.admin_password  = form.admin_password;
         if (form.server_password) payload.server_password = form.server_password;
         await serverInstancesApi.update(editingId, payload);
-        setSuccess(t("instances.form.save"));
       }
+      setSuccess(t("instances.form.save"));
       await loadInstances();
       closeForm();
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t(editingId === null ? "instances.errors.create" : "instances.errors.update"),
-      );
+      setError(e instanceof Error ? e.message
+        : t(editingId === null ? "instances.errors.create" : "instances.errors.update"));
     } finally {
       setSaving(false);
     }
-  }
-
-  // -------------------------------------------------------------------------
-  // Delete
-  // -------------------------------------------------------------------------
-
-  // POK "update" pulls a fresh ASA build from Steam; on slow hosts this
-  // can exceed 15 minutes.  The backend call is blocking -- the button
-  // is disabled via busyId until the response comes back, and the user
-  // is warned up front.
-  async function handleUpdate(inst: ServerInstance) {
-    if (!window.confirm(t("instances.confirmUpdate", { name: inst.name }))) {
-      return;
-    }
-    await runAction(inst.id, "update");
   }
 
   async function handleDelete(inst: ServerInstance) {
@@ -384,515 +419,505 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   }
 
   // -------------------------------------------------------------------------
-  // Render helpers
+  // Scan + import-orphan
   // -------------------------------------------------------------------------
 
-  const statusPill = useMemo(
-    () => (status: InstanceStatus) => {
-      const colorMap: Record<InstanceStatus, string> = {
-        created:  "var(--text-muted)",
-        starting: "var(--accent-warning, #f59e0b)",
-        running:  "var(--accent-success, #10b981)",
-        stopping: "var(--accent-warning, #f59e0b)",
-        stopped:  "var(--text-muted)",
-        updating: "var(--accent, #3b82f6)",
-        error:    "var(--accent-danger, #ef4444)",
-      };
-      return (
-        <span
-          style={{
-            display: "inline-block",
-            padding: "0.15rem 0.6rem",
-            borderRadius: "999px",
-            background: "color-mix(in srgb, var(--bg-elevated) 60%, transparent)",
-            color: colorMap[status],
-            fontSize: "0.78rem",
-            fontWeight: 600,
-            border: `1px solid ${colorMap[status]}`,
-          }}
-        >
-          {t(`instances.status.${status}`)}
-        </span>
-      );
-    },
-    [t],
-  );
+  async function handleScanAll() {
+    setError("");
+    if (machines.length === 0) return;
+    for (const m of machines) {
+      setScanningMachineId(m.id);
+      try {
+        await containersApi.scanMachine(m.id);
+      } catch {
+        // Per-machine failures don't abort the bulk scan; the missing
+        // machine simply contributes 0 orphans.
+      }
+    }
+    setScanningMachineId(null);
+    await loadDiscoveredCache();
+    setSuccess(t("instances.scanDone", { count: machines.length }));
+  }
+
+  function openImport(c: DiscoveredContainer) {
+    setImportingFor(c);
+    setImportForm(emptyImportForm(c));
+  }
+  function closeImport() {
+    setImportingFor(null);
+    setImportForm(null);
+  }
+  async function submitImport(evt: React.FormEvent) {
+    evt.preventDefault();
+    if (!importingFor || !importForm) return;
+    setImporting(true); setError("");
+    try {
+      await serverInstancesApi.importFromContainer({
+        machine_id:      importingFor.machine_id,
+        container_name:  importingFor.name,
+        admin_password:  importForm.admin_password,
+        server_password: importForm.server_password || undefined,
+        display_name:    importForm.display_name,
+        map_name:        importForm.map_name,
+        game_port:       importForm.game_port,
+        rcon_port:       importForm.rcon_port,
+      });
+      setSuccess(t("instances.importDone", { name: importingFor.name }));
+      closeImport();
+      await loadInstances();
+    } catch (e) {
+      const detail =
+        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? (e instanceof Error ? e.message : t("instances.errors.import"));
+      setError(detail);
+    } finally {
+      setImporting(false);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
 
+  const filteredInstances = filterMachineId === "all"
+    ? instances
+    : instances.filter((i) => i.machine_id === filterMachineId);
+
+  const isAnyScanning = scanningMachineId !== null;
+
   return (
-    <div className="page">
-      <header className="page-header">
+    <div>
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <div className="page-header">
         <div>
           <h1 className="page-title">
-            <Server size={22} style={{ verticalAlign: "-4px", marginRight: "0.5rem" }} />
-            {t("instances.title")}
+            <Server size={20} /> {t("instances.title")}
           </h1>
-          <p className="page-subtitle">{t("instances.subtitle")}</p>
+          <p className="page-subtitle">
+            {t("instances.subtitle")}
+            {filteredInstances.length > 0 && (
+              <span className="page-subtitle-count">
+                {" "}{t("instances.subtitleCount", { count: filteredInstances.length })}
+              </span>
+            )}
+          </p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
-              {t("instances.filterMachine")}
-            </span>
-            <select
-              value={filterMachineId}
-              onChange={(e) =>
-                setFilterMachineId(
-                  e.target.value === "all" ? "all" : Number(e.target.value),
-                )
-              }
-            >
-              <option value="all">{t("instances.filterAll")}</option>
-              {machines.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="page-header-actions">
+          <select
+            className="form-input"
+            value={filterMachineId}
+            onChange={(e) =>
+              setFilterMachineId(
+                e.target.value === "all" ? "all" : Number(e.target.value),
+              )
+            }
+            aria-label={t("instances.filterMachine")}
+          >
+            <option value="all">{t("instances.filterAll")}</option>
+            {machines.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
           <button
-            className="btn-primary"
+            className="btn btn-secondary"
+            onClick={handleScanAll}
+            disabled={isAnyScanning || machines.length === 0}
+          >
+            <RefreshCw size={14} style={{ animation: isAnyScanning ? "spin 1s linear infinite" : "none" }} />
+            {isAnyScanning ? t("instances.scanning") : t("instances.scanAll")}
+          </button>
+          <button
+            className="btn btn-primary"
             onClick={openCreate}
             disabled={machines.length === 0}
           >
-            <Plus size={15} style={{ verticalAlign: "-3px" }} /> {t("instances.newButton")}
+            <Plus size={14} /> {t("instances.newButton")}
           </button>
         </div>
-      </header>
+      </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {success && <div className="alert alert-success">{success}</div>}
-
-      {loading ? (
-        <p style={{ color: "var(--text-muted)" }}>{t("instances.loading")}</p>
-      ) : instances.length === 0 ? (
-        <p style={{ color: "var(--text-muted)" }}>{t("instances.noInstances")}</p>
-      ) : (
-        <div className="table-wrapper">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: "2rem" }}></th>
-                <th>{t("instances.columns.name")}</th>
-                <th>{t("instances.columns.machine")}</th>
-                <th>{t("instances.columns.map")}</th>
-                <th>{t("instances.columns.status")}</th>
-                <th>{t("instances.columns.ports")}</th>
-                <th>{t("instances.columns.cluster")}</th>
-                <th style={{ textAlign: "right" }}>
-                  {t("instances.columns.actions")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {instances.map((inst) => (
-                <>
-                  <tr key={inst.id}>
-                    <td>
-                      <button
-                        className="btn-ghost"
-                        onClick={() => toggleExpanded(inst.id)}
-                        title={t("instances.actions.viewLog")}
-                      >
-                        {expandedId === inst.id ? (
-                          <ChevronDown size={15} />
-                        ) : (
-                          <ChevronRight size={15} />
-                        )}
-                      </button>
-                    </td>
-                    <td>
-                      <strong>{inst.display_name || inst.name}</strong>
-                      <br />
-                      <small style={{ color: "var(--text-muted)" }}>
-                        {inst.name}
-                      </small>
-                    </td>
-                    <td>{machineName(inst.machine_id)}</td>
-                    <td>
-                      {inst.map_name}
-                      <br />
-                      <small style={{ color: "var(--text-muted)" }}>
-                        {inst.max_players} slots
-                      </small>
-                    </td>
-                    <td>{statusPill(inst.status)}</td>
-                    <td style={{ fontFamily: "monospace", fontSize: "0.82rem" }}>
-                      {inst.game_port}
-                      <br />
-                      <small style={{ color: "var(--text-muted)" }}>
-                        rcon {inst.rcon_port}
-                      </small>
-                    </td>
-                    <td>{inst.cluster_id || "—"}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <div style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <ActionBtn
-                          icon={<Play size={14} />}
-                          label={t("instances.actions.start")}
-                          onClick={() => runAction(inst.id, "start")}
-                          busy={busyId?.id === inst.id && busyId?.action === "start"}
-                          disabled={!!busyId}
-                        />
-                        <ActionBtn
-                          icon={<Square size={14} />}
-                          label={t("instances.actions.stop")}
-                          onClick={() => runAction(inst.id, "stop")}
-                          busy={busyId?.id === inst.id && busyId?.action === "stop"}
-                          disabled={!!busyId}
-                        />
-                        <ActionBtn
-                          icon={<RotateCw size={14} />}
-                          label={t("instances.actions.restart")}
-                          onClick={() => runAction(inst.id, "restart")}
-                          busy={busyId?.id === inst.id && busyId?.action === "restart"}
-                          disabled={!!busyId}
-                        />
-                        <ActionBtn
-                          icon={<Activity size={14} />}
-                          label={t("instances.actions.probe")}
-                          onClick={() => runAction(inst.id, "probe")}
-                          busy={busyId?.id === inst.id && busyId?.action === "probe"}
-                          disabled={!!busyId}
-                        />
-                        <ActionBtn
-                          icon={<Download size={14} />}
-                          label={t("instances.actions.backup")}
-                          onClick={() => runAction(inst.id, "backup")}
-                          busy={busyId?.id === inst.id && busyId?.action === "backup"}
-                          disabled={!!busyId}
-                        />
-                        <ActionBtn
-                          icon={<DownloadCloud size={14} />}
-                          label={t("instances.actions.update")}
-                          onClick={() => handleUpdate(inst)}
-                          busy={busyId?.id === inst.id && busyId?.action === "update"}
-                          disabled={!!busyId}
-                        />
-                        <button
-                          className="btn-ghost"
-                          onClick={() => openEdit(inst)}
-                          title={t("instances.actions.edit")}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        {isAdmin && (
-                          <button
-                            className="btn-ghost"
-                            onClick={() => handleDelete(inst)}
-                            title={t("instances.actions.delete")}
-                            style={{ color: "var(--accent-danger, #ef4444)" }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedId === inst.id && (
-                    <tr key={`${inst.id}-log`}>
-                      <td colSpan={8} style={{ background: "var(--bg-subtle)" }}>
-                        <ActionLogPanel
-                          instanceName={inst.display_name || inst.name}
-                          actions={actionLog[inst.id]}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
+      {/* ── Feedback alerts ─────────────────────────────────────────── */}
+      {error && (
+        <div className="alert alert-error mb-6">
+          <span className="alert-icon">!</span> {error}
+        </div>
+      )}
+      {success && (
+        <div className="alert alert-success mb-6">
+          <span className="alert-icon">✓</span> {success}
         </div>
       )}
 
+      {/* ── Create / edit form ─────────────────────────────────────── */}
       {showForm && (
-        <div ref={formRef} className="card" style={{ marginTop: "1.5rem" }}>
-          <h2 style={{ marginTop: 0 }}>
-            {editingId === null
-              ? t("instances.form.newTitle")
-              : t("instances.form.editTitle")}
+        <div className="card card-form mb-8">
+          <h2 className="card-title">
+            <span className="card-title-icon">{editingId === null ? "+" : "~"}</span>
+            {editingId === null ? t("instances.form.newTitle") : t("instances.form.editTitle")}
           </h2>
           <form onSubmit={submitForm}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: "1rem",
-              }}
-            >
-              <Field label={t("instances.form.machine")}>
+            <div className="form-grid">
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.machine")}</label>
                 <select
+                  className="form-input"
                   value={form.machine_id || ""}
-                  onChange={(e) =>
-                    updateField("machine_id", Number(e.target.value))
-                  }
+                  onChange={(e) => setField("machine_id", Number(e.target.value))}
                   disabled={editingId !== null}
                   required
                 >
-                  <option value="" disabled>
-                    —
-                  </option>
+                  <option value="" disabled>—</option>
                   {machines.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
+                    <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
-              </Field>
+              </div>
 
-              <Field
-                label={t("instances.form.name")}
-                hint={t("instances.form.nameHint")}
-              >
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.name")}</label>
                 <input
+                  className="form-input"
                   value={form.name}
-                  onChange={(e) => updateField("name", e.target.value)}
+                  onChange={(e) => setField("name", e.target.value)}
                   pattern="[a-zA-Z0-9][a-zA-Z0-9_\-]*"
                   disabled={editingId !== null}
                   required
                 />
-              </Field>
+                <span className="form-hint">{t("instances.form.nameHint")}</span>
+              </div>
 
-              <Field label={t("instances.form.displayName")}>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.displayName")}</label>
                 <input
+                  className="form-input"
                   value={form.display_name ?? ""}
-                  onChange={(e) => updateField("display_name", e.target.value)}
+                  onChange={(e) => setField("display_name", e.target.value)}
                 />
-              </Field>
+              </div>
 
-              <Field label={t("instances.form.description")}>
+              <div className="form-group form-group-full">
+                <label className="form-label">{t("instances.form.description")}</label>
                 <input
+                  className="form-input"
                   value={form.description ?? ""}
-                  onChange={(e) => updateField("description", e.target.value)}
+                  onChange={(e) => setField("description", e.target.value)}
                 />
-              </Field>
+              </div>
 
-              <Field label={t("instances.form.map")}>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.map")}</label>
                 <input
+                  className="form-input"
                   value={form.map_name ?? ""}
-                  onChange={(e) => updateField("map_name", e.target.value)}
+                  onChange={(e) => setField("map_name", e.target.value)}
                   required
                 />
-              </Field>
-
-              <Field label={t("instances.form.sessionName")}>
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.sessionName")}</label>
                 <input
+                  className="form-input"
                   value={form.session_name ?? ""}
-                  onChange={(e) => updateField("session_name", e.target.value)}
+                  onChange={(e) => setField("session_name", e.target.value)}
                 />
-              </Field>
-
-              <Field label={t("instances.form.maxPlayers")}>
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.maxPlayers")}</label>
                 <input
+                  className="form-input"
                   type="number"
-                  min={1}
-                  max={500}
+                  min={1} max={500}
                   value={form.max_players ?? 70}
-                  onChange={(e) =>
-                    updateField("max_players", Number(e.target.value))
-                  }
+                  onChange={(e) => setField("max_players", Number(e.target.value))}
                 />
-              </Field>
-
-              <Field label={t("instances.form.cluster")}>
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.cluster")}</label>
                 <input
+                  className="form-input"
                   value={form.cluster_id ?? ""}
-                  onChange={(e) => updateField("cluster_id", e.target.value)}
+                  onChange={(e) => setField("cluster_id", e.target.value)}
                 />
-              </Field>
+              </div>
 
-              <Field label={t("instances.form.gamePort")}>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.gamePort")}</label>
                 <input
-                  type="number"
-                  min={1}
-                  max={65535}
+                  className="form-input"
+                  type="number" min={1} max={65535}
                   value={form.game_port ?? 7777}
-                  onChange={(e) =>
-                    updateField("game_port", Number(e.target.value))
-                  }
+                  onChange={(e) => setField("game_port", Number(e.target.value))}
                 />
-              </Field>
-
-              <Field label={t("instances.form.rconPort")}>
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.rconPort")}</label>
                 <input
-                  type="number"
-                  min={1}
-                  max={65535}
+                  className="form-input"
+                  type="number" min={1} max={65535}
                   value={form.rcon_port ?? 27020}
-                  onChange={(e) =>
-                    updateField("rcon_port", Number(e.target.value))
-                  }
+                  onChange={(e) => setField("rcon_port", Number(e.target.value))}
                 />
-              </Field>
-
-              <Field
-                label={t("instances.form.adminPassword")}
-                hint={
-                  editingId !== null
-                    ? t("instances.form.adminPasswordEditHint")
-                    : undefined
-                }
-              >
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.adminPassword")}</label>
                 <input
+                  className="form-input"
                   type="password"
                   value={form.admin_password}
-                  onChange={(e) =>
-                    updateField("admin_password", e.target.value)
-                  }
+                  onChange={(e) => setField("admin_password", e.target.value)}
                   minLength={editingId === null ? 4 : 0}
                   required={editingId === null}
                 />
-              </Field>
-
-              <Field label={t("instances.form.serverPassword")}>
+                {editingId !== null && (
+                  <span className="form-hint">{t("instances.form.adminPasswordEditHint")}</span>
+                )}
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.serverPassword")}</label>
                 <input
+                  className="form-input"
                   type="password"
                   value={form.server_password ?? ""}
-                  onChange={(e) =>
-                    updateField("server_password", e.target.value)
-                  }
+                  onChange={(e) => setField("server_password", e.target.value)}
                 />
-              </Field>
+              </div>
 
-              <Field label={t("instances.form.image")}>
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.image")}</label>
                 <input
+                  className="form-input"
                   value={form.image ?? ""}
-                  onChange={(e) => updateField("image", e.target.value)}
+                  onChange={(e) => setField("image", e.target.value)}
                 />
-              </Field>
-
-              <Field label={t("instances.form.memLimit")}>
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.memLimit")}</label>
                 <input
-                  type="number"
-                  min={1024}
-                  max={131072}
+                  className="form-input"
+                  type="number" min={1024} max={131072}
                   value={form.mem_limit_mb ?? 16384}
-                  onChange={(e) =>
-                    updateField("mem_limit_mb", Number(e.target.value))
-                  }
+                  onChange={(e) => setField("mem_limit_mb", Number(e.target.value))}
                 />
-              </Field>
-
-              <Field label={t("instances.form.timezone")}>
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.timezone")}</label>
                 <input
+                  className="form-input"
                   value={form.timezone ?? ""}
-                  onChange={(e) => updateField("timezone", e.target.value)}
+                  onChange={(e) => setField("timezone", e.target.value)}
                 />
-              </Field>
+              </div>
 
-              <Field label={t("instances.form.updateRole")}>
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.mods")}</label>
+                <input
+                  className="form-input"
+                  value={form.mods ?? ""}
+                  onChange={(e) => setField("mods", e.target.value)}
+                />
+              </div>
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.passiveMods")}</label>
+                <input
+                  className="form-input"
+                  value={form.passive_mods ?? ""}
+                  onChange={(e) => setField("passive_mods", e.target.value)}
+                />
+              </div>
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.customArgs")}</label>
+                <input
+                  className="form-input"
+                  value={form.custom_args ?? ""}
+                  onChange={(e) => setField("custom_args", e.target.value)}
+                />
+              </div>
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.pokBaseDir")}</label>
+                <input
+                  className="form-input"
+                  value={form.pok_base_dir ?? ""}
+                  onChange={(e) => setField("pok_base_dir", e.target.value)}
+                />
+              </div>
+
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.updateRole")}</label>
                 <select
+                  className="form-input"
                   value={form.update_coordination_role ?? "FOLLOWER"}
                   onChange={(e) =>
-                    updateField(
-                      "update_coordination_role",
-                      e.target.value as UpdateCoordinationRole,
-                    )
+                    setField("update_coordination_role", e.target.value as UpdateCoordinationRole)
                   }
                 >
                   <option value="FOLLOWER">FOLLOWER</option>
                   <option value="MASTER">MASTER</option>
                 </select>
-              </Field>
-
-              <Field label={t("instances.form.updatePriority")}>
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.updatePriority")}</label>
                 <input
-                  type="number"
-                  min={0}
-                  max={100}
+                  className="form-input"
+                  type="number" min={0} max={100}
                   value={form.update_coordination_priority ?? 1}
-                  onChange={(e) =>
-                    updateField(
-                      "update_coordination_priority",
-                      Number(e.target.value),
-                    )
-                  }
+                  onChange={(e) => setField("update_coordination_priority", Number(e.target.value))}
                 />
-              </Field>
+              </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: "1rem",
-                marginTop: "1rem",
-              }}
-            >
-              <Field label={t("instances.form.mods")}>
-                <input
-                  value={form.mods ?? ""}
-                  onChange={(e) => updateField("mods", e.target.value)}
-                />
-              </Field>
-              <Field label={t("instances.form.passiveMods")}>
-                <input
-                  value={form.passive_mods ?? ""}
-                  onChange={(e) => updateField("passive_mods", e.target.value)}
-                />
-              </Field>
-              <Field label={t("instances.form.customArgs")}>
-                <input
-                  value={form.custom_args ?? ""}
-                  onChange={(e) => updateField("custom_args", e.target.value)}
-                />
-              </Field>
-              <Field label={t("instances.form.pokBaseDir")}>
-                <input
-                  value={form.pok_base_dir ?? ""}
-                  onChange={(e) => updateField("pok_base_dir", e.target.value)}
-                />
-              </Field>
-            </div>
-
-            <fieldset
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm, 4px)",
-                padding: "0.75rem 1rem",
-                margin: "1rem 0",
-              }}
-            >
-              <legend style={{ padding: "0 0.4rem", fontSize: "0.82rem" }}>
-                {t("instances.form.flags")}
-              </legend>
-              <div style={{ display: "flex", gap: "1.2rem", flexWrap: "wrap" }}>
-                <Checkbox
-                  label={t("instances.form.modApi")}
-                  checked={!!form.mod_api}
-                  onChange={(v) => updateField("mod_api", v)}
-                />
-                <Checkbox
-                  label={t("instances.form.battleye")}
-                  checked={!!form.battleye}
-                  onChange={(v) => updateField("battleye", v)}
-                />
-                <Checkbox
-                  label={t("instances.form.updateServer")}
-                  checked={!!form.update_server}
-                  onChange={(v) => updateField("update_server", v)}
-                />
-                <Checkbox
-                  label={t("instances.form.cpuOptimization")}
-                  checked={!!form.cpu_optimization}
-                  onChange={(v) => updateField("cpu_optimization", v)}
-                />
+            <fieldset className="form-fieldset mt-6">
+              <legend className="form-legend">{t("instances.form.flags")}</legend>
+              <div className="form-row">
+                {([
+                  ["mod_api",          t("instances.form.modApi")],
+                  ["battleye",         t("instances.form.battleye")],
+                  ["update_server",    t("instances.form.updateServer")],
+                  ["cpu_optimization", t("instances.form.cpuOptimization")],
+                ] as Array<[keyof ServerInstanceCreate, string]>).map(([k, label]) => (
+                  <label key={k as string} className="form-label-inline">
+                    <input
+                      className="form-checkbox"
+                      type="checkbox"
+                      checked={!!form[k]}
+                      onChange={(e) => setField(k, e.target.checked as never)}
+                    />
+                    {label}
+                  </label>
+                ))}
               </div>
             </fieldset>
 
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+            <div className="form-actions">
               <button
-                type="submit"
-                className="btn-primary"
+                type="submit" className="btn btn-primary"
                 disabled={saving || !form.machine_id}
               >
                 {saving ? t("instances.form.saving") : t("instances.form.save")}
               </button>
-              <button type="button" className="btn-secondary" onClick={closeForm}>
+              <button type="button" className="btn btn-secondary" onClick={closeForm}>
+                {t("instances.form.cancel")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ── Registered instances ─────────────────────────────────────── */}
+      {loading ? (
+        <p className="card-text">{t("instances.loading")}</p>
+      ) : filteredInstances.length === 0 ? (
+        <div className="card card-muted">
+          <p className="card-text">{t("instances.noInstances")}</p>
+        </div>
+      ) : (
+        <div className="card-grid card-grid-1col">
+          {filteredInstances.map((inst) => (
+            <InstanceCard
+              key={inst.id}
+              inst={inst}
+              busyId={busyId}
+              isAdmin={isAdmin}
+              expanded={expandedId === inst.id}
+              actions={actionLog[inst.id]}
+              machineLabel={machineName(inst.machine_id)}
+              statusBadgeClass={statusBadgeClass}
+              onToggle={() => toggleExpanded(inst.id)}
+              onAction={(a) => runAction(inst.id, a)}
+              onUpdate={() => handleUpdate(inst)}
+              onEdit={() => openEdit(inst)}
+              onDelete={() => handleDelete(inst)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Discovered orphan containers ────────────────────────────── */}
+      {orphans.length > 0 && (
+        <div className="mt-8">
+          <h2 className="card-title" style={{ marginBottom: "0.6rem" }}>
+            <span className="card-title-icon"><Search size={14} /></span>
+            {t("instances.orphansTitle", { count: orphans.length })}
+          </h2>
+          <p className="card-text mb-6">{t("instances.orphansHint")}</p>
+          <div className="card-grid card-grid-1col">
+            {orphans.map((c) => (
+              <OrphanCard
+                key={`${c.machine_id}-${c.name}`}
+                container={c}
+                machineLabel={machineName(c.machine_id)}
+                onImport={() => openImport(c)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Import dialog (rendered as inline card, scrolls into view) ── */}
+      {importingFor && importForm && (
+        <div className="card card-form mt-8">
+          <h2 className="card-title">
+            <span className="card-title-icon"><PackagePlus size={14} /></span>
+            {t("instances.importTitle", { name: importingFor.name })}
+          </h2>
+          <p className="card-text mb-6">
+            {t("instances.importHint", { machine: machineName(importingFor.machine_id) })}
+          </p>
+          <form onSubmit={submitImport}>
+            <div className="form-grid">
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.displayName")}</label>
+                <input
+                  className="form-input"
+                  value={importForm.display_name}
+                  onChange={(e) => setImportForm({ ...importForm, display_name: e.target.value })}
+                />
+              </div>
+              <div className="form-group form-group-3">
+                <label className="form-label">{t("instances.form.map")}</label>
+                <input
+                  className="form-input"
+                  value={importForm.map_name}
+                  onChange={(e) => setImportForm({ ...importForm, map_name: e.target.value })}
+                />
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.gamePort")}</label>
+                <input
+                  className="form-input" type="number" min={1} max={65535}
+                  value={importForm.game_port}
+                  onChange={(e) => setImportForm({ ...importForm, game_port: Number(e.target.value) })}
+                />
+              </div>
+              <div className="form-group form-group-1">
+                <label className="form-label">{t("instances.form.rconPort")}</label>
+                <input
+                  className="form-input" type="number" min={1} max={65535}
+                  value={importForm.rcon_port}
+                  onChange={(e) => setImportForm({ ...importForm, rcon_port: Number(e.target.value) })}
+                />
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.adminPassword")}</label>
+                <input
+                  className="form-input" type="password" minLength={4} required
+                  value={importForm.admin_password}
+                  onChange={(e) => setImportForm({ ...importForm, admin_password: e.target.value })}
+                />
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t("instances.form.serverPassword")}</label>
+                <input
+                  className="form-input" type="password"
+                  value={importForm.server_password}
+                  onChange={(e) => setImportForm({ ...importForm, server_password: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={importing}>
+                {importing ? t("instances.form.saving") : t("instances.importConfirm")}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={closeImport}>
                 {t("instances.form.cancel")}
               </button>
             </div>
@@ -904,146 +929,172 @@ export default function ServerInstancesPage({ currentUser }: Props) {
 }
 
 // ---------------------------------------------------------------------------
-// Small presentational helpers (local to this file on purpose)
+// Sub-components (kept local because they are page-specific)
 // ---------------------------------------------------------------------------
 
-function Field(props: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-      <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
-        {props.label}
-      </span>
-      {props.children}
-      {props.hint && (
-        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-          {props.hint}
-        </span>
-      )}
-    </label>
-  );
-}
-
-function Checkbox(props: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-      <input
-        type="checkbox"
-        checked={props.checked}
-        onChange={(e) => props.onChange(e.target.checked)}
-      />
-      <span style={{ fontSize: "0.85rem" }}>{props.label}</span>
-    </label>
-  );
-}
-
-function ActionBtn(props: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  busy: boolean;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <button
-      className="btn-ghost"
-      onClick={props.onClick}
-      disabled={props.disabled}
-      title={props.label}
-      style={{ opacity: props.busy ? 0.5 : 1 }}
-    >
-      {props.busy ? <small>{t("instances.actions.running")}</small> : props.icon}
-    </button>
-  );
-}
-
-function ActionLogPanel(props: {
-  instanceName: string;
+interface InstanceCardProps {
+  inst: ServerInstance;
+  busyId: { id: number; action: string } | null;
+  isAdmin: boolean;
+  expanded: boolean;
   actions: InstanceAction[] | undefined;
-}) {
+  machineLabel: string;
+  statusBadgeClass: (s: InstanceStatus) => string;
+  onToggle: () => void;
+  onAction: (a: "start" | "stop" | "restart" | "backup" | "probe") => void;
+  onUpdate: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function InstanceCard(p: InstanceCardProps) {
   const { t } = useTranslation();
-  const rows = props.actions;
+  const { inst, busyId, isAdmin, expanded, actions } = p;
+  const busy = busyId?.id === inst.id;
+
   return (
-    <div style={{ padding: "0.75rem 1rem" }}>
-      <h4 style={{ marginTop: 0 }}>
-        {t("instances.log.title", { name: props.instanceName })}
-      </h4>
-      {!rows ? (
-        <p style={{ color: "var(--text-muted)" }}>…</p>
-      ) : rows.length === 0 ? (
-        <p style={{ color: "var(--text-muted)" }}>{t("instances.log.empty")}</p>
-      ) : (
-        <div style={{ display: "grid", gap: "0.5rem" }}>
-          {rows.map((a) => (
-            <details
-              key={a.id}
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm, 4px)",
-                padding: "0.4rem 0.7rem",
-                background: "var(--bg-surface)",
-              }}
-            >
-              <summary
-                style={{
-                  cursor: "pointer",
-                  display: "flex",
-                  gap: "1rem",
-                  fontSize: "0.85rem",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>{a.action}</span>
-                <span
-                  style={{
-                    color:
-                      a.status === "success"
-                        ? "var(--accent-success, #10b981)"
-                        : a.status === "failed"
-                        ? "var(--accent-danger, #ef4444)"
-                        : "var(--text-muted)",
-                  }}
-                >
-                  {a.status}
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>
-                  {t("instances.log.exitCode")} {a.exit_code ?? "—"}
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>
-                  {a.duration_ms ?? "—"} ms
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>
-                  {a.started_at ?? ""}
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>
-                  {a.username ? `@${a.username}` : ""}
-                </span>
-              </summary>
-              <pre
-                style={{
-                  margin: "0.5rem 0 0",
-                  padding: "0.5rem",
-                  background: "var(--bg-code, rgba(0,0,0,0.2))",
-                  borderRadius: "var(--radius-sm, 4px)",
-                  maxHeight: "240px",
-                  overflow: "auto",
-                  fontSize: "0.78rem",
-                }}
-              >
-                {a.stdout || a.stderr || t("instances.log.noStdout")}
-              </pre>
-            </details>
-          ))}
+    <div className={`machine-card ${!inst.is_active ? "machine-card-inactive" : ""}`}>
+      <div className="machine-card-header" onClick={p.onToggle} style={{ cursor: "pointer" }}>
+        <div className="machine-card-info">
+          <h3 className="machine-card-name">
+            {inst.display_name || inst.name}
+            <span className="machine-card-tag">{inst.map_name}</span>
+            {inst.cluster_id && <span className="machine-card-tag">cluster: {inst.cluster_id}</span>}
+          </h3>
+          <p className="machine-card-host">
+            {p.machineLabel} &middot; {inst.container_name} &middot; {inst.game_port}/{inst.rcon_port}
+          </p>
+          {inst.description && <p className="machine-card-desc">{inst.description}</p>}
+        </div>
+        <div className="machine-card-status">
+          <span className={p.statusBadgeClass(inst.status)}>
+            <span className="badge-dot" />
+            {t(`instances.status.${inst.status}`)}
+          </span>
+          <span className="machine-card-expand">
+            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </span>
+        </div>
+      </div>
+
+      {/* Always-visible action toolbar */}
+      <div className="machine-card-actions">
+        <ActionBtn icon={<Play     size={14} />} label={t("instances.actions.start")}   busy={busy && busyId?.action === "start"}   disabled={!!busyId} onClick={() => p.onAction("start")} />
+        <ActionBtn icon={<Square   size={14} />} label={t("instances.actions.stop")}    busy={busy && busyId?.action === "stop"}    disabled={!!busyId} onClick={() => p.onAction("stop")} />
+        <ActionBtn icon={<RotateCw size={14} />} label={t("instances.actions.restart")} busy={busy && busyId?.action === "restart"} disabled={!!busyId} onClick={() => p.onAction("restart")} />
+        <ActionBtn icon={<Activity size={14} />} label={t("instances.actions.probe")}   busy={busy && busyId?.action === "probe"}   disabled={!!busyId} onClick={() => p.onAction("probe")} />
+        <ActionBtn icon={<Download size={14} />} label={t("instances.actions.backup")}  busy={busy && busyId?.action === "backup"}  disabled={!!busyId} onClick={() => p.onAction("backup")} />
+        <ActionBtn icon={<DownloadCloud size={14} />} label={t("instances.actions.update")} busy={busy && busyId?.action === "update"} disabled={!!busyId} onClick={p.onUpdate} />
+        <button className="btn btn-ghost btn-sm" onClick={p.onEdit} title={t("instances.actions.edit")}>
+          <Pencil size={14} />
+        </button>
+        {isAdmin && (
+          <button className="btn btn-danger btn-sm" onClick={p.onDelete} title={t("instances.actions.delete")}>
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="machine-card-body">
+          <h4 className="form-label" style={{ marginTop: "0.7rem" }}>
+            {t("instances.log.title", { name: inst.display_name || inst.name })}
+          </h4>
+          {!actions ? (
+            <p className="card-text">…</p>
+          ) : actions.length === 0 ? (
+            <p className="card-text">{t("instances.log.empty")}</p>
+          ) : (
+            <div className="card-grid card-grid-1col" style={{ gap: "0.4rem", marginTop: "0.4rem" }}>
+              {actions.map((a) => (
+                <details key={a.id} className="card card-muted" style={{ padding: "0.45rem 0.7rem" }}>
+                  <summary style={{ cursor: "pointer", display: "flex", gap: "0.7rem", flexWrap: "wrap", fontSize: "0.78rem" }}>
+                    <span style={{ fontWeight: 700 }}>{a.action}</span>
+                    <span className={
+                      a.status === "success" ? "form-message form-message-success"
+                      : a.status === "failed" ? "form-message form-message-error"
+                      : "form-message"
+                    }>{a.status}</span>
+                    <span style={{ color: "var(--text-muted)" }}>rc {a.exit_code ?? "—"}</span>
+                    <span style={{ color: "var(--text-muted)" }}>{a.duration_ms ?? "—"} ms</span>
+                    <span style={{ color: "var(--text-muted)" }}>{a.started_at ?? ""}</span>
+                    {a.username && <span style={{ color: "var(--text-muted)" }}>@{a.username}</span>}
+                  </summary>
+                  <pre className="form-input" style={{ marginTop: "0.4rem", maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap", fontSize: "0.72rem" }}>
+                    {a.stdout || a.stderr || t("instances.log.noStdout")}
+                  </pre>
+                </details>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+interface OrphanCardProps {
+  container: DiscoveredContainer;
+  machineLabel: string;
+  onImport: () => void;
+}
+
+function OrphanCard({ container, machineLabel, onImport }: OrphanCardProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="machine-card machine-card-inactive">
+      <div className="machine-card-header">
+        <div className="machine-card-info">
+          <h3 className="machine-card-name">
+            {container.server_name || container.name}
+            <span className="machine-card-tag">{container.map_name || "?"}</span>
+            <span className={
+              container.process_running
+                ? "badge badge-md badge-online"
+                : "badge badge-md badge-offline"
+            }>
+              <span className="badge-dot" />
+              {container.status || (container.process_running ? "running" : "stopped")}
+            </span>
+          </h3>
+          <p className="machine-card-host">
+            {machineLabel} &middot; {container.name}
+            {container.path && <> &middot; <code>{container.path}</code></>}
+          </p>
+          {container.plugins?.length > 0 && (
+            <p className="machine-card-desc">
+              {t("instances.orphanPlugins", { plugins: container.plugins.join(", ") })}
+            </p>
+          )}
+        </div>
+        <div className="machine-card-status">
+          <button className="btn btn-primary btn-sm" onClick={onImport}>
+            <PackagePlus size={14} /> {t("instances.importButton")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ActionBtnProps {
+  icon: React.ReactNode;
+  label: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}
+
+function ActionBtn({ icon, label, busy, disabled, onClick }: ActionBtnProps) {
+  const { t } = useTranslation();
+  return (
+    <button
+      className="btn btn-ghost btn-sm"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+    >
+      {busy ? <span style={{ fontSize: "0.7rem" }}>{t("instances.actions.running")}</span> : icon}
+    </button>
   );
 }

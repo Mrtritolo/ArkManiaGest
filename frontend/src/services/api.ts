@@ -327,7 +327,23 @@ export const serverInstancesApi = {
   // Per-instance action log (most recent first)
   actions: (id: number, params?: { limit?: number; offset?: number }) =>
     api.get<InstanceAction[]>(`/servers/${id}/actions`, { params }),
+
+  // Promote a scanned-but-unregistered container into a real ARKM_server_instances row.
+  importFromContainer: (data: ImportFromContainerRequest) =>
+    api.post<ServerInstance>("/servers/import-from-container", data),
 };
+
+/** Body for serverInstancesApi.importFromContainer. */
+export interface ImportFromContainerRequest {
+  machine_id:      number;
+  container_name:  string;
+  admin_password:  string;
+  server_password?: string | null;
+  display_name?:    string;
+  map_name?:        string;
+  game_port?:       number;
+  rcon_port?:       number;
+}
 
 // Back-compat alias so legacy imports of `serversApi` keep working.
 export const serversApi = serverInstancesApi;

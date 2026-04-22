@@ -16,7 +16,9 @@
     "confirm": "Confirm",
     "retry": "Retry",
     "refresh": "Refresh",
-    "language": "Language"
+    "language": "Language",
+    "themeLight": "Switch to light theme",
+    "themeDark": "Switch to dark theme"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -1666,11 +1668,23 @@
   "instances": {
     "title": "ARK Server Instances",
     "subtitle": "Manage ARK: Survival Ascended containers via POK-manager on your SSH machines.",
+    "subtitleCount": "({{count}} registered)",
     "newButton": "New instance",
-    "noInstances": "No instances configured yet.",
+    "noInstances": "No instances configured yet. Use \"Scan machines\" to discover existing containers, or click \"New instance\" to create one from scratch.",
     "loading": "Loading instances…",
     "filterMachine": "Machine",
     "filterAll": "All machines",
+    "scanAll": "Scan machines",
+    "scanning": "Scanning…",
+    "scanDone": "Scanned {{count}} machine(s).",
+    "orphansTitle": "Discovered containers ({{count}})",
+    "orphansHint": "Containers found by SSH that are NOT yet registered as managed instances. Click Import to promote one into the panel DB.",
+    "orphanPlugins": "Plugins: {{plugins}}",
+    "importButton": "Import",
+    "importTitle": "Import container '{{name}}'",
+    "importHint": "Discovered on {{machine}}. Set the admin password (required) and any overrides; the rest is inferred from the scan.",
+    "importConfirm": "Import",
+    "importDone": "Imported '{{name}}' as a managed instance.",
     "columns": {
       "name": "Name",
       "machine": "Machine",
@@ -1741,7 +1755,8 @@
       "create": "Failed to create instance.",
       "update": "Failed to update instance.",
       "delete": "Failed to delete instance.",
-      "action": "Action failed."
+      "action": "Action failed.",
+      "import": "Failed to import container."
     },
     "confirmDelete": "Delete instance '{{name}}'? This removes the panel record. The container files on the host are NOT deleted.",
     "confirmDeleteWithPurge": "Also stop the container on the host before deleting?",

@@ -432,6 +432,39 @@ export interface InstanceActionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Discovered containers (output of POST /containers/machines/:id/scan)
+// ---------------------------------------------------------------------------
+//
+// The SSH scanner walks the host's POK base directory and discovers every
+// ARK server folder under it.  The result lives in app settings under the
+// ``containers_map`` key; the Instances page reads it via
+// containersApi.getMachineContainers and surfaces "orphan" entries (those
+// without a matching ARKM_server_instances row) as importable rows.
+
+export interface DiscoveredContainer {
+  name:            string;
+  path:            string;
+  server_root:     string | null;
+  paths:           Record<string, string>;
+  config_files:    Array<{
+    plugin: string;
+    file:   string;
+    path:   string;
+    key:    string;
+  }>;
+  plugins:         string[];
+  map_name:        string | null;
+  server_name:     string | null;
+  save_files:      string[];
+  process_running: boolean;
+  status:          string;
+  profile_count:   number;
+  machine_id:      number;
+  machine_name:    string;
+  hostname:        string;
+}
+
+// ---------------------------------------------------------------------------
 // Instance action audit log
 // ---------------------------------------------------------------------------
 
