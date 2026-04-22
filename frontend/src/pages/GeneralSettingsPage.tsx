@@ -99,9 +99,11 @@ export default function GeneralSettingsPage() {
 
     try {
       await systemUpdateApi.install()
-      // Poll every 2s until the state becomes terminal.
+      // Poll every 3s until the state becomes terminal.  The status path
+      // is rate-limit-exempt on the backend, so 3s is just a courtesy to
+      // avoid churn on the UI side.
       if (pollRef.current) window.clearInterval(pollRef.current)
-      pollRef.current = window.setInterval(pollUpdateStatus, 2000)
+      pollRef.current = window.setInterval(pollUpdateStatus, 3000)
       // Kick one immediate poll so the UI updates right away.
       pollUpdateStatus()
     } catch (err: unknown) {

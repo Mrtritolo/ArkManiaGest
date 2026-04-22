@@ -116,10 +116,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     ``block_duration`` seconds.
     """
 
+    # Endpoints that the UI polls frequently (status pings, update progress
+    # drawer) -- exempt from the per-IP counter so an active admin session
+    # can't lock itself out by reloading the page a few times.
+    POLLING_EXEMPT_PATHS = (
+        "/api/v1/settings/status",
+        "/api/v1/system-update/status",
+        "/health",
+    )
+
     def __init__(
         self,
         app,
-        general_limit:  int = 120,
+        general_limit:  int = 300,
         auth_limit:     int = 10,
         window:         int = 60,
         block_duration: int = 300,
@@ -141,8 +150,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": "300"},
             )
 
-        # Apply a stricter limit to authentication endpoints
         path    = request.url.path
+
+        # Polling endpoints are excluded from rate limiting entirely.  They
+        # carry no state-change risk and the UI hits them on a tight loop
+        # by design.
+        if any(path.startswith(p) for p in self.POLLING_EXEMPT_PATHS):
+            return await call_next(request)
+
+        # Apply a stricter limit to authentication endpoints
         is_auth = any(x in path for x in ["/auth/login", "/settings/setup"])
         limit   = self.auth_limit if is_auth else self.general_limit
 
