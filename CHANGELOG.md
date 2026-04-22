@@ -7,6 +7,82 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.4] - 2026-04-22
+
+### Added
+
+- **ARK server instances module** (`/instances` page, `/api/v1/servers/*`).
+  Full CRUD over `ARKM_server_instances` + lifecycle actions executed via
+  SSH against POK-manager: **start / stop / restart / update / backup /
+  status probe / rcon**.  Every call is audited into
+  `ARKM_instance_actions` (stdout / stderr / exit code / duration) and
+  the instance `status` column is transitioned (`starting` -> `running`,
+  `stopping` -> `stopped`, `error` on failure, ...).
+- **`ssh/pok_executor.py`**: new module that wraps POK-manager invocations
+  through `PlatformAdapter` (bash on Linux, `wsl.exe` on Windows hosts),
+  runs them off the event loop via `asyncio.to_thread`, and persists the
+  outcome.  Long-running actions (e.g. `POK -update`, 10+ min) are
+  supported; the per-call axios timeout on the UI side is bumped to 30
+  minutes only for `/update`.
+- **Global instance-action log endpoint** `GET /api/v1/instance-actions`
+  with filters (`instance_id`, `machine_id`, `action`, `status`).
+
+### Fixed
+
+- **Backend boots on installs that emit empty `.env` values**.
+  pydantic v2 refused to parse `PLUGIN_DB_PORT=""` into `int` and the
+  service stayed in an `exited` loop after the installer wrote the real
+  `.env`.  Added a `@field_validator(mode="before")` on every int / bool
+  field that treats empty strings as "use the default".
+- **`release.ps1` aborting on vite stderr**.  With
+  `$ErrorActionPreference = "Stop"` any native command writing to stderr
+  (including vite's progress lines) got promoted to a
+  `NativeCommandError` before `$LASTEXITCODE` could be checked; fix
+  lowers the preference for the build call only.
+- **`release.ps1` mojibake on non-ASCII characters**.  `Get-Content -Raw`
+  without `-Encoding UTF8` on PS 5.1 with the Italian locale re-read
+  files as Windows-1252, so em-dashes / arrows / ellipses round-tripped
+  to garbage when rewritten.  All three call sites now pass
+  `-Encoding UTF8` explicitly.
+- **`release.ps1` + `package-release.ps1` resolved `$PROJECT` wrong**.
+  The scripts were moved under `deploy/maintainer/` but still did
+  `$PSScriptRoot\..`, pointing at `deploy/` instead of the repo root
+  ("cannot find path deploy\backend\app\main.py").
+- **`full-deploy.sh` GeoIP nginx config**: the generated
+  `/etc/nginx/conf.d/geoip2.conf` is now written directly from bash
+  instead of via `awk` template substitution, which on Ubuntu's mawk
+  silently flattened the country/whitelist multi-line variables into a
+  single line ("unknown directive CH").  GeoIP DB fallback also
+  extended to the current month + the previous 3 months so early-
+  in-the-month deploys succeed before db-ip publishes the new DB.
+- **`full-deploy.sh`**: npm is now upgraded to latest right after
+  installing NodeSource Node.js 20 (silences the
+  "new major version of npm available" notice on every deploy).
+
+### UI
+
+- New **"ARK Instances"** entry in the Main sidebar group
+  (`/instances`), between Containers and Game Config.
+- Per-row action toolbar with icons for start / stop / restart /
+  probe / backup / update / edit / delete.  Delete gated to admin role;
+  optional host-side stop before deletion.
+- Expandable drawer below each row showing the 20 most recent audit
+  entries with stdout/stderr/exit code/duration/user.
+- `serverInstancesApi` + `instanceActionsApi` in `services/api.ts`;
+  typed `ServerInstance`, `InstanceAction`, `InstanceActionResult`
+  added to `types/index.ts`; `instances.*` i18n section in both
+  `en.json` and `it.json`.
+
+### Installer
+
+- Both `install-panel.ps1` and `install-panel.sh` now dump
+  `/var/log/arkmaniagest/backend-error.log` when the post-install
+  `/health` poll times out — that's where uvicorn's stderr actually
+  lives.  `journalctl` alone only shows systemd "Main process exited"
+  noise, which is useless for diagnosing Python tracebacks.
+
+---
+
 ## [2.3.3] - 2026-04-21
 
 ### Fixed
