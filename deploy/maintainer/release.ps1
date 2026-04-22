@@ -101,7 +101,11 @@ function Invoke-Bump-Semver([string]$current, [string]$kind) {
 }
 
 function Invoke-Replace([string]$path, [string]$old, [string]$new, [int]$expectedHits) {
-    $content = Get-Content -Raw -Path $path
+    # Read UTF-8 explicitly.  PS 5.1's default is the current ANSI codepage
+    # (Windows-1252 on Italian locales), which silently corrupts every
+    # non-ASCII char on round-trip — e.g. "—" becomes "â€”" in the rewritten
+    # file.  We target cross-platform sources so all our files are UTF-8.
+    $content = Get-Content -Raw -Path $path -Encoding UTF8
     $hits = ([regex]::Matches($content, [regex]::Escape($old))).Count
     if ($hits -eq 0) {
         Write-Host "    skip: $path (no occurrence of '$old')" -ForegroundColor DarkGray
@@ -231,7 +235,9 @@ Write-OK "version literals patched"
 Write-Section "CHANGELOG"
 
 $changelogPath = Join-Path $PROJECT "CHANGELOG.md"
-$changelogRaw  = Get-Content -Raw -Path $changelogPath
+# UTF-8 read (see Invoke-Replace for why) — the CHANGELOG contains em-dashes
+# and accented characters that would round-trip to mojibake on ANSI locales.
+$changelogRaw  = Get-Content -Raw -Path $changelogPath -Encoding UTF8
 
 if ($changelogRaw -match "## \[$([regex]::Escape($Version))\]") {
     Write-Host "  section for $Version already exists - leaving CHANGELOG untouched" -ForegroundColor DarkGray
@@ -239,7 +245,7 @@ if ($changelogRaw -match "## \[$([regex]::Escape($Version))\]") {
     $notesBody = ""
     if ($NotesFile) {
         if (-not (Test-Path $NotesFile)) { Fail "NotesFile not found: $NotesFile" }
-        $notesBody = Get-Content -Raw -Path $NotesFile
+        $notesBody = Get-Content -Raw -Path $NotesFile -Encoding UTF8
     } elseif ($Notes) {
         $notesBody = $Notes
     } else {
@@ -281,7 +287,23 @@ if (-not $SkipBuild) {
         try {
             Write-Action "npx vite build"
             $env:NODE_OPTIONS = "--max-old-space-size=1536"
-            $buildOut = & npx vite build 2>&1
+
+            # PS 5.1 gotcha: with $ErrorActionPreference = "Stop" a native
+            # command writing anything on stderr (vite's progress/info lines
+            # do!) gets wrapped in a NativeCommandError and aborts the script
+            # before we can even check $LASTEXITCODE.  We lower the preference
+            # just for the duration of the call and rely on $LASTEXITCODE for
+            # the real pass/fail verdict.  The buffered output is printed in
+            # full only if the exit code is non-zero, so a successful build
+            # stays quiet.
+            $prev_eap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $buildOut = $null
+            try {
+                $buildOut = & npx vite build 2>&1
+            } finally {
+                $ErrorActionPreference = $prev_eap
+            }
             if ($LASTEXITCODE -ne 0) {
                 $buildOut | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
                 Fail "Frontend build failed; aborting release"
