@@ -142,6 +142,71 @@ def read_log_tail(max_lines: int = 200) -> str:
         return ""
 
 
+# ── GitHub error formatter ───────────────────────────────────────────────────
+
+def _format_github_error(
+    response: "httpx.Response",
+    url: str,
+    *,
+    had_token: bool,
+) -> str:
+    """
+    Return a human-readable message for a non-200 GitHub API response.
+
+    For 403/429 (rate limit) we pull ``X-RateLimit-Reset`` out of the
+    headers and translate it into a minutes-until-reset string, plus a
+    hint to set ``GITHUB_TOKEN`` in .env when the call went in
+    unauthenticated.
+    """
+    code = response.status_code
+
+    # GitHub serves 403 with rate-limit headers AND 429 on "secondary"
+    # abuse limits; treat both as rate-limit scenarios.
+    if code in (403, 429):
+        reset_raw = response.headers.get("X-RateLimit-Reset")
+        remaining = response.headers.get("X-RateLimit-Remaining", "?")
+        retry_after = response.headers.get("Retry-After")
+
+        when_str = ""
+        if reset_raw:
+            try:
+                reset_ts = int(reset_raw)
+                mins = max(0, int((reset_ts - time.time()) / 60))
+                when_str = f" Try again in ~{mins} minute(s)."
+            except ValueError:
+                pass
+        elif retry_after:
+            when_str = f" Retry-After: {retry_after}s."
+
+        token_hint = (
+            "" if had_token
+            else " Add GITHUB_TOKEN to backend/.env to lift the limit from "
+                 "60/h anonymous to 5000/h authenticated."
+        )
+        return (
+            f"GitHub rate limit hit (HTTP {code}, remaining={remaining}).{when_str}"
+            f"{token_hint}"
+        )
+
+    if code == 404:
+        return (
+            f"GitHub returned 404 for {url} -- the repo has no published "
+            "releases, or GITHUB_REPO is set to a non-existent repository."
+        )
+
+    if code == 401:
+        return (
+            "GitHub returned 401 -- the GITHUB_TOKEN in .env is invalid or "
+            "expired; regenerate it on https://github.com/settings/tokens."
+        )
+
+    # Everything else: surface status + a short body excerpt.
+    body = (response.text or "").strip()
+    if len(body) > 200:
+        body = body[:200] + "..."
+    return f"GitHub returned HTTP {code} for {url} (body: {body!r})"
+
+
 # ── GitHub release discovery ─────────────────────────────────────────────────
 
 async def find_latest_release(
@@ -170,10 +235,7 @@ async def find_latest_release(
     async with httpx.AsyncClient(timeout=GITHUB_API_TIMEOUT) as client:
         r = await client.get(url, headers=headers)
     if r.status_code != 200:
-        raise RuntimeError(
-            f"GitHub returned HTTP {r.status_code} for {url} "
-            f"(body: {r.text[:200]!r})."
-        )
+        raise RuntimeError(_format_github_error(r, url, had_token=bool(github_token)))
 
     data = r.json()
     tag = str(data.get("tag_name") or data.get("name") or "").strip()

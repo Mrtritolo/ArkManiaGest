@@ -410,13 +410,33 @@ async def check_for_updates(
         return payload
 
     if r.status_code != 200:
+        # 403/429 are GitHub's rate-limit signals.  Translate the relevant
+        # headers into a "retry in N minutes" hint and, when the call went
+        # in unauthenticated, suggest adding GITHUB_TOKEN to .env.
+        from app.services.self_updater import _format_github_error
+        msg = _format_github_error(
+            r, url,
+            had_token=bool(server_settings.GITHUB_TOKEN),
+        )
         payload = VersionCheckResponse(
             current=current,
             current_commit=current_commit,
             current_built_at=current_built_at,
-            error=f"GitHub API returned HTTP {r.status_code}.",
+            error=msg,
             cached_at=datetime.now(timezone.utc).isoformat(),
         )
+        # For rate-limit responses, cache until the reset time so we don't
+        # keep hammering GitHub and making the situation worse.
+        if r.status_code in (403, 429):
+            reset_raw = r.headers.get("X-RateLimit-Reset")
+            if reset_raw:
+                try:
+                    reset_ts = int(reset_raw)
+                    ttl = max(60, reset_ts - int(now))
+                    _VERSION_CACHE = (now + min(ttl, 3600), payload)
+                    return payload
+                except ValueError:
+                    pass
         _VERSION_CACHE = (now + 60, payload)
         return payload
 
