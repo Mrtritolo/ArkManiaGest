@@ -543,6 +543,33 @@ export const blueprintsApi = {
       sources: string[];
       errors: string[];
     }>("/blueprints/sync", null, { timeout: 120_000 }),
+
+  /**
+   * Upload a `.beacondata` export from Beacon (https://usebeacon.app)
+   * and replace the local blueprint DB with its contents.
+   *
+   * Beacon's catalog is maintained actively and covers every ASA creature
+   * the stale Dododex mirror is missing (Maeguana, Helminth, ...), plus
+   * any mods the operator has loaded in Beacon.  Recommended way to
+   * populate the DB on fresh installs.
+   */
+  importBeacondata: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<{
+      success: boolean;
+      total_blueprints: number;
+      items_count: number;
+      dinos_count: number;
+      commands_count: number;
+      sources: string[];
+      errors: string[];
+    }>("/blueprints/import-beacondata", fd, {
+      // The parse walks ~60MB of JSON -- give the server plenty of time.
+      timeout: 180_000,
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
   list: (params?: {
     search?: string;
     category?: string;

@@ -1263,6 +1263,16 @@
       "syncing": "Syncing...",
       "sync": "Sync"
     },
+    "beacon": {
+      "importButton": "Import Beacon (.beacondata)",
+      "importShort": "Beacon",
+      "importTitle": "Replace catalog with a Beacon export (covers ASA + mods)",
+      "importing": "Parsing Beacon archive…",
+      "importDone": "Beacon import done: {{total}} unique blueprints ({{dinos}} creatures + {{items}} items).",
+      "importFailed": "Beacon import failed.",
+      "tooLarge": "File too large ({{size}} MB). Beacon's complete export is normally ~12 MB.",
+      "hint": "Tip: Beacon (https://usebeacon.app) ships an up-to-date catalog covering every ASA creature plus your installed mods. Drop a .beacondata file here to skip the stale Dododex mirror."
+    },
     "filters": {
       "searchPlaceholder": "Search name, blueprint, GFI...",
       "allCategories": "All categories",

@@ -1,23 +1,35 @@
 """
 api/routes/blueprints.py — ARK blueprint database.
 
-Downloads blueprint data from multiple public sources, normalises entries, and
-stores them in the application settings table for offline search.
+Two ways to populate the local blueprint catalog:
 
-Data sources:
-  1. Dododex GitHub bp.json       — creature/dino blueprints
-  2. Dododex GitHub commands.json — admin console commands
-  3. ARK Wiki (ark.wiki.gg)       — complete item database (19 categories)
+* ``POST /sync``                — fetches the Dododex GitHub mirror.  Fast
+                                  and zero-config, but the upstream is
+                                  stale (last refresh 2024-11-08, missing
+                                  most ASA-era creatures like Maeguana).
+* ``POST /import-beacondata``   — uploads a Beacon `.beacondata` bundle
+                                  (gzipped tar of JSON files) exported
+                                  from the Beacon admin tool.  Covers
+                                  every official ASA creature plus all
+                                  modded content the operator has loaded
+                                  in Beacon, with up-to-date paths +
+                                  GFI commands.  Recommended.
+
+Both write to the same ``blueprints_db`` plugin-config blob; whichever
+ran most recently wins.  ``GET /`` searches the resulting catalog.
 """
 import asyncio
+import gzip
+import io
 import json
 import re
+import tarfile
 import logging
 from typing import Optional, List
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 
 from app.core.store import get_plugin_config_sync, save_plugin_config_sync
@@ -563,6 +575,255 @@ async def sync_blueprints():
         items_count      = items_count,
         dinos_count      = dinos_count,
         commands_count   = commands_count,
+        sources          = sources,
+        errors           = errors,
+    )
+
+
+# ── Beacon import ──────────────────────────────────────────────────────────────
+#
+# Beacon (https://usebeacon.app) ships its catalog as a `.beacondata` file --
+# really a gzipped POSIX tar archive of JSON files, one per content pack.
+# Each file contains `payloads[].creatures[]` and/or `payloads[].engrams[]`
+# entries with up-to-date paths and GFI commands, including ASA additions
+# (Maeguana, Helminth, ...) the Dododex GitHub mirror is missing.
+#
+# We accept the file as a multipart upload, walk it entirely in memory
+# (the whole archive is ~60MB uncompressed), normalise creatures + engrams
+# into our flat blueprint shape, and replace the local DB.
+
+# Hard cap on the upload size we will accept.  Beacon's "complete" bundle
+# is ~12MB gzipped today; 50MB leaves plenty of headroom for future growth
+# without exposing the panel to a memory-bomb upload.
+_BEACON_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+# Strings inside Beacon's `path` that imply a non-spawnable record we don't
+# want cluttering autocomplete (admin tags, baby variants, broken refs).
+_BEACON_SKIP_PATH_FRAGMENTS = (
+    "/Buffs/", "/Effects/", "/UI/", "/HUD/",
+)
+
+
+def _beacon_normalize_path(path: Optional[str]) -> Optional[str]:
+    """Trim Beacon's `path` field and drop empties.  Already starts with '/'."""
+    if not path:
+        return None
+    p = path.strip()
+    return p if p else None
+
+
+def _beacon_classify_type(path: str, kind: str) -> str:
+    """
+    Map a Beacon record onto our (dino|item|weapon|armor|saddle|...) buckets.
+
+    `kind` is the Beacon section the record came from -- "creatures" maps
+    straight to "dino"; for engrams we re-use the existing _classify_type
+    string-matching against the path so the resulting catalog is shaped
+    identically to Dododex output.
+    """
+    if kind == "creatures":
+        return "dino"
+    return _classify_type(path)
+
+
+def _beacon_record_skipped(path: str) -> bool:
+    """Return True for paths we deliberately drop from the catalog."""
+    if not path:
+        return True
+    return any(frag in path for frag in _BEACON_SKIP_PATH_FRAGMENTS)
+
+
+def _normalize_beacon_creature(c: dict) -> Optional[dict]:
+    """Convert a Beacon `creatures[]` record to our blueprint dict."""
+    path = _beacon_normalize_path(c.get("path"))
+    if not path or _beacon_record_skipped(path):
+        return None
+    pack = str(c.get("contentPackName") or "").strip() or "Unknown"
+    name = str(c.get("label") or c.get("alternateLabel") or "").strip()
+    if not name:
+        return None
+    class_str = str(c.get("classString") or "").strip()
+    return {
+        "id":        f"bcn_{c.get('creatureId') or _make_id(name + path)}",
+        "name":      name,
+        "blueprint": path,
+        # We expose the content pack as the "category" so users can filter
+        # the dropdown by mod / DLC of origin.
+        "category":  pack,
+        "type":      "dino",
+        "gfi":       None,                     # Beacon doesn't carry GFI for creatures.
+        "source":    "beacon",
+        "class":     class_str or None,
+    }
+
+
+def _normalize_beacon_engram(e: dict) -> Optional[dict]:
+    """Convert a Beacon `engrams[]` record to our blueprint dict."""
+    path = _beacon_normalize_path(e.get("path"))
+    if not path or _beacon_record_skipped(path):
+        return None
+    pack = str(e.get("contentPackName") or "").strip() or "Unknown"
+    name = str(e.get("label") or e.get("alternateLabel") or "").strip()
+    if not name:
+        return None
+    class_str = str(e.get("classString") or "").strip()
+    bp_type   = _beacon_classify_type(path, "engrams")
+    # Beacon stores either the short `gfi` string ("dme") or the full
+    # `spawn` command ("cheat gfi dme 1 1 0").  Prefer the latter when
+    # present so the user sees something they can paste straight in.
+    spawn = e.get("spawn") or (
+        f"cheat gfi {e['gfi']} 1 1 0" if e.get("gfi") else None
+    )
+    return {
+        "id":        f"bcn_{e.get('engramId') or _make_id(name + path)}",
+        "name":      name,
+        "blueprint": path,
+        "category":  pack,
+        "type":      bp_type,
+        "gfi":       spawn,
+        "source":    "beacon",
+        "class":     class_str or None,
+    }
+
+
+def _iter_beacon_records(archive_bytes: bytes):
+    """
+    Yield (kind, dict) pairs from a `.beacondata` archive.
+
+    The file is `gzip(tar(json_files))`.  Every JSON file holds a
+    `{ "payloads": [ { "creatures": [...] | "engrams": [...] | ... } ] }`
+    structure -- we ignore everything except those two arrays.
+    """
+    # Beacon archives are gzip-then-tar but Python's tarfile can read both
+    # in one shot via mode='r:gz' on the raw bytes.
+    bio = io.BytesIO(archive_bytes)
+    try:
+        tf = tarfile.open(fileobj=bio, mode="r:gz")
+    except (tarfile.ReadError, OSError):
+        # Some `.beacondata` exports are NOT gzipped (newer Beacon builds).
+        # Try plain tar before giving up.
+        bio.seek(0)
+        tf = tarfile.open(fileobj=bio, mode="r:")
+    with tf:
+        for member in tf:
+            if not member.isfile() or not member.name.endswith(".json"):
+                continue
+            fh = tf.extractfile(member)
+            if fh is None:
+                continue
+            raw = fh.read()
+            try:
+                doc = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            for payload in doc.get("payloads", []) or []:
+                for c in payload.get("creatures", []) or []:
+                    yield ("creature", c)
+                for e in payload.get("engrams", []) or []:
+                    yield ("engram", e)
+
+
+@router.post("/import-beacondata", response_model=SyncResult)
+async def import_beacondata(file: UploadFile = File(...)):
+    """
+    Replace the local blueprint DB with the contents of a Beacon export.
+
+    The user uploads `Complete.beacondata` (or any subset export) from
+    Beacon: https://usebeacon.app .  The file is a gzipped tar of JSON
+    bundles; we parse it in memory, deduplicate by blueprint path, and
+    persist the result to the same plugin-config blob `/sync` writes.
+
+    Errors abort the import without touching the existing DB -- a bad
+    upload never leaves the catalog half-replaced.
+    """
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty upload.")
+    if len(raw) > _BEACON_MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"File too large ({len(raw)} bytes; max "
+                f"{_BEACON_MAX_UPLOAD_BYTES} = "
+                f"{_BEACON_MAX_UPLOAD_BYTES // (1024*1024)} MB)."
+            ),
+        )
+
+    log.info(
+        "Beacon import: %s (%d bytes); wiping %d previous entries",
+        file.filename or "<no name>",
+        len(raw),
+        len(_get_db().get("blueprints", [])),
+    )
+
+    blueprints:     list[dict] = []
+    items_count:    int = 0
+    dinos_count:    int = 0
+    pack_counts:    dict[str, int] = {}
+    errors:         list[str] = []
+
+    try:
+        for kind, record in _iter_beacon_records(raw):
+            if kind == "creature":
+                normalized = _normalize_beacon_creature(record)
+                if normalized:
+                    dinos_count += 1
+                    pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
+                    blueprints.append(normalized)
+            else:  # engram
+                normalized = _normalize_beacon_engram(record)
+                if normalized:
+                    items_count += 1
+                    pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
+                    blueprints.append(normalized)
+    except (tarfile.TarError, OSError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not read .beacondata archive: {exc}",
+        )
+
+    if not blueprints:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Archive parsed OK but contained 0 creatures + engrams.  "
+                "Are you sure this is a Complete or Per-Pack Beacon export?"
+            ),
+        )
+
+    # Deduplicate by blueprint path (case-insensitive).  When two packs
+    # ship the same blueprint we keep the FIRST one encountered, which is
+    # usually the one with richer fields because Beacon writes its
+    # primary catalog before user mods.
+    seen: dict[str, bool] = {}
+    unique = []
+    for bp in blueprints:
+        key = bp["blueprint"].lower().strip()
+        if key and key not in seen:
+            seen[key] = True
+            unique.append(bp)
+
+    # Build a one-line "sources" summary the UI shows on the Updates card.
+    top_packs = sorted(pack_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    sources = [
+        f"{file.filename or 'beacondata'} -- {len(unique)} unique blueprints across "
+        f"{len(pack_counts)} content packs (top: " +
+        ", ".join(f"{n} ({c})" for n, c in top_packs) + ")"
+    ]
+
+    _save_db({
+        "blueprints": unique,
+        "last_sync":  datetime.now(timezone.utc).isoformat(),
+        "sources":    sources,
+        "version":    _get_db().get("version", 0) + 1,
+    })
+
+    return SyncResult(
+        success          = True,
+        total_blueprints = len(unique),
+        items_count      = items_count,
+        dinos_count      = dinos_count,
+        commands_count   = 0,    # Beacon archives have no /commands section.
         sources          = sources,
         errors           = errors,
     )

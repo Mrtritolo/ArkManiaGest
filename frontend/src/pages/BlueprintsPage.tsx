@@ -64,7 +64,10 @@ export default function BlueprintsPage() {
   const [bulkCat, setBulkCat] = useState('')
 
   // Import
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef  = useRef<HTMLInputElement>(null)
+  // Separate input ref for Beacon uploads so the accept filter and
+  // onChange handler don't clash with the existing JSON-import input.
+  const beaconInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
   const [importPreview, setImportPreview] = useState<{ data: unknown[]; filename: string } | null>(null)
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
@@ -129,6 +132,28 @@ export default function BlueprintsPage() {
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || t('blueprints.messages.syncFailed'))
+    } finally { setSyncing(false) }
+  }
+
+  async function handleBeaconUpload(file: File) {
+    // Basic client-side guard.  The server also enforces a 50MB cap but
+    // failing fast here spares the user a long wasted upload.
+    if (file.size > 60 * 1024 * 1024) {
+      setError(t('blueprints.beacon.tooLarge', { size: Math.round(file.size / 1024 / 1024) }))
+      return
+    }
+    setSyncing(true); setError(''); setSuccess('')
+    try {
+      const res = await blueprintsApi.importBeacondata(file)
+      const d = res.data
+      setSuccess(t('blueprints.beacon.importDone', {
+        total: d.total_blueprints, items: d.items_count, dinos: d.dinos_count,
+      }))
+      setHasData(true); setTotalBp(d.total_blueprints); setSources(d.sources); setLastSync(new Date().toISOString())
+      resetFilters(); loadData('', '', '', 0); loadFilters(); loadAllCategories()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || t('blueprints.beacon.importFailed'))
     } finally { setSyncing(false) }
   }
 
@@ -244,12 +269,28 @@ export default function BlueprintsPage() {
             {t('blueprints.noData.hint')}
           </p>
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={handleSync} disabled={syncing} className="btn btn-primary">
+            <button onClick={() => beaconInputRef.current?.click()} disabled={syncing} className="btn btn-primary">
+              {syncing ? <><Loader2 size={16} className="pl-spin" /> {t('blueprints.beacon.importing')}</> : <><Upload size={16} /> {t('blueprints.beacon.importButton')}</>}
+            </button>
+            <button onClick={handleSync} disabled={syncing} className="btn btn-secondary">
               {syncing ? <><Loader2 size={16} className="pl-spin" /> {t('blueprints.noData.syncing')}</> : <><Download size={16} /> {t('blueprints.noData.syncButton')}</>}
             </button>
-            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary"><Upload size={16} /> {t('blueprints.noData.importButton')}</button>
+            <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost">
+              <Upload size={16} /> {t('blueprints.noData.importButton')}
+            </button>
           </div>
+          <p style={{ marginTop: '0.75rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            {t('blueprints.beacon.hint')}
+          </p>
           <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileSelected} />
+          <input
+            ref={beaconInputRef} type="file" accept=".beacondata,application/gzip,application/x-tar"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (f) { handleBeaconUpload(f); e.target.value = '' }
+            }}
+          />
         </div>
         {importPreview && renderImportDialog()}
       </div>
@@ -300,12 +341,23 @@ export default function BlueprintsPage() {
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <button onClick={handleExport} className="btn btn-ghost btn-sm" title={t('blueprints.actions.exportTitle')}><Download size={14} /> {t('blueprints.actions.export')}</button>
           <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost btn-sm" title={t('blueprints.actions.importTitle')}><Upload size={14} /> {t('blueprints.actions.import')}</button>
+          <button onClick={() => beaconInputRef.current?.click()} disabled={syncing} className="btn btn-secondary btn-sm" title={t('blueprints.beacon.importTitle')}>
+            <Upload size={14} /> {t('blueprints.beacon.importShort')}
+          </button>
           <button onClick={handleSync} disabled={syncing} className="btn btn-primary btn-sm">
             {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('blueprints.actions.syncing')}</> : <><RefreshCw size={14} /> {t('blueprints.actions.sync')}</>}
           </button>
         </div>
       </div>
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileSelected} />
+      <input
+        ref={beaconInputRef} type="file" accept=".beacondata,application/gzip,application/x-tar"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const f = e.target.files?.[0]
+          if (f) { handleBeaconUpload(f); e.target.value = '' }
+        }}
+      />
 
       {error && <div className="pl-alert pl-alert-err"><AlertCircle size={14} /> {error}<button onClick={() => setError('')} className="pl-alert-x"><X size={14} /></button></div>}
       {success && <div className="pl-alert pl-alert-ok"><CheckCircle size={14} /> {success}</div>}
