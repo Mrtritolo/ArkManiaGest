@@ -82,7 +82,7 @@ def preflight() -> PreflightResponse:
        (drop ``deploy/sudoers-arkmaniagest`` under
        ``/etc/sudoers.d/arkmaniagest`` to enable).
     """
-    sudo_ok   = self_updater.is_self_update_authorised()
+    sudo_ok, sudo_reason = self_updater.probe_sudo_authorisation()
     script_ok = (self_updater.APP_DIR / "deploy" / "server-update.sh").exists()
     repo      = (server_settings.GITHUB_REPO or "").strip()
     repo_ok   = bool(repo) and "/" in repo
@@ -95,9 +95,13 @@ def preflight() -> PreflightResponse:
             "Was the panel deployed with full-deploy.sh?"
         )
     elif not sudo_ok:
+        # Surface the concrete sudo error instead of the old generic
+        # "Sudoers entry missing" message -- makes it obvious whether
+        # the file is missing, has wrong perms, or doesn't match.
         hint = (
-            "Sudoers entry missing.  Run on the panel host: "
-            "sudo install -m 0440 /opt/arkmaniagest/deploy/sudoers-arkmaniagest "
+            f"Self-update sudo probe failed: {sudo_reason}.  "
+            "Install: sudo install -m 0440 "
+            "/opt/arkmaniagest/deploy/sudoers-arkmaniagest "
             "/etc/sudoers.d/arkmaniagest"
         )
     elif not repo_ok:

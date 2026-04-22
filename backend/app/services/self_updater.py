@@ -377,27 +377,85 @@ def _sha256_of(path: Path, chunk: int = 1024 * 1024) -> str:
 def is_self_update_authorised() -> bool:
     """
     Return True iff the running user can invoke ``sudo -n bash server-update.sh``
-    without a password prompt.
+    without a password prompt.  Wraps :func:`probe_sudo_authorisation` and
+    discards the diagnostic detail.
+    """
+    return probe_sudo_authorisation()[0]
 
-    Used by the UI to enable / disable the "Install update" button up
-    front so the operator gets a clear "you need to drop the sudoers
-    snippet first" message instead of a half-completed update.
+
+def probe_sudo_authorisation() -> tuple[bool, str]:
+    """
+    Run the sudo probe used by the preflight endpoint and return
+    ``(authorised, reason)``.
+
+    The original attempt used ``sudo -n -l bash <script>`` (a strict
+    "can I run this exact command" check).  That probe fails with
+    recent sudo versions when the sudoers rule ends with a ``*``
+    wildcard and no argument is passed, because ``sudo -l`` matches
+    commands against rules in a way that requires the wildcard to
+    consume at least one character.  The *actual* ``sudo -n bash
+    <script> FULL AUTO`` call that spawn_update() runs matches fine,
+    but the probe doesn't -- giving a false-negative UI banner.
+
+    We now do the relaxed check instead:  list all the rules that
+    apply to the current user with ``sudo -n -l`` (no command
+    argument, so NOPASSWD rules are always enumerable) and look for
+    our script path in the output.  It matches what a human operator
+    would read in ``/etc/sudoers.d/arkmaniagest``.
     """
     script = APP_DIR / "deploy" / "server-update.sh"
     if not script.exists():
-        return False
+        return False, f"server-update.sh missing at {script}"
+
     try:
-        # `sudo -n -l <command>` lists allowed commands matching <command>;
-        # exit code 0 == allowed, 1 == not allowed (or no sudoers entry).
         proc = subprocess.run(
-            ["sudo", "-n", "-l", "bash", str(script)],
+            ["sudo", "-n", "-l"],
             capture_output=True,
             text=True,
             timeout=SUDO_PROBE_TIMEOUT,
         )
-        return proc.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+    except FileNotFoundError:
+        return False, "sudo binary not found in PATH"
+    except subprocess.TimeoutExpired:
+        return False, f"sudo probe timed out after {SUDO_PROBE_TIMEOUT}s"
+
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+
+    # Password-required / blocked user cases -- sudo exits non-zero and
+    # writes a recognisable message to stderr.
+    if "password is required" in combined.lower():
+        return False, (
+            "sudoers rule present but missing NOPASSWD -- check "
+            "/etc/sudoers.d/arkmaniagest and reinstall from "
+            "/opt/arkmaniagest/deploy/sudoers-arkmaniagest"
+        )
+    if "may not run sudo" in combined.lower() or "user .* is not allowed" in combined.lower():
+        return False, "the running user has no sudoers rules at all"
+
+    if proc.returncode != 0 and not proc.stdout:
+        head = (combined.strip().splitlines() or ["unknown"])[0][:200]
+        return False, f"sudo -n -l returned rc={proc.returncode}: {head!r}"
+
+    # Success == our server-update.sh path appears somewhere under a
+    # NOPASSWD line for root.  The sudoers file ships two forms to cover
+    # different /bin/bash vs /usr/bin/bash layouts, so just string-match
+    # on the script name + "NOPASSWD" context.
+    stdout = proc.stdout or ""
+    if "server-update.sh" in stdout and "NOPASSWD" in stdout:
+        return True, "ok"
+
+    if "server-update.sh" in stdout:
+        return False, (
+            "sudoers rule present but not NOPASSWD -- edit "
+            "/etc/sudoers.d/arkmaniagest or reinstall from "
+            "/opt/arkmaniagest/deploy/sudoers-arkmaniagest"
+        )
+
+    return False, (
+        "no sudoers entry mentioning server-update.sh for this user.  "
+        "Install: sudo install -m 0440 "
+        "/opt/arkmaniagest/deploy/sudoers-arkmaniagest /etc/sudoers.d/arkmaniagest"
+    )
 
 
 def spawn_update(target_version: str) -> int:
