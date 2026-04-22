@@ -4,10 +4,11 @@
  * Covers: application name, log level, auto-backup configuration.
  * Changes are persisted to the database via the settings API.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
-import { settingsApi } from '../services/api'
+import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle, DownloadCloud, AlertTriangle } from 'lucide-react'
+import { settingsApi, systemUpdateApi } from '../services/api'
+import type { SystemUpdatePreflight, SystemUpdateStatus } from '../services/api'
 import type { AppSettings, VersionCheckResult } from '../types'
 
 interface HealthInfo {
@@ -35,7 +36,82 @@ export default function GeneralSettingsPage() {
   const [versionInfo, setVersionInfo]   = useState<VersionCheckResult | null>(null)
   const [versionLoading, setVersionLoading] = useState(false)
 
-  useEffect(() => { loadSettings(); loadHealth(); loadVersion(false) }, [])
+  // Self-update state (button, preflight banner, progress drawer).
+  const [preflight, setPreflight]     = useState<SystemUpdatePreflight | null>(null)
+  const [installing, setInstalling]   = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<SystemUpdateStatus | null>(null)
+  const [installError, setInstallError] = useState('')
+  const pollRef = useRef<number | null>(null)
+
+  useEffect(() => { loadSettings(); loadHealth(); loadVersion(false); loadPreflight() }, [])
+
+  // Stop polling when the component unmounts.
+  useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current) }, [])
+
+  async function loadPreflight(): Promise<void> {
+    try {
+      const res = await systemUpdateApi.preflight()
+      setPreflight(res.data)
+    } catch {
+      setPreflight(null)
+    }
+  }
+
+  async function pollUpdateStatus(): Promise<void> {
+    try {
+      const res = await systemUpdateApi.status()
+      setUpdateStatus(res.data)
+      // Re-check the installed version whenever the state says "success".
+      // The server-update.sh restart usually takes 10-20s, during which
+      // the status endpoint may be briefly unreachable (503).  loadHealth
+      // below picks up the new version as soon as the backend is back up.
+      if (res.data.state === 'success' || res.data.state === 'failed') {
+        if (pollRef.current) { window.clearInterval(pollRef.current); pollRef.current = null }
+        setInstalling(false)
+        loadHealth()
+        loadVersion(true)
+      }
+    } catch {
+      // 401 / 503 during the restart window -- keep polling.
+    }
+  }
+
+  async function handleInstallUpdate(): Promise<void> {
+    setInstallError('')
+    if (!preflight?.can_self_update) {
+      setInstallError(preflight?.hint || 'Self-update is not available on this host.')
+      return
+    }
+    if (!window.confirm(t('generalSettings.updates.confirmInstall', {
+      version: versionInfo?.latest ?? '?',
+    }))) return
+
+    setInstalling(true)
+    setUpdateStatus({
+      state: 'downloading',
+      target_version: versionInfo?.latest ?? null,
+      started_at: new Date().toISOString(),
+      finished_at: null,
+      message: t('generalSettings.updates.starting'),
+      progress_pct: 5,
+      log_tail: null,
+    })
+
+    try {
+      await systemUpdateApi.install()
+      // Poll every 2s until the state becomes terminal.
+      if (pollRef.current) window.clearInterval(pollRef.current)
+      pollRef.current = window.setInterval(pollUpdateStatus, 2000)
+      // Kick one immediate poll so the UI updates right away.
+      pollUpdateStatus()
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? (err instanceof Error ? err.message : 'install failed')
+      setInstallError(detail)
+      setInstalling(false)
+    }
+  }
 
   async function loadVersion(force: boolean): Promise<void> {
     setVersionLoading(true)
@@ -239,21 +315,36 @@ export default function GeneralSettingsPage() {
             )}
           </div>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
               onClick={() => loadVersion(true)}
-              disabled={versionLoading}
+              disabled={versionLoading || installing}
               className="btn btn-secondary"
             >
               <RefreshCw size={14} style={{ animation: versionLoading ? 'spin 1s linear infinite' : 'none' }} />
               {versionLoading ? t('generalSettings.updates.checking') : t('generalSettings.updates.checkNow')}
             </button>
+            {versionInfo?.update_available && (
+              <button
+                onClick={handleInstallUpdate}
+                disabled={installing || !preflight?.can_self_update}
+                className="btn btn-primary"
+                title={preflight?.can_self_update
+                  ? ''
+                  : preflight?.hint || t('generalSettings.updates.installDisabled')}
+              >
+                <DownloadCloud size={14} />
+                {installing
+                  ? t('generalSettings.updates.installing')
+                  : t('generalSettings.updates.installNow')}
+              </button>
+            )}
             {versionInfo?.release_url && (
               <a
                 href={versionInfo.release_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-primary"
+                className="btn btn-secondary"
               >
                 <ExternalLink size={14} /> {t('generalSettings.updates.viewRelease')}
               </a>
@@ -282,6 +373,108 @@ export default function GeneralSettingsPage() {
             {t('generalSettings.updates.cacheHint')}
           </p>
         </div>
+
+        {/* Preflight banner -- shown only when the in-UI installer is NOT
+            usable on this host (no sudoers, missing script, no repo). */}
+        {preflight && !preflight.can_self_update && (
+          <div
+            style={{
+              marginTop: '0.75rem',
+              padding: '0.6rem 0.85rem',
+              borderRadius: 'var(--radius-sm, 4px)',
+              border: '1px solid var(--warning, #ca8a04)',
+              background: 'color-mix(in srgb, var(--warning, #ca8a04) 10%, transparent)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.5rem',
+              fontSize: '0.82rem',
+            }}
+          >
+            <AlertTriangle size={15} style={{ marginTop: 2, color: 'var(--warning, #ca8a04)', flexShrink: 0 }} />
+            <div>
+              <strong>{t('generalSettings.updates.inUpdaterUnavailable')}</strong>
+              <div style={{ marginTop: '0.2rem', color: 'var(--text-muted)' }}>
+                {preflight.hint || t('generalSettings.updates.inUpdaterGenericFix')}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Install error (one-off, immediate) */}
+        {installError && (
+          <div
+            style={{
+              marginTop: '0.75rem',
+              padding: '0.6rem 0.85rem',
+              borderRadius: 'var(--radius-sm, 4px)',
+              border: '1px solid var(--danger, #dc2626)',
+              background: 'color-mix(in srgb, var(--danger, #dc2626) 10%, transparent)',
+              color: 'var(--danger, #dc2626)',
+              fontSize: '0.82rem',
+            }}
+          >
+            {installError}
+          </div>
+        )}
+
+        {/* Live progress drawer -- visible while an install is running or
+            after it finished, until the user refreshes the page. */}
+        {updateStatus && updateStatus.state !== 'idle' && (
+          <div
+            style={{
+              marginTop: '0.75rem',
+              padding: '0.75rem 0.9rem',
+              borderRadius: 'var(--radius-sm, 4px)',
+              background: 'var(--bg-subtle, rgba(0,0,0,0.2))',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+              {updateStatus.state === 'success' && <CheckCircle size={14} style={{ color: 'var(--success, #16a34a)' }} />}
+              {updateStatus.state === 'failed'  && <AlertCircle size={14} style={{ color: 'var(--danger, #dc2626)' }} />}
+              {(updateStatus.state === 'downloading' || updateStatus.state === 'running' || updateStatus.state === 'verifying') && (
+                <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              )}
+              <span>{t(`generalSettings.updates.stateLabel.${updateStatus.state}`)}</span>
+              {updateStatus.target_version && (
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>
+                  → v{updateStatus.target_version}
+                </span>
+              )}
+              {typeof updateStatus.progress_pct === 'number' && (
+                <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  {updateStatus.progress_pct}%
+                </span>
+              )}
+            </div>
+            {updateStatus.message && (
+              <div style={{ marginTop: '0.35rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                {updateStatus.message}
+              </div>
+            )}
+            {updateStatus.log_tail && (
+              <pre
+                style={{
+                  marginTop: '0.5rem',
+                  padding: '0.5rem',
+                  background: 'var(--bg-code, rgba(0,0,0,0.3))',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  maxHeight: 260,
+                  overflow: 'auto',
+                  fontSize: '0.72rem',
+                  lineHeight: 1.4,
+                }}
+              >
+                {updateStatus.log_tail}
+              </pre>
+            )}
+            {updateStatus.state === 'running' && (
+              <p style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {t('generalSettings.updates.duringRestartHint')}
+              </p>
+            )}
+          </div>
+        )}
 
         <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
       </div>

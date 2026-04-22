@@ -7,6 +7,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.5] - 2026-04-22
+
+### Added
+
+- **In-UI self-update** (Settings -> General -> Updates card, new
+  "Install update" button).  When a newer release is available on
+  GitHub, an admin can now install it directly from the browser:
+  - `GET  /api/v1/system-update/preflight` -- reports whether the
+    sudoers entry, `server-update.sh` and `GITHUB_REPO` are in place;
+    the UI uses it to enable/disable the button and explain what is
+    missing.
+  - `POST /api/v1/system-update/install` -- fetches the latest GitHub
+    release metadata, downloads the Linux tarball to `/tmp`, verifies
+    its SHA-256 against `SHA256SUMS`, then spawns `server-update.sh`
+    in a detached process (`start_new_session=True`) so it survives
+    the backend restart it triggers.
+  - `GET  /api/v1/system-update/status` -- poll-friendly snapshot of
+    the in-flight update, including a tail of `/tmp/arkmaniagest-update.log`.
+  The UI polls `/status` every 2 s during the install and displays a
+  live drawer with the build log, then re-checks `/health` and the
+  version banner once the new backend is up.
+- **`deploy/sudoers-arkmaniagest`**: drop this file under
+  `/etc/sudoers.d/arkmaniagest` (mode 0440) to allow the panel user
+  `arkmania` to run `server-update.sh` as root without a password.
+  The snippet whitelists only the literal script path under bash, so
+  a panel compromise cannot escalate via this entry.  `full-deploy.sh`
+  installs it automatically (and reverts if `visudo -c` rejects it).
+- **`deploy/update-panel.ps1`** and **`deploy/update-panel.sh`**:
+  interactive dev-side update scripts.  Unlike the release-based
+  flow, these pack the local working tree, upload it to an existing
+  panel and run `server-update.sh` in place -- so a developer can
+  iterate against a remote panel without cutting a GitHub release.
+  Both honour `.deployignore`, auto-detect `deploy/deploy.conf`,
+  support `--backend-only` / `--frontend-only` / `--no-deps`, and
+  survive the backend restart via stdout streaming.
+
+### Changed
+
+- `full-deploy.sh` phase 9 now also installs the sudoers snippet,
+  validated with `visudo -c`.  Existing deployments can enable the
+  in-UI updater by running once:
+  ```
+  sudo install -m 0440 /opt/arkmaniagest/deploy/sudoers-arkmaniagest \
+      /etc/sudoers.d/arkmaniagest
+  ```
+
+---
+
 ## [2.3.4] - 2026-04-22
 
 ### Added

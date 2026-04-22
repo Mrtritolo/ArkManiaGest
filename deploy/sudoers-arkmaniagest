@@ -1,0 +1,22 @@
+# /etc/sudoers.d/arkmaniagest
+#
+# Allow the panel backend (running as the `arkmania` system user) to run
+# the self-update script as root without a password prompt.  This is the
+# ONLY way the in-UI "Install update" button can actually replace the
+# code under /opt/arkmaniagest, restart the systemd unit and reload Nginx.
+#
+# We deliberately whitelist a single command path (the literal location of
+# server-update.sh under the install prefix) and only with `bash` as the
+# interpreter, so even if an attacker gained code execution as `arkmania`
+# they cannot use this entry to run anything else as root.
+#
+# Drop this file under /etc/sudoers.d/arkmaniagest with mode 0440:
+#
+#     sudo install -m 0440 deploy/sudoers-arkmaniagest /etc/sudoers.d/arkmaniagest
+#     sudo visudo -c -f /etc/sudoers.d/arkmaniagest
+#
+# Both `install-panel.sh` and `install-panel.ps1` install it automatically
+# when the operator answers "yes" to "enable in-UI self-update".
+
+arkmania ALL=(root) NOPASSWD: /usr/bin/bash /opt/arkmaniagest/deploy/server-update.sh *
+arkmania ALL=(root) NOPASSWD: /bin/bash /opt/arkmaniagest/deploy/server-update.sh *

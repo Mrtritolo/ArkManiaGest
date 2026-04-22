@@ -20,6 +20,7 @@ from app.api.routes import (
     auth,
     servers,
     instance_actions,
+    system_update,
     ssh,
     settings,
     machines,
@@ -112,6 +113,12 @@ router.include_router(
     prefix="/instance-actions",
     tags=["Instance Actions"],
     dependencies=_viewer,
+)
+router.include_router(
+    system_update.router,
+    prefix="/system-update",
+    tags=["System Update"],
+    dependencies=_viewer,   # endpoint-level admin check inside the module
 )
 router.include_router(
     ssh.router,

@@ -338,7 +338,23 @@
       "commit": "Commit",
       "noReleases": "Non è stata ancora pubblicata nessuna release.",
       "error": "Verifica aggiornamenti fallita: {{message}}",
-      "cacheHint": "I risultati sono in cache per 1 ora. Usa \"Verifica ora\" per forzare."
+      "cacheHint": "I risultati sono in cache per 1 ora. Usa \"Verifica ora\" per forzare.",
+      "installNow": "Installa aggiornamento",
+      "installing": "Installazione…",
+      "installDisabled": "L'aggiornamento dal pannello non è disponibile su questo host.",
+      "inUpdaterUnavailable": "Self-update disabilitato su questo host",
+      "inUpdaterGenericFix": "Installa lo snippet sudoers sull'host del pannello per abilitare gli aggiornamenti con un click.",
+      "starting": "Preparazione aggiornamento…",
+      "confirmInstall": "Installare ArkManiaGest v{{version}} adesso?\n\nIl pannello sarà momentaneamente non disponibile durante il riavvio del backend. Il tuo database e il file .env non vengono modificati.",
+      "duringRestartHint": "Il backend verrà riavviato al termine del download; la pagina potrebbe non rispondere per qualche secondo.",
+      "stateLabel": {
+        "idle":        "In attesa",
+        "downloading": "Download release",
+        "verifying":   "Verifica checksum",
+        "running":     "Applicazione aggiornamento",
+        "success":     "Aggiornamento installato",
+        "failed":      "Aggiornamento fallito"
+      }
     }
   },
   "eventLog": {

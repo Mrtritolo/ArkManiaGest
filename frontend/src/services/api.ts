@@ -313,6 +313,42 @@ export const instanceActionsApi = {
 };
 
 // ---------------------------------------------------------------------------
+// In-panel self-update (Settings > General > "Install update" button)
+// ---------------------------------------------------------------------------
+
+export interface SystemUpdatePreflight {
+  sudo_authorised: boolean;
+  script_present:  boolean;
+  repo_configured: boolean;
+  repo:            string;
+  can_self_update: boolean;
+  hint:            string;
+}
+
+export interface SystemUpdateStatus {
+  state:          "idle" | "downloading" | "verifying" | "running" | "success" | "failed";
+  target_version: string | null;
+  started_at:     string | null;
+  finished_at:    string | null;
+  message:        string | null;
+  progress_pct:   number | null;
+  log_tail:       string | null;
+}
+
+export const systemUpdateApi = {
+  preflight: () =>
+    api.get<SystemUpdatePreflight>("/system-update/preflight"),
+  install:   () =>
+    api.post<Omit<SystemUpdateStatus, "log_tail" | "started_at" | "finished_at">>(
+      "/system-update/install",
+      null,
+      { timeout: 60_000 },   // download can take a minute on slow links
+    ),
+  status:    () =>
+    api.get<SystemUpdateStatus>("/system-update/status"),
+};
+
+// ---------------------------------------------------------------------------
 // SSH direct execution (debug utilities)
 // ---------------------------------------------------------------------------
 

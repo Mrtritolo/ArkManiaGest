@@ -338,7 +338,23 @@
       "commit": "Commit",
       "noReleases": "No releases have been published yet.",
       "error": "Update check failed: {{message}}",
-      "cacheHint": "Results are cached for 1 hour. Use \"Check now\" to refresh immediately."
+      "cacheHint": "Results are cached for 1 hour. Use \"Check now\" to refresh immediately.",
+      "installNow": "Install update",
+      "installing": "Installing…",
+      "installDisabled": "In-UI updater is not available on this host.",
+      "inUpdaterUnavailable": "Self-update is disabled on this host",
+      "inUpdaterGenericFix": "Run the sudoers snippet on the panel host to enable one-click updates.",
+      "starting": "Preparing update…",
+      "confirmInstall": "Install ArkManiaGest v{{version}} now?\n\nThe panel will be briefly unavailable while the backend restarts. Your database and .env file are not modified.",
+      "duringRestartHint": "The backend will restart when the download is replaced; the page may briefly fail to load.",
+      "stateLabel": {
+        "idle":        "Idle",
+        "downloading": "Downloading release",
+        "verifying":   "Verifying checksum",
+        "running":     "Applying update",
+        "success":     "Update installed",
+        "failed":      "Update failed"
+      }
     }
   },
   "eventLog": {

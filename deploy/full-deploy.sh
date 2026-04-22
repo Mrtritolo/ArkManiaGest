@@ -518,6 +518,22 @@ cat > /etc/cron.d/arkmaniagest << 'CRONS'
 */5 * * * * root curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 || systemctl restart arkmaniagest
 CRONS
 echo "  Cron backup + health OK"
+
+# Sudoers entry that lets the panel itself trigger the in-UI self-update
+# (POST /system-update/install).  The snippet whitelists ONLY the literal
+# server-update.sh path under bash, so even a panel compromise cannot
+# escalate to arbitrary root code via this entry.
+if [ -f "$APP_DIR/deploy/sudoers-arkmaniagest" ]; then
+    install -m 0440 "$APP_DIR/deploy/sudoers-arkmaniagest" \
+        /etc/sudoers.d/arkmaniagest
+    if visudo -c -f /etc/sudoers.d/arkmaniagest >/dev/null 2>&1; then
+        echo "  Self-update sudoers installed"
+    else
+        rm -f /etc/sudoers.d/arkmaniagest
+        echo "  WARNING: sudoers snippet failed visudo -c -- removed"
+    fi
+fi
+
 echo "  PHASE 9 OK"
 echo ""
 
