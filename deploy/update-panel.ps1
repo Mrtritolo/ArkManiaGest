@@ -215,10 +215,12 @@ if (Test-Path $updateScript) {
     # Strip CRLF + UTF-8 BOM -- bash chokes on both.
     $scriptUnix = Join-Path $env:TEMP "server-update-unix.sh"
     $content = (Get-Content $updateScript -Raw) -replace "`r`n", "`n"
+    # PS 5.1 does NOT accept a trailing comma in an argument list, so keep
+    # all three args on a single "no trailing comma" signature.
     [System.IO.File]::WriteAllText(
         $scriptUnix,
         $content,
-        [System.Text.UTF8Encoding]::new($false),
+        [System.Text.UTF8Encoding]::new($false)
     )
     $scpScript = @(
         "-o", "StrictHostKeyChecking=accept-new",
