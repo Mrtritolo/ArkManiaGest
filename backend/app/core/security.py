@@ -260,15 +260,35 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """
     Reject requests whose ``Content-Length`` exceeds ``max_size`` bytes.
 
+    A handful of upload endpoints (Beacon blueprint imports, JSON
+    blueprint dumps, etc.) legitimately need larger request bodies and
+    enforce their own per-route cap.  Those paths are listed in
+    :attr:`LARGE_UPLOAD_PATHS` and bypass the global limit so the
+    global default can stay tight.
+
     Args:
         max_size: Maximum allowed request body size in bytes (default: 10 MB).
     """
+
+    # Endpoints that handle file uploads bigger than the global cap.
+    # The endpoints themselves enforce a tighter, route-specific limit
+    # (see e.g. _BEACON_MAX_UPLOAD_BYTES in routes/blueprints.py) so a
+    # malicious client can't push 4 GB of garbage at us.
+    LARGE_UPLOAD_PATHS: tuple[str, ...] = (
+        "/api/v1/blueprints/import-beacondata",
+        "/api/v1/blueprints/import",
+    )
 
     def __init__(self, app, max_size: int = 10 * 1024 * 1024):
         super().__init__(app)
         self.max_size = max_size
 
     async def dispatch(self, request: Request, call_next):
+        # Skip the size check entirely for whitelisted upload endpoints --
+        # they enforce their own per-route cap before the body is read.
+        if request.url.path in self.LARGE_UPLOAD_PATHS:
+            return await call_next(request)
+
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > self.max_size:
             return JSONResponse(
