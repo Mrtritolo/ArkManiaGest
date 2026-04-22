@@ -108,8 +108,28 @@
   --glow-green:     0 0 25px rgba(22,163,74,0.18);
 }
 
-[data-theme="light"] html { color-scheme: light; }
+/* `[data-theme="light"]` matches <html> DIRECTLY (the attribute lives on
+   the documentElement); the descendant form `[data-theme="light"] html`
+   would mean "an html inside something marked light", which can never
+   exist.  Without color-scheme browsers paint native dropdowns / form
+   controls with their dark default and they become illegible on white. */
+[data-theme="light"]      { color-scheme: light; }
 [data-theme="light"] body { background: var(--bg-root); }
+
+/* Native <option> elements ignore most CSS in many browsers and pick
+   their colours from color-scheme.  Setting them explicitly is belt +
+   braces -- works on Chromium where color-scheme alone is enough, AND
+   on Firefox where it isn't. */
+[data-theme="light"] select option,
+[data-theme="light"] datalist option {
+  background-color: #ffffff;
+  color: var(--text-primary);
+}
+[data-theme="light"] select option:checked,
+[data-theme="light"] select option:hover {
+  background-color: var(--accent-light);
+  color: var(--text-primary);
+}
 
 /* Scrollbar track -- the dark-theme value (#0a0f0a) clashes on light pages. */
 [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-card-muted); }

@@ -361,13 +361,12 @@ _PREDEFINED_CATEGORIES: list[str] = [
 
 @router.get("/test-connection")
 async def test_connection():
-    """Verify connectivity to all blueprint data sources."""
+    """Verify connectivity to the Dododex upstream used by ``POST /sync``."""
     results = {}
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         for name, url in [
             ("bp.json", _DODODEX_BP_URL),
             ("commands.json", _DODODEX_COMMANDS_URL),
-            ("ark.wiki.gg", f"{_WIKI_API_BASE}?action=parse&page=Item_IDs/Resources&prop=wikitext&format=json"),
         ]:
             try:
                 resp = await client.get(url)
@@ -399,10 +398,21 @@ async def blueprint_status():
 @router.post("/sync", response_model=SyncResult)
 async def sync_blueprints():
     """
-    Download blueprint data from Dododex GitHub and rebuild the local database.
+    Wipe the local blueprint DB and refill it from Dododex.
 
-    Fetches ``bp.json`` (items/creatures) and ``commands.json`` (admin commands),
-    normalises entries, deduplicates by blueprint path, and persists the result.
+    The sync is deliberately destructive: the previous contents are
+    discarded and the result of the Dododex fetch becomes the new
+    canonical dataset.  This keeps the catalog in lockstep with
+    Dododex's upstream -- entries they removed disappear locally, and
+    there's no chance of stale rows piling up across repeated syncs.
+
+    We used to ALSO scrape the ARK Wiki (18 pages, rate-limited, prone
+    to 429) -- that path has been dropped: Dododex already covers the
+    creature + item + command dataset, and the wiki scrape added ~60s
+    of latency, 18 extra external dependencies, and the occasional
+    rate-limit failure for little gain.  If wiki coverage is ever
+    needed again the removed helpers (``_parse_wiki_item_table`` et al.)
+    still live in this module but are intentionally not called.
     """
     blueprints:     list[dict] = []
     sources:        list[str]  = []
@@ -410,6 +420,13 @@ async def sync_blueprints():
     items_count    = 0
     dinos_count    = 0
     commands_count = 0
+
+    # Explicit wipe up front.  _save_db at the tail already replaces the
+    # whole blob, but operators reading the log expect to see the reset
+    # moment so they can tell a "nothing changed" run from a "wiped and
+    # refilled" one.
+    prev_total = len(_get_db().get("blueprints", []))
+    log.info("Blueprint sync: wiping %d previous entries", prev_total)
 
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECS, follow_redirects=True) as client:
 
@@ -519,58 +536,10 @@ async def sync_blueprints():
         except Exception as exc:
             errors.append(f"commands.json: {type(exc).__name__}: {exc}")
 
-    # ── 3. ARK Wiki items (18 categories) ───────────────────────────────
-    # Each subpage contains a wikitext table with columns:
-    #   Name | Category | Stack Size | Item ID | Class Name | Blueprint Path
-    # Rate-limited: 1s delay between requests + retry on HTTP 429.
-    wiki_items = 0
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECS, follow_redirects=True) as wiki_client:
-        for i, wiki_cat in enumerate(_WIKI_ITEM_CATEGORIES):
-            # Delay between requests to avoid 429 rate limiting
-            if i > 0:
-                await asyncio.sleep(1.0)
-
-            page_name = f"Item_IDs/{wiki_cat}"
-            for attempt in range(3):
-                try:
-                    resp = await wiki_client.get(
-                        _WIKI_API_BASE,
-                        params={
-                            "action": "parse",
-                            "page": page_name,
-                            "prop": "wikitext",
-                            "format": "json",
-                        },
-                    )
-                    if resp.status_code == 429:
-                        # Rate limited — wait and retry
-                        wait = 3.0 * (attempt + 1)
-                        log.warning("Wiki %s: HTTP 429, retrying in %.0fs", wiki_cat, wait)
-                        await asyncio.sleep(wait)
-                        continue
-
-                    if resp.status_code != 200:
-                        errors.append(f"Wiki {wiki_cat}: HTTP {resp.status_code}")
-                        break
-
-                    data = resp.json()
-                    wikitext = data.get("parse", {}).get("wikitext", {}).get("*", "")
-                    if not wikitext:
-                        break
-
-                    parsed = _parse_wiki_item_table(wikitext, wiki_cat)
-                    blueprints.extend(parsed)
-                    wiki_items += len(parsed)
-                    items_count += len(parsed)
-                    break  # success
-                except Exception as exc:
-                    if attempt == 2:
-                        errors.append(f"Wiki {wiki_cat}: {type(exc).__name__}: {exc}")
-                    else:
-                        await asyncio.sleep(2.0)
-
-    if wiki_items > 0:
-        sources.append(f"ark.wiki.gg ({wiki_items} items across {len(_WIKI_ITEM_CATEGORIES)} categories)")
+    # ARK Wiki scrape used to live here -- removed on the switch to
+    # "Dododex only".  See the sync_blueprints docstring for the
+    # rationale; the parser helpers below this module are kept in case
+    # coverage has to grow back.
 
     # Deduplicate by blueprint path (case-insensitive)
     seen: dict[str, bool] = {}
