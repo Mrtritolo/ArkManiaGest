@@ -19,6 +19,7 @@ from app.core.auth import require_viewer
 from app.api.routes import (
     auth,
     servers,
+    instance_actions,
     ssh,
     settings,
     machines,
@@ -105,6 +106,12 @@ router.include_router(
 router.include_router(
     servers.router,
     prefix="/servers", tags=["Servers"], dependencies=_viewer,
+)
+router.include_router(
+    instance_actions.router,
+    prefix="/instance-actions",
+    tags=["Instance Actions"],
+    dependencies=_viewer,
 )
 router.include_router(
     ssh.router,

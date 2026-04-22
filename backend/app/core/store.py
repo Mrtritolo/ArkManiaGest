@@ -632,6 +632,115 @@ async def get_all_instances_async(
     return [_row_to_instance_dict(dict(r)) for r in result.mappings().fetchall()]
 
 
+async def create_instance_async(
+    db: AsyncSession,
+    fields: Dict[str, Any],
+) -> int:
+    """
+    Insert a new ARK server instance row and return its generated id.
+
+    ``fields`` must contain every NOT NULL column not covered by the SQL
+    defaults:  ``machine_id``, ``name``, ``container_name``, ``admin_password_enc``,
+    ``pok_base_dir``, ``instance_dir``.  Every other key is optional.
+
+    Password fields are expected to be already encrypted by the caller
+    (``admin_password_enc`` / ``server_password_enc``); the store does not
+    touch plaintext credentials.
+
+    Raises:
+        ValueError: A required column is missing from *fields*.
+    """
+    required = (
+        "machine_id", "name", "container_name",
+        "admin_password_enc", "pok_base_dir", "instance_dir",
+    )
+    missing = [k for k in required if k not in fields]
+    if missing:
+        raise ValueError(f"create_instance_async: missing required field(s) {missing}")
+
+    # Columns that have SQL defaults or nullable=True can be omitted; the
+    # UPDATE path handles the rest through update_instance_async.
+    cols = list(fields.keys())
+    placeholders = ", ".join(f":{c}" for c in cols)
+    result = await db.execute(
+        text(
+            f"INSERT INTO ARKM_server_instances "
+            f"({', '.join(cols)}) VALUES ({placeholders})"
+        ),
+        fields,
+    )
+    return result.lastrowid
+
+
+async def update_instance_async(
+    db: AsyncSession,
+    instance_id: int,
+    fields: Dict[str, Any],
+) -> bool:
+    """
+    Apply a partial update to an ARK server instance row.
+
+    *fields* is a flat dict of column names -> new values.  Empty dicts
+    are a no-op and return True.  Encrypted password fields must arrive
+    pre-encrypted (``admin_password_enc`` / ``server_password_enc``).
+
+    Returns:
+        True if a row was updated or the update was empty, False if the
+        instance does not exist.
+    """
+    if not fields:
+        return True
+    assignments = ", ".join(f"{c} = :{c}" for c in fields)
+    params = dict(fields)
+    params["iid"] = instance_id
+    result = await db.execute(
+        text(
+            f"UPDATE ARKM_server_instances SET {assignments} "
+            f"WHERE id = :iid"
+        ),
+        params,
+    )
+    return result.rowcount > 0
+
+
+async def delete_instance_async(db: AsyncSession, instance_id: int) -> bool:
+    """Remove an ARK server instance row. Returns True if a row was deleted."""
+    result = await db.execute(
+        text("DELETE FROM ARKM_server_instances WHERE id = :iid"),
+        {"iid": instance_id},
+    )
+    return result.rowcount > 0
+
+
+async def set_instance_status_async(
+    db: AsyncSession,
+    instance_id: int,
+    status: str,
+    *,
+    touch_started: bool = False,
+    touch_stopped: bool = False,
+) -> None:
+    """
+    Update the ``status`` column and the related lifecycle timestamps.
+
+    The ``last_status_at`` column always receives the current UTC time.
+    Pass ``touch_started=True`` to also bump ``last_started_at`` (for the
+    ``running`` transition), and ``touch_stopped=True`` for the
+    ``stopped``/``error`` transitions.
+    """
+    now = datetime.now(timezone.utc)
+    sets = ["status = :st", "last_status_at = :now"]
+    params: Dict[str, Any] = {"st": status, "now": now, "iid": instance_id}
+    if touch_started:
+        sets.append("last_started_at = :now")
+    if touch_stopped:
+        sets.append("last_stopped_at = :now")
+    await db.execute(
+        text(f"UPDATE ARKM_server_instances SET {', '.join(sets)} WHERE id = :iid"),
+        params,
+    )
+
+
 # =============================================
 #  Instance actions (panel DB) — async
 # =============================================
