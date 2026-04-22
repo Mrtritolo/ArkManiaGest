@@ -6,6 +6,7 @@ Bootstrap parameters (host, port, CORS, debug mode) and sensitive credentials
 The .env file is never committed to version control.
 """
 import secrets
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -94,6 +95,36 @@ class ServerSettings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+
+    # ------------------------------------------------------------------
+    # Input coercion
+    # ------------------------------------------------------------------
+    # Our installers write a single .env with every known key, emitting
+    # empty strings for values the user did not provide (e.g. an unused
+    # PLUGIN_DB_PORT or SSH_TIMEOUT).  Pydantic v2 would otherwise refuse
+    # to parse "" into an int -- turn that into the field default instead
+    # of crashing the service at boot.
+    @field_validator(
+        "API_PORT",
+        "DB_PORT",
+        "PLUGIN_DB_PORT",
+        "SSH_TIMEOUT",
+        mode="before",
+    )
+    @classmethod
+    def _empty_int_to_default(cls, v, info):
+        if isinstance(v, str) and v.strip() == "":
+            default = cls.model_fields[info.field_name].default
+            return default if default is not None else 0
+        return v
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def _empty_bool_to_default(cls, v):
+        # Same idea for DEBUG: accept empty string, treat as "not set".
+        if isinstance(v, str) and v.strip() == "":
+            return False
+        return v
 
     @property
     def database_url(self) -> str:
