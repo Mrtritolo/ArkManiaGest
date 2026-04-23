@@ -7,6 +7,126 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.8] - 2026-04-22
+
+UI consolidation, light theme, fresh blueprint catalog and rare-dino
+event log management.
+
+### Added
+
+- **Containers + ARK Instances merged** into a single `/instances`
+  page.  The new Instances page lists every registered managed
+  instance and adds a "Scan machines" action that surfaces "orphan"
+  containers (discovered by SSH but not yet in `ARKM_server_instances`)
+  in a separate section, each with a one-click **Import** workflow
+  backed by the new `POST /api/v1/servers/import-from-container`
+  endpoint.  The old `/containers` route now redirects to `/instances`.
+- **Light theme.**  `index.css` ships a `[data-theme="light"]` palette
+  alongside the dark default; `src/theme.ts` reads / persists the
+  choice in `localStorage` and applies it to `<html>` BEFORE React
+  paints (no flash of wrong theme).  A Sun/Moon button next to the
+  language selector toggles between modes.  System preference is
+  honoured when the user hasn't picked yet.
+- **Beacon `.beacondata` import** for the blueprint catalog.  The
+  Dododex GitHub mirror is stale (1,973 entries, last refresh 2024-11-08,
+  zero ASA additions); Beacon's complete export yields 15,243 unique
+  blueprints across 80 content packs (4,586 creatures + 12,283 engrams)
+  including ASA-era creatures like Maeguana, Helminth and Bog Spider
+  PLUS any mods loaded in Beacon.  Multipart upload via the new
+  `POST /api/v1/blueprints/import-beacondata` endpoint; primary
+  "Import Beacon (.beacondata)" button on the empty-state screen,
+  smaller "Beacon" button in the toolbar.
+- **"Clear spawn table" button** on the Rare Dinos page (top-right,
+  next to "Generate Random") — wipes the `ARKM_rare_spawns` event
+  log without touching the configured pool.  Backed by the new
+  `DELETE /api/v1/arkmania/rare-dinos/spawns` endpoint with optional
+  `server_key` / `older_than_days` filters for future fine-grained
+  cleanups.
+
+### Changed
+
+- ServerInstancesPage rewritten on the design-system classes
+  (`.page-header`, `.card`, `.card-form`, `.form-grid`, `.machine-card`,
+  `.badge`, `.btn-primary/secondary/ghost/danger`).  Almost all inline
+  styles removed -- font sizes, spacing and colours now match the rest
+  of the panel.
+- "Containers" sidebar entry retired; the Instances page absorbs its
+  list-view + scan responsibilities.
+- `POST /api/v1/blueprints/sync` no longer scrapes 18 ARK Wiki pages
+  (which added ~60s of latency, occasional 429s, and marginal gain
+  over Dododex).  Sync is Dododex-only; the wiki helpers are kept
+  in-module ready to re-enable if ever needed.  Operators reading the
+  log now see an explicit `Blueprint sync: wiping N previous entries`
+  line so a no-op run is distinguishable from a real refresh.
+- `RateLimitMiddleware` exempts the polling endpoints (`/settings/status`,
+  `/system-update/status`, `/health`) and raises the general per-IP
+  quota from 120/min to 300/min so an active admin session can't
+  429-lock itself.
+- The frontend's GitHub-derived 429 messages now include the reset
+  time + a hint to add `GITHUB_TOKEN` to `.env`.
+
+### Fixed
+
+- `[data-theme="light"]` selector for `color-scheme` was nested wrong
+  (would only have matched an `<html>` inside a `data-theme="light"`
+  element, which is impossible) — native dropdowns rendered with dark
+  defaults on a white page.  Fixed plus belt-and-braces explicit
+  `select option` background/colour so Firefox renders correctly too.
+- `RareDinosPage` add-modal now warns up front when the local blueprint
+  DB is empty + offers a deep link to Settings → Blueprints, instead
+  of returning silent zero-result autocomplete.
+- Self-update sudo probe (`POST /system-update/preflight`) used the
+  strict `sudo -n -l <command>` form which doesn't match a sudoers
+  rule ending with `*` when no argument is supplied.  Switched to the
+  relaxed `sudo -n -l` listing + grep, matching the operator-readable
+  manual verification.  Banner hint surfaces the concrete sudo error
+  (`NOPASSWD missing`, `no rule for this user`, ...) instead of a
+  generic "sudoers entry missing".
+- `arkmaniagest.service` had `NoNewPrivileges=yes`, which silently
+  vetoed every sudo from inside the service and made the in-UI
+  self-update unusable -- flipped to `no` (the matching sudoers
+  whitelist still constrains escalation to the single trusted
+  `server-update.sh` path).  `PrivateTmp` flipped to `no` and `/tmp`
+  added to `ReadWritePaths` so the detached update child + the
+  post-restart backend share the status / log / tarball files.
+- `server-update.sh` now writes `state=success` to the panel-side
+  status JSON BEFORE calling `systemctl restart arkmaniagest`,
+  because the script is in the panel's cgroup and gets SIGTERM-ed
+  the moment systemd starts stopping the service.  Adds an `ERR`
+  trap that writes `state=failed` on any non-zero exit earlier.
+- `server-update.sh` auto-detects the GitHub-release tarball layout
+  (`arkmaniagest-vX.Y.Z/` as a single top-level directory) and shifts
+  ROOT one level deeper before the rsync -- the old logic blew away
+  most of `/opt/arkmaniagest/` when fed a release-style archive.
+  A follow-up sweep cleans up any orphan `arkmaniagest-v*/` directory
+  left by previous broken runs.
+- Hitting F5 on any panel page no longer kicks the user back to the
+  login screen.  The JWT is now persisted in `sessionStorage` (cleared
+  on tab close) and restored on boot via `authApi.me()`.
+- Nginx `client_max_body_size` raised from 10 MB to 100 MB so Beacon
+  uploads (~12 MB) reach the backend.
+- `RequestSizeLimitMiddleware` exempts the `/blueprints/import-*`
+  endpoints from the 10 MB cap so the Beacon upload isn't blocked
+  by the global limit either.
+
+### Tooling
+
+- **`deploy/update-panel.ps1`** + **`deploy/update-panel.sh`**:
+  interactive dev-side update scripts (push working tree to an
+  existing panel host without cutting a GitHub release).  Honour
+  `.deployignore`, support `--backend-only` / `--frontend-only` /
+  `--no-deps` / `--dry-run`.
+- `release.ps1` no longer aborts on vite stderr (PS 5.1 turned it
+  into a NativeCommandError) and reads files as UTF-8 explicitly so
+  em-dashes / accented characters don't round-trip to mojibake.
+- `release.ps1` + `package-release.ps1` resolve `$PROJECT` two levels
+  up from `deploy/maintainer/` (where they actually live).
+- `full-deploy.sh` writes `/etc/sudoers.d/arkmaniagest` after
+  `visudo -c` validation in phase 9, enabling the in-UI self-update
+  on fresh installs.
+
+---
+
 ## [2.3.7] - 2026-04-22
 
 Hotfix release for two regressions surfaced by the first real-world
