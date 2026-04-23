@@ -104,6 +104,56 @@ export default function DecayPage() {
     }
   }
 
+  // ── DM.Purge dispatch (cluster-wide) ───────────────────────────
+  // Calls ARKM.DM.Purge over RCON on every active ARK instance --
+  // the plugin then walks ARKM_decay_pending on each contacted
+  // server and destroys the actors there.  Admin only on the backend.
+  const [running, setRunning] = useState(false)
+
+  async function handleRunPurge() {
+    if (!window.confirm(t('decay.confirmRunPurge'))) return
+    setRunning(true); setError('')
+    try {
+      const res = await arkDecayApi.runPurge()
+      window.alert(t('decay.runPurgeDone', {
+        ok:     res.data.instances_ok,
+        total:  res.data.instances_total,
+        failed: res.data.instances_failed,
+      }))
+      await loadData()
+    } catch (e: any) {
+      setError(e.response?.data?.detail || t('decay.runPurgeFailed'))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  // ── Per-tribe combined "schedule + run" ────────────────────────
+  // Used by the new red 'Purge now' button on the Tribes tab; one
+  // round-trip schedules the tribe AND triggers the cluster-wide
+  // RCON sweep so the operator doesn't need to click twice.
+  async function handlePurgeTribeNow(tribe: DecayTribe) {
+    if (!window.confirm(t('decay.confirmPurgeNow', {
+      id: tribe.targeting_team,
+      name: tribe.tribe_name || t('decay.unknownTribe'),
+    }))) return
+    setActing(tribe.targeting_team); setError('')
+    try {
+      const res = await arkDecayApi.purgeTribe(tribe.targeting_team)
+      window.alert(t('decay.purgeNowDone', {
+        id:    tribe.targeting_team,
+        rows:  res.data.rows_inserted,
+        ok:    res.data.instances_ok,
+        total: res.data.instances_total,
+      }))
+      await loadData()
+    } catch (e: any) {
+      setError(e.response?.data?.detail || t('decay.purgeNowFailed'))
+    } finally {
+      setActing(null)
+    }
+  }
+
   async function handleCancelPurge(p: PendingItem) {
     if (!window.confirm(t('decay.confirmCancel', {
       id:     p.targeting_team,
@@ -144,6 +194,17 @@ export default function DecayPage() {
         <div className="page-header-text">
           <h1 className="page-title"><Timer size={22} /> {t('decay.heading')}</h1>
           <p className="page-subtitle">{t('decay.subtitle', { count: stats.total })}</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <button
+            onClick={handleRunPurge}
+            disabled={running}
+            className="btn btn-danger btn-sm"
+            title={t('decay.runPurgeTitle')}
+          >
+            <Trash2 size={14} />
+            {running ? t('decay.runningPurge') : t('decay.runPurgeButton')}
+          </button>
         </div>
       </div>
 
@@ -226,12 +287,12 @@ export default function DecayPage() {
               <div className="pl-empty"><Timer size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyTribes')}</p></div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 110px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 130px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                   <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.tribes.table.group')}</span><span>{t('decay.tribes.table.days')}</span><span>{t('decay.tribes.table.expires')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.status')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
                 </div>
                 {tribes.map(tr => (
                   <div key={tr.targeting_team} style={{
-                    display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 110px',
+                    display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 130px',
                     padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
                   }}>
                     <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{tr.targeting_team}</span>
@@ -254,15 +315,26 @@ export default function DecayPage() {
                         {tr.status === 'expired' ? t('decay.status.expired') : tr.status === 'expiring' ? formatHoursLeft(tr.hours_left) : t('decay.status.ok')}
                       </span>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem' }}>
                       <button
                         onClick={() => handleSchedulePurge(tr)}
-                        disabled={acting !== null}
-                        className="btn btn-danger btn-sm"
+                        disabled={acting !== null || running}
+                        className="btn btn-ghost btn-sm"
                         title={t('decay.scheduleTitle')}
+                        style={{ padding: '0.2rem 0.4rem' }}
                       >
-                        <Trash2 size={11} />
-                        {acting === tr.targeting_team ? t('decay.scheduling') : t('decay.scheduleButton')}
+                        <Clock size={12} />
+                      </button>
+                      <button
+                        onClick={() => handlePurgeTribeNow(tr)}
+                        disabled={acting !== null || running}
+                        className="btn btn-danger btn-sm"
+                        title={t('decay.purgeNowTitle')}
+                        style={{ padding: '0.2rem 0.4rem' }}
+                      >
+                        {acting === tr.targeting_team
+                          ? <span style={{ fontSize: '0.65rem' }}>…</span>
+                          : <><Trash2 size={11} /> {t('decay.purgeNowButton')}</>}
                       </button>
                     </div>
                   </div>

@@ -842,6 +842,51 @@ export const arkDecayApi = {
     }>(`/arkmania/decay/pending/${targetingTeam}`, {
       params: serverKey ? { server_key: serverKey } : undefined,
     }),
+
+  /**
+   * Send `ARKM.DM.Purge` over RCON to every active ARK instance (or the
+   * single one identified by `instanceId`).  The plugin then walks
+   * ARKM_decay_pending on each contacted server and destroys the
+   * corresponding actors.
+   */
+  runPurge: (instanceId?: number) =>
+    api.post<{
+      instances_total:  number;
+      instances_ok:     number;
+      instances_failed: number;
+      results:          Array<{
+        instance_id:   number;
+        instance_name: string | null;
+        status:        string;
+        exit_code?:    number;
+        duration_ms?:  number;
+        stdout_tail?:  string;
+        stderr_tail?:  string;
+        message?:      string;
+      }>;
+    }>(
+      "/arkmania/decay/run-purge",
+      null,
+      { params: instanceId ? { instance_id: instanceId } : undefined, timeout: 120_000 },
+    ),
+
+  /** Schedule a single tribe AND immediately fire DM.Purge cluster-wide. */
+  purgeTribe: (targetingTeam: number) =>
+    api.post<{
+      targeting_team:   number;
+      scheduled_on:     string[];
+      rows_inserted:    number;
+      instances_total:  number;
+      instances_ok:     number;
+      instances_failed: number;
+      results:          Array<{
+        instance_id:   number;
+        instance_name: string | null;
+        status:        string;
+        exit_code?:    number;
+        message?:      string;
+      }>;
+    }>(`/arkmania/decay/purge-tribe/${targetingTeam}`, null, { timeout: 120_000 }),
 };
 
 // ---------------------------------------------------------------------------

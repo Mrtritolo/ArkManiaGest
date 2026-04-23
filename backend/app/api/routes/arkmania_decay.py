@@ -2,17 +2,105 @@
 api/routes/ARKM_decay.py — Tribe decay management.
 
 Reads from the ``ARKM_tribe_decay``, ``ARKM_decay_pending``, and
-``ARKM_decay_log`` tables (all populated by the ArkMania plugin).
+``ARKM_decay_log`` tables (all populated by the ArkMania plugin) and,
+for the destructive RCON endpoints (``run-purge`` / ``purge-tribe``),
+also reaches into the panel DB to enumerate the registered ARK server
+instances.
+
+The plugin (ARKM-DecayManager / Commands.cpp:315) registers
+``ARKM.DM.Purge`` as a console + RCON command -- the panel triggers
+it via :func:`app.ssh.pok_executor.exec_rcon`, which goes through
+``docker exec`` rather than raw RCON TCP so we don't need an extra
+network channel.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_plugin_db
+from app.core.auth import require_admin, require_operator
+from app.core.store import (
+    get_all_instances_async,
+    get_machine_async,
+)
+from app.db.session import get_db, get_plugin_db
+from app.ssh.pok_executor import exec_rcon
 
 router = APIRouter()
+
+
+# ── Helpers shared by the RCON-driven endpoints ──────────────────────────────
+
+# The literal RCON command string registered by the plugin.  Single source
+# of truth -- if the plugin ever renames it (`ARKM.DM.PurgeAll`, etc.),
+# updating here covers both /run-purge and /purge-tribe.
+_RCON_PURGE_CMD = "ARKM.DM.Purge"
+
+
+async def _dispatch_purge_to_instances(
+    panel_db: AsyncSession,
+    *,
+    instance_id_filter: Optional[int] = None,
+    user: Optional[dict] = None,
+) -> list[dict]:
+    """
+    Enumerate active server instances (optionally filtered to one) and
+    run ``ARKM.DM.Purge`` on each.
+
+    Returns a per-instance summary list with stdout/stderr tails so the UI
+    can show what each server reported.  Failures don't abort the loop --
+    a dead container shouldn't prevent the purge running on the rest of
+    the cluster.
+    """
+    instances = await get_all_instances_async(panel_db, active_only=True)
+    if instance_id_filter is not None:
+        instances = [i for i in instances if i["id"] == instance_id_filter]
+    if not instances:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No active ARK server instances registered in the panel.  "
+                "Add one under /instances first."
+            ),
+        )
+
+    results: list[dict] = []
+    for inst in instances:
+        machine = await get_machine_async(panel_db, inst["machine_id"])
+        if not machine:
+            results.append({
+                "instance_id":   inst["id"],
+                "instance_name": inst.get("name"),
+                "status":        "skipped",
+                "message":       f"Machine {inst['machine_id']} not found.",
+            })
+            continue
+        try:
+            r = await exec_rcon(
+                panel_db,
+                instance=inst,
+                machine=machine,
+                user=user,
+                rcon_cmd=_RCON_PURGE_CMD,
+            )
+            results.append({
+                "instance_id":   inst["id"],
+                "instance_name": inst["name"],
+                "status":        r.status,        # "success" | "failed"
+                "exit_code":     r.exit_code,
+                "duration_ms":   r.duration_ms,
+                "stdout_tail":   (r.stdout or "")[-2000:],
+                "stderr_tail":   (r.stderr or "")[-2000:],
+            })
+        except Exception as exc:
+            results.append({
+                "instance_id":   inst["id"],
+                "instance_name": inst.get("name"),
+                "status":        "failed",
+                "message":       f"{type(exc).__name__}: {exc}",
+            })
+    return results
 
 
 # NOTE: routes use "" (no trailing slash) to be consistent with
@@ -334,4 +422,107 @@ async def cancel_tribe_purge(
         "targeting_team": targeting_team,
         "server_key":     server_key,
         "rows_deleted":   res.rowcount or 0,
+    }
+
+
+# ── Direct DM.Purge invocation via RCON ──────────────────────────────────────
+#
+# These endpoints actually destroy in-game actors (via the plugin) -- the
+# previous /pending POST + DELETE only stage / unstage the queue.  Both
+# are admin-only; the existing route-level dependency in api/routes/__init__.py
+# only enforces 'viewer', so we add an explicit Depends(require_admin)
+# here.
+
+@router.post("/run-purge", dependencies=[Depends(require_admin)])
+async def run_dm_purge(
+    instance_id: Optional[int] = Query(
+        default=None, ge=1,
+        description=(
+            "When set, only that single ARK instance receives the RCON "
+            "purge command.  Omit to dispatch to every active instance."
+        ),
+    ),
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Send ``ARKM.DM.Purge`` over RCON to one or every active ARK instance.
+
+    The plugin's ``DM_PurgeRcon`` handler then iterates ``ARKM_decay_pending``
+    on each contacted server and destroys actors + writes
+    ``ARKM_decay_log`` / ``ARKM_purge_detail`` rows itself -- the panel
+    just kicks off the sweep.
+
+    Returns a per-instance result list with stdout / stderr tails so the
+    UI can display whether each server actually executed the command.
+    """
+    results = await _dispatch_purge_to_instances(
+        panel_db,
+        instance_id_filter=instance_id,
+        user=user,
+    )
+    summary_ok     = sum(1 for r in results if r.get("status") == "success")
+    summary_failed = sum(1 for r in results if r.get("status") in ("failed", "skipped"))
+    return {
+        "instances_total":  len(results),
+        "instances_ok":     summary_ok,
+        "instances_failed": summary_failed,
+        "results":          results,
+    }
+
+
+@router.post("/purge-tribe/{targeting_team}", dependencies=[Depends(require_admin)])
+async def purge_single_tribe(
+    targeting_team: int,
+    plugin_db: AsyncSession = Depends(get_plugin_db),
+    panel_db:  AsyncSession = Depends(get_db),
+    user:      dict          = Depends(require_admin),
+):
+    """
+    Schedule a single tribe and immediately fire ``ARKM.DM.Purge``.
+
+    Convenience endpoint that runs the equivalent of:
+
+        POST /pending/{targeting_team}     (insert per-server queue rows)
+        POST /run-purge                    (RCON sweep on every instance)
+
+    in a single round-trip.  Returns the queue insertion count plus the
+    per-instance RCON result so the operator can confirm both phases ran.
+    """
+    # Phase 1: schedule on every server known to the plugin DB.
+    server_rows = await plugin_db.execute(text("SELECT server_key FROM ARKM_servers"))
+    server_keys = [r[0] for r in server_rows.fetchall() if r[0]]
+    if not server_keys:
+        raise HTTPException(
+            status_code=409,
+            detail="No servers registered in ARKM_servers; nothing to schedule.",
+        )
+
+    inserted = 0
+    for sk in server_keys:
+        res = await plugin_db.execute(
+            text(
+                "INSERT IGNORE INTO ARKM_decay_pending "
+                "(targeting_team, server_key, reason, "
+                " structure_count, dino_count, flagged_at) "
+                "VALUES (:t, :sk, :r, 0, 0, NOW())"
+            ),
+            {"t": targeting_team, "sk": sk, "r": "manual"},
+        )
+        inserted += res.rowcount or 0
+    await plugin_db.commit()
+
+    # Phase 2: RCON sweep on every live ARK instance.
+    rcon_results = await _dispatch_purge_to_instances(panel_db, user=user)
+    summary_ok     = sum(1 for r in rcon_results if r.get("status") == "success")
+    summary_failed = sum(1 for r in rcon_results if r.get("status") in ("failed", "skipped"))
+
+    return {
+        "targeting_team":  targeting_team,
+        "scheduled_on":    server_keys,
+        "rows_inserted":   inserted,
+        "instances_total":  len(rcon_results),
+        "instances_ok":     summary_ok,
+        "instances_failed": summary_failed,
+        "results":         rcon_results,
     }
