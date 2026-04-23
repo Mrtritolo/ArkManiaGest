@@ -232,3 +232,106 @@ async def list_decay_log(
         for r in result.fetchall()
     ]
     return {"log": items, "count": len(items)}
+
+
+# ── Single-tribe purge management ────────────────────────────────────────────
+#
+# The plugin's `DM.Purge` sweep destroys every tribe currently listed in
+# ARKM_decay_pending; the panel just manages that table.  Two endpoints:
+#
+#   POST   /pending/{targeting_team}  -> queue the tribe (one row per active
+#                                        server, so the sweep on every map
+#                                        in the cluster catches it)
+#   DELETE /pending/{targeting_team}  -> wipe the tribe's pending rows
+#                                        across all servers (cancel)
+#
+# The plugin's own `AdminPurgeExpired()` does extra bookkeeping
+# (ARKM_purge_detail, ARKM_decay_log) AS THE ACTORS GET DESTROYED -- we
+# explicitly do NOT touch those tables here.  We just stage the
+# work; the in-game scheduler executes it.
+
+@router.post("/pending/{targeting_team}", status_code=201)
+async def schedule_tribe_purge(
+    targeting_team: int,
+    reason: str = Query(
+        default="manual",
+        description="Free-form tag stored in ARKM_decay_pending.reason "
+                    "(typically 'manual', 'expired', 'orphaned').",
+    ),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Schedule a single tribe for destruction on every active server.
+
+    Inserts one ``ARKM_decay_pending`` row per ``ARKM_servers`` entry
+    (the plugin's purge sweep walks per-map actors, so each map needs its
+    own pending row).  Existing rows for that ``(targeting_team,
+    server_key)`` pair are left untouched -- the INSERT IGNORE pattern
+    keeps the call idempotent.
+    """
+    # 1. Pull the current cluster server list -- the plugin only acts on
+    #    servers that have a matching ARKM_servers entry.
+    servers_res = await db.execute(text("SELECT server_key FROM ARKM_servers"))
+    server_keys = [r[0] for r in servers_res.fetchall() if r[0]]
+    if not server_keys:
+        raise HTTPException(
+            status_code=409,
+            detail="No servers registered in ARKM_servers; nothing to schedule.",
+        )
+
+    inserted = 0
+    for sk in server_keys:
+        # INSERT IGNORE so re-clicking the button is harmless.  We seed
+        # structure_count + dino_count to 0 -- the plugin's sweep will
+        # recompute them from the actual actor count when it runs.
+        res = await db.execute(
+            text(
+                "INSERT IGNORE INTO ARKM_decay_pending "
+                "(targeting_team, server_key, reason, "
+                " structure_count, dino_count, flagged_at) "
+                "VALUES (:t, :sk, :r, 0, 0, NOW())"
+            ),
+            {"t": targeting_team, "sk": sk, "r": reason[:64]},
+        )
+        inserted += res.rowcount or 0
+
+    await db.commit()
+    return {
+        "targeting_team": targeting_team,
+        "scheduled_on":   server_keys,
+        "rows_inserted":  inserted,
+        "reason":         reason,
+    }
+
+
+@router.delete("/pending/{targeting_team}")
+async def cancel_tribe_purge(
+    targeting_team: int,
+    server_key: Optional[str] = Query(
+        default=None,
+        description="Limit the cancel to a single server.  Omit to cancel "
+                    "the pending purge across every server in the cluster.",
+    ),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Remove a tribe from ``ARKM_decay_pending`` so the plugin's next purge
+    sweep skips it.  The tribe stays in ``ARKM_tribe_decay`` (its decay
+    timer keeps ticking).  Re-add by POSTing the same path.
+    """
+    where:  list[str] = ["targeting_team = :t"]
+    params: dict      = {"t": targeting_team}
+    if server_key:
+        where.append("server_key = :sk")
+        params["sk"] = server_key
+
+    res = await db.execute(
+        text(f"DELETE FROM ARKM_decay_pending WHERE {' AND '.join(where)}"),
+        params,
+    )
+    await db.commit()
+    return {
+        "targeting_team": targeting_team,
+        "server_key":     server_key,
+        "rows_deleted":   res.rowcount or 0,
+    }

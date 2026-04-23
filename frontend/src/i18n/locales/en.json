@@ -546,9 +546,22 @@
         "group": "Group",
         "days": "Days",
         "expires": "Expires",
-        "status": "Status"
+        "status": "Status",
+        "actions": "Actions"
       }
     },
+    "scheduleButton":  "Purge",
+    "scheduling":      "…",
+    "scheduleTitle":   "Mark this tribe for destruction by the plugin's next purge sweep",
+    "confirmSchedule": "Schedule tribe #{{id}} ({{name}}) for destruction on every server?\n\nThe panel only stages the request; the plugin's next purge sweep destroys all of the tribe's structures and dinos. Use 'Cancel' from the Pending tab to revert before the sweep runs.",
+    "scheduleDone":    "Tribe #{{id}} scheduled on {{rows}}/{{total}} servers.",
+    "scheduleFailed":  "Could not schedule the purge.",
+    "cancelButton":    "Cancel",
+    "cancelling":      "…",
+    "cancelTitle":     "Remove this tribe from the pending purge queue (the decay timer keeps ticking)",
+    "confirmCancel":   "Cancel pending purge for tribe #{{id}} ({{name}}) on {{server}}?\n\nThe row in ARKM_decay_pending is removed; the tribe stays in ARKM_tribe_decay and the regular decay timer continues.",
+    "cancelDone":      "Pending entry for tribe #{{id}} removed ({{rows}} row(s)).",
+    "cancelFailed":    "Could not cancel the pending purge.",
     "pending": {
       "table": {
         "server": "Server",

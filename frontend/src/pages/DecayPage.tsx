@@ -78,6 +78,55 @@ export default function DecayPage() {
 
   useEffect(() => { loadData() }, [filterStatus])
 
+  // ── Single-tribe purge actions ─────────────────────────────────
+  // `acting` is the targeting_team currently being scheduled or
+  // cancelled, used to show a per-row spinner / disable double-click.
+  const [acting, setActing] = useState<number | null>(null)
+
+  async function handleSchedulePurge(tribe: DecayTribe) {
+    if (!window.confirm(t('decay.confirmSchedule', {
+      id:    tribe.targeting_team,
+      name:  tribe.tribe_name || t('decay.unknownTribe'),
+    }))) return
+    setActing(tribe.targeting_team); setError('')
+    try {
+      const res = await arkDecayApi.schedulePurge(tribe.targeting_team, 'manual')
+      window.alert(t('decay.scheduleDone', {
+        id:    tribe.targeting_team,
+        rows:  res.data.rows_inserted,
+        total: res.data.scheduled_on.length,
+      }))
+      await loadData()
+    } catch (e: any) {
+      setError(e.response?.data?.detail || t('decay.scheduleFailed'))
+    } finally {
+      setActing(null)
+    }
+  }
+
+  async function handleCancelPurge(p: PendingItem) {
+    if (!window.confirm(t('decay.confirmCancel', {
+      id:     p.targeting_team,
+      name:   p.tribe_name || t('decay.unknownTribe'),
+      server: p.server_name || p.server_key.split('_')[0],
+    }))) return
+    setActing(p.targeting_team); setError('')
+    try {
+      // Pass the specific server_key so we only cancel ONE row at a
+      // time (the per-row button maps to the per-row entry).
+      const res = await arkDecayApi.cancelPurge(p.targeting_team, p.server_key)
+      window.alert(t('decay.cancelDone', {
+        id:   p.targeting_team,
+        rows: res.data.rows_deleted,
+      }))
+      await loadData()
+    } catch (e: any) {
+      setError(e.response?.data?.detail || t('decay.cancelFailed'))
+    } finally {
+      setActing(null)
+    }
+  }
+
   function handleSearch(e: React.FormEvent) {
     e.preventDefault(); loadData()
   }
@@ -177,12 +226,12 @@ export default function DecayPage() {
               <div className="pl-empty"><Timer size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyTribes')}</p></div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                  <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.tribes.table.group')}</span><span>{t('decay.tribes.table.days')}</span><span>{t('decay.tribes.table.expires')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.status')}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 110px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+                  <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.tribes.table.group')}</span><span>{t('decay.tribes.table.days')}</span><span>{t('decay.tribes.table.expires')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.status')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
                 </div>
                 {tribes.map(tr => (
                   <div key={tr.targeting_team} style={{
-                    display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px',
+                    display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 110px',
                     padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
                   }}>
                     <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{tr.targeting_team}</span>
@@ -205,6 +254,17 @@ export default function DecayPage() {
                         {tr.status === 'expired' ? t('decay.status.expired') : tr.status === 'expiring' ? formatHoursLeft(tr.hours_left) : t('decay.status.ok')}
                       </span>
                     </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleSchedulePurge(tr)}
+                        disabled={acting !== null}
+                        className="btn btn-danger btn-sm"
+                        title={t('decay.scheduleTitle')}
+                      >
+                        <Trash2 size={11} />
+                        {acting === tr.targeting_team ? t('decay.scheduling') : t('decay.scheduleButton')}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </>
@@ -220,12 +280,12 @@ export default function DecayPage() {
             <div className="pl-empty"><CheckCircle size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyPending')}</p></div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.flaggedAt')}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px 100px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+                <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.flaggedAt')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
               </div>
               {pending.map(p => (
                 <div key={`${p.targeting_team}-${p.server_key}`} style={{
-                  display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px',
+                  display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px 100px',
                   padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
                 }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 600 }}>{p.targeting_team}</span>
@@ -241,6 +301,17 @@ export default function DecayPage() {
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: p.structure_count > 500 ? 700 : 400, color: p.structure_count > 500 ? 'var(--danger)' : 'var(--text-secondary)' }}>{p.structure_count.toLocaleString(undefined)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{p.dino_count}</span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(p.flagged_at)}</span>
+                  <div style={{ textAlign: 'center' }}>
+                    <button
+                      onClick={() => handleCancelPurge(p)}
+                      disabled={acting !== null}
+                      className="btn btn-ghost btn-sm"
+                      title={t('decay.cancelTitle')}
+                    >
+                      <XCircle size={11} />
+                      {acting === p.targeting_team ? t('decay.cancelling') : t('decay.cancelButton')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </>

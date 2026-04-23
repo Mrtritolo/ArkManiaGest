@@ -546,9 +546,22 @@
         "group": "Gruppo",
         "days": "Giorni",
         "expires": "Scadenza",
-        "status": "Stato"
+        "status": "Stato",
+        "actions": "Azioni"
       }
     },
+    "scheduleButton":  "Purge",
+    "scheduling":      "…",
+    "scheduleTitle":   "Marca questa tribù per la distruzione al prossimo sweep di purge del plugin",
+    "confirmSchedule": "Programmare la distruzione della tribù #{{id}} ({{name}}) su tutti i server?\n\nIl pannello prepara solo la richiesta; il prossimo sweep del plugin distrugge strutture e dino della tribù. Usa 'Annulla' dal tab Pending per revocare prima dello sweep.",
+    "scheduleDone":    "Tribù #{{id}} programmata su {{rows}}/{{total}} server.",
+    "scheduleFailed":  "Programmazione purge fallita.",
+    "cancelButton":    "Annulla",
+    "cancelling":      "…",
+    "cancelTitle":     "Rimuovi questa tribù dalla coda pending (il timer di decay continua)",
+    "confirmCancel":   "Annullare la purge pending per la tribù #{{id}} ({{name}}) su {{server}}?\n\nLa riga in ARKM_decay_pending viene rimossa; la tribù resta in ARKM_tribe_decay e il timer continua normalmente.",
+    "cancelDone":      "Entry pending per la tribù #{{id}} rimossa ({{rows}} righe).",
+    "cancelFailed":    "Impossibile annullare la purge pending.",
     "pending": {
       "table": {
         "server": "Server",

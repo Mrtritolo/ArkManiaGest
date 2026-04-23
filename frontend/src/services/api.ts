@@ -812,6 +812,36 @@ export const arkDecayApi = {
   pending: () => api.get("/arkmania/decay/pending"),
   log: (params?: { limit?: number; server_key?: string }) =>
     api.get("/arkmania/decay/log", { params }),
+
+  /**
+   * Schedule a tribe for destruction on every active server in the cluster.
+   * The plugin's next purge sweep destroys the actors and logs them.
+   */
+  schedulePurge: (targetingTeam: number, reason: string = "manual") =>
+    api.post<{
+      targeting_team: number;
+      scheduled_on:   string[];
+      rows_inserted:  number;
+      reason:         string;
+    }>(
+      `/arkmania/decay/pending/${targetingTeam}`,
+      null,
+      { params: { reason } },
+    ),
+
+  /**
+   * Cancel a queued purge (DELETE rows from ARKM_decay_pending).  Pass a
+   * server_key to limit the cancel to one server; omit to cancel the
+   * pending entries everywhere.
+   */
+  cancelPurge: (targetingTeam: number, serverKey?: string) =>
+    api.delete<{
+      targeting_team: number;
+      server_key:     string | null;
+      rows_deleted:   number;
+    }>(`/arkmania/decay/pending/${targetingTeam}`, {
+      params: serverKey ? { server_key: serverKey } : undefined,
+    }),
 };
 
 // ---------------------------------------------------------------------------
