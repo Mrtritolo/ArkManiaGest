@@ -155,6 +155,34 @@ api.interceptors.response.use(
     const status: number | undefined = error.response?.status;
     const url: string = error.config?.url ?? "";
 
+    // FastAPI returns `detail: string` for HTTPException raises, but for
+    // Pydantic validation failures it returns
+    //     detail: [{ type, loc, msg, input }, ...]
+    // Page-level handlers across the codebase do
+    //     setError(err.response.data.detail)
+    // which then tries to render an object directly into JSX -- React
+    // explodes with the unhelpful Minified-Error #31.  Coerce arrays /
+    // objects into a readable single-line string here so every page is
+    // safe regardless of what FastAPI happened to return.
+    const data = error.response?.data;
+    if (data && data.detail !== undefined && typeof data.detail !== "string") {
+      const raw = data.detail;
+      let coerced = "";
+      if (Array.isArray(raw)) {
+        coerced = raw
+          .map((it) =>
+            it && typeof it === "object" && "msg" in it
+              ? String((it as { msg: unknown }).msg)
+              : JSON.stringify(it),
+          )
+          .join("; ");
+      } else {
+        try { coerced = JSON.stringify(raw); }
+        catch { coerced = String(raw); }
+      }
+      data.detail = coerced;
+    }
+
     // Log non-2xx errors in development for easier debugging
     if (status && status >= 400) {
       console.warn(

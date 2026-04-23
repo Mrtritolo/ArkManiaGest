@@ -218,7 +218,21 @@ export default function RareDinosPage() {
       // state would mean threading more plumbing for one toast.
       window.alert(t('rareDinos.clearSpawnsDone', { count: res.data.deleted }))
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      // FastAPI returns `detail: string` for HTTPException raises, but
+      // Pydantic validation errors come back as `detail: Array<{type,
+      // loc, msg, input}>`.  Rendering an object directly into JSX
+      // throws React error #31, so coerce arrays into a readable string.
+      const raw = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      let detail = ''
+      if (Array.isArray(raw)) {
+        detail = raw
+          .map(it => (it && typeof it === 'object' && 'msg' in it ? String((it as { msg: unknown }).msg) : JSON.stringify(it)))
+          .join('; ')
+      } else if (typeof raw === 'string') {
+        detail = raw
+      } else if (raw) {
+        detail = JSON.stringify(raw)
+      }
       setError(detail || t('rareDinos.clearSpawnsFailed'))
     } finally {
       setClearingSpawns(false)
