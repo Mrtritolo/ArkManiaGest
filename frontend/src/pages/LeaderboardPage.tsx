@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { arkLeaderboardApi } from '../services/api'
 import {
   Trophy, Search, Crosshair, Heart, Hammer, Skull, Users, Activity,
-  AlertCircle, RefreshCw, ChevronDown
+  AlertCircle, RefreshCw, ChevronDown, Trash2
 } from 'lucide-react'
 
 interface LbScore {
@@ -106,6 +106,32 @@ export default function LeaderboardPage() {
 
   function handleSearch(e: React.FormEvent) { e.preventDefault(); loadData() }
 
+  // ── Clear leaderboard buttons ───────────────────────────────────
+  // Wipes both ARKM_lb_scores AND ARKM_lb_events for the chosen
+  // server_type ('PvE' | 'PvP').  No way to omit the type from the UI
+  // (use the API directly if you really want to nuke everything) so
+  // operators can't accidentally lose the OTHER mode's history.
+  const [clearing, setClearing] = useState<'PvE' | 'PvP' | null>(null)
+
+  async function handleClear(serverType: 'PvE' | 'PvP') {
+    if (!window.confirm(t('leaderboard.clearConfirm', { type: serverType }))) return
+    setClearing(serverType); setError('')
+    try {
+      const res = await arkLeaderboardApi.clear(serverType)
+      window.alert(t('leaderboard.clearDone', {
+        type: serverType,
+        scores: res.data.scores_deleted,
+        events: res.data.events_deleted,
+      }))
+      await loadData()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || t('leaderboard.clearFailed'))
+    } finally {
+      setClearing(null)
+    }
+  }
+
   function getRankStyle(rank: number) {
     if (rank === 1) return { background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000', fontWeight: 900 }
     if (rank === 2) return { background: 'linear-gradient(135deg, #d1d5db, #9ca3af)', color: '#000', fontWeight: 800 }
@@ -129,9 +155,29 @@ export default function LeaderboardPage() {
             {stats && <> {t('leaderboard.subtitleSuffix', { players: stats.total_players, events: stats.total_events })}</>}
           </p>
         </div>
-        <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }}>
-          <RefreshCw size={14} />
-        </button>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => handleClear('PvE')}
+            disabled={clearing !== null}
+            className="btn btn-ghost"
+            style={{ borderColor: 'var(--border)', padding: '0.4rem 0.7rem' }}
+            title={t('leaderboard.clearPveTitle')}
+          >
+            <Trash2 size={14} /> {clearing === 'PvE' ? t('leaderboard.clearing') : t('leaderboard.clearPve')}
+          </button>
+          <button
+            onClick={() => handleClear('PvP')}
+            disabled={clearing !== null}
+            className="btn btn-ghost"
+            style={{ borderColor: 'var(--border)', padding: '0.4rem 0.7rem' }}
+            title={t('leaderboard.clearPvpTitle')}
+          >
+            <Trash2 size={14} /> {clearing === 'PvP' ? t('leaderboard.clearing') : t('leaderboard.clearPvp')}
+          </button>
+          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }}>
+            <RefreshCw size={14} />
+          </button>
+        </div>
       </div>
 
       {error && (

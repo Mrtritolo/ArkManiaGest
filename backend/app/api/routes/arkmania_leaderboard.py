@@ -203,6 +203,60 @@ async def list_events(
     return {"events": events, "count": len(events)}
 
 
+# NOTE: this DELETE must stay declared BEFORE any `/{eos_id}` route below
+# (FastAPI matches paths in declaration order, so a catch-all DELETE
+# would intercept `/scores`).  Today only GET /player/{eos_id} exists,
+# but keeping the order explicit prevents future surprises.
+@router.delete("/scores")
+async def clear_leaderboard(
+    server_type: Optional[str] = Query(
+        default=None,
+        description=(
+            "Wipe only PvE or PvP rows.  Omit to clear EVERY leaderboard "
+            "score + every event row regardless of server type."
+        ),
+    ),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Wipe the leaderboard for a given server type (or all of them).
+
+    Truncates BOTH the aggregate score table (``ARKM_lb_scores``) and
+    the per-event log (``ARKM_lb_events``) for the matching ``server_type``,
+    so the dashboard tiles + the recent-events widget go back to zero in
+    lockstep.  Use cases:
+
+    * end of season -> wipe PvP only, keep PvE history;
+    * map / cluster wipe -> drop everything by omitting ``server_type``.
+
+    Returns the row counts deleted from each table so the UI can show a
+    confirmation toast.
+    """
+    where: list[str] = []
+    params: dict     = {}
+    if server_type:
+        # Plugin uses the literal strings 'PvE' / 'PvP' (case-sensitive in
+        # MariaDB depending on collation), so we don't normalise here.
+        where.append("server_type = :stype")
+        params["stype"] = server_type
+
+    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+    scores_res = await db.execute(
+        text(f"DELETE FROM ARKM_lb_scores {where_clause}"), params,
+    )
+    events_res = await db.execute(
+        text(f"DELETE FROM ARKM_lb_events {where_clause}"), params,
+    )
+    await db.commit()
+
+    return {
+        "scores_deleted": scores_res.rowcount,
+        "events_deleted": events_res.rowcount,
+        "scope":          server_type or "all",
+    }
+
+
 @router.get("/player/{eos_id}")
 async def get_player_leaderboard(eos_id: str, db: AsyncSession = Depends(get_plugin_db)):
     """Return all scores and the most recent 50 events for a single player."""

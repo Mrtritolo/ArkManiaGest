@@ -893,6 +893,18 @@ export const arkLeaderboardApi = {
     limit?: number;
   }) => api.get("/arkmania/leaderboard/events", { params }),
   player: (eosId: string) => api.get(`/arkmania/leaderboard/player/${eosId}`),
+  /**
+   * Truncate the leaderboard tables (`ARKM_lb_scores` + `ARKM_lb_events`)
+   * for a given server_type, or for everything when omitted.
+   */
+  clear: (server_type?: string) =>
+    api.delete<{
+      scores_deleted: number;
+      events_deleted: number;
+      scope:          string;
+    }>("/arkmania/leaderboard/scores", {
+      params: server_type ? { server_type } : undefined,
+    }),
 };
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Database, Monitor, Users, Server, RefreshCw, WifiOff } from 'lucide-react'
+import { Database, Monitor, Users, Server, RefreshCw } from 'lucide-react'
 import { machinesApi, databaseApi, arkmaniaApi } from '../services/api'
 
 interface OnlinePlayer {
@@ -75,7 +75,6 @@ export default function DashboardPage() {
     return () => clearInterval(id)
   }, [])
 
-  const serversOffline = servers.filter(s => !s.is_online)
 
   const statCards = [
     { label: t('dashboard.stat.onlinePlayers'), value: totalOnline,                                  icon: Users,   color: 'var(--accent)',         nav: '/online' },
@@ -158,8 +157,11 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* 2-column: players + servers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+      {/* The right-hand "Server status" box has been removed -- it was
+          showing inconsistent server count / name / status data that
+          duplicated what the Servers / ServerForge pages already cover.
+          The Online Players card now spans the full width. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
 
         {/* Online players */}
         <div className="card" style={{ overflow: 'hidden' }}>
@@ -208,70 +210,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Server status */}
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '0.65rem 1rem', borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-card-muted)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Server size={16} color="var(--success)" />
-              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{t('dashboard.card.serverStatus')}</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('dashboard.card.serversOnlineCount', { count: serversOnline })}
-                {serversOffline.length > 0 && ` · ${t('dashboard.card.serversOfflineCount', { count: serversOffline.length })}`}
-              </span>
-            </div>
-            <button onClick={() => navigate('/serverforge')} className="btn btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}>
-              {t('dashboard.card.serverforgeLink')}
-            </button>
-          </div>
-          <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-            {servers.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                <Server size={32} style={{ opacity: 0.15, display: 'block', margin: '0 auto 0.5rem' }} />
-                {t('dashboard.card.noServers')}
-              </div>
-            ) : servers.map(srv => (
-              <div key={srv.server_key} style={{
-                display: 'flex', alignItems: 'center', gap: '0.6rem',
-                padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)',
-                opacity: srv.is_online ? 1 : 0.5,
-              }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                  background: srv.is_online ? (srv.session_count > 0 ? '#22c55e' : '#94a3b8') : '#ef4444',
-                  boxShadow: srv.is_online && srv.session_count > 0 ? '0 0 6px rgba(34,197,94,0.5)' : 'none',
-                }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)',
-                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {srv.display_name}
-                  </div>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                    {srv.map_name || srv.server_key.split('_')[0]}
-                  </div>
-                </div>
-                {srv.is_online ? (
-                  srv.session_count > 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-                      <Users size={12} color="var(--accent)" />
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)' }}>{srv.session_count}</span>
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', flexShrink: 0 }}>{t('dashboard.card.empty')}</span>
-                  )
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexShrink: 0 }}>
-                    <WifiOff size={12} color="#ef4444" />
-                    <span style={{ fontSize: '0.68rem', color: '#ef4444', fontWeight: 600 }}>{t('dashboard.card.offline')}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
