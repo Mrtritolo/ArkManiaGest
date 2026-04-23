@@ -797,6 +797,13 @@
     "syncNamesButton": "Sync Nomi",
     "syncing": "Sync nomi...",
     "refreshTooltip": "Aggiorna",
+    "tribeSync": {
+      "button":  "Sync Tribù",
+      "title":   "Scansiona i file binari .arktribe e aggiorna i nomi tribù in ARKM_player_tribes + ARKM_tribe_decay",
+      "running": "Sync tribù…",
+      "done":    "Sync tribù completato: {{scanned}} file scansionati, {{matched}} tribù trovate, {{rows}} righe DB aggiornate.",
+      "failed":  "Sync nomi tribù fallito."
+    },
     "syncPanel": {
       "title": "Sync Nomi da .arkprofile",
       "allButton": "Tutti",

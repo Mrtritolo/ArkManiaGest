@@ -25,7 +25,7 @@ from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer, PermissionGroup, TribePermission
 from app.core.store import get_machine_sync, get_plugin_config_sync
 from app.ssh.manager import SSHManager
-from app.ssh.profile_parser import scan_and_match_profiles, extract_player_data
+from app.ssh.profile_parser import scan_and_match_profiles, extract_player_data, scan_and_match_tribes
 from app.schemas.players import (
     PlayerFull, PlayerListItem, PlayerUpdate, PlayerPointsUpdate, PlayerPointsAdd,
     PermissionGroupRead, PermissionGroupUpdate, TribePermissionRead, PlayersStats,
@@ -882,4 +882,160 @@ async def sync_player_names_from_profiles(
         "not_matched": not_matched[:20],
         "not_matched_total": len(not_matched),
         "errors": errors,
+    }
+
+
+@router.post("/sync-tribes")
+async def sync_tribe_names_from_files(
+    machine_id: Optional[int] = Query(None, description="Restrict sync to a single machine"),
+    container_name: Optional[str] = Query(None, description="Restrict sync to a single container"),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Scan ``.arktribe`` binary files on remote servers, extract tribe names,
+    and update the ``tribe_name`` column in both ``ARKM_player_tribes`` and
+    ``ARKM_tribe_decay`` for the matching ``targeting_team``.
+
+    Works exactly like ``/sync-names`` but for tribes:
+    1. Walks each scanned container's ``saved_arks`` directory looking for
+       ``*.arktribe`` files (one per tribe).
+    2. The filename IS the in-game ``targeting_team`` (tribe id), so the
+       match against the DB is direct.  We additionally extract the tribe
+       display name from the binary via :mod:`ark_parse_tribe`.
+    3. UPDATEs both tribe-tracking tables in a single transaction so the
+       /players list and the decay manager pick up the fresh names on the
+       next read without a second round-trip.
+
+    Returns a per-table update count plus the list of tribes for which
+    the binary parser couldn't recover a name (usually means the file is
+    truncated or the tribe was never named in-game).
+    """
+    containers_map = get_plugin_config_sync("containers_map")
+    if not containers_map or not containers_map.get("machines"):
+        raise HTTPException(
+            status_code=404,
+            detail="No containers scanned. Run a container scan first.",
+        )
+
+    # Build the list of SavedArks paths to scan, grouped by machine
+    machines_to_scan: dict[int, list[str]] = {}
+    for mid, mdata in containers_map["machines"].items():
+        if machine_id is not None and int(mid) != machine_id:
+            continue
+        saved_paths = [
+            container.get("paths", {}).get("saved_arks")
+            for container in mdata.get("containers", [])
+            if (not container_name or container["name"] == container_name)
+            and container.get("paths", {}).get("saved_arks")
+        ]
+        if saved_paths:
+            machines_to_scan[int(mid)] = saved_paths
+
+    if not machines_to_scan:
+        raise HTTPException(
+            status_code=404,
+            detail="No SavedArks paths found in the scanned containers.",
+        )
+
+    # Pre-load the set of (targeting_team, current_name) we already know
+    # from the DB so we can skip pointless UPDATEs when the tribe name
+    # hasn't actually changed.  Two source tables to consider; merge the
+    # union into one map (player_tribes wins on conflict).
+    pt_rows = await db.execute(
+        text("SELECT DISTINCT targeting_team, tribe_name FROM ARKM_player_tribes")
+    )
+    decay_rows = await db.execute(
+        text("SELECT targeting_team, tribe_name FROM ARKM_tribe_decay")
+    )
+    current_names: dict[int, str] = {}
+    for r in decay_rows.fetchall():
+        if r[0] is not None:
+            current_names[r[0]] = (r[1] or "").strip()
+    for r in pt_rows.fetchall():
+        if r[0] is not None:
+            # player_tribes is the more authoritative source -- overwrite.
+            current_names[r[0]] = (r[1] or "").strip()
+
+    total_files: int = 0
+    matched:     int = 0
+    updates_pt:  int = 0
+    updates_decay: int = 0
+    not_named: list[dict] = []
+    errors:    list[str]  = []
+
+    for mid, saved_paths in machines_to_scan.items():
+        machine = get_machine_sync(mid)
+        if not machine:
+            errors.append(f"Machine {mid} not found in database.")
+            continue
+
+        try:
+            with SSHManager(
+                host=machine["hostname"],
+                username=machine["ssh_user"],
+                password=machine.get("ssh_password"),
+                key_path=machine.get("ssh_key_path"),
+                port=machine.get("ssh_port", 22),
+            ) as ssh:
+                tribes = scan_and_match_tribes(ssh, saved_paths)
+        except Exception as exc:
+            errors.append(f"SSH {machine['hostname']}: {exc}")
+            continue
+
+        for tribe in tribes:
+            total_files += 1
+            tribe_name: Optional[str] = tribe.get("tribe_name")
+            tribe_id:   Optional[int] = tribe.get("tribe_id")
+
+            if not tribe_name:
+                not_named.append({
+                    "file_id":   tribe["file_id"],
+                    "tribe_id":  tribe_id,
+                    "source":    tribe.get("source_path", ""),
+                })
+                continue
+            if tribe_id is None:
+                # Filename wasn't a number AND the binary parser couldn't
+                # find an id either -- nothing we can match against the DB.
+                not_named.append({
+                    "file_id":   tribe["file_id"],
+                    "tribe_id":  None,
+                    "source":    tribe.get("source_path", ""),
+                })
+                continue
+
+            matched += 1
+            if current_names.get(tribe_id) == tribe_name:
+                # Already up to date in both tables.
+                continue
+
+            res_pt = await db.execute(
+                text(
+                    "UPDATE ARKM_player_tribes SET tribe_name = :n "
+                    "WHERE targeting_team = :t"
+                ),
+                {"n": tribe_name, "t": tribe_id},
+            )
+            res_dc = await db.execute(
+                text(
+                    "UPDATE ARKM_tribe_decay SET tribe_name = :n "
+                    "WHERE targeting_team = :t"
+                ),
+                {"n": tribe_name, "t": tribe_id},
+            )
+            updates_pt    += res_pt.rowcount or 0
+            updates_decay += res_dc.rowcount or 0
+            current_names[tribe_id] = tribe_name
+
+    await db.commit()
+
+    return {
+        "success":            True,
+        "total_files_scanned": total_files,
+        "matched":            matched,
+        "player_tribes_rows_updated": updates_pt,
+        "tribe_decay_rows_updated":   updates_decay,
+        "not_named":          not_named[:20],
+        "not_named_total":    len(not_named),
+        "errors":             errors,
     }

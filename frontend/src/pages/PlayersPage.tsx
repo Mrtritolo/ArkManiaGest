@@ -256,6 +256,31 @@ export default function PlayersPage() {
     } finally { setSyncing(false) }
   }
 
+  // Sibling of handleSyncNames: targets .arktribe files instead of
+  // .arkprofile and writes the discovered names into ARKM_player_tribes
+  // + ARKM_tribe_decay.  Same SSH plumbing on the backend.
+  const [syncingTribes, setSyncingTribes] = useState(false)
+  async function handleSyncTribes() {
+    setSyncingTribes(true); setError('')
+    try {
+      const res = await playersApi.syncTribes()
+      const updates = res.data.player_tribes_rows_updated + res.data.tribe_decay_rows_updated
+      window.alert(t('players.tribeSync.done', {
+        scanned: res.data.total_files_scanned,
+        matched: res.data.matched,
+        rows:    updates,
+      }))
+      if (updates > 0) loadPlayers()
+      if (res.data.errors?.length > 0) {
+        setError(t('players.messages.syncErrors', { errors: res.data.errors.join('; ') }))
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || t('players.tribeSync.failed'))
+    } finally {
+      setSyncingTribes(false)
+    }
+  }
+
   function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '--' }
   function fmtLoginAgo(d: string | null) {
     if (!d) return null
@@ -306,7 +331,17 @@ export default function PlayersPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          <button onClick={() => setShowSyncPanel(!showSyncPanel)} disabled={syncing} className="btn btn-primary btn-sm" title={t('players.syncNamesTitle')}>
+          <button
+            onClick={handleSyncTribes}
+            disabled={syncing || syncingTribes}
+            className="btn btn-secondary btn-sm"
+            title={t('players.tribeSync.title')}
+          >
+            {syncingTribes
+              ? <><Loader2 size={14} className="pl-spin" /> {t('players.tribeSync.running')}</>
+              : <><Download size={14} /> {t('players.tribeSync.button')}</>}
+          </button>
+          <button onClick={() => setShowSyncPanel(!showSyncPanel)} disabled={syncing || syncingTribes} className="btn btn-primary btn-sm" title={t('players.syncNamesTitle')}>
             {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('players.syncing')}</> : <><Download size={14} /> {t('players.syncNamesButton')}</>}
           </button>
           <button onClick={() => { loadPlayers(); loadStats() }} className="pl-btn-icon" title={t('players.refreshTooltip')}>

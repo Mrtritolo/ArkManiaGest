@@ -520,6 +520,27 @@ export const playersApi = {
     return api.post("/players/sync-names", null, { params, timeout: 120_000 });
   },
 
+  /**
+   * Sibling of syncNames: scans .arktribe binary files instead of
+   * .arkprofile and writes the discovered tribe display names into
+   * ARKM_player_tribes + ARKM_tribe_decay (matched by targeting_team).
+   */
+  syncTribes: (machineId?: number, containerName?: string) => {
+    const params: Record<string, unknown> = {};
+    if (machineId) params.machine_id = machineId;
+    if (containerName) params.container_name = containerName;
+    return api.post<{
+      success:                     boolean;
+      total_files_scanned:         number;
+      matched:                     number;
+      player_tribes_rows_updated:  number;
+      tribe_decay_rows_updated:    number;
+      not_named:                   Array<{file_id: string; tribe_id: number | null; source: string}>;
+      not_named_total:             number;
+      errors:                      string[];
+    }>("/players/sync-tribes", null, { params, timeout: 120_000 });
+  },
+
   /** Return containers eligible for the name sync operation. */
   syncContainers: () => api.get("/players/sync-containers"),
 
