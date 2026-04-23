@@ -631,6 +631,12 @@
     "subtitle": "{{total}} dino nel pool — {{enabled}} abilitati, {{disabled}} disabilitati",
     "generateRandom": "Genera random",
     "addDino": "Aggiungi dino",
+    "clearSpawns": "Svuota tabella spawn",
+    "clearingSpawns": "Svuotamento…",
+    "clearSpawnsTitle": "Cancella il log eventi dei dino rari (ARKM_rare_spawns). Il pool NON viene toccato.",
+    "clearSpawnsConfirm": "Svuotare la tabella eventi spawn / kill dei dino rari?\n\nIl pool dei dino rari configurati NON viene modificato — vengono cancellati solo gli eventi registrati (spawn, uccisioni, despawn). Operazione irreversibile.",
+    "clearSpawnsDone": "Tabella spawn svuotata: {{count}} eventi cancellati.",
+    "clearSpawnsFailed": "Impossibile svuotare la tabella spawn.",
     "generator": {
       "title": "Generatore dino random",
       "countLabel": "Quantità",

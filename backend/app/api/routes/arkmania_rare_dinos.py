@@ -321,6 +321,50 @@ async def list_rare_spawns(
     return {"spawns": spawns}
 
 
+@router.delete("/spawns")
+async def clear_rare_spawns(
+    server_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "When set, only events for that server_key are removed. "
+            "Omit to wipe the whole event log."
+        ),
+    ),
+    older_than_days: Optional[int] = Query(
+        default=None, ge=1, le=3650,
+        description="Optional: keep events newer than N days; older ones are removed.",
+    ),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Truncate the rare-dino spawn / kill event log (``ARKM_rare_spawns``).
+
+    Only the EVENT log table is touched; the configured pool in
+    ``ARKM_rare_dinos`` is left intact.  Useful between events / wipes
+    when the in-game leaderboard / "rare dinos online" widgets need a
+    clean slate without re-creating the pool entries one by one.
+    """
+    where: list[str] = []
+    params: dict     = {}
+    if server_key:
+        where.append("server_key = :sk"); params["sk"] = server_key
+    if older_than_days:
+        where.append("event_time < (NOW() - INTERVAL :age DAY)")
+        params["age"] = older_than_days
+
+    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = f"DELETE FROM ARKM_rare_spawns {where_clause}"
+    result = await db.execute(text(sql), params)
+    await db.commit()
+
+    return {
+        "deleted":          result.rowcount,
+        "scope":            "filtered" if where else "all",
+        "server_key":       server_key,
+        "older_than_days":  older_than_days,
+    }
+
+
 # ── Random dino generator ────────────────────────────────────────────────────
 
 # Stat presets: (min, max) tuples — values are bonus wild levels, max must be < 43

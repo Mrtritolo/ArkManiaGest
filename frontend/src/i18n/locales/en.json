@@ -631,6 +631,12 @@
     "subtitle": "{{total}} dinos in pool — {{enabled}} enabled, {{disabled}} disabled",
     "generateRandom": "Generate Random",
     "addDino": "Add Dino",
+    "clearSpawns": "Clear spawn table",
+    "clearingSpawns": "Clearing…",
+    "clearSpawnsTitle": "Wipe the rare-dino event log (ARKM_rare_spawns). The pool itself is NOT touched.",
+    "clearSpawnsConfirm": "Truncate the rare-dino spawn / kill EVENT log?\n\nThe configured pool of rare dinos is NOT affected — only the recorded events (spawns, kills, despawns) are deleted. This action cannot be undone.",
+    "clearSpawnsDone": "Spawn table cleared: {{count}} event(s) deleted.",
+    "clearSpawnsFailed": "Could not clear the spawn table.",
     "generator": {
       "title": "Random Dino Generator",
       "countLabel": "Count",

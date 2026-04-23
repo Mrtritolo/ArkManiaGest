@@ -806,6 +806,15 @@ export const arkRareDinosApi = {
     event_type?: string;
     server_key?: string;
   }) => api.get("/arkmania/rare-dinos/spawns", { params }),
+  /**
+   * Truncate the spawn / kill event log table (ARKM_rare_spawns).
+   * Does NOT touch the configured rare-dino pool (ARKM_rare_dinos).
+   */
+  clearSpawns: (params?: { server_key?: string; older_than_days?: number }) =>
+    api.delete<{ deleted: number; scope: string }>(
+      "/arkmania/rare-dinos/spawns",
+      { params },
+    ),
   generate: (params: {
     count?: number;
     map_name?: string;

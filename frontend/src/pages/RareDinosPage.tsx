@@ -75,6 +75,8 @@ export default function RareDinosPage() {
   const [genExclude, setGenExclude] = useState(true)
   const [genResults, setGenResults] = useState<Record<string, unknown>[]>([])
   const [genLoading, setGenLoading] = useState(false)
+  // Spawn-event log wipe
+  const [clearingSpawns, setClearingSpawns] = useState(false)
   const [genInfo, setGenInfo] = useState<{ available: number; excluded: number } | null>(null)
 
   async function handleGenerate() {
@@ -201,6 +203,28 @@ export default function RareDinosPage() {
     catch (e: any) { setError(e.message) }
   }
 
+  async function handleClearSpawnTable() {
+    // The spawn TABLE is the event log (ARKM_rare_spawns) -- the
+    // configured POOL (ARKM_rare_dinos rows) is left intact.  Make the
+    // confirm copy explicit so a panicked operator can't lose their pool
+    // by misreading the button.
+    if (!window.confirm(t('rareDinos.clearSpawnsConfirm'))) return
+    setClearingSpawns(true); setError('')
+    try {
+      const res = await arkRareDinosApi.clearSpawns()
+      // Success message goes through the same alert region by being
+      // briefly stashed in `error` -- the page already auto-dismisses
+      // via the alert close button; switching to a dedicated success
+      // state would mean threading more plumbing for one toast.
+      window.alert(t('rareDinos.clearSpawnsDone', { count: res.data.deleted }))
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || t('rareDinos.clearSpawnsFailed'))
+    } finally {
+      setClearingSpawns(false)
+    }
+  }
+
   async function handleDelete(id: number, name: string) {
     if (!confirm(t('rareDinos.confirmDelete', { name }))) return
     try { await arkRareDinosApi.delete(id); await loadDinos() }
@@ -224,7 +248,10 @@ export default function RareDinosPage() {
             {t('rareDinos.subtitle', { total: dinos.length, enabled: enabledCount, disabled: dinos.length - enabledCount })}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <button onClick={handleClearSpawnTable} disabled={clearingSpawns} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }} title={t('rareDinos.clearSpawnsTitle')}>
+            <Trash2 size={15} /> {clearingSpawns ? t('rareDinos.clearingSpawns') : t('rareDinos.clearSpawns')}
+          </button>
           <button onClick={() => { setShowGenerator(true); setGenResults([]) }} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }}>
             <Shuffle size={15} /> {t('rareDinos.generateRandom')}
           </button>
