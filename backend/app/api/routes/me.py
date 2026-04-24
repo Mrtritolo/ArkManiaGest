@@ -458,14 +458,19 @@ async def get_dashboard(
         tid = int(t_row["targeting_team"])
         # Latest tribes entry per eos_id for this team -- a player may have
         # left/rejoined; we keep the most recent record.
+        # ARKM_player_tribes only has: eos_id / targeting_team / tribe_name /
+        # last_login.  The roster name comes exclusively from Players.Giocatore
+        # via the LEFT JOIN; eos_id prefix is the fallback when Players is
+        # missing for a member (rare -- only happens for whoever-tribed-then-
+        # was-cleaned-up).
         roster = (await plugin_db.execute(
             text(
                 "SELECT pt.eos_id, MAX(pt.last_login) AS last_login, "
-                "       COALESCE(NULLIF(p.Giocatore, ''), pt.player_name) AS name "
+                "       NULLIF(p.Giocatore, '') AS name "
                 "FROM ARKM_player_tribes pt "
                 "LEFT JOIN Players p ON p.EOS_Id = pt.eos_id "
                 "WHERE pt.targeting_team = :t "
-                "GROUP BY pt.eos_id "
+                "GROUP BY pt.eos_id, p.Giocatore "
                 "ORDER BY last_login DESC LIMIT 25"
             ),
             {"t": tid},
