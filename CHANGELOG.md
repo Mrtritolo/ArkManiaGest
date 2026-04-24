@@ -7,6 +7,51 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.2] - 2026-04-24
+
+Patch release: two operator-reported papercuts on the Discord pages.
+
+### Fixed
+
+- **Settings -> Discord -> Modifica: 'Save' looked like a no-op.**
+  The form was re-fetching `/discord/config` right after a successful
+  save, which returned the OLD in-memory values (Pydantic loads
+  `.env` only at boot).  The form visually snapped back to its
+  pre-save state, hiding the green 'restart required' banner amid
+  the visual noise -- making the operator think the save had
+  silently failed when in fact `.env` WAS correctly updated.
+
+  Fixed by NOT re-fetching after save: the local 'initial' baseline
+  is updated to match what was just submitted, so the form stays
+  consistent with the user's input + the green banner is the only
+  visible 'pending' cue (which it should be -- the truth is that
+  the running backend is still on the old values until restarted).
+
+  Also tightened the disabled Save button: tooltip and label flip
+  to 'No changes' so a grey button no longer looks broken.
+
+- **Discord avatars + guild icon were blank squares everywhere.**
+  Browser was rejecting every `<img src='https://cdn.discordapp.com/...'>`
+  with a Content-Security-Policy violation -- the deployed nginx
+  template still had the pre-Phase-3 `img-src 'self' data:` lockdown
+  and never got loosened when we added Discord-CDN-fed surfaces in
+  v3.0.0+.
+
+  Fixed by whitelisting `https://cdn.discordapp.com` in `img-src`.
+  All other directives (script-src / connect-src / frame-ancestors)
+  stay locked.  Discord CDN images are public + no-PII so the trust
+  boundary doesn't widen meaningfully.
+
+### Operational note
+
+Existing deployments whose `/etc/nginx/sites-available/arkmaniagest`
+was already rendered from the previous template need a ONE-SHOT
+manual fix on the host (the panel doesn't rewrite nginx config on
+every release; only fresh installs pick up the template change).
+The release notes carry the exact `sed` one-liner; future fresh
+installs are unaffected.
+
+---
 ## [3.3.1] - 2026-04-24
 
 Patch release: hotfix for the Phase-7 tribe-roster query that landed
