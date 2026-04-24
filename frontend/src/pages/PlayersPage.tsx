@@ -8,7 +8,12 @@ import {
   Search, Users, Star, Shield, ChevronRight, X, Plus, Minus,
   Clock, UserCheck, Skull, Home, Calendar, CreditCard, Save,
   RefreshCw, Filter, Loader2, Download, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown,
-  Map, Copy, CheckCircle, ShieldOff
+  // NOTE: lucide-react also exports `Map`.  We aliased it to `MapIcon`
+  // because the file uses the built-in `new Map()` for the Discord-link
+  // index -- the bare `Map` import shadows the global Map constructor
+  // and crashes at runtime ("TypeError: _s is not a constructor" once
+  // minified).  Don't change this back to a bare `Map` import.
+  Map as MapIcon, Copy, CheckCircle, ShieldOff
 } from 'lucide-react'
 import { playersApi, arkBansApi, discordApi } from '../services/api'
 import type { DiscordAccount } from '../services/api'
@@ -1384,9 +1389,9 @@ export default function PlayersPage() {
 
             {/* Mappe & Copia personaggio */}
             <div className="pl-section">
-              <h4 className="pl-section-title"><Map size={14} /> {t('players.maps.sectionTitle')}</h4>
+              <h4 className="pl-section-title"><MapIcon size={14} /> {t('players.maps.sectionTitle')}</h4>
               <button onClick={handleFindMaps} disabled={mapsLoading} className="pl-btn-sm pl-btn-primary pl-btn-full" style={{ marginBottom: '0.5rem' }}>
-                {mapsLoading ? <><Loader2 size={12} className="pl-spin" /> {t('players.maps.searching')}</> : <><Map size={12} /> {t('players.maps.searchButton')}</>}
+                {mapsLoading ? <><Loader2 size={12} className="pl-spin" /> {t('players.maps.searching')}</> : <><MapIcon size={12} /> {t('players.maps.searchButton')}</>}
               </button>
 
               {mapsSearched && playerMaps.length === 0 && (
@@ -1420,7 +1425,7 @@ export default function PlayersPage() {
                   {playerMaps.map((m, i) => (
                     <div key={i} className={`pl-map-item ${copySource?.profile_path === m.profile_path ? 'pl-map-selected' : ''}`}>
                       <div className="pl-map-info">
-                        <span className="pl-map-name"><Map size={11} /> {m.map_name}</span>
+                        <span className="pl-map-name"><MapIcon size={11} /> {m.map_name}</span>
                         <span className="pl-map-detail">{m.container_name} &middot; {m.machine_name}</span>
                         {m.player_name && <span className="pl-map-detail">{t('players.maps.nameLabel')} {m.player_name}</span>}
                       </div>
