@@ -34,6 +34,8 @@ from app.discord import client as dc_client
 from app.discord.config import get_discord_config
 from app.discord import store as dc_store
 from app.discord.sync_vip import sync_vip_role, VipSyncReport
+from app.discord.sync_roles import sync_role_mappings, RoleSyncReport
+from app.db.models.app import DiscordRoleMap
 
 
 router = APIRouter()
@@ -919,6 +921,173 @@ async def sync_vip_endpoint(
     return await sync_vip_role(
         db=db, plugin_db=plugin_db,
         bot_token=bot_token, guild_id=guild_id, vip_role_id=vip_role_id,
+    )
+
+
+# ── Generic Discord-role -> ARK-group mapping CRUD (Phase 7+) ────────────────
+#
+# Sister of the VIP sync but driven by N rows configured from the panel
+# instead of a single env var.  Coexists with VIP sync (which keeps
+# DISCORD_VIP_ROLE_ID + the dedicated /sync-vip route).
+
+class _RoleMappingRead(BaseModel):
+    id:                int
+    discord_role_id:   str
+    discord_role_name: Optional[str] = None
+    ark_group_name:    str
+    is_active:         bool
+    priority:          int
+    notes:             Optional[str] = None
+    created_at:        Optional[str] = None
+    updated_at:        Optional[str] = None
+
+
+class _RoleMappingCreate(BaseModel):
+    discord_role_id:   str
+    discord_role_name: Optional[str] = None
+    ark_group_name:    str
+    is_active:         bool = True
+    priority:          int  = 0
+    notes:             Optional[str] = None
+
+
+class _RoleMappingUpdate(BaseModel):
+    discord_role_id:   Optional[str] = None
+    discord_role_name: Optional[str] = None
+    ark_group_name:    Optional[str] = None
+    is_active:         Optional[bool] = None
+    priority:          Optional[int]  = None
+    notes:             Optional[str] = None
+
+
+def _serialize_role_mapping(m: DiscordRoleMap) -> _RoleMappingRead:
+    return _RoleMappingRead(
+        id                = m.id,
+        discord_role_id   = str(m.discord_role_id or ""),
+        discord_role_name = m.discord_role_name,
+        ark_group_name    = m.ark_group_name or "",
+        is_active         = bool(m.is_active),
+        priority          = int(m.priority or 0),
+        notes             = m.notes,
+        created_at        = m.created_at.isoformat() if m.created_at else None,
+        updated_at        = m.updated_at.isoformat() if m.updated_at else None,
+    )
+
+
+@router.get(
+    "/role-mappings",
+    response_model=list[_RoleMappingRead],
+    dependencies=[Depends(require_admin)],
+)
+async def list_role_mappings(db: AsyncSession = Depends(get_db)):
+    """List every Discord role -> ARK group mapping (rows with ark_group_name set)."""
+    res = await db.execute(
+        select(DiscordRoleMap)
+        .where(DiscordRoleMap.ark_group_name.is_not(None))
+        .order_by(DiscordRoleMap.priority.desc(), DiscordRoleMap.id.asc())
+    )
+    return [_serialize_role_mapping(r) for r in res.scalars().all()]
+
+
+@router.post(
+    "/role-mappings",
+    response_model=_RoleMappingRead,
+    dependencies=[Depends(require_admin)],
+)
+async def create_role_mapping(body: _RoleMappingCreate, db: AsyncSession = Depends(get_db)):
+    """Insert a new Discord role -> ARK group mapping."""
+    cfg = get_discord_config()
+    role_id = (body.discord_role_id or "").strip()
+    group   = (body.ark_group_name  or "").strip()
+    if not role_id or not group:
+        raise HTTPException(status_code=422, detail="discord_role_id and ark_group_name are required.")
+    row = DiscordRoleMap(
+        discord_role_id   = role_id,
+        discord_role_name = (body.discord_role_name or "").strip() or None,
+        ark_group_name    = group,
+        discord_guild_id  = cfg.guild_id or "",
+        is_active         = bool(body.is_active),
+        priority          = int(body.priority or 0),
+        notes             = body.notes,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return _serialize_role_mapping(row)
+
+
+@router.put(
+    "/role-mappings/{mapping_id}",
+    response_model=_RoleMappingRead,
+    dependencies=[Depends(require_admin)],
+)
+async def update_role_mapping(
+    mapping_id: int,
+    body: _RoleMappingUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Patch one or more fields of an existing role mapping."""
+    row = await db.scalar(select(DiscordRoleMap).where(DiscordRoleMap.id == mapping_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Role mapping not found.")
+    if body.discord_role_id is not None:
+        v = body.discord_role_id.strip()
+        if not v:
+            raise HTTPException(status_code=422, detail="discord_role_id cannot be empty.")
+        row.discord_role_id = v
+    if body.discord_role_name is not None:
+        row.discord_role_name = body.discord_role_name.strip() or None
+    if body.ark_group_name is not None:
+        v = body.ark_group_name.strip()
+        if not v:
+            raise HTTPException(status_code=422, detail="ark_group_name cannot be empty.")
+        row.ark_group_name = v
+    if body.is_active is not None:
+        row.is_active = bool(body.is_active)
+    if body.priority is not None:
+        row.priority = int(body.priority)
+    if body.notes is not None:
+        row.notes = body.notes
+    await db.commit()
+    await db.refresh(row)
+    return _serialize_role_mapping(row)
+
+
+@router.delete(
+    "/role-mappings/{mapping_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
+async def delete_role_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
+    """Hard-delete a role mapping (history is not preserved)."""
+    row = await db.scalar(select(DiscordRoleMap).where(DiscordRoleMap.id == mapping_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Role mapping not found.")
+    await db.delete(row)
+    await db.commit()
+    return None
+
+
+@router.post(
+    "/sync-roles",
+    response_model=RoleSyncReport,
+    dependencies=[Depends(require_admin)],
+)
+async def sync_roles_endpoint(
+    db:        AsyncSession = Depends(get_db),
+    plugin_db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Apply every active row in arkmaniagest_discord_role_map.  Direction
+    is fixed Discord -> ARK plugin DB.  See app.discord.sync_roles for
+    the algorithm details.
+
+    503s with a missing-keys list when bot creds are not configured.
+    """
+    bot_token, guild_id = _require_bot_ready()
+    return await sync_role_mappings(
+        db=db, plugin_db=plugin_db,
+        bot_token=bot_token, guild_id=guild_id,
     )
 
 

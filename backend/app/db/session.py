@@ -128,6 +128,66 @@ async def create_app_tables() -> None:
             ),
         )
 
+        # Phase 7+: DiscordRoleMap originally carried only app_role_name
+        # (panel-side mapping, never wired up).  Add the ARK-side column
+        # the new sync engine actually uses, and demote app_role_name
+        # to NULL-able so newly-inserted rows don't have to populate
+        # both sides.
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_discord_role_map",
+            column="ark_group_name",
+            ddl=(
+                "ALTER TABLE arkmaniagest_discord_role_map "
+                "ADD COLUMN ark_group_name VARCHAR(64) NULL, "
+                "ADD INDEX ix_role_map_ark_group (ark_group_name)"
+            ),
+        )
+        # In-place relax of app_role_name NOT NULL -> NULL.  Skipped
+        # silently when the column is already nullable (re-runs).
+        await _relax_column_to_null(
+            conn,
+            table="arkmaniagest_discord_role_map",
+            column="app_role_name",
+            new_type="VARCHAR(64) NULL",
+        )
+
+
+async def _relax_column_to_null(
+    conn, *, table: str, column: str, new_type: str,
+) -> None:
+    """
+    Relax a column's nullability via MODIFY COLUMN, but only when the
+    column is currently NOT NULL.  Re-runs are no-ops.
+
+    `new_type` is the full type+nullability spec (e.g. ``"VARCHAR(64) NULL"``);
+    we don't try to introspect the existing type since we already know what
+    we want it to become.
+    """
+    from sqlalchemy import text as _sql_text
+    is_nullable = await conn.execute(
+        _sql_text(
+            "SELECT IS_NULLABLE FROM information_schema.columns "
+            "WHERE table_schema = DATABASE() "
+            "  AND table_name   = :t "
+            "  AND column_name  = :c "
+            "LIMIT 1"
+        ),
+        {"t": table, "c": column},
+    )
+    row = is_nullable.first()
+    if row is None or row[0] == "YES":
+        # Column missing (handled elsewhere) or already nullable -- no-op.
+        return
+    try:
+        await conn.execute(_sql_text(
+            f"ALTER TABLE {table} MODIFY COLUMN {column} {new_type}"
+        ))
+    except Exception:
+        # Don't crash boot if the column has FK constraints we can't
+        # touch transparently -- the operator can investigate.
+        pass
+
 
 async def _add_column_if_missing(conn, *, table: str, column: str, ddl: str) -> None:
     """

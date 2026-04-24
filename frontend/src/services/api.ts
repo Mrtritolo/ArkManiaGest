@@ -1299,9 +1299,73 @@ export const discordApi = {
    * call per linked player) -- the UI shows a spinner while it walks.
    */
   syncVip: () => api.post<VipSyncReport>("/discord/sync-vip", undefined, {
-    timeout: 300_000,   // 5 min: large guilds may need it
+    timeout: 300_000,
+  }),
+
+  // -- Generic role mapping CRUD + sync (Phase 7+) -------------------------
+  listRoleMappings:   () =>
+    api.get<RoleMapping[]>("/discord/role-mappings"),
+  createRoleMapping:  (body: RoleMappingCreate) =>
+    api.post<RoleMapping>("/discord/role-mappings", body),
+  updateRoleMapping:  (id: number, body: Partial<RoleMappingCreate>) =>
+    api.put<RoleMapping>(`/discord/role-mappings/${id}`, body),
+  deleteRoleMapping:  (id: number) =>
+    api.delete(`/discord/role-mappings/${id}`),
+  /**
+   * Generic Discord-role -> ARK-group reconciliation.  Walks every
+   * active row in arkmaniagest_discord_role_map.  Same long-running
+   * shape as syncVip().
+   */
+  syncRoles: () => api.post<RoleSyncReport>("/discord/sync-roles", undefined, {
+    timeout: 300_000,
   }),
 };
+
+// ── Role-mapping types (Phase 7+) ───────────────────────────────────────────
+
+export interface RoleMapping {
+  id:                number;
+  discord_role_id:   string;
+  discord_role_name: string | null;
+  ark_group_name:    string;
+  is_active:         boolean;
+  priority:          number;
+  notes:             string | null;
+  created_at:        string | null;
+  updated_at:        string | null;
+}
+
+export interface RoleMappingCreate {
+  discord_role_id:   string;
+  discord_role_name?: string | null;
+  ark_group_name:    string;
+  is_active?:        boolean;
+  priority?:         number;
+  notes?:            string | null;
+}
+
+export interface RoleSyncAction {
+  discord_user_id: string;
+  eos_id:          string;
+  player_name:     string | null;
+  groups_added:    string[];
+  groups_removed:  string[];
+  detail:          string | null;
+  error:           boolean;
+}
+
+export interface RoleSyncReport {
+  started_at_iso:    string;
+  finished_at_iso:   string;
+  duration_seconds:  number;
+  rules_total:       number;
+  rules_active:      number;
+  linked_total:      number;
+  players_changed:   number;
+  players_unchanged: number;
+  error_count:       number;
+  actions:           RoleSyncAction[];
+}
 
 // ---------------------------------------------------------------------------
 // Player dashboard (Phase 6) -- /api/v1/me/* via the disc_session cookie

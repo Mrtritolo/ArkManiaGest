@@ -24,11 +24,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, CheckCircle, Save, Eye, EyeOff,
-  KeyRound, Bot, Star, Users as UsersIcon, RotateCcw, Copy, RefreshCw,
+  KeyRound, Bot, Star, RotateCcw, Copy, RefreshCw,
+  Plus, Trash2, ArrowDownUp, Link as LinkIcon,
 } from "lucide-react";
 import {
   discordApi,
   type DiscordConfigStatus, type DiscordConfigUpdate,
+  type DiscordGuildRole, type RoleMapping, type RoleSyncReport,
 } from "../../services/api";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,9 +59,6 @@ interface FormState {
   guild_id:          string;
   redirect_uri:      string;
   vip_role_id:       string;
-  admin_user_ids:    string;       // comma-separated
-  operator_user_ids: string;
-  viewer_user_ids:   string;
 }
 
 function makeInitialForm(cfg: DiscordConfigStatus): FormState {
@@ -73,9 +72,6 @@ function makeInitialForm(cfg: DiscordConfigStatus): FormState {
     guild_id:          cfg.guild_id || "",
     redirect_uri:      cfg.redirect_uri || "",
     vip_role_id:       cfg.vip_role_id || "",
-    admin_user_ids:    cfg.admin_user_ids.join(","),
-    operator_user_ids: cfg.operator_user_ids.join(","),
-    viewer_user_ids:   cfg.viewer_user_ids.join(","),
   };
 }
 
@@ -106,21 +102,9 @@ function buildUpdateBody(form: FormState, initial: FormState): DiscordConfigUpda
     body.bot_token = "";
   }
 
-  // CSV lists -- send the parsed array when the textarea changed.
-  function maybeList<K extends "admin_user_ids" | "operator_user_ids" | "viewer_user_ids">(
-    key: K,
-  ): void {
-    if (form[key] !== initial[key]) {
-      body[key] = form[key]
-        .split(",")
-        .map(s => s.trim())
-        .filter(Boolean);
-    }
-  }
-  maybeList("admin_user_ids");
-  maybeList("operator_user_ids");
-  maybeList("viewer_user_ids");
-
+  // The OAuth admin/operator/viewer whitelists were removed in Phase 7+.
+  // The body now never carries them, so the backend leaves whatever it had
+  // in .env untouched (the per-key 'null = leave alone' semantics).
   return body;
 }
 
@@ -359,35 +343,8 @@ export default function SettingsTab() {
         />
       </Section>
 
-      {/* Auto-promotion whitelists */}
-      <Section
-        title={t("discord.settings.section.whitelists", { defaultValue: "Auto-promotion whitelists" })}
-        icon={<UsersIcon size={14} />}
-      >
-        <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
-          {t(
-            "discord.settings.whitelistsExplain",
-            {
-              defaultValue: "Comma-separated list of Discord IDs that get a 'discord:<id>' AppUser auto-created at the matching role on first Sign-in with Discord.  Edits override the previous list.",
-            },
-          )}
-        </p>
-        <ListField
-          label={t("discord.settings.whitelist.admin", { defaultValue: "Admin" })}
-          value={form.admin_user_ids}
-          onChange={v => setForm({ ...form, admin_user_ids: v })}
-        />
-        <ListField
-          label={t("discord.settings.whitelist.operator", { defaultValue: "Operator" })}
-          value={form.operator_user_ids}
-          onChange={v => setForm({ ...form, operator_user_ids: v })}
-        />
-        <ListField
-          label={t("discord.settings.whitelist.viewer", { defaultValue: "Viewer" })}
-          value={form.viewer_user_ids}
-          onChange={v => setForm({ ...form, viewer_user_ids: v })}
-        />
-      </Section>
+      {/* Discord role -> ARK group mapping (Phase 7+) */}
+      <RoleMappingSection />
 
       {/* Action bar */}
       <div style={{
@@ -479,30 +436,311 @@ function Field({
   );
 }
 
-function ListField({
-  label, value, onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const count = value.split(",").map(s => s.trim()).filter(Boolean).length;
+// ── Role-mapping section (Phase 7+) ──────────────────────────────────────────
+
+function RoleMappingSection() {
+  const { t } = useTranslation();
+  const [mappings, setMappings] = useState<RoleMapping[] | null>(null);
+  const [roles, setRoles]       = useState<DiscordGuildRole[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
+  const [creating, setCreating]   = useState(false);
+  const [syncing, setSyncing]     = useState(false);
+  const [syncReport, setSyncReport] = useState<RoleSyncReport | null>(null);
+  const [error, setError]       = useState("");
+
+  // New-row draft (kept local so typing doesn't yet hit the backend)
+  const [draftRole, setDraftRole]   = useState("");
+  const [draftGroup, setDraftGroup] = useState("");
+
+  useEffect(() => { load(); }, []);
+
+  async function load(): Promise<void> {
+    setLoading(true);
+    setError("");
+    try {
+      const [m, r] = await Promise.all([
+        discordApi.listRoleMappings(),
+        discordApi.guildRoles().catch(() => ({ data: [] as DiscordGuildRole[] })),
+      ]);
+      setMappings(m.data);
+      setRoles(r.data);
+    } catch (err: unknown) {
+      setError(extractError(err, t("discord.roleMap.errors.load", {
+        defaultValue: "Failed to load role mappings.",
+      })));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function createMapping(): Promise<void> {
+    const role = draftRole.trim();
+    const grp  = draftGroup.trim();
+    if (!role || !grp) {
+      setError(t("discord.roleMap.errors.required", {
+        defaultValue: "Select a Discord role AND type the ARK group name.",
+      }));
+      return;
+    }
+    setCreating(true);
+    setError("");
+    try {
+      const guildRole = roles.find(r => r.id === role);
+      await discordApi.createRoleMapping({
+        discord_role_id:   role,
+        discord_role_name: guildRole?.name,
+        ark_group_name:    grp,
+        is_active:         true,
+      });
+      setDraftRole("");
+      setDraftGroup("");
+      await load();
+    } catch (err: unknown) {
+      setError(extractError(err, t("discord.roleMap.errors.create", {
+        defaultValue: "Failed to create mapping.",
+      })));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function patch(id: number, body: Partial<RoleMapping>): Promise<void> {
+    const next = new Set(savingIds); next.add(id); setSavingIds(next);
+    try {
+      await discordApi.updateRoleMapping(id, body);
+      setMappings(prev => prev?.map(m => m.id === id ? { ...m, ...body } : m) ?? null);
+    } catch (err: unknown) {
+      setError(extractError(err, t("discord.roleMap.errors.update", {
+        defaultValue: "Failed to update mapping.",
+      })));
+    } finally {
+      const after = new Set(savingIds); after.delete(id); setSavingIds(after);
+    }
+  }
+
+  async function del(id: number): Promise<void> {
+    if (!confirm(t("discord.roleMap.confirmDelete", {
+      defaultValue: "Delete this mapping?",
+    }))) return;
+    try {
+      await discordApi.deleteRoleMapping(id);
+      setMappings(prev => prev?.filter(m => m.id !== id) ?? null);
+    } catch (err: unknown) {
+      setError(extractError(err, t("discord.roleMap.errors.delete", {
+        defaultValue: "Failed to delete mapping.",
+      })));
+    }
+  }
+
+  async function runSync(): Promise<void> {
+    setSyncing(true);
+    setError("");
+    setSyncReport(null);
+    try {
+      const res = await discordApi.syncRoles();
+      setSyncReport(res.data);
+    } catch (err: unknown) {
+      setError(extractError(err, t("discord.roleMap.errors.sync", {
+        defaultValue: "Sync failed.",
+      })));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
-    <div className="form-group" style={{ margin: 0 }}>
-      <label className="form-label" style={{ display: "flex", justifyContent: "space-between" }}>
-        <span>{label}</span>
-        <span style={{ color: "var(--text-secondary)", fontSize: "0.7rem" }}>
-          {count} {count === 1 ? "ID" : "IDs"}
-        </span>
-      </label>
-      <input
-        className="form-input"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="123456789012345678,234567890123456789"
-        style={{ fontFamily: "monospace" }}
-      />
-    </div>
+    <Section
+      title={t("discord.roleMap.title", { defaultValue: "Sincronizzazione ruoli (Discord -> ARK)" })}
+      icon={<LinkIcon size={14} />}
+    >
+      <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
+        {t("discord.roleMap.explain", {
+          defaultValue: "Ogni regola dice: chi ha il ruolo Discord X riceve il gruppo permessi Y nel DB plugin (Players.PermissionGroups).  Il motore di sync NON tocca gruppi non gestiti da regole attive: la VIP-sync (env DISCORD_VIP_ROLE_ID) e i gruppi admin/custom passano intatti.",
+        })}
+      </p>
+
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: "0.5rem" }}>
+          <AlertCircle size={14} /> {error}
+        </div>
+      )}
+
+      {/* Existing rules */}
+      {loading ? (
+        <div className="pl-loading"><Loader2 size={16} className="pl-spin" /></div>
+      ) : (mappings && mappings.length > 0) ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+          {mappings.map(m => {
+            const saving = savingIds.has(m.id);
+            const guildRole = roles.find(r => r.id === m.discord_role_id);
+            const roleLabel = guildRole?.name || m.discord_role_name || `(role ${m.discord_role_id})`;
+            return (
+              <div key={m.id} style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(120px, 1fr) 24px minmax(100px, 1fr) auto auto",
+                gap: "0.4rem", alignItems: "center",
+                padding: "0.35rem 0.45rem",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                opacity: m.is_active ? 1 : 0.55,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 0 }}>
+                  <span style={{
+                    width: 10, height: 10, borderRadius: 99,
+                    background: guildRole ? `#${(guildRole.color || 0x5865F2).toString(16).padStart(6, "0")}` : "#5865F2",
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: "0.8rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {roleLabel}
+                  </span>
+                </div>
+                <span style={{ textAlign: "center", color: "var(--text-secondary)" }}>→</span>
+                <input
+                  className="form-input"
+                  value={m.ark_group_name}
+                  onChange={e => setMappings(prev => prev?.map(x =>
+                    x.id === m.id ? { ...x, ark_group_name: e.target.value } : x
+                  ) ?? null)}
+                  onBlur={e => {
+                    const v = e.target.value.trim();
+                    if (v && v !== m.ark_group_name) patch(m.id, { ark_group_name: v });
+                  }}
+                  style={{ fontFamily: "monospace", fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
+                />
+                <label style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+                  <input
+                    type="checkbox"
+                    checked={m.is_active}
+                    disabled={saving}
+                    onChange={e => patch(m.id, { is_active: e.target.checked })}
+                  />
+                  {t("discord.roleMap.enabled", { defaultValue: "Attiva" })}
+                </label>
+                <button
+                  onClick={() => del(m.id)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: "0.2rem 0.4rem", color: "#dc2626" }}
+                  title={t("discord.roleMap.delete", { defaultValue: "Elimina" })}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", padding: "0.4rem 0" }}>
+          {t("discord.roleMap.empty", {
+            defaultValue: "Nessuna regola configurata.  Aggiungine una qui sotto.",
+          })}
+        </div>
+      )}
+
+      {/* New row draft */}
+      <div style={{
+        marginTop: "0.6rem", display: "grid",
+        gridTemplateColumns: "minmax(120px, 1fr) 24px minmax(100px, 1fr) auto",
+        gap: "0.4rem", alignItems: "center",
+        padding: "0.35rem 0.45rem",
+        background: "var(--bg-card-muted, #f5f5f7)",
+        borderRadius: 6,
+      }}>
+        <select
+          value={draftRole}
+          onChange={e => setDraftRole(e.target.value)}
+          className="form-input"
+          style={{ fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
+        >
+          <option value="">
+            {roles.length === 0
+              ? t("discord.roleMap.noRolesLoaded", { defaultValue: "(Bot non configurato -- nessun ruolo)" })
+              : t("discord.roleMap.pickRole", { defaultValue: "Scegli un ruolo Discord…" })}
+          </option>
+          {roles.filter(r => r.name !== "@everyone" && !r.managed).map(r => (
+            <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+        </select>
+        <span style={{ textAlign: "center", color: "var(--text-secondary)" }}>→</span>
+        <input
+          className="form-input"
+          placeholder={t("discord.roleMap.groupPlaceholder", { defaultValue: "Nome gruppo ARK (es. VIP)" })}
+          value={draftGroup}
+          onChange={e => setDraftGroup(e.target.value)}
+          style={{ fontFamily: "monospace", fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
+        />
+        <button
+          onClick={createMapping}
+          disabled={creating || !draftRole || !draftGroup.trim()}
+          className="btn btn-primary btn-sm"
+        >
+          {creating ? <Loader2 size={12} className="pl-spin" /> : <Plus size={12} />}
+          {" "}{t("discord.roleMap.add", { defaultValue: "Aggiungi" })}
+        </button>
+      </div>
+
+      {/* Sync trigger + last report */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.8rem" }}>
+        <button
+          onClick={runSync}
+          disabled={syncing || (mappings?.filter(m => m.is_active).length ?? 0) === 0}
+          className="btn btn-primary btn-sm"
+        >
+          {syncing ? <Loader2 size={12} className="pl-spin" /> : <ArrowDownUp size={12} />}
+          {" "}
+          {syncing
+            ? t("discord.roleMap.syncing", { defaultValue: "Sync in corso…" })
+            : t("discord.roleMap.sync",    { defaultValue: "Sync ruoli ora" })}
+        </button>
+        {syncReport && (
+          <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+            {t("discord.roleMap.lastRun", {
+              defaultValue: "{{s}}s · {{n}} linked, {{c}} cambiati, {{e}} errori",
+              s: syncReport.duration_seconds.toFixed(1),
+              n: syncReport.linked_total,
+              c: syncReport.players_changed,
+              e: syncReport.error_count,
+            })}
+          </span>
+        )}
+      </div>
+
+      {syncReport && syncReport.actions.length > 0 && (
+        <details style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
+          <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
+            {t("discord.roleMap.details", {
+              defaultValue: "Dettaglio cambi ({{n}})",
+              n: syncReport.actions.length,
+            })}
+          </summary>
+          <div style={{ marginTop: "0.3rem", maxHeight: 280, overflowY: "auto" }}>
+            {syncReport.actions.map((a, i) => (
+              <div key={i} style={{
+                padding: "0.25rem 0.45rem",
+                borderBottom: "1px solid var(--border)",
+                display: "flex", justifyContent: "space-between",
+                color: a.error ? "#dc2626" : "var(--text)",
+              }}>
+                <span>
+                  {a.player_name || a.eos_id.slice(0, 8) + "…"}
+                  {a.groups_added.length > 0 && (
+                    <span style={{ color: "#16a34a", marginLeft: 6 }}>
+                      +{a.groups_added.join(",")}
+                    </span>
+                  )}
+                  {a.groups_removed.length > 0 && (
+                    <span style={{ color: "#d97706", marginLeft: 6 }}>
+                      -{a.groups_removed.join(",")}
+                    </span>
+                  )}
+                </span>
+                {a.detail && <span style={{ color: "var(--text-secondary)" }}>{a.detail}</span>}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </Section>
   );
 }
 

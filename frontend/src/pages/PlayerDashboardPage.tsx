@@ -53,17 +53,30 @@ function fmtDateTime(iso: string | null): string {
   });
 }
 
-/** "2h fa", "3g fa", "ora" -- relative time from now. */
+/**
+ * Bidirectional relative time:
+ *   * past   -> "2h fa", "3g fa", "ora"
+ *   * future -> "tra 2h", "tra 3g"
+ *
+ * The previous one-way version always returned "ora" for any future
+ * timestamp because diff was negative and < 60_000.  That broke the
+ * VIP-chip + timed-permission-group expiry labels on the dashboard,
+ * which were rendering 'scade ora' for VIPs that actually expire in
+ * 12 days.
+ */
 function fmtRelative(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const diff = Date.now() - d.getTime();
-  if (diff < 60_000)        return "ora";
-  if (diff < 3_600_000)     return `${Math.floor(diff / 60_000)}m fa`;
-  if (diff < 86_400_000)    return `${Math.floor(diff / 3_600_000)}h fa`;
-  if (diff < 86_400_000*30) return `${Math.floor(diff / 86_400_000)}g fa`;
-  return d.toLocaleDateString();
+  const abs  = Math.abs(diff);
+  let label: string;
+  if (abs < 60_000)             label = "< 1m";
+  else if (abs < 3_600_000)     label = `${Math.floor(abs / 60_000)}m`;
+  else if (abs < 86_400_000)    label = `${Math.floor(abs / 3_600_000)}h`;
+  else if (abs < 86_400_000*30) label = `${Math.floor(abs / 86_400_000)}g`;
+  else return d.toLocaleDateString();
+  return diff >= 0 ? `${label} fa` : `tra ${label}`;
 }
 
 /** Humanise minutes (login duration) into "Xh YYm" / "Mm". */
@@ -162,7 +175,9 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
         <div style={{
           minHeight: "100vh",
           background: "var(--bg, #f5f5f7)",
-          padding: "1.5rem",
+          // Mobile: less side padding so cards can breathe.  clamp scales
+          // smoothly between 12px and 24px based on viewport width.
+          padding: "clamp(0.75rem, 3vw, 1.5rem)",
         }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
             <PageHeader
@@ -235,11 +250,17 @@ function PageHeader({
       border: "1px solid #4752C4",
       borderRadius: 12,
       boxShadow: "0 4px 12px rgba(88, 101, 242, 0.25)",
+      // Let the action buttons wrap onto a second row on very narrow
+      // viewports instead of squeezing the greeting block.
+      flexWrap: "wrap",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.8rem" }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: "0.8rem",
+        flex: "1 1 220px", minWidth: 0,   // allow shrinking below content size
+      }}>
         {av ? (
           <img src={av} alt=""
-            style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "3px solid #ffffff66" }}
+            style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "3px solid #ffffff66", flexShrink: 0 }}
           />
         ) : (
           <div style={{
@@ -247,15 +268,22 @@ function PageHeader({
             background: "#ffffff22", color: "#fff",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "1.6rem", fontWeight: 700, border: "3px solid #ffffff66",
+            flexShrink: 0,
           }}>
             {name[0]?.toUpperCase() ?? "?"}
           </div>
         )}
-        <div>
-          <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontSize: "clamp(1rem, 4.2vw, 1.2rem)",
+            fontWeight: 700,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
             {t("dashboard.greeting", { defaultValue: "Ciao {{n}}", n: name })}
           </div>
-          <div style={{ fontSize: "0.78rem", opacity: 0.9, display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+          <div style={{ fontSize: "0.75rem", opacity: 0.9, display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: 2 }}>
             <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <DiscordIcon size={9} color="#fff" />
               {discord?.discord_username ? `@${discord.discord_username}` : (discord?.discord_user_id ?? "")}
@@ -318,7 +346,12 @@ function DashboardGrid({ data, embedded }: { data: DashboardResponse; embedded: 
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: embedded ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))",
+      // Mobile (viewports under ~600px): single column because the 280px
+      // minimum can't fit two columns once the page padding is accounted
+      // for.  Tablet portrait (~768px): 2 columns.  Desktop: 2-3 depending
+      // on width.  auto-fit also collapses when embedded inside the
+      // narrower admin sidebar layout.
+      gridTemplateColumns: embedded ? "1fr" : "repeat(auto-fit, minmax(280px, 1fr))",
       gap: "0.85rem",
     }}>
       {/* Hero character spans both columns */}
@@ -424,9 +457,14 @@ function CharacterHero({
           </div>
         </div>
 
-        {/* Permanent perm group chips */}
-        {character.permission_groups.length > 0 && (
-          <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", maxWidth: "40%" }}>
+        {/* Permanent perm group chips.  On narrow viewports they wrap
+            to a new row instead of fighting the avatar+name block for
+            horizontal space (mobile fix). */}
+        {character.permission_groups.filter(g => g !== "VIP").length > 0 && (
+          <div style={{
+            display: "flex", gap: "0.3rem", flexWrap: "wrap",
+            flex: "1 1 100%", marginTop: "0.25rem",
+          }}>
             {character.permission_groups.filter(g => g !== "VIP").map(g => (
               <span key={g} className="pl-chip">
                 <Shield size={9} /> {g}
@@ -642,7 +680,7 @@ function TribeCard({ data }: { data: DashboardTribe }) {
         o: onlineCount,
       })}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxHeight: 220, overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxHeight: "clamp(180px, 40vh, 240px)", overflowY: "auto" }}>
         {data.members.map(m => (
           <div key={m.eos_id} style={{
             display: "flex", alignItems: "center", gap: "0.5rem",
@@ -686,7 +724,7 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
           {t("dashboard.rare.empty", { defaultValue: "Nessun rare dino interagito di recente." })}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxHeight: 200, overflowY: "auto" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxHeight: "clamp(160px, 35vh, 220px)", overflowY: "auto" }}>
           {data.recent.map(e => (
             <div key={e.id} style={{
               display: "flex", justifyContent: "space-between",
@@ -730,7 +768,7 @@ function ActivityCard({ data }: { data: DashboardActivity }) {
   }
   return (
     <Card icon={<ActivityIcon size={14} />} title={t("dashboard.activity.title", { defaultValue: "Attività recente" })}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxHeight: 240, overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxHeight: "clamp(200px, 45vh, 280px)", overflowY: "auto" }}>
         {data.items.map((e, i) => (
           <div key={i} style={{
             display: "flex", justifyContent: "space-between", gap: "0.5rem",

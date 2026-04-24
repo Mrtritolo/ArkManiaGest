@@ -354,30 +354,43 @@ class DiscordAccount(Base):
 
 class DiscordRoleMap(Base):
     """
-    Mapping between a panel-side application role and a Discord guild role.
+    Discord role -> ARK permission group mapping (Phase 7+).
 
-    Direction controls how the sync engine reconciles disagreements:
-      * ``panel_to_discord`` -- panel is authoritative; Discord is updated
-        to match.
-      * ``discord_to_panel`` -- Discord is authoritative; panel
-        PermissionGroups is updated to match.
-      * ``both``             -- bidirectional union; ``priority`` breaks
-        ties (higher wins).
+    Each row says: 'every linked player who owns Discord role X gets
+    the ARK permission group Y written into Players.PermissionGroups'.
+    The sync engine walks every row, fetches the corresponding guild
+    members, computes the diff vs the plugin DB, and applies it.
 
-    Multiple mappings per ``app_role_name`` are allowed (one role can
-    grant multiple Discord roles, possibly across multiple guilds).
+    The original Phase-1 model carried `app_role_name` (panel role)
+    instead of `ark_group_name` (in-game group); both are kept in the
+    schema -- `app_role_name` stays nullable for back-compat in case a
+    future Phase reintroduces the panel-side mapping it was originally
+    designed for.  New rows only need to populate `ark_group_name` and
+    `discord_role_id`.
+
+    `direction` is kept for future bidirectional flows; for now the
+    sync engine only honours `discord_to_panel` (or `both`, treated as
+    discord_to_panel since panel is downstream).  Multiple rows per
+    ARK group are allowed (e.g. several Discord roles all granting the
+    same in-game perk).
     """
     __tablename__ = "arkmaniagest_discord_role_map"
 
     id                  = Column(Integer, primary_key=True, autoincrement=True)
-    app_role_name       = Column(String(64), nullable=False, index=True)
+    # Phase 1 column -- kept nullable for back-compat.  Sync engine
+    # ignores it; new rows can leave this null.
+    app_role_name       = Column(String(64), nullable=True, index=True)
     discord_guild_id    = Column(String(32), nullable=False)
     discord_role_id     = Column(String(32), nullable=False)
     # Cached human-readable Discord role name; refreshed by the sync
     # engine so the admin UI doesn't need to call Discord every page.
     discord_role_name   = Column(String(128), nullable=True)
+    # Phase 7+ -- the ARK permission-group string this Discord role
+    # maps to.  When set, the sync engine grants this group to every
+    # linked player who has discord_role_id on Discord.
+    ark_group_name      = Column(String(64), nullable=True, index=True)
     # 'both' | 'panel_to_discord' | 'discord_to_panel'
-    direction           = Column(String(24), nullable=False, default="both")
+    direction           = Column(String(24), nullable=False, default="discord_to_panel")
     priority            = Column(Integer, nullable=False, default=0)
     is_active           = Column(Boolean, nullable=False, default=True)
 
