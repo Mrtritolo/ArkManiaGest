@@ -7,6 +7,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.1] - 2026-04-24
+
+Patch release: hotfix for the Players page crash that landed with
+v3.2.0.
+
+### Fixed
+
+- **PlayersPage crashed at runtime** with
+  `TypeError: _s is not a constructor` as soon as the operator
+  opened it, blocking access to the page entirely.
+
+  Root cause: `frontend/src/pages/PlayersPage.tsx` imports the
+  `Map` icon from `lucide-react` AND uses `new Map()` to build
+  the Discord-link index added back in v3.0.0.  Both `Map`
+  identifiers compete for the same name; the bundler resolves
+  `new Map()` to the React component (a function, not a
+  constructor) -- crash on the first render.
+
+  Fixed by aliasing the import to `Map as MapIcon` and updating
+  the three JSX usages.  Added an inline comment on the import
+  line so a future contributor doesn't innocently revert it
+  back to a bare `Map` import.
+
+  Diagnosed by extracting the bytes around the minified crash
+  position (line 90 col 84342) of the deployed bundle, which
+  decoded to `c.useState(new _s)` -- the smoking gun pointing
+  straight at `useState(new Map())`.
+
+### No other changes
+
+This release contains no new features.  Apply via the in-panel
+self-update -- the only changed file is the rebuilt frontend
+bundle, no migrations or restart caveats.
+
+---
 ## [3.2.0] - 2026-04-24
 
 Two big additions: a **player-facing dashboard** (Phase 6) so a
