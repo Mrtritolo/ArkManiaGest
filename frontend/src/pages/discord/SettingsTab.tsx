@@ -177,8 +177,26 @@ export default function SettingsTab() {
     try {
       const res = await discordApi.updateConfig(body);
       setSuccess({ updatedKeys: res.data.updated_keys, hint: res.data.restart_hint });
-      // Re-load to reset the 'initial' baseline; clears the secret fields.
-      await load();
+      // IMPORTANT: do NOT re-fetch /discord/config here.  Pydantic loads
+      // .env only at boot, so a re-fetch right now would return the OLD
+      // in-memory values (the server hasn't restarted yet) and would
+      // VISUALLY revert the form to its pre-save state -- making the
+      // operator think 'nothing happened' even though the file IS
+      // correctly updated.  Instead, update the local 'initial' baseline
+      // to match what we just sent, so the form stays consistent and
+      // hasChanges flips to false (the green 'restart required' banner
+      // is the visible signal that more is needed).  Secret fields are
+      // also reset to 'keep' mode so the password inputs clear without
+      // looking like they got wiped.
+      const newInitial: FormState = {
+        ...form,
+        client_secret:      "",
+        client_secret_mode: "keep",
+        bot_token:          "",
+        bot_token_mode:     "keep",
+      };
+      setForm(newInitial);
+      setInitial(newInitial);
     } catch (err: unknown) {
       setError(extractError(err, t(
         "discord.settings.errors.save",
@@ -394,10 +412,16 @@ export default function SettingsTab() {
             onClick={save}
             disabled={!hasChanges || saving}
             className="btn btn-primary btn-sm"
+            title={!hasChanges
+              ? t("discord.settings.saveDisabledNoChanges",
+                  { defaultValue: "No pending changes to save" })
+              : t("discord.settings.save", { defaultValue: "Save changes" })}
           >
             {saving ? <Loader2 size={12} className="pl-spin" /> : <Save size={12} />}
             {" "}
-            {t("discord.settings.save", { defaultValue: "Save changes" })}
+            {hasChanges
+              ? t("discord.settings.save", { defaultValue: "Save changes" })
+              : t("discord.settings.saveNothing", { defaultValue: "No changes" })}
           </button>
         </div>
       </div>
