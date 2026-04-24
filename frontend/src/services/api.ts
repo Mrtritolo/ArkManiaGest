@@ -1096,6 +1096,131 @@ export const gameConfigApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Discord (admin only — Phase 3)
+// ---------------------------------------------------------------------------
+//
+// Mirrors `backend/app/api/routes/discord.py`.  All endpoints are gated by
+// `Depends(require_admin)` server-side; the sidebar already hides the page
+// for non-admin operators so the UI never reaches these calls.
+
+/** /api/v1/discord/config response. */
+export interface DiscordConfigStatus {
+  client_id:           string;
+  public_key:          string;
+  guild_id:            string;
+  redirect_uri:        string;
+  has_client_secret:   boolean;
+  has_bot_token:       boolean;
+  oauth_ready:         boolean;
+  bot_ready:           boolean;
+  missing_for_oauth:   string[];
+  missing_for_bot:     string[];
+}
+
+/** Single row from /api/v1/discord/accounts. */
+export interface DiscordAccount {
+  discord_user_id:     string;
+  discord_username:    string | null;
+  discord_global_name: string | null;
+  discord_avatar:      string | null;
+  eos_id:              string | null;
+  app_user_id:         number | null;
+  app_user_username:   string | null;
+  app_user_role:       string | null;
+  linked_at:           string | null;
+  last_sync_at:        string | null;
+}
+
+/** Single hit from /api/v1/discord/players/search?q= */
+export interface DiscordPlayerSearchHit {
+  eos_id:     string;
+  name:       string | null;
+  tribe_name: string | null;
+}
+
+export interface DiscordGuildInfo {
+  id:                          string;
+  name:                        string;
+  icon:                        string | null;
+  owner_id:                    string | null;
+  approximate_member_count:    number | null;
+  approximate_presence_count:  number | null;
+}
+
+export interface DiscordGuildRole {
+  id:          string;
+  name:        string;
+  color:       number;
+  position:    number;
+  hoist:       boolean;
+  managed:     boolean;
+  mentionable: boolean;
+}
+
+export interface DiscordGuildMember {
+  user_id:     string;
+  username:    string | null;
+  global_name: string | null;
+  avatar:      string | null;
+  nick:        string | null;
+  roles:       string[];
+  joined_at:   string | null;
+}
+
+export const discordApi = {
+  // -- Diagnostic + accounts --------------------------------------------------
+  config:   () => api.get<DiscordConfigStatus>("/discord/config"),
+  accounts: () => api.get<DiscordAccount[]>("/discord/accounts"),
+
+  // -- Player search + EOS link ----------------------------------------------
+  searchPlayers: (q: string, limit = 25) =>
+    api.get<DiscordPlayerSearchHit[]>("/discord/players/search", {
+      params: { q, limit },
+    }),
+  linkEos: (discord_user_id: string, eos_id: string) =>
+    api.post<DiscordAccount>(
+      `/discord/link-eos/${discord_user_id}`,
+      { eos_id },
+    ),
+  unlinkEos: (discord_user_id: string) =>
+    api.delete<DiscordAccount>(`/discord/link-eos/${discord_user_id}`),
+
+  // -- AppUser link (already shipped in Phase 2; surfaced here for the UI) ---
+  linkAppUser: (
+    discord_user_id: string,
+    body: { app_user_id?: number; app_user_username?: string },
+  ) => api.post<DiscordAccount>(`/discord/link-app-user/${discord_user_id}`, body),
+  unlinkAppUser: (discord_user_id: string) =>
+    api.delete<DiscordAccount>(`/discord/link-app-user/${discord_user_id}`),
+
+  // -- Bot guild operations --------------------------------------------------
+  guildInfo:    () => api.get<DiscordGuildInfo>("/discord/guild/info"),
+  guildRoles:   () => api.get<DiscordGuildRole[]>("/discord/guild/roles"),
+  guildMembers: (params?: { limit?: number; after?: string }) =>
+    api.get<DiscordGuildMember[]>("/discord/guild/members", { params }),
+
+  assignRole: (user_id: string, role_id: string) =>
+    api.put(`/discord/guild/members/${user_id}/roles/${role_id}`),
+  removeRole: (user_id: string, role_id: string) =>
+    api.delete(`/discord/guild/members/${user_id}/roles/${role_id}`),
+
+  kickMember: (user_id: string) =>
+    api.delete(`/discord/guild/members/${user_id}`),
+  banMember:  (
+    user_id: string,
+    body: { reason?: string; delete_message_seconds?: number } = {},
+  ) => api.put(`/discord/guild/bans/${user_id}`, body),
+  unbanMember: (user_id: string) =>
+    api.delete(`/discord/guild/bans/${user_id}`),
+
+  dmUser: (user_id: string, content: string) =>
+    api.post<{ channel_id: string; message_id: string | null }>(
+      `/discord/dm/${user_id}`,
+      { content },
+    ),
+};
+
+// ---------------------------------------------------------------------------
 // SQL Console (admin only)
 // ---------------------------------------------------------------------------
 

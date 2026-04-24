@@ -36,8 +36,8 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
+import type { ComponentType } from "react";
 import type { AuthUser } from "../types";
 import {
   SUPPORTED_LANGUAGES,
@@ -47,6 +47,12 @@ import {
   type SupportedLanguage,
 } from "../i18n";
 import { getCurrentTheme, toggleTheme, type Theme } from "../theme";
+import DiscordIcon from "./DiscordIcon";
+
+// Sidebar icons can be either a Lucide icon (defaults sized via the size
+// prop) OR our inline DiscordIcon, which exposes the same {size, className}
+// surface.  We keep the type loose to accept both without a runtime check.
+type NavIcon = ComponentType<{ size?: number; className?: string }>;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +67,7 @@ interface NavItem {
   to: string;
   /** i18n key for the label (e.g. "nav.dashboard"). */
   i18nKey: string;
-  icon: LucideIcon;
+  icon: NavIcon;
   /** When true the item is only shown to users with the "admin" role. */
   adminOnly?: boolean;
 }
@@ -96,12 +102,13 @@ const NAV_PLUGINS: NavItem[] = [
 ];
 
 const NAV_SETTINGS: NavItem[] = [
-  { to: "/settings/users",      i18nKey: "nav.users",      icon: UserCog,  adminOnly: true },
-  { to: "/settings/db",         i18nKey: "nav.database",   icon: Database, adminOnly: true },
-  { to: "/settings/sql",        i18nKey: "nav.sqlConsole", icon: Terminal, adminOnly: true },
+  { to: "/settings/users",      i18nKey: "nav.users",      icon: UserCog,     adminOnly: true },
+  { to: "/settings/db",         i18nKey: "nav.database",   icon: Database,    adminOnly: true },
+  { to: "/settings/sql",        i18nKey: "nav.sqlConsole", icon: Terminal,    adminOnly: true },
+  { to: "/settings/discord",    i18nKey: "nav.discord",    icon: DiscordIcon, adminOnly: true },
   { to: "/settings/machines",   i18nKey: "nav.machines",   icon: Monitor },
   { to: "/settings/blueprints", i18nKey: "nav.blueprints", icon: BookOpen },
-  { to: "/settings/general",    i18nKey: "nav.settings",   icon: Settings, adminOnly: true },
+  { to: "/settings/general",    i18nKey: "nav.settings",   icon: Settings,    adminOnly: true },
 ];
 
 const ROLE_LABELS: Record<string, string> = {

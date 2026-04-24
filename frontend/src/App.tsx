@@ -48,6 +48,7 @@ import TransferRulesPage from "./pages/TransferRulesPage";
 import DecayPage from "./pages/DecayPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import UsersPage from "./pages/UsersPage";
+import DiscordSettingsPage from "./pages/DiscordSettingsPage";
 import SqlConsolePage from "./pages/SqlConsolePage";
 import ServersPage from "./pages/ServersPage";
 import ServerInstancesPage from "./pages/ServerInstancesPage";
@@ -284,6 +285,9 @@ function App() {
               )}
               {currentUser?.role === "admin" && (
                 <Route path="/settings/sql" element={<SqlConsolePage />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/discord" element={<DiscordSettingsPage />} />
               )}
 
               {/* Catch-all: redirect unknown paths to the dashboard */}
