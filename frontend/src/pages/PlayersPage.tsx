@@ -10,8 +10,10 @@ import {
   RefreshCw, Filter, Loader2, Download, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown,
   Map, Copy, CheckCircle, ShieldOff
 } from 'lucide-react'
-import { playersApi, arkBansApi } from '../services/api'
+import { playersApi, arkBansApi, discordApi } from '../services/api'
+import type { DiscordAccount } from '../services/api'
 import type { PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
+import DiscordIcon from '../components/DiscordIcon'
 
 // ── Tiny filter trigger icon for column headers ─────────────────────────────
 
@@ -265,13 +267,35 @@ export default function PlayersPage() {
   const [banDuration, setBanDuration] = useState<'permanent' | '1d' | '3d' | '7d' | '30d'>('permanent')
   const [banning, setBanning] = useState(false)
 
-  useEffect(() => { loadPlayers(); loadGroups(); loadStats(); loadSyncContainers() }, [])
+  // Discord links indexed by EOS_Id, populated only for admin operators
+  // (the /discord/accounts endpoint is admin-gated; non-admins get a 403
+  // we silently swallow so the page keeps working unchanged for them).
+  const [discordByEos, setDiscordByEos] = useState<Map<string, DiscordAccount>>(new Map())
+  const [discordChipFor, setDiscordChipFor] = useState<{ player: PlayerListItem; account: DiscordAccount } | null>(null)
+  const [dmContent, setDmContent] = useState('')
+  const [dmSending, setDmSending] = useState(false)
+
+  useEffect(() => { loadPlayers(); loadGroups(); loadStats(); loadSyncContainers(); loadDiscordLinks() }, [])
 
   async function loadSyncContainers() {
     try {
       const res = await playersApi.syncContainers()
       setSyncContainers(res.data.containers || [])
     } catch {}
+  }
+
+  async function loadDiscordLinks() {
+    try {
+      const res = await discordApi.accounts()
+      const map = new Map<string, DiscordAccount>()
+      for (const a of res.data) {
+        if (a.eos_id) map.set(a.eos_id, a)
+      }
+      setDiscordByEos(map)
+    } catch {
+      // Non-admin operators get 403 here -- harmless: the chip simply
+      // never renders.  We don't surface the error.
+    }
   }
   useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
 
@@ -1108,6 +1132,33 @@ export default function PlayersPage() {
                       <div className="pl-cell-player">
                         <div className="pl-avatar">{(p.name || '?')[0].toUpperCase()}</div>
                         <span className="pl-cell-name">{p.name || t('players.unknownPlayer')}</span>
+                        {discordByEos.get(p.eos_id) && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation()
+                              const acc = discordByEos.get(p.eos_id)
+                              if (acc) {
+                                setDiscordChipFor({ player: p, account: acc })
+                                setDmContent('')
+                              }
+                            }}
+                            className="pl-chip"
+                            style={{
+                              background: '#5865F215', color: '#5865F2',
+                              borderColor: '#5865F230',
+                              cursor: 'pointer', padding: '0.1rem 0.4rem',
+                              marginLeft: '0.4rem',
+                            }}
+                            title={t('players.discord.chipTitle', { defaultValue: 'Discord linked — click to DM' })}
+                          >
+                            <DiscordIcon size={9} />
+                            <span style={{ fontSize: '0.7rem' }}>
+                              {discordByEos.get(p.eos_id)?.discord_global_name
+                                ?? discordByEos.get(p.eos_id)?.discord_username
+                                ?? t('players.discord.linked', { defaultValue: 'linked' })}
+                            </span>
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -1679,6 +1730,121 @@ export default function PlayersPage() {
                   ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkAlign.applying')}</>
                   : <><Save size={12} /> {t('players.bulkAlign.apply', { count: selectedIds.size })}</>}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Discord quick-action modal: opens when an admin clicks the Discord
+          chip on a linked player.  Lets the operator either DM the user
+          immediately or jump to the full Discord settings page. */}
+      {discordChipFor && (
+        <div
+          onClick={() => setDiscordChipFor(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, var(--bg-card, #fff))',
+              color: 'var(--text)', padding: '1rem 1.1rem',
+              borderRadius: 8, minWidth: 420, maxWidth: 520,
+              boxShadow: '0 10px 40px rgba(0,0,0,0.35)',
+            }}
+          >
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: '0.6rem', borderBottom: '1px solid var(--border)',
+              paddingBottom: '0.4rem',
+            }}>
+              <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <DiscordIcon size={14} color="#5865F2" />
+                {discordChipFor.account.discord_global_name
+                  ?? discordChipFor.account.discord_username
+                  ?? discordChipFor.account.discord_user_id}
+              </span>
+              <button
+                onClick={() => setDiscordChipFor(null)}
+                className="pl-btn-icon"
+                style={{ width: 24, height: 24 }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.7rem' }}>
+              {t(
+                'players.discord.linkedTo',
+                {
+                  defaultValue: 'Linked to ARK player {{p}}',
+                  p: discordChipFor.player.name || discordChipFor.player.eos_id,
+                },
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                {t('players.discord.dmLabel', { defaultValue: 'Send a Discord DM' })}
+              </label>
+              <textarea
+                autoFocus
+                className="form-input"
+                value={dmContent}
+                onChange={e => setDmContent(e.target.value.slice(0, 2000))}
+                rows={5}
+                placeholder={t('players.discord.dmPh', { defaultValue: 'Plain text — sent through your bot.' })}
+                style={{ resize: 'vertical', minHeight: 100 }}
+              />
+              <div style={{
+                fontSize: '0.7rem',
+                color: 2000 - dmContent.length < 100 ? '#dc2626' : 'var(--text-secondary)',
+                marginTop: 4, textAlign: 'right',
+              }}>
+                {2000 - dmContent.length} / 2000
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between', marginTop: '0.75rem' }}>
+              <a
+                href="/settings/discord"
+                className="btn btn-secondary btn-sm"
+                style={{ textDecoration: 'none' }}
+              >
+                {t('players.discord.openSettings', { defaultValue: 'Open Discord settings' })}
+              </a>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button onClick={() => setDiscordChipFor(null)} className="btn btn-ghost btn-sm">
+                  {t('common.cancel', { defaultValue: 'Cancel' })}
+                </button>
+                <button
+                  onClick={async () => {
+                    const c = dmContent.trim()
+                    if (!c || !discordChipFor) return
+                    setDmSending(true)
+                    try {
+                      await discordApi.dmUser(discordChipFor.account.discord_user_id, c)
+                      setSuccess(t('players.discord.dmSent', { defaultValue: 'DM sent.' }))
+                      setDiscordChipFor(null)
+                    } catch (err: unknown) {
+                      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                      setError(typeof detail === 'string' ? detail
+                        : t('players.discord.dmFailed', { defaultValue: 'Failed to send DM.' }))
+                    } finally {
+                      setDmSending(false)
+                    }
+                  }}
+                  disabled={dmSending || !dmContent.trim()}
+                  className="btn btn-primary btn-sm"
+                >
+                  {dmSending ? <Loader2 size={12} className="pl-spin" /> : <DiscordIcon size={12} />}
+                  {' '}
+                  {t('players.discord.dmSend', { defaultValue: 'Send DM' })}
+                </button>
+              </div>
             </div>
           </div>
         </div>
