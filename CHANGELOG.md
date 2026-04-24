@@ -7,6 +7,98 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.4.0] - 2026-04-24
+
+Big release: configurable Discord role -> ARK group sync engine,
+mobile-friendly player dashboard, plus the bug fix for relative
+timestamps that was making every VIP/timed-perm chip read 'scade
+ora' regardless of the actual expiry.
+
+### Added
+
+- **Generic Discord-role -> ARK-group mapping engine** (Phase 7+).
+  Replaces the unused OAuth admin/operator/viewer whitelists with a
+  proper CRUD-driven mapping table.  N rules of
+  `(discord_role_id -> ark_group_name)` configurable from the
+  panel, with a 'Sync ruoli ora' button that walks every active
+  rule and pushes the diff into `Players.PermissionGroups`.
+
+  Where: **Settings -> Discord -> Modifica -> Sincronizzazione
+  ruoli**.  Each row exposes the colored Discord role + an inline
+  ARK group name input + Active toggle + Delete.  A draft row at
+  the bottom adds new rules.  The sync report shows per-player
+  groups added (green) and removed (amber).
+
+  Backend additions:
+    * `GET /api/v1/discord/role-mappings` (list)
+    * `POST /api/v1/discord/role-mappings` (create)
+    * `PUT  /api/v1/discord/role-mappings/{id}` (patch)
+    * `DELETE /api/v1/discord/role-mappings/{id}` (delete)
+    * `POST /api/v1/discord/sync-roles` (apply all active rules)
+    * `app/discord/sync_roles.py` (the engine)
+    * `arkmaniagest_discord_role_map.ark_group_name` column added
+      via boot-time idempotent migration
+
+  The VIP sync stays untouched (separate `DISCORD_VIP_ROLE_ID` env,
+  separate endpoint, separate button) per operator request.  The
+  two engines compose cleanly: the generic engine NEVER touches
+  groups not produced by an active rule, so the VIP-managed group
+  + admin/custom groups pass through.
+
+### Removed
+
+- **Auto-promotion whitelists section** on the Modifica tab
+  (admin / operator / viewer Discord-ID CSVs).  These were the
+  bootstrap-admin-via-Discord knobs from Phase 2 and were never
+  used in practice.  The .env keys themselves
+  (`DISCORD_*_USER_IDS`) stay in place server-side -- `auth_discord`
+  still respects them on first OAuth login -- but the UI no longer
+  shows or edits them.
+
+### Fixed
+
+- **Player dashboard: every VIP / timed-permission chip read
+  'scade ora'.** `fmtRelative()` always treated negative diffs (future
+  timestamps) as 'less than 1 minute ago'.  Now bidirectional: past
+  values render as `'... fa'` (2h fa, 3g fa, ...), future values as
+  `'tra ...'` (tra 2h, tra 12g, ...).
+
+- **Player dashboard: mobile rendering**.  Several viewport
+  improvements based on operator feedback:
+    * Page padding scales with `clamp(0.75rem, 3vw, 1.5rem)` so it
+      breathes on phones without wasting space on desktop.
+    * Header greeting block clamps font + ellipsises long names so
+      they don't push the avatar off-screen.  Action buttons drop
+      to a second line on very narrow viewports.
+    * CharacterHero permanent-permission chips no longer have a
+      `maxWidth: 40%` constraint -- they wrap to a new row when
+      tight (was squeezing to nothing on mobile).
+    * Grid `minmax(280px, 1fr)` (was 320px) -- tablet portrait now
+      fits 2 columns; mobile still falls to 1.
+    * Scrollable lists (tribe roster / rare dinos / activity) use
+      `clamp(...)` for `maxHeight` so they don't explode on short
+      phones.
+
+### Backend
+
+Total Discord-related routes: 22 -> 27.  Two boot-time idempotent
+migrations on `arkmaniagest_discord_role_map`: ADD COLUMN
+`ark_group_name VARCHAR(64) NULL` + index, MODIFY `app_role_name`
+to NULL-able for back-compat.
+
+### Operational notes
+
+- Run sync from `Settings -> Discord -> Modifica` after configuring
+  rules.  The button is disabled when no active rules exist.
+- Existing v3.3.x deploys: nothing manual to do.  The migration
+  applies on first boot of v3.4.0; the ARK-group column is created
+  empty so the new sync engine is a no-op until you add rules.
+- The unused OAuth whitelist `.env` keys (`DISCORD_ADMIN_USER_IDS`
+  etc.) can be left as-is; they're only consulted by the very first
+  Discord login when a brand-new identity has no AppUser link yet,
+  and that codepath is unchanged.
+
+---
 ## [3.3.2] - 2026-04-24
 
 Patch release: two operator-reported papercuts on the Discord pages.
