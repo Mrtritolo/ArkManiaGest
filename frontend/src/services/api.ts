@@ -1212,9 +1212,36 @@ export interface DiscordGuildMember {
   joined_at:   string | null;
 }
 
+/** Body shape for PUT /discord/config.  All fields optional. */
+export interface DiscordConfigUpdate {
+  client_id?:         string;
+  client_secret?:     string;       // null/absent = keep, "" = clear, value = set
+  bot_token?:         string;       // same semantics
+  public_key?:        string;
+  guild_id?:          string;
+  redirect_uri?:      string;
+  vip_role_id?:       string;
+  admin_user_ids?:    string[];
+  operator_user_ids?: string[];
+  viewer_user_ids?:   string[];
+}
+
+export interface DiscordConfigUpdateResponse {
+  updated_keys:     string[];
+  restart_required: boolean;
+  restart_hint:     string;
+}
+
 export const discordApi = {
   // -- Diagnostic + accounts --------------------------------------------------
   config:   () => api.get<DiscordConfigStatus>("/discord/config"),
+  /**
+   * Update the editable subset of DISCORD_* keys in the backend's .env
+   * file.  Returns the list of keys actually touched + a restart hint
+   * (the new values are NOT live until the service restarts).
+   */
+  updateConfig: (body: DiscordConfigUpdate) =>
+    api.put<DiscordConfigUpdateResponse>("/discord/config", body),
   accounts: () => api.get<DiscordAccount[]>("/discord/accounts"),
 
   // -- Player search + EOS link ----------------------------------------------

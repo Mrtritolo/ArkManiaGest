@@ -1,27 +1,28 @@
 /**
  * DiscordSettingsPage.tsx — Settings -> Discord (admin only).
  *
- * Three tabs:
+ * Four tabs:
  *   1. Accounts  -- Discord <-> AppUser and Discord <-> ARK player links.
  *   2. Members   -- Live guild member list with per-row moderation actions
  *                   (assign role, remove role, kick, ban, DM).
- *   3. Config    -- Diagnostic of which DISCORD_* .env keys are still
- *                   missing, plus the whitelist editor for auto-promoting
- *                   Discord IDs to admin / operator / viewer.
- *
- * The first commit ships the page shell + tab switcher; the per-tab
- * panels land in subsequent commits so each piece is reviewable
- * standalone.
+ *   3. Config    -- READ-ONLY diagnostic of OAuth + bot readiness, the
+ *                   live guild probe, the VIP-sync controls and the
+ *                   current whitelist contents.
+ *   4. Settings  -- WRITE: edit the DISCORD_* keys directly (Client ID,
+ *                   secrets, role IDs, whitelists).  Saves to backend's
+ *                   .env via PUT /discord/config; restart required for
+ *                   the new values to take effect.
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Users as UsersIcon, Sliders } from "lucide-react";
+import { Users as UsersIcon, Sliders, Cog } from "lucide-react";
 import DiscordIcon from "../components/DiscordIcon";
 import AccountsTab from "./discord/AccountsTab";
 import MembersTab from "./discord/MembersTab";
 import ConfigTab from "./discord/ConfigTab";
+import SettingsTab from "./discord/SettingsTab";
 
-type TabKey = "accounts" | "members" | "config";
+type TabKey = "accounts" | "members" | "config" | "settings";
 
 export default function DiscordSettingsPage() {
   const { t } = useTranslation();
@@ -76,12 +77,19 @@ export default function DiscordSettingsPage() {
           icon={<Sliders size={14} />}
           label={t("discord.tab.config", "Configuration")}
         />
+        <TabButton
+          active={tab === "settings"}
+          onClick={() => setTab("settings")}
+          icon={<Cog size={14} />}
+          label={t("discord.tab.settings", { defaultValue: "Modifica" })}
+        />
       </div>
 
       {/* Per-tab panels */}
       {tab === "accounts" && <AccountsTab />}
       {tab === "members"  && <MembersTab />}
       {tab === "config"   && <ConfigTab />}
+      {tab === "settings" && <SettingsTab />}
     </div>
   );
 }
