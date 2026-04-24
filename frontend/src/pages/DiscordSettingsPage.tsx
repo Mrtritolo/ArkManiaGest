@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings as SettingsIcon, Users as UsersIcon, Sliders } from "lucide-react";
 import DiscordIcon from "../components/DiscordIcon";
+import AccountsTab from "./discord/AccountsTab";
 
 type TabKey = "accounts" | "members" | "config";
 
@@ -75,14 +76,8 @@ export default function DiscordSettingsPage() {
         />
       </div>
 
-      {/* Per-tab panel placeholders -- implementations land in
-          commits 5/6/7 of this Phase-3 series. */}
-      {tab === "accounts" && (
-        <div className="pl-loading" style={{ textAlign: "left" }}>
-          <SettingsIcon size={14} />{" "}
-          {t("discord.tab.accountsPlaceholder", "Accounts tab — coming up next.")}
-        </div>
-      )}
+      {/* Per-tab panels — Members + Config land in the next two commits. */}
+      {tab === "accounts" && <AccountsTab />}
       {tab === "members" && (
         <div className="pl-loading" style={{ textAlign: "left" }}>
           <SettingsIcon size={14} />{" "}
