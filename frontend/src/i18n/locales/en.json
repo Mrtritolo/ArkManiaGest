@@ -914,6 +914,14 @@
       "flagLabel": "Flag",
       "expiresLabel": "Expires"
     },
+    "filterPopup": {
+      "tabActive":            "Active",
+      "tabExpired":           "Expired",
+      "noValueTribe":         "(no tribe)",
+      "noValueGroups":        "(no permission)",
+      "noValueTimedActive":   "(no active timed perm)",
+      "noValueTimedExpired":  "(no expired timed perm)"
+    },
     "bulkPerm": {
       "selectedCount":     "{{count}} selected",
       "openModal":         "Configure bulk grant…",

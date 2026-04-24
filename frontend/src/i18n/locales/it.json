@@ -914,6 +914,14 @@
       "flagLabel": "Flag",
       "expiresLabel": "Scadenza"
     },
+    "filterPopup": {
+      "tabActive":            "Attivi",
+      "tabExpired":           "Scaduti",
+      "noValueTribe":         "(senza tribù)",
+      "noValueGroups":        "(senza permessi)",
+      "noValueTimedActive":   "(senza permessi temp. attivi)",
+      "noValueTimedExpired":  "(senza permessi temp. scaduti)"
+    },
     "bulkPerm": {
       "selectedCount":     "{{count}} selezionati",
       "openModal":         "Configura assegnazione massiva…",

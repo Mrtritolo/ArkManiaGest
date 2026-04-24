@@ -2,7 +2,7 @@
  * PlayersPage — ARK player management.
  * Modern design with Lucide icons, solid table, inline detail view.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Search, Users, Star, Shield, ChevronRight, X, Plus, Minus,
@@ -12,6 +12,169 @@ import {
 } from 'lucide-react'
 import { playersApi, arkBansApi } from '../services/api'
 import type { PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
+
+// ── Tiny filter trigger icon for column headers ─────────────────────────────
+
+interface FilterIconProps {
+  colKey:   string
+  active:   boolean
+  open:     boolean
+  onToggle: (open: boolean) => void
+}
+
+function FilterIcon(p: FilterIconProps) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); p.onToggle(!p.open) }}
+      title={p.active ? `Filter active (${p.colKey})` : `Filter ${p.colKey}`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 18, height: 18, marginLeft: 4, padding: 0,
+        background: p.active ? 'var(--accent-light)' : 'transparent',
+        border: p.active ? '1px solid var(--accent)' : '1px solid transparent',
+        borderRadius: 3, cursor: 'pointer',
+        color: p.active ? 'var(--accent)' : 'var(--text-muted)',
+      }}
+    >
+      <Filter size={11} />
+    </button>
+  )
+}
+
+
+// ── Column filter popup (Excel-style) ───────────────────────────────────────
+// Floating checkbox list anchored to the column header.  Clicking outside
+// or hitting Escape closes it; values are stored in the parent component
+// via the toggleValue callback so the same Set drives the row filter
+// pipeline + the icon active-state highlight.
+
+interface ColumnFilterPopupProps {
+  /** All distinct values found in the column across loaded players. */
+  options:    string[]
+  /** Currently ticked values; empty Set means "no filter applied". */
+  selected:   Set<string>
+  /** Reserved sentinel for rows that have no value in this column. */
+  noValueKey: string
+  /** Called every time the user toggles a single checkbox. */
+  onToggle:   (value: string) => void
+  /** Called when "Select all" / "Select none" is hit. */
+  onSetAll:   (allOn: boolean) => void
+  /** Called when "Clear filter" wipes the Set. */
+  onClear:    () => void
+  onClose:    () => void
+  labelFor?:  (value: string) => string
+  emptyLabel: string
+}
+
+function ColumnFilterPopup(p: ColumnFilterPopupProps) {
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Close on outside click + Escape.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) p.onClose()
+    }
+    function onEsc(e: KeyboardEvent) { if (e.key === 'Escape') p.onClose() }
+    // Use capture so we beat the input's own focus handlers.
+    document.addEventListener('mousedown', onDocClick, true)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick, true)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [p])
+
+  const filteredOptions = p.options.filter(opt => {
+    if (!search) return true
+    const label = (p.labelFor ? p.labelFor(opt) : opt) || ''
+    return label.toLowerCase().includes(search.toLowerCase())
+  })
+  const allSelected = filteredOptions.length > 0
+    && filteredOptions.every(o => p.selected.has(o))
+
+  return (
+    <div
+      ref={ref}
+      onClick={e => e.stopPropagation()}
+      style={{
+        position: 'absolute', top: '100%', left: 0, marginTop: 4,
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        boxShadow: 'var(--shadow-lg)',
+        zIndex: 50, minWidth: 220, maxWidth: 320,
+        padding: '0.4rem',
+      }}
+    >
+      <input
+        type="text"
+        autoFocus
+        placeholder="Search…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="form-input"
+        style={{ width: '100%', padding: '0.25rem 0.4rem', fontSize: '0.78rem', marginBottom: '0.3rem' }}
+      />
+      <div style={{
+        display: 'flex', gap: '0.3rem', justifyContent: 'space-between',
+        padding: '0 0.15rem', marginBottom: '0.25rem',
+      }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.74rem', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={el => {
+              if (el) el.indeterminate =
+                filteredOptions.some(o => p.selected.has(o)) && !allSelected
+            }}
+            onChange={() => p.onSetAll(!allSelected)}
+          />
+          (Select all)
+        </label>
+        <button
+          onClick={p.onClear}
+          className="btn btn-ghost btn-sm"
+          style={{ padding: '0.1rem 0.4rem', fontSize: '0.72rem' }}
+        >Clear</button>
+      </div>
+      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+        {filteredOptions.length === 0 ? (
+          <div style={{ padding: '0.5rem', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+            No matches.
+          </div>
+        ) : filteredOptions.map(opt => {
+          const label = opt === p.noValueKey
+            ? p.emptyLabel
+            : (p.labelFor ? p.labelFor(opt) : opt)
+          return (
+            <label
+              key={opt}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '0.2rem 0.4rem', cursor: 'pointer',
+                fontSize: '0.78rem', borderRadius: 3,
+              }}
+              onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+              onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <input
+                type="checkbox"
+                checked={p.selected.has(opt)}
+                onChange={() => p.onToggle(opt)}
+              />
+              <span style={{
+                fontStyle: opt === p.noValueKey ? 'italic' : 'normal',
+                color: opt === p.noValueKey ? 'var(--text-muted)' : 'inherit',
+              }}>
+                {label}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function PlayersPage() {
   const { t } = useTranslation()
@@ -49,6 +212,23 @@ export default function PlayersPage() {
   const [showSyncPanel, setShowSyncPanel] = useState(false)
   const [sortCol, setSortCol] = useState<string>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  // ── Per-column filters ─────────────────────────────────────────
+  // Excel-style: each filterable column has a popup with a checkbox
+  // list of distinct values; only ticked values pass through.  An
+  // empty Set means "no filter applied" (everything passes).
+  // The reserved value '__empty__' represents rows that don't have
+  // any value in the column (no permission, no tribe, etc.).
+  type ColKey = 'tribe' | 'groups' | 'timedActive' | 'timedExpired'
+  const [colFilters, setColFilters] = useState<Record<ColKey, Set<string>>>({
+    tribe:        new Set(),
+    groups:       new Set(),
+    timedActive:  new Set(),
+    timedExpired: new Set(),
+  })
+  // Which column's filter popup is currently open (null = none).
+  const [openFilter, setOpenFilter] = useState<ColKey | null>(null)
+  const NO_VALUE_KEY = '__empty__'
 
   // --- Maps & character copy ---
   const [playerMaps, setPlayerMaps] = useState<PlayerMapResult[]>([])
@@ -394,7 +574,126 @@ export default function PlayersPage() {
     return sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
   }
 
-  const sortedPlayers = [...players].sort((a, b) => {
+  // ── Filter pipeline ────────────────────────────────────────────
+
+  /** Return the (group, expired) pairs encoded in TimedPermissionGroups. */
+  function parseTimedGroups(raw: string | null | undefined): Array<{group: string; expired: boolean}> {
+    const nowSec = Date.now() / 1000
+    return (raw || '').split(',').filter(Boolean).map(entry => {
+      const parts = entry.split(';')
+      const ts    = parseInt(parts[1] || '0', 10) || 0
+      return { group: (parts[2] || '').trim(), expired: ts > 0 && ts < nowSec }
+    }).filter(e => e.group)
+  }
+
+  /** Return the comma-separated fixed-permission groups for a player. */
+  function parseFixedGroups(raw: string | null | undefined): string[] {
+    return (raw || '').split(',').map(s => s.trim()).filter(Boolean)
+  }
+
+  // Distinct values across the whole loaded player set, used to populate
+  // the filter popups.  Memoised on `players` so it doesn't rebuild on
+  // every keystroke / sort toggle.
+  const distinctValues = useMemo(() => {
+    const tribes        = new Set<string>()
+    const groups        = new Set<string>()
+    const timedActive   = new Set<string>()
+    const timedExpired  = new Set<string>()
+    let hasNoTribe   = false
+    let hasNoGroups  = false
+    let hasNoActive  = false
+    let hasNoExpired = false
+    players.forEach(p => {
+      if (p.tribe_name?.trim()) tribes.add(p.tribe_name.trim())
+      else hasNoTribe = true
+      const fg = parseFixedGroups(p.permission_groups)
+      if (fg.length === 0) hasNoGroups = true
+      fg.forEach(g => groups.add(g))
+      const tg = parseTimedGroups(p.timed_permission_groups)
+      const act = tg.filter(e => !e.expired)
+      const exp = tg.filter(e => e.expired)
+      if (act.length === 0) hasNoActive = true
+      if (exp.length === 0) hasNoExpired = true
+      act.forEach(e => timedActive.add(e.group))
+      exp.forEach(e => timedExpired.add(e.group))
+    })
+    function sorted(set: Set<string>, hasEmpty: boolean): string[] {
+      const arr = Array.from(set).sort((a, b) => a.localeCompare(b))
+      return hasEmpty ? [...arr, NO_VALUE_KEY] : arr
+    }
+    return {
+      tribe:        sorted(tribes,       hasNoTribe),
+      groups:       sorted(groups,       hasNoGroups),
+      timedActive:  sorted(timedActive,  hasNoActive),
+      timedExpired: sorted(timedExpired, hasNoExpired),
+    }
+  }, [players])
+
+  function clearColFilter(key: ColKey) {
+    setColFilters(prev => ({ ...prev, [key]: new Set() }))
+  }
+  function toggleColFilterValue(key: ColKey, value: string) {
+    setColFilters(prev => {
+      const next = new Set(prev[key])
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return { ...prev, [key]: next }
+    })
+  }
+  function setColFilterAll(key: ColKey, values: string[], allOn: boolean) {
+    setColFilters(prev => ({
+      ...prev, [key]: allOn ? new Set(values) : new Set(),
+    }))
+  }
+
+  function passesFilter(player: PlayerListItem): boolean {
+    // Tribe column
+    if (colFilters.tribe.size > 0) {
+      const tribeKey = (player.tribe_name?.trim()) || NO_VALUE_KEY
+      if (!colFilters.tribe.has(tribeKey)) return false
+    }
+    // Fixed permissions column
+    if (colFilters.groups.size > 0) {
+      const fg = parseFixedGroups(player.permission_groups)
+      if (fg.length === 0) {
+        if (!colFilters.groups.has(NO_VALUE_KEY)) return false
+      } else {
+        // ANY-match: if at least one of the player's groups is ticked,
+        // the row passes.  Behaves like Excel autofilter.
+        if (!fg.some(g => colFilters.groups.has(g))) return false
+      }
+    }
+    // Timed permissions: split into "active" and "expired" halves
+    if (colFilters.timedActive.size > 0 || colFilters.timedExpired.size > 0) {
+      const tg = parseTimedGroups(player.timed_permission_groups)
+      const act = tg.filter(e => !e.expired).map(e => e.group)
+      const exp = tg.filter(e =>  e.expired).map(e => e.group)
+
+      if (colFilters.timedActive.size > 0) {
+        if (act.length === 0) {
+          if (!colFilters.timedActive.has(NO_VALUE_KEY)) return false
+        } else if (!act.some(g => colFilters.timedActive.has(g))) {
+          return false
+        }
+      }
+      if (colFilters.timedExpired.size > 0) {
+        if (exp.length === 0) {
+          if (!colFilters.timedExpired.has(NO_VALUE_KEY)) return false
+        } else if (!exp.some(g => colFilters.timedExpired.has(g))) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  const filteredPlayers = useMemo(
+    () => players.filter(passesFilter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [players, colFilters],
+  )
+
+  const sortedPlayers = [...filteredPlayers].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
     switch (sortCol) {
       case 'name': return dir * (a.name || '').localeCompare(b.name || '')
@@ -593,10 +892,115 @@ export default function PlayersPage() {
                     />
                   </th>
                   <th className="pl-th-sort" onClick={() => toggleSort('name')} style={{width:'18%'}}>{t('players.table.player')} <SortIcon col="name" /></th>
-                  <th className="pl-th-sort" onClick={() => toggleSort('tribe')} style={{width:'14%'}}>{t('players.table.tribe')} <SortIcon col="tribe" /></th>
+                  <th className="pl-th-sort" style={{width:'14%', position: 'relative'}}>
+                    <span onClick={() => toggleSort('tribe')} style={{cursor: 'pointer'}}>
+                      {t('players.table.tribe')} <SortIcon col="tribe" />
+                    </span>
+                    <FilterIcon
+                      colKey="tribe"
+                      active={colFilters.tribe.size > 0}
+                      open={openFilter === 'tribe'}
+                      onToggle={(open) => setOpenFilter(open ? 'tribe' : null)}
+                    />
+                    {openFilter === 'tribe' && (
+                      <ColumnFilterPopup
+                        options={distinctValues.tribe}
+                        selected={colFilters.tribe}
+                        noValueKey={NO_VALUE_KEY}
+                        onToggle={v => toggleColFilterValue('tribe', v)}
+                        onSetAll={on => setColFilterAll('tribe', distinctValues.tribe, on)}
+                        onClear={() => clearColFilter('tribe')}
+                        onClose={() => setOpenFilter(null)}
+                        emptyLabel={t('players.filterPopup.noValueTribe')}
+                      />
+                    )}
+                  </th>
                   <th className="pl-th-sort" onClick={() => toggleSort('points')} style={{width:'8%'}}>{t('players.table.points')} <SortIcon col="points" /></th>
-                  <th className="pl-th-sort" onClick={() => toggleSort('groups')} style={{width:'20%'}}>{t('players.table.groups')} <SortIcon col="groups" /></th>
-                  <th className="pl-th-sort" onClick={() => toggleSort('timed')} style={{width:'16%'}}>{t('players.table.timed')} <SortIcon col="timed" /></th>
+                  <th className="pl-th-sort" style={{width:'20%', position: 'relative'}}>
+                    <span onClick={() => toggleSort('groups')} style={{cursor: 'pointer'}}>
+                      {t('players.table.groups')} <SortIcon col="groups" />
+                    </span>
+                    <FilterIcon
+                      colKey="groups"
+                      active={colFilters.groups.size > 0}
+                      open={openFilter === 'groups'}
+                      onToggle={(open) => setOpenFilter(open ? 'groups' : null)}
+                    />
+                    {openFilter === 'groups' && (
+                      <ColumnFilterPopup
+                        options={distinctValues.groups}
+                        selected={colFilters.groups}
+                        noValueKey={NO_VALUE_KEY}
+                        onToggle={v => toggleColFilterValue('groups', v)}
+                        onSetAll={on => setColFilterAll('groups', distinctValues.groups, on)}
+                        onClear={() => clearColFilter('groups')}
+                        onClose={() => setOpenFilter(null)}
+                        emptyLabel={t('players.filterPopup.noValueGroups')}
+                      />
+                    )}
+                  </th>
+                  <th className="pl-th-sort" style={{width:'16%', position: 'relative'}}>
+                    <span onClick={() => toggleSort('timed')} style={{cursor: 'pointer'}}>
+                      {t('players.table.timed')} <SortIcon col="timed" />
+                    </span>
+                    <FilterIcon
+                      colKey="timedActive"
+                      active={colFilters.timedActive.size > 0 || colFilters.timedExpired.size > 0}
+                      open={openFilter === 'timedActive' || openFilter === 'timedExpired'}
+                      onToggle={(open) => setOpenFilter(open ? 'timedActive' : null)}
+                    />
+                    {(openFilter === 'timedActive' || openFilter === 'timedExpired') && (
+                      <div
+                        onClick={e => e.stopPropagation()}
+                        style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 50 }}
+                      >
+                        {/* Two-tab popup: ACTIVE / EXPIRED.  Both filters
+                            stack so the operator can build queries like
+                            'has Patreon active OR has VIP expired'. */}
+                        <div style={{ display: 'flex', gap: 4, marginBottom: 4, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 3 }}>
+                          <button
+                            onClick={() => setOpenFilter('timedActive')}
+                            className={`btn btn-sm ${openFilter === 'timedActive' ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }}
+                          >
+                            {t('players.filterPopup.tabActive')}
+                            {colFilters.timedActive.size > 0 ? ` (${colFilters.timedActive.size})` : ''}
+                          </button>
+                          <button
+                            onClick={() => setOpenFilter('timedExpired')}
+                            className={`btn btn-sm ${openFilter === 'timedExpired' ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }}
+                          >
+                            {t('players.filterPopup.tabExpired')}
+                            {colFilters.timedExpired.size > 0 ? ` (${colFilters.timedExpired.size})` : ''}
+                          </button>
+                        </div>
+                        {openFilter === 'timedActive' ? (
+                          <ColumnFilterPopup
+                            options={distinctValues.timedActive}
+                            selected={colFilters.timedActive}
+                            noValueKey={NO_VALUE_KEY}
+                            onToggle={v => toggleColFilterValue('timedActive', v)}
+                            onSetAll={on => setColFilterAll('timedActive', distinctValues.timedActive, on)}
+                            onClear={() => clearColFilter('timedActive')}
+                            onClose={() => setOpenFilter(null)}
+                            emptyLabel={t('players.filterPopup.noValueTimedActive')}
+                          />
+                        ) : (
+                          <ColumnFilterPopup
+                            options={distinctValues.timedExpired}
+                            selected={colFilters.timedExpired}
+                            noValueKey={NO_VALUE_KEY}
+                            onToggle={v => toggleColFilterValue('timedExpired', v)}
+                            onSetAll={on => setColFilterAll('timedExpired', distinctValues.timedExpired, on)}
+                            onClear={() => clearColFilter('timedExpired')}
+                            onClose={() => setOpenFilter(null)}
+                            emptyLabel={t('players.filterPopup.noValueTimedExpired')}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </th>
                   <th className="pl-th-sort" onClick={() => toggleSort('login')} style={{width:'14%'}}>{t('players.table.login')} <SortIcon col="login" /></th>
                   <th style={{width: '24px'}}></th>
                 </tr>
