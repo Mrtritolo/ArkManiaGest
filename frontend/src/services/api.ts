@@ -1348,11 +1348,97 @@ export interface DashboardDiscord {
   discord_avatar:      string | null;
 }
 
+// ── Phase 7 enrichments ─────────────────────────────────────────────────────
+
+export interface DashboardPresence {
+  online_now:        boolean;
+  server_key:        string | null;
+  server_name:       string | null;
+  map_name:          string | null;
+  login_time_iso:    string | null;
+  duration_minutes:  number | null;
+}
+
+export interface DashboardServerPulse {
+  servers_online:        number;
+  servers_total:         number;
+  players_online_total:  number;
+}
+
+export interface DashboardLeaderboardScoreRow {
+  server_type:        string | null;
+  rank:               number | null;
+  total_players:      number | null;
+  total_points:       number;
+  kills_wild:         number;
+  kills_enemy_dino:   number;
+  kills_player:       number;
+  tames:              number;
+  crafts:             number;
+  structs_destroyed:  number;
+  deaths:             number;
+  last_event_iso:     string | null;
+}
+
+export interface DashboardLeaderboard {
+  has_scores: boolean;
+  scores:     DashboardLeaderboardScoreRow[];
+}
+
+export interface DashboardTribeMember {
+  eos_id:           string;
+  name:             string | null;
+  is_self:          boolean;
+  online_now:       boolean;
+  last_login_iso:   string | null;
+}
+
+export interface DashboardTribe {
+  has_tribe:   boolean;
+  tribe_id:    number | null;
+  tribe_name:  string | null;
+  members:     DashboardTribeMember[];
+}
+
+export interface DashboardRareDinoEvent {
+  id:           number;
+  event_type:   string;
+  dino_name:    string | null;
+  dino_level:   number | null;
+  server_key:   string | null;
+  event_at_iso: string | null;
+}
+
+export interface DashboardRareDinos {
+  kills_30d:  number;
+  tames_30d:  number;
+  recent:     DashboardRareDinoEvent[];
+}
+
+export interface DashboardActivityEvent {
+  source:    "event_log" | "lb_event";
+  kind:      string;
+  points:    number | null;
+  detail:    string | null;
+  when_iso:  string | null;
+  server_key:string | null;
+}
+
+export interface DashboardActivity {
+  items: DashboardActivityEvent[];
+}
+
 export interface DashboardResponse {
-  discord:   DashboardDiscord;
-  character: DashboardCharacter;
-  shop:      DashboardShop;
-  decay:     DashboardDecay;
+  discord:     DashboardDiscord;
+  character:   DashboardCharacter;
+  shop:        DashboardShop;
+  decay:       DashboardDecay;
+  presence:    DashboardPresence;
+  server_pulse:DashboardServerPulse;
+  leaderboard: DashboardLeaderboard;
+  tribe:       DashboardTribe;
+  rare_dinos:  DashboardRareDinos;
+  activity:    DashboardActivity;
 }
 
 export const meApi = {
