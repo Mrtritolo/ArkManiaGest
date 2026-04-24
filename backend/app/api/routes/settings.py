@@ -100,7 +100,7 @@ async def initial_setup(req: SetupRequest, db: AsyncSession = Depends(get_db)):
         db, "app_name", req.app_name or "ArkManiaGest",
         description="Application name",
     )
-    await set_setting_async(db, "app_version", "3.3.0", description="Application version")
+    await set_setting_async(db, "app_version", "3.3.1", description="Application version")
     await set_setting_async(
         db, "log_level", req.log_level or "INFO",
         description="Log level",
@@ -123,7 +123,7 @@ async def get_app_settings(
     """Read general application settings from the database."""
     return AppSettingsRead(
         app_name=await get_setting_async(db, "app_name") or "ArkManiaGest",
-        version=await get_setting_async(db, "app_version") or "3.3.0",
+        version=await get_setting_async(db, "app_version") or "3.3.1",
         log_level=await get_setting_async(db, "log_level") or "INFO",
         auto_backup=(await get_setting_async(db, "auto_backup") or "true") == "true",
         backup_interval_hours=int(

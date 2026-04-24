@@ -7,6 +7,43 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.1] - 2026-04-24
+
+Patch release: hotfix for the Phase-7 tribe-roster query that landed
+broken with v3.3.0.
+
+### Fixed
+
+- **Player dashboard 500ed** when the linked player had a tribe.
+
+  ```
+  pymysql.err.OperationalError: (1054, "Unknown column 'pt.player_name'
+  in 'SELECT'")
+  ```
+
+  Root cause: the Phase-7 tribe-roster query joined
+  `ARKM_player_tribes` with `Players` and tried to use
+  `COALESCE(NULLIF(p.Giocatore, ''), pt.player_name)` as the member's
+  display name -- but `ARKM_player_tribes` does NOT have a
+  `player_name` column.  The schema is just `eos_id /
+  targeting_team / tribe_name / last_login`.
+
+  Fixed by dropping `pt.player_name` from the SELECT and the
+  COALESCE.  Names now come exclusively from `Players.Giocatore` via
+  the LEFT JOIN; the frontend already handles a null name with the
+  `name || eos_id.slice(0, 8) + '…'` fallback, so the UI is
+  unchanged.
+
+  GROUP BY also gets `p.Giocatore` appended -- MariaDB would
+  otherwise reject the non-aggregated column once the COALESCE was
+  simplified.
+
+### No other changes
+
+Apply via the in-panel self-update -- only one backend file changed,
+no frontend rebuild needed.
+
+---
 ## [3.3.0] - 2026-04-24
 
 Big visual + data refresh of the player dashboard, plus the related
