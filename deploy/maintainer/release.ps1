@@ -341,7 +341,18 @@ git commit -m "Bump version to $Version" | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "git commit failed" }
 
 Write-Action "git push origin main"
-$pushOut = & git push origin main 2>&1
+# PS 5.1 + $ErrorActionPreference='Stop' wraps every stderr line from a
+# native exe in a NativeCommandError record (which sets $? to false even on
+# exit 0).  git push prints harmless progress to stderr, so we lower the
+# preference for the call and trust $LASTEXITCODE for the verdict -- same
+# pattern the vite build above uses.
+$prev_eap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $pushOut = & git push origin main 2>&1
+} finally {
+    $ErrorActionPreference = $prev_eap
+}
 if ($LASTEXITCODE -ne 0) {
     $pushOut | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     Fail "git push failed (see output above)"
@@ -358,7 +369,14 @@ Write-Action "git tag -a $tag"
 git tag -a $tag -m "ArkManiaGest $tag" | Out-Null
 
 Write-Action "git push origin $tag"
-$pushTagOut = & git push origin $tag 2>&1
+# Same NativeCommandError dance as the main push above.
+$prev_eap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $pushTagOut = & git push origin $tag 2>&1
+} finally {
+    $ErrorActionPreference = $prev_eap
+}
 if ($LASTEXITCODE -ne 0) {
     $pushTagOut | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     Fail "git push tag failed"
