@@ -2,14 +2,26 @@
  * App.tsx — Root component and application shell.
  *
  * Auth state machine:
- *   loading → (backend unreachable) → error
- *           → (no users in DB)      → setup
- *           → (users exist)         → login
- *                                   → ready  (after successful login)
+ *   loading → (backend unreachable)              → error
+ *           → (no users in DB)                   → setup
+ *           → (users exist)                      → login
+ *                                                → ready    (admin panel)
+ *                                                → player   (Discord-only)
+ *
+ * Resolution order on boot (and on every checkStatus call):
+ *
+ *   1. #token=... fragment (Discord OAuth callback)  → store + drop into 2.
+ *   2. Panel JWT in sessionStorage                    → authApi.me()
+ *                                                       success → "ready"
+ *   3. Discord session cookie alone                   → discordAuthApi.me()
+ *                                                       success → "player"
+ *                                                       (dashboard only)
+ *   4. Otherwise                                      → "login".
  *
  * The overlay (setup / login / loading / error) is rendered on top of the
- * main layout.  Once the state reaches "ready", the overlay is removed and
- * the full sidebar + route tree becomes interactive.
+ * main layout.  Once the state reaches "ready" the admin sidebar + route
+ * tree becomes interactive; "player" renders the PlayerDashboardPage with
+ * no admin sidebar.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -17,6 +29,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import {
   settingsApi,
   authApi,
+  discordAuthApi,
   setAuthToken,
   getAuthToken,
   setOnAuthError,
@@ -29,6 +42,10 @@ import Sidebar from "./components/Sidebar";
 // Auth / setup overlays
 import SetupWizard from "./pages/SetupWizard";
 import LoginPage from "./pages/LoginPage";
+
+// Player dashboard (Phase 6) -- shown when the user has a Discord
+// session cookie but no panel JWT.
+import PlayerDashboardPage from "./pages/PlayerDashboardPage";
 
 // App pages
 import DashboardPage from "./pages/DashboardPage";
@@ -58,7 +75,7 @@ import EventLogPage from "./pages/EventLogPage";
 // Types
 // ---------------------------------------------------------------------------
 
-type AuthState = "loading" | "setup" | "login" | "ready" | "error";
+type AuthState = "loading" | "setup" | "login" | "ready" | "player" | "error";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -112,10 +129,28 @@ function App() {
           setAuthState("ready");
           return;
         } catch {
-          // Invalid / expired token -- wipe and fall through to login.
+          // Invalid / expired token -- wipe and fall through to the
+          // Discord probe below (maybe the operator only has a Discord
+          // session left).
           setAuthToken(null);
           setCurrentUser(null);
         }
+      }
+
+      // No panel JWT: probe the Discord-session cookie.  If the Discord
+      // OAuth callback set one (Phase 2), the user is a Discord-only
+      // player and we route them to the PlayerDashboardPage.  A 401 here
+      // just means no Discord session either -- fall through to login.
+      try {
+        const { data: discord } = await discordAuthApi.me();
+        if (discord.discord_user_id) {
+          setAuthState("player");
+          return;
+        }
+      } catch {
+        // No Discord session OR backend couldn't verify it -- treat as
+        // 'not logged in' and land on the login page.  The /me/dashboard
+        // endpoint will also 401/403 if the user ever reaches it by URL.
       }
 
       setAuthState("login");
@@ -156,7 +191,9 @@ function App() {
   // ---------------------------------------------------------------------------
 
   function renderAuthOverlay(): React.ReactNode {
-    if (authState === "ready") return null;
+    // The player state has its OWN full-page render (no admin sidebar);
+    // skip the overlay entirely so the dashboard takes over the canvas.
+    if (authState === "ready" || authState === "player") return null;
 
     if (authState === "loading") {
       return (
@@ -221,6 +258,13 @@ function App() {
   return (
     <BrowserRouter>
       {renderAuthOverlay()}
+
+      {/* Discord-only players see the dashboard with no admin sidebar.
+          The PlayerDashboardPage manages its own logout (clears the
+          Discord session cookie and reloads the page). */}
+      {authState === "player" && (
+        <PlayerDashboardPage onLogout={() => setAuthState("login")} />
+      )}
 
       {authState === "ready" && (
         <div className="app-layout">
