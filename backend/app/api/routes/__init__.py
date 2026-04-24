@@ -19,6 +19,7 @@ from app.core.auth import require_viewer
 from app.api.routes import (
     auth,
     auth_discord,
+    me,
     servers,
     instance_actions,
     system_update,
@@ -50,6 +51,11 @@ router.include_router(auth.router,     tags=["Auth"])
 # the user is mid-redirect-flow and hasn't proven any panel identity
 # yet.  The session cookie issued by the callback is the auth.
 router.include_router(auth_discord.router, tags=["Auth (Discord)"])
+# Player dashboard endpoints (Phase 6) -- authenticated by the disc_session
+# cookie inside each handler, NOT by the panel JWT.  A Discord user with no
+# linked EOS gets 403; an unauthenticated caller gets 401.  No router-level
+# guard so the dependency can speak for itself.
+router.include_router(me.router, prefix="/me", tags=["Me (player dashboard)"])
 router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 router.include_router(public.router,   prefix="/public",   tags=["Public"])
 
