@@ -28,6 +28,7 @@ from sqlalchemy import select, text
 from app.core.auth import require_admin
 from app.db.models.app import AppUser
 from app.db.session import get_db, get_plugin_db
+from app.discord import client as dc_client
 from app.discord.config import get_discord_config
 from app.discord import store as dc_store
 
@@ -472,3 +473,295 @@ async def list_discord_accounts(db: AsyncSession = Depends(get_db)):
             last_sync_at        = m.get("last_sync_at"),
         ))
     return out
+
+
+# ── Discord bot interaction (admin only) ─────────────────────────────────────
+#
+# The bot must be invited to the guild AND its role must sit ABOVE the
+# target's highest role for moderation calls.  Discord returns 50013
+# ("Missing Permissions") otherwise; we surface the message verbatim so
+# the operator can act on the actual fix instead of a generic 500.
+
+def _require_bot_ready() -> tuple[str, str]:
+    """
+    Return (bot_token, guild_id) once the bot side is fully configured.
+
+    Raises 503 with a list of the missing .env keys so the admin UI can
+    point the operator at the exact fix.
+    """
+    cfg = get_discord_config()
+    if not cfg.has_bot:
+        missing = ", ".join(cfg.missing_for_bot()) or "DISCORD_BOT_TOKEN, DISCORD_GUILD_ID"
+        raise HTTPException(
+            status_code=503,
+            detail=f"Discord bot not configured. Missing env keys: {missing}",
+        )
+    return cfg.bot_token, cfg.guild_id
+
+
+def _wrap_discord_call(coro_factory):
+    """
+    Run a Discord API helper and translate :class:`DiscordAPIError` into
+    a FastAPI HTTPException carrying Discord's own message.
+
+    We re-raise 401/403/404 as-is (semantically meaningful for the UI) and
+    flatten everything else to 502 ("upstream error") so the panel doesn't
+    falsely advertise a 500 on the panel itself.
+    """
+    async def _runner():
+        try:
+            return await coro_factory()
+        except dc_client.DiscordAPIError as exc:
+            status = exc.status if exc.status in (400, 401, 403, 404, 409, 429) else 502
+            raise HTTPException(status_code=status, detail=str(exc)) from None
+    return _runner
+
+
+# ── Pydantic shapes ──────────────────────────────────────────────────────────
+
+class _GuildInfo(BaseModel):
+    id:                   str
+    name:                 str
+    icon:                 Optional[str] = None
+    owner_id:             Optional[str] = None
+    approximate_member_count:  Optional[int] = None
+    approximate_presence_count: Optional[int] = None
+
+
+class _GuildRole(BaseModel):
+    id:        str
+    name:      str
+    color:     int = 0
+    position:  int = 0
+    hoist:     bool = False
+    managed:   bool = False
+    mentionable: bool = False
+
+
+class _GuildMember(BaseModel):
+    user_id:      str
+    username:     Optional[str] = None
+    global_name:  Optional[str] = None
+    avatar:       Optional[str] = None
+    nick:         Optional[str] = None
+    roles:        list[str] = []
+    joined_at:    Optional[str] = None
+
+
+class _BanRequest(BaseModel):
+    reason:                 Optional[str] = None
+    delete_message_seconds: int = 0
+
+
+class _DmRequest(BaseModel):
+    content: str
+
+
+# ── Guild snapshot ───────────────────────────────────────────────────────────
+
+@router.get(
+    "/guild/info",
+    response_model=_GuildInfo,
+    dependencies=[Depends(require_admin)],
+)
+async def get_guild_info():
+    """Top-of-page banner data for the Settings -> Discord 'Guild' tab."""
+    bot_token, guild_id = _require_bot_ready()
+    data = await _wrap_discord_call(
+        lambda: dc_client.get_guild(bot_token=bot_token, guild_id=guild_id)
+    )()
+    return _GuildInfo(
+        id   = data["id"],
+        name = data.get("name") or "",
+        icon = data.get("icon"),
+        owner_id = data.get("owner_id"),
+        approximate_member_count   = data.get("approximate_member_count"),
+        approximate_presence_count = data.get("approximate_presence_count"),
+    )
+
+
+@router.get(
+    "/guild/roles",
+    response_model=list[_GuildRole],
+    dependencies=[Depends(require_admin)],
+)
+async def list_guild_roles_endpoint():
+    """List every role in the configured guild, sorted by position desc."""
+    bot_token, guild_id = _require_bot_ready()
+    data = await _wrap_discord_call(
+        lambda: dc_client.list_guild_roles(bot_token=bot_token, guild_id=guild_id)
+    )()
+    out = [
+        _GuildRole(
+            id          = r["id"],
+            name        = r.get("name") or "",
+            color       = int(r.get("color") or 0),
+            position    = int(r.get("position") or 0),
+            hoist       = bool(r.get("hoist") or False),
+            managed     = bool(r.get("managed") or False),
+            mentionable = bool(r.get("mentionable") or False),
+        )
+        for r in (data or [])
+    ]
+    # Highest position first -- matches Discord's own role list ordering.
+    out.sort(key=lambda r: r.position, reverse=True)
+    return out
+
+
+@router.get(
+    "/guild/members",
+    response_model=list[_GuildMember],
+    dependencies=[Depends(require_admin)],
+)
+async def list_guild_members_endpoint(
+    limit: int = 100,
+    after: Optional[str] = None,
+):
+    """
+    Paginated guild member list.  The admin UI walks pages by passing
+    ``after=<last_user_id>`` until the response is shorter than ``limit``.
+
+    Discord caps ``limit`` at 1000 per call.  Requires the GUILD_MEMBERS
+    privileged intent enabled on the application; absence of the intent
+    surfaces here as a 403 from Discord (we forward the message verbatim).
+    """
+    bot_token, guild_id = _require_bot_ready()
+    data = await _wrap_discord_call(
+        lambda: dc_client.list_guild_members(
+            bot_token=bot_token, guild_id=guild_id,
+            limit=limit, after=after,
+        )
+    )()
+    out: list[_GuildMember] = []
+    for m in (data or []):
+        u = m.get("user") or {}
+        out.append(_GuildMember(
+            user_id     = u.get("id") or "",
+            username    = u.get("username"),
+            global_name = u.get("global_name"),
+            avatar      = u.get("avatar"),
+            nick        = m.get("nick"),
+            roles       = list(m.get("roles") or []),
+            joined_at   = m.get("joined_at"),
+        ))
+    return out
+
+
+# ── Member moderation ────────────────────────────────────────────────────────
+
+@router.put(
+    "/guild/members/{user_id}/roles/{role_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
+async def assign_role_endpoint(user_id: str, role_id: str):
+    """Add a role to a guild member (admin manual override)."""
+    bot_token, guild_id = _require_bot_ready()
+    await _wrap_discord_call(
+        lambda: dc_client.add_guild_member_role(
+            bot_token=bot_token, guild_id=guild_id,
+            user_id=user_id, role_id=role_id,
+        )
+    )()
+    return None
+
+
+@router.delete(
+    "/guild/members/{user_id}/roles/{role_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
+async def remove_role_endpoint(user_id: str, role_id: str):
+    """Remove a role from a guild member."""
+    bot_token, guild_id = _require_bot_ready()
+    await _wrap_discord_call(
+        lambda: dc_client.remove_guild_member_role(
+            bot_token=bot_token, guild_id=guild_id,
+            user_id=user_id, role_id=role_id,
+        )
+    )()
+    return None
+
+
+@router.delete(
+    "/guild/members/{user_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
+async def kick_member_endpoint(user_id: str):
+    """Kick a member (they can re-join via an invite)."""
+    bot_token, guild_id = _require_bot_ready()
+    await _wrap_discord_call(
+        lambda: dc_client.remove_guild_member(
+            bot_token=bot_token, guild_id=guild_id, user_id=user_id,
+        )
+    )()
+    return None
+
+
+@router.put(
+    "/guild/bans/{user_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
+async def ban_member_endpoint(user_id: str, body: _BanRequest):
+    """Ban a member (audit-log reason via X-Audit-Log-Reason)."""
+    bot_token, guild_id = _require_bot_ready()
+    await _wrap_discord_call(
+        lambda: dc_client.create_guild_ban(
+            bot_token=bot_token, guild_id=guild_id, user_id=user_id,
+            reason=body.reason,
+            delete_message_seconds=body.delete_message_seconds,
+        )
+    )()
+    return None
+
+
+@router.delete(
+    "/guild/bans/{user_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin)],
+)
+async def unban_member_endpoint(user_id: str):
+    """Lift an existing ban so the user can rejoin via invite."""
+    bot_token, guild_id = _require_bot_ready()
+    await _wrap_discord_call(
+        lambda: dc_client.remove_guild_ban(
+            bot_token=bot_token, guild_id=guild_id, user_id=user_id,
+        )
+    )()
+    return None
+
+
+# ── DM ───────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/dm/{user_id}",
+    dependencies=[Depends(require_admin)],
+)
+async def dm_user_endpoint(user_id: str, body: _DmRequest):
+    """
+    Open a DM channel with a user and post a message.
+
+    Discord caches DM channels per recipient -- repeated calls hit the
+    same channel id.  Content is capped at the Discord 2000-char hard
+    limit (we trim instead of erroring; the operator's intent is clearly
+    to deliver the message).
+    """
+    bot_token, _ = _require_bot_ready()
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="content is required.")
+    content = content[:2000]
+    channel = await _wrap_discord_call(
+        lambda: dc_client.create_dm_channel(bot_token=bot_token, recipient_id=user_id)
+    )()
+    msg = await _wrap_discord_call(
+        lambda: dc_client.send_message(
+            bot_token=bot_token, channel_id=channel["id"], content=content,
+        )
+    )()
+    return {
+        "channel_id": channel["id"],
+        "message_id": msg.get("id"),
+    }
