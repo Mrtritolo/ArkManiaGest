@@ -7,6 +7,152 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.0] - 2026-04-24
+
+Two big additions: a **player-facing dashboard** (Phase 6) so a
+Discord-linked player can self-serve their character / shop /
+decay status without admin help, and a **manual VIP-role sync**
+(Phase 4) that mirrors the ARK plugin DB's VIP permission group
+onto a Discord role on demand.
+
+The Settings -> Discord page also gains a fourth tab where an
+admin can rotate every Discord credential / ID directly from the
+panel (no more SSH + nano).
+
+### Added
+
+- **Player dashboard** at `/me` (admin layout) and as a full-canvas
+  view for Discord-only players.  Three cards rendered from the
+  new `GET /api/v1/me/dashboard` endpoint:
+
+    * Character: name, tribe, last login, EOS_Id, permanent
+                 permission groups + active timed entries (with
+                 their expiry timestamps).
+    * Shop:      points + total spent (big-stat tiles), plus a
+                 collapsible raw view of the plugin's `Kits`
+                 column.
+    * Decay:     status banner (safe / expiring / expired) with
+                 a friendly countdown ('scade tra Xg Yh' /
+                 'scaduto da Xh'), tribe info, last-refresh
+                 metadata, and a red banner when the tribe is
+                 scheduled for purge.
+
+  Authenticated via the existing `disc_session` cookie; unlinked
+  Discord callers see a 403 with a hint pointing at the admin
+  link flow.
+
+- **Auth state machine** rerouted to the dashboard.  When the
+  SPA boots without a panel JWT but with a valid Discord session,
+  `App.tsx` resolves to a new `"player"` state and renders the
+  dashboard with no admin sidebar.  The previous Phase-2 path
+  (admin-linked Discord -> panel JWT -> admin shell) is unchanged.
+
+- **'My dashboard' sidebar entry** for admins -- click it from
+  the admin shell to preview your own player view inside the
+  existing layout (the same component, mounted with
+  `embedded={true}`).
+
+- **Manual VIP-role sync** (Phase 4):
+
+    * `POST /api/v1/discord/sync-vip` (admin only) walks every
+      linked discord_account, computes 'should be VIP' from the
+      Players row (permanent OR active timed entry for the
+      'VIP' permission group -- 'permanenti e temporanei
+      gestiti in ugual modo'), and applies the diff to the
+      Discord role specified by `DISCORD_VIP_ROLE_ID`.
+    * Direction is fixed: ARK plugin DB is authoritative ('VIP
+      vince il dato su db gestionale').  Discord-side members
+      who hold the role but have no EOS link in our DB are
+      reported only -- never stripped.
+    * Per-row report: assigned / removed / noop / error counts,
+      duration, plus a paginated action table for the operator
+      to audit.  A 'user left the guild' 404 becomes a 'noop'
+      with detail; other Discord errors per row count as
+      'error' but never abort the run.
+
+- **Settings -> Discord -> VIP sync section** with a 'Sync VIP
+  now' button + last-result panel (5-metric dashboard + collapsible
+  per-row table + 'stranger VIPs' list).
+
+- **Settings -> Discord -> Modifica tab** -- edit every
+  `DISCORD_*` key directly from the panel.  Powered by the new
+  `PUT /api/v1/discord/config` endpoint and an atomic env-file
+  writer (`app/core/env_writer.py`) that:
+
+    * Replaces existing keys in place, preserving comments + key
+      order.
+    * Appends unknown keys at the end.
+    * Atomic write via `<env>.tmp + os.replace`.
+    * Preserves the file's 600 mode after the rename.
+
+  The form treats secrets specially: their current values are
+  never returned by the GET; the field shows '(currently set,
+  leave empty to keep)' and an explicit 'Clear' button is needed
+  to wipe them.  Pydantic loads `.env` once at boot, so a save
+  surfaces a 'restart required' banner with the exact systemctl
+  command + a copy button.
+
+### Backend
+
+- New `app/api/routes/me.py` (`/me/dashboard`); auth via
+  `get_current_player()` dependency that decodes the
+  `disc_session` cookie + resolves the linked EOS, returning
+  401 / 403 / 404 with operator-friendly messages.
+- New `app/discord/sync_vip.py` containing
+  `sync_vip_role()` (panel -> Discord reconciliation engine) and
+  the `VipSyncReport` envelope returned to the route layer.
+- New `app/core/env_writer.py` providing
+  `update_env_file({KEY: value})` for the panel-driven `.env`
+  edit flow, with `keys_in_env(keys)` as a presence-check helper
+  for diagnostic UIs.
+- New `DISCORD_VIP_ROLE_ID` settings key (defaults to empty;
+  `.env.production` template gains a documented placeholder).
+- `/discord/config` response extended with `vip_role_id` +
+  `vip_sync_ready` so the Config tab can light up / disable the
+  sync controls accordingly.
+
+### Frontend
+
+- New `services/api.ts` namespace `meApi` (`dashboard()`) and
+  `discordAuthApi` (`me()`, `logout()`); typed responses
+  `DashboardResponse / DashboardCharacter / DashboardShop /
+  DashboardDecay / DashboardDiscord / DiscordMeResponse`.
+- `discordApi` extended with `syncVip()` (5-min timeout, large
+  guilds may need it) and `updateConfig(body)`; type additions
+  `VipSyncReport`, `VipSyncAction`, `DiscordConfigUpdate`,
+  `DiscordConfigUpdateResponse`.
+- New `pages/PlayerDashboardPage.tsx` (full-canvas + embedded
+  modes; 3 stacked cards).
+- New `pages/discord/SettingsTab.tsx` (edit form for every
+  `DISCORD_*` key) and a 'VIP sync' section in the existing
+  `ConfigTab`.
+- Sidebar gets a 'La mia dashboard' entry under the main
+  Dashboard.
+- The 401 axios interceptor now exempts `/auth/discord/me` and
+  `/me/dashboard` so a missing/expired Discord session does NOT
+  clear the panel JWT or bounce the admin to /login.
+
+### Operational notes
+
+- **VIP sync prerequisites**: bot must be in the guild with the
+  Manage Roles permission AND the bot's role must sit ABOVE the
+  VIP role in the guild's role hierarchy.  Discord otherwise
+  responds 50013 'Missing Permissions' which the panel surfaces
+  verbatim.
+- **`.env` editing prerequisites**: the backend process must have
+  write access to `/opt/arkmaniagest/backend/.env`.  Default
+  install (file owned by `arkmania:arkmania`, mode 600) satisfies
+  this.  Changes do NOT take effect until the service is
+  restarted -- the response carries the exact command.
+- **Player dashboard via Discord-only**: when a Discord-only player
+  reaches the panel, the SPA detects the session cookie and lands
+  them on the dashboard instead of the admin login screen.  Their
+  Discord identity must already be linked to an EOS by an admin
+  via Settings -> Discord -> Accounts -> 'Link player'; otherwise
+  the dashboard renders a 403 with a hint asking them to ping an
+  admin.
+
+---
 ## [3.1.0] - 2026-04-24
 
 Phase 3 of the Discord integration: a full **admin Discord

@@ -301,7 +301,7 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
           )}
         </div>
 
-        <span className="sidebar-version">V 3.1.0</span>
+        <span className="sidebar-version">V 3.2.0</span>
       </div>
     </aside>
   );
