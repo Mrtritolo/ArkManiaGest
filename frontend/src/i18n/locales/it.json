@@ -45,6 +45,7 @@
     "settings": "Impostazioni",
     "sqlConsole": "Console SQL",
     "discord": "Discord",
+    "myDashboard": "La mia dashboard",
     "logout": "Esci"
   },
   "auth": {

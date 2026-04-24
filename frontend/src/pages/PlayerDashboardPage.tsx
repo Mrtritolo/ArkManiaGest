@@ -77,11 +77,20 @@ function extractError(err: unknown, fallback: string): string {
 
 interface PlayerDashboardPageProps {
   /** Optional callback the host can wire to its auth-state machine
-   *  (e.g. App.tsx wants to flip back to the login screen on logout). */
+   *  (e.g. App.tsx wants to flip back to the login screen on logout).
+   *  Ignored when `embedded` is true. */
   onLogout?: () => void;
+
+  /**
+   * When true, the page renders WITHOUT its own slim header / logout /
+   * full-canvas wrapper -- it's been mounted inside the admin layout
+   * (sidebar already provides identity + logout).  Use this when an admin
+   * navigates to /me from within the panel to peek at their player view.
+   */
+  embedded?: boolean;
 }
 
-export default function PlayerDashboardPage({ onLogout }: PlayerDashboardPageProps) {
+export default function PlayerDashboardPage({ onLogout, embedded = false }: PlayerDashboardPageProps) {
   const { t } = useTranslation();
   const [data, setData]       = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,23 +129,58 @@ export default function PlayerDashboardPage({ onLogout }: PlayerDashboardPagePro
     window.location.href = "/";
   }
 
-  return (
-    <div style={{
-      minHeight: "100vh",
-      background: "var(--bg, #f5f5f7)",
-      padding: "1.5rem",
-    }}>
-      <div style={{
-        maxWidth: 880, margin: "0 auto",
-        display: "flex", flexDirection: "column", gap: "1rem",
-      }}>
-        <PageHeader
-          discord={data?.discord ?? null}
-          characterName={data?.character.name ?? null}
-          onRefresh={() => load()}
-          onLogout={handleLogout}
-        />
+  // Standalone uses a full-canvas wrapper with a slim header (the player
+  // is the only thing on screen).  Embedded uses the admin's pl-page so
+  // it slots into the existing sidebar+main layout.
+  const Wrapper = embedded
+    ? ({ children }: { children: React.ReactNode }) => (
+        <div className="pl-page">
+          <div className="pl-header">
+            <div>
+              <h1 className="pl-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <User size={20} />{" "}
+                {t("dashboard.embeddedTitle", { defaultValue: "La mia dashboard" })}
+              </h1>
+              <p className="pl-subtitle">
+                {t("dashboard.embeddedSubtitle", {
+                  defaultValue: "Anteprima della view che il tuo personaggio vede via Discord.",
+                })}
+              </p>
+            </div>
+            <button onClick={() => load()} className="btn btn-secondary btn-sm">
+              <RefreshCw size={12} />{" "}
+              {t("common.refresh", { defaultValue: "Refresh" })}
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {children}
+          </div>
+        </div>
+      )
+    : ({ children }: { children: React.ReactNode }) => (
+        <div style={{
+          minHeight: "100vh",
+          background: "var(--bg, #f5f5f7)",
+          padding: "1.5rem",
+        }}>
+          <div style={{
+            maxWidth: 880, margin: "0 auto",
+            display: "flex", flexDirection: "column", gap: "1rem",
+          }}>
+            <PageHeader
+              discord={data?.discord ?? null}
+              characterName={data?.character.name ?? null}
+              onRefresh={() => load()}
+              onLogout={handleLogout}
+            />
+            {children}
+          </div>
+        </div>
+      );
 
+  return (
+    <Wrapper>
+      <>
         {error && (
           <div className="alert alert-error">
             <AlertCircle size={14} />
@@ -166,8 +210,8 @@ export default function PlayerDashboardPage({ onLogout }: PlayerDashboardPagePro
             <DecayCard     data={data.decay} />
           </>
         ) : null}
-      </div>
-    </div>
+      </>
+    </Wrapper>
   );
 }
 

@@ -274,6 +274,14 @@ function App() {
             <Routes>
               {/* Main navigation */}
               <Route path="/" element={<DashboardPage />} />
+              {/* 'My dashboard' inside the admin layout -- same component
+                  as the standalone player view, mounted with embedded=true
+                  so it inherits the admin sidebar instead of taking over
+                  the canvas. */}
+              <Route
+                path="/me"
+                element={<PlayerDashboardPage embedded />}
+              />
               <Route path="/serverforge" element={<ServerForgePage />} />
               <Route path="/online" element={<OnlinePlayersPage />} />
               <Route path="/players" element={<PlayersPage />} />

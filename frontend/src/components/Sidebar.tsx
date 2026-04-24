@@ -35,6 +35,7 @@ import {
   Globe,
   Sun,
   Moon,
+  User,
 } from "lucide-react";
 import { useState } from "react";
 import type { ComponentType } from "react";
@@ -82,6 +83,11 @@ interface NavItem {
 // in-page file editor) via a Navigate redirect in App.tsx.
 const NAV_MAIN: NavItem[] = [
   { to: "/",                i18nKey: "nav.dashboard",  icon: LayoutDashboard },
+  // 'My dashboard' opens the player view inside the admin layout.  Visible
+  // for everyone -- the page itself returns a friendly 'no Discord linked'
+  // hint when the operator's Discord identity is not bound to an EOS, so
+  // the entry is safe even for admins who never linked.
+  { to: "/me",              i18nKey: "nav.myDashboard", icon: User },
   { to: "/serverforge",     i18nKey: "nav.serverForge", icon: Server },
   { to: "/online",          i18nKey: "nav.online",     icon: Users },
   { to: "/players",         i18nKey: "nav.players",    icon: Database },

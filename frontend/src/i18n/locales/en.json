@@ -45,6 +45,7 @@
     "settings": "Settings",
     "sqlConsole": "SQL Console",
     "discord": "Discord",
+    "myDashboard": "My dashboard",
     "logout": "Log out"
   },
   "auth": {
