@@ -7,6 +7,85 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.0] - 2026-04-24
+
+Big visual + data refresh of the player dashboard, plus the related
+backend enrichments.  The dashboard now exposes most of what the
+plugin DB tracks per-player without forcing the player into the
+admin panel.
+
+### Added
+
+- **Hero player card** at the top of the dashboard with the player's
+  big avatar, an **animated VIP badge** (gold gradient + glow when
+  the player is in the VIP permission group), inline online/offline
+  pill, and a sub-line that shows tribe + relative time
+  ('connesso da 2h 14m' / 'ultimo accesso 3g fa').
+- **Cluster pulse banner** at the very top: 'Online su <server>
+  (1h 42m) · 8 giocatori su 3/3 server online'.  Lets the player
+  know the live state of the cluster at a glance.
+- **Leaderboard card** per `server_type` (PvE / PvP):
+    * Headline `#12 su 247 (PvE)` with the player's rank
+    * Coloured percentile bar (green/amber/red by tier)
+    * Two-column 7-stat breakdown: kill wild, tame, kill PvP,
+      craft, kill enemy dino, structs destroyed, deaths
+- **Tribe roster card** listing every other linked tribe member
+  with an online indicator (green dot for live sessions) and
+  relative last-seen for offline members.  The current player's
+  row is highlighted with a `(tu)` tag.
+- **Rare dinos card**: 30-day kill / tame counters as big-stat
+  tiles, plus a scrollable list of the 10 most recent rare-dino
+  events the player was killer or tamer of.
+- **Activity feed card**: merged `ARKM_event_log` + `ARKM_lb_events`
+  timeline (15 most recent items combined), with the leaderboard-
+  event rows showing their point delta in green.
+
+### Backend
+
+- New `app/api/routes/me.py` enrichments to `GET /api/v1/me/dashboard`:
+    * `presence`     -- real-time online status (joins ARKM_sessions
+                        with ARKM_servers)
+    * `server_pulse` -- cluster-wide online counters
+    * `leaderboard`  -- per-server_type scores + computed rank
+                        (counts strictly-higher total_points peers)
+    * `tribe.members`-- self-join on `ARKM_player_tribes` with
+                        latest-entry-per-eos collapse + online flag
+                        from `ARKM_sessions`
+    * `rare_dinos`   -- last-30-day kills/tames per player from
+                        `ARKM_rare_spawns`
+    * `activity`     -- UNION of `ARKM_event_log` + `ARKM_lb_events`
+                        merge-sorted by time, capped at 15
+
+  Single combined endpoint preserved so the page first-paints in one
+  round-trip.  No new routes; all data added to the existing JSON
+  response.
+
+### Frontend
+
+- `services/api.ts`: typed `DashboardPresence`, `DashboardServerPulse`,
+  `DashboardLeaderboard*`, `DashboardTribe*`, `DashboardRareDinos*`,
+  `DashboardActivity*`; `DashboardResponse` extended with the six
+  new sections.
+- `PlayerDashboardPage.tsx` redesigned around an asymmetric grid
+  (`auto-fit minmax(320px, 1fr)` columns when standalone, single
+  column when embedded inside the admin sidebar).  Hero character
+  card spans full width.
+- New helpers: `fmtRelative()` ('ora' / 'Xm fa' / 'Xh fa' / 'Xg fa')
+  and `fmtMinutes()` ('Xh YYm') for friendlier presentation.
+- The standalone view ships a Discord-blurple gradient header instead
+  of the previous flat one; embedded mode keeps the panel's pl-page
+  wrapper so it slots into the admin layout without visual collision.
+
+### Roadmap
+
+This release ships the **read-only** enrichments (Phase 7 Asse 1).
+The interactive layer (Phase 7 Asse 2 -- Discord DM to tribe member,
+opt-in scadenza notifications, derived achievements, auto Discord
+nickname sync, web-driven decay refresh) lands in v3.4.0.
+Collaborative tools (tribe diary, ticket system, marketplace) are
+queued for v3.5.0.
+
+---
 ## [3.2.1] - 2026-04-24
 
 Patch release: hotfix for the Players page crash that landed with
