@@ -7,6 +7,144 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.1.0] - 2026-04-24
+
+Phase 3 of the Discord integration: a full **admin Discord
+console** wired into Settings, plus inline player-side actions
+on the Players page.
+
+The operator can now bind ARK players to Discord identities,
+moderate the guild from inside the panel (assign/remove roles,
+kick, ban, DM), and inspect at a glance which players have a
+Discord link straight from the Players table.
+
+Per the operator's design intent the player <-> Discord binding
+is **admin-only** -- there is no self-link flow.  This keeps the
+audit trail clean and makes the link the trustworthy substrate
+the future role-sync engine (Phase 4-5) will build on.
+
+### Added
+
+- **Settings -> Discord page** (admin-only) with three tabs:
+
+  - **Accounts** -- one row per known Discord identity, with
+    inline link/unlink for both:
+      * panel AppUser   (filterable dropdown of /users)
+      * ARK player      (debounced autocomplete by name / EOS /
+                         tribe via the new
+                         `GET /api/v1/discord/players/search`)
+    Both sides surface the verbatim 409 from the UNIQUE indexes
+    so the operator sees 'EOS X is already linked to Discord
+    ID Y' instead of a generic error.
+
+  - **Members** -- live guild member list driven by the bot.
+    Per row: avatar, global_name, role chips (clickable to
+    remove), DM, Kick, Ban.  The '+' next to the chips opens a
+    popover with the assignable roles (skips @everyone and
+    managed-by-integration roles).  Pagination via 'Load more'
+    (Discord caps a single page at 1000; we walk pages of 100).
+    DM is a 2 000-char-capped textarea with live counter.  Ban
+    has audit-log reason + delete-recent-messages picker.
+
+  - **Configuration** -- read-only diagnostic.  OAuth readiness
+    + which `.env` keys are still missing.  Bot readiness +
+    live guild probe (calls `/discord/guild/info` on mount and
+    shows the guild icon + name + member counts in a green
+    success block).  Auto-promotion whitelists rendered as
+    chips per role (admin / operator / viewer).
+
+- **Players page Discord chip**.  When the row's eos_id has a
+  Discord link, a tiny blurple chip is appended next to the
+  player name showing the Discord global_name.  Click opens a
+  small modal with a textarea for sending an immediate DM and
+  a link to the Settings -> Discord page for follow-up actions.
+  Non-admin operators silently see no chips (the chip's data
+  source `/discord/accounts` is admin-gated).
+
+- **Backend Discord client helpers** (`app/discord/client.py`):
+    `get_guild()`, `list_guild_members()` (paginated),
+    `remove_guild_member()` (kick), `create_guild_ban()` /
+    `remove_guild_ban()`, `create_dm_channel()`, `send_message()`.
+  All routed through the existing `_request()` so the 429 /
+  Retry-After single-retry honour applies.  Audit-log reasons
+  on bans go through the `X-Audit-Log-Reason` header.
+
+- **Backend Discord routes** (all gated by
+  `Depends(require_admin)`):
+
+    `GET    /api/v1/discord/players/search?q=&limit=`
+    `POST   /api/v1/discord/link-eos/{discord_user_id}`
+    `DELETE /api/v1/discord/link-eos/{discord_user_id}`
+    `GET    /api/v1/discord/guild/info`
+    `GET    /api/v1/discord/guild/roles`
+    `GET    /api/v1/discord/guild/members?limit=&after=`
+    `PUT    /api/v1/discord/guild/members/{user_id}/roles/{role_id}`
+    `DELETE /api/v1/discord/guild/members/{user_id}/roles/{role_id}`
+    `DELETE /api/v1/discord/guild/members/{user_id}`         (kick)
+    `PUT    /api/v1/discord/guild/bans/{user_id}`            (ban)
+    `DELETE /api/v1/discord/guild/bans/{user_id}`            (unban)
+    `POST   /api/v1/discord/dm/{user_id}`                    (DM)
+
+  Total Discord surface: 16 routes (was 7 in v3.0.0).
+
+- **`discordApi` namespace** in `frontend/src/services/api.ts`
+  with typed responses (`DiscordAccount`, `DiscordPlayerSearchHit`,
+  `DiscordGuildInfo`, `DiscordGuildRole`, `DiscordGuildMember`,
+  `DiscordConfigStatus`).
+
+- **Shared `DiscordIcon` component** under
+  `frontend/src/components/DiscordIcon.tsx`.  Replaces the
+  duplicate inline SVG that lived inside `LoginPage.tsx`; both
+  the login button, the sidebar Settings -> Discord entry, the
+  admin tabs and the Players page chip now import the single
+  source.
+
+### Changed
+
+- **`/api/v1/discord/config`** response extended with
+  `admin_user_ids`, `operator_user_ids`, `viewer_user_ids`
+  (parsed from the existing `DISCORD_*_USER_IDS` env CSVs).
+  Drives the Configuration tab's whitelist view.  Backwards-
+  compatible: every previous field is unchanged.
+
+- **Sidebar `NavItem.icon` type** widened from `LucideIcon` to
+  a structural `ComponentType<{size?, className?}>` so both
+  Lucide icons and the inline `DiscordIcon` slot in without
+  per-call casts.
+
+- **Discord-call error mapping**: a new `_wrap_discord_call()`
+  helper in `routes/discord.py` translates `DiscordAPIError`
+  into an HTTPException carrying Discord's own message.
+  401 / 403 / 404 / 409 / 429 pass through as-is (semantically
+  meaningful for the UI); everything else flattens to 502 so
+  the panel doesn't falsely advertise a 500 on its own side.
+
+### Operational notes
+
+- **GUILD_MEMBERS privileged intent** must be enabled on the
+  Discord Developer Portal -> Bot tab for the Members tab to
+  populate.  Without it Discord returns 403 'Missing Access'
+  on `/guild/members`; the panel surfaces the message verbatim
+  with a hint pointing at the Dev Portal.
+
+- **Bot role hierarchy**: for kick / ban / role-assign to
+  succeed, the bot's role must sit ABOVE the target's highest
+  role on Server Settings -> Roles.  Discord otherwise returns
+  50013 'Missing Permissions' which the panel forwards verbatim
+  so the operator sees the actual fix.
+
+- **Recommended bot permissions integer** for the OAuth invite
+  URL (minimum for full Phase 3 functionality):
+  `268504070` (View Channels + Send Messages + Read Message
+  History + Kick + Ban + Manage Roles).  Or `8` (Administrator)
+  for testing.
+
+- **Build housekeeping**: `release.ps1` no longer dies on the
+  `git push` stderr lines under PowerShell 5.1 strict mode, and
+  the CHANGELOG separator detection is CRLF-tolerant.  Both
+  fixes shipped during the v3.0.0 cycle and are now baked in.
+
+---
 ## [3.0.0] - 2026-04-24
 
 First major release introducing **Discord integration** as a
