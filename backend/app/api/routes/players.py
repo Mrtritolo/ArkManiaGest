@@ -836,6 +836,155 @@ async def bulk_add_timed_perm(
     }
 
 
+# ── Bulk timed-perm alignment ────────────────────────────────────────────────
+#
+# Given a "family" of related timed-permission groups (e.g. VIP, Dead,
+# Decadimento), align the expiry of every ACTIVE entry in the family to
+# the latest active timestamp present.  Entries that are already expired
+# are left untouched (their owner's grant has lapsed and aligning them
+# would silently revive a past status).
+#
+# Per-player examples (now = today):
+#
+#   A) Dead 26/04/26, VIP 31/12/26
+#      -> Dead := 31/12/26                     (aligned UP to VIP)
+#
+#   B) Dead = expired, VIP 12/12/26, Decay 31/01/27
+#      -> Dead untouched, VIP := 31/01/27      (aligned UP to Decay)
+#
+#   C) Decay 24/04/26, VIP 31/01/27
+#      -> Decay := 31/01/27                    (aligned UP to VIP)
+#
+# Players with 0 or 1 active family entries are skipped (nothing to
+# align); the response surfaces a "skipped" count for those.
+
+class _BulkAlignTimedPermRequest(BaseModel):
+    """Body for :func:`bulk_align_timed_perms`."""
+
+    player_ids: list[int] = Field(..., min_length=1, max_length=2000)
+    # The family of group names to align together.  Match is exact and
+    # case-sensitive on the in-DB group string (typically capitalised:
+    # "VIP", "Dead", "Decadimento").
+    groups:     list[str] = Field(..., min_length=2, max_length=20)
+
+
+def _align_timed_perm_family(
+    raw: str,
+    *,
+    family: set[str],
+    now_ts: int,
+) -> tuple[str, int, int, int]:
+    """
+    Parse the existing ``TimedPermissionGroups`` string, find every
+    ACTIVE entry whose group name is in *family*, set them all to the
+    max active timestamp in the family, and re-serialise.
+
+    Returns ``(serialised, family_active_count, aligned_count, max_ts)``.
+
+    Edge cases:
+      * Fewer than 2 active family members -> nothing to align; the
+        original string is returned untouched and ``aligned_count = 0``.
+      * Already-expired entries (ts <= now) are NEVER modified.
+      * Entries outside *family* are also never modified.
+    """
+    # Pass 1: parse + identify active family entries.
+    parsed: list[dict] = []
+    for chunk in (raw or "").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = chunk.split(";")
+        if len(parts) >= 3 and parts[2].strip():
+            f = (parts[0] or "0").strip() or "0"
+            try:
+                ts = int(parts[1].strip()) if parts[1].strip() else 0
+            except ValueError:
+                ts = 0
+            g = parts[2].strip()
+            parsed.append({
+                "flag": f, "ts": ts, "group": g,
+                "in_family_active": (g in family) and (ts > now_ts),
+            })
+        else:
+            parsed.append({"_raw": chunk})
+
+    family_active = [p for p in parsed if p.get("in_family_active")]
+    if len(family_active) < 2:
+        # Nothing to align.
+        return raw or "", len(family_active), 0, 0
+
+    max_ts  = max(p["ts"] for p in family_active)
+    aligned = 0
+    for p in parsed:
+        if p.get("in_family_active") and p["ts"] != max_ts:
+            p["ts"] = max_ts
+            aligned += 1
+
+    out_parts: list[str] = []
+    for p in parsed:
+        if "_raw" in p:
+            out_parts.append(p["_raw"])
+        else:
+            out_parts.append(f"{p['flag']};{p['ts']};{p['group']}")
+    return ",".join(out_parts), len(family_active), aligned, max_ts
+
+
+@router.post("/bulk-align-timed-perms")
+async def bulk_align_timed_perms(
+    body: _BulkAlignTimedPermRequest,
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Align expiry dates inside a family of related timed permissions.
+
+    For every selected player:
+      * If the player has 2+ ACTIVE entries among ``body.groups``, every
+        such entry is bumped to the maximum active timestamp in the
+        family.
+      * Players with 0 or 1 active family entries are counted under
+        ``skipped`` -- nothing to align.
+
+    Expired entries (ts <= now) and entries outside the family are
+    NEVER modified.  Single transaction; commit at the end.
+    """
+    rows = await db.execute(
+        select(Player).where(Player.Id.in_(body.player_ids))
+    )
+    found_players = list(rows.scalars().all())
+    found_ids = {p.Id for p in found_players}
+    missing   = [pid for pid in body.player_ids if pid not in found_ids]
+
+    family = {g.strip() for g in body.groups if g.strip()}
+    now_ts = int(datetime.now().timestamp())
+
+    aligned_players  = 0
+    aligned_entries  = 0
+    skipped_players  = 0
+    for player in found_players:
+        new_value, fam_count, aligned_n, _max_ts = _align_timed_perm_family(
+            player.TimedPermissionGroups or "",
+            family=family,
+            now_ts=now_ts,
+        )
+        if aligned_n > 0:
+            player.TimedPermissionGroups = new_value
+            aligned_players  += 1
+            aligned_entries  += aligned_n
+        else:
+            skipped_players += 1
+
+    await db.commit()
+    return {
+        "success":          True,
+        "requested":        len(body.player_ids),
+        "aligned_players":  aligned_players,
+        "aligned_entries":  aligned_entries,
+        "skipped_players":  skipped_players,
+        "missing_ids":      missing,
+        "family":           sorted(family),
+    }
+
+
 @router.put("/{player_id}/points")
 async def set_player_points(
     player_id: int,

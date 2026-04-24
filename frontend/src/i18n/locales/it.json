@@ -914,6 +914,25 @@
       "flagLabel": "Flag",
       "expiresLabel": "Scadenza"
     },
+    "bulkAlign": {
+      "headerButton":           "Allinea ({{count}})",
+      "headerTitleEnabled":     "Apri il modal di allineamento scadenze per i {{count}} giocatori selezionati",
+      "headerTitleDisabled":    "Spunta almeno una riga della tabella per abilitare l'allineamento",
+      "modalTitle":             "Allinea scadenze permessi temporanei ({{count}} giocatori)",
+      "modalHint":              "Scegli una famiglia di gruppi correlati (es. VIP, Dead, Decadimento). Per ogni giocatore, ogni entry ATTIVA della famiglia viene portata alla scadenza attiva più alta nella famiglia.",
+      "familyLabel":            "Famiglia di gruppi correlati",
+      "addPlaceholder":         "Aggiungi nome gruppo custom…",
+      "addHint":                "Premi Invio",
+      "semanticsHint":          "Regole per ogni giocatore:\n  • Trova la scadenza più alta tra le entry attive della famiglia.\n  • Porta ogni altra entry attiva della famiglia a quella data.\n  • Le entry SCADUTE NON vengono mai toccate.\n  • Giocatori con 0 o 1 entry attive nella famiglia vengono saltati.",
+      "cancel":                 "Annulla",
+      "apply":                  "Allinea {{count}} giocatori",
+      "applying":               "Allineamento…",
+      "confirm":                "Allineare le scadenze dei permessi temporanei per {{count}} giocatori sulla famiglia [{{groups}}]?\n\nPer ogni giocatore portiamo tutte le entry ATTIVE della famiglia alla data attiva più alta presente. Le entry scadute NON vengono toccate.",
+      "done":                   "Allineamento completato: {{aligned}} giocatori aggiornati ({{entries}} entry), {{skipped}} saltati, {{missing}} non trovati.",
+      "failed":                 "Allineamento fallito.",
+      "errorNoneSelected":      "Nessun giocatore selezionato.",
+      "errorTooFewGroups":      "Scegli almeno 2 gruppi da allineare."
+    },
     "filterPopup": {
       "tabActive":            "Attivi",
       "tabExpired":           "Scaduti",

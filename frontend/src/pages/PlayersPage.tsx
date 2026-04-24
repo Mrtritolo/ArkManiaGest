@@ -207,6 +207,25 @@ export default function PlayersPage() {
   const [bulkGroup, setBulkGroup] = useState<string>('')
   const [bulkDurationSeconds, setBulkDurationSeconds] = useState<number>(7 * 24 * 3600)
   const [bulkApplying, setBulkApplying] = useState(false)
+
+  // ── Bulk align (family of timed perms) ─────────────────────────
+  // Separate workflow from bulk-grant: aligns the expiry of every
+  // ACTIVE entry in a chosen "family" of related groups (e.g. VIP,
+  // Dead, Decadimento) to the LATEST active timestamp in the family.
+  // Persists the family choice in localStorage so the operator
+  // doesn't have to re-pick it every time.
+  const [alignModalOpen, setAlignModalOpen] = useState(false)
+  const [alignGroups, setAlignGroups] = useState<string[]>(() => {
+    try {
+      const stored = window.localStorage.getItem('arkmaniagest.alignGroups')
+      if (stored) {
+        const arr = JSON.parse(stored)
+        if (Array.isArray(arr) && arr.every(s => typeof s === 'string')) return arr
+      }
+    } catch { /* fall through */ }
+    return ['VIP', 'Dead', 'Decadimento']
+  })
+  const [alignApplying, setAlignApplying] = useState(false)
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null)
   const [syncContainers, setSyncContainers] = useState<Record<string, unknown>[]>([])
   const [showSyncPanel, setShowSyncPanel] = useState(false)
@@ -511,6 +530,53 @@ export default function PlayersPage() {
     return t('players.bulkPerm.fmtDays', { n: Math.round(s / day) })
   }
 
+  // ── Bulk align (family) handlers ──────────────────────────────
+  function openAlignModal() {
+    setAlignModalOpen(true)
+  }
+  function persistAlignGroups(groups: string[]) {
+    setAlignGroups(groups)
+    try { window.localStorage.setItem('arkmaniagest.alignGroups', JSON.stringify(groups)) }
+    catch { /* ignore */ }
+  }
+  function toggleAlignGroup(name: string) {
+    persistAlignGroups(
+      alignGroups.includes(name)
+        ? alignGroups.filter(g => g !== name)
+        : [...alignGroups, name],
+    )
+  }
+
+  async function handleBulkAlign() {
+    if (selectedIds.size === 0) { setError(t('players.bulkAlign.errorNoneSelected')); return }
+    if (alignGroups.length < 2) { setError(t('players.bulkAlign.errorTooFewGroups')); return }
+    if (!window.confirm(t('players.bulkAlign.confirm', {
+      count:  selectedIds.size,
+      groups: alignGroups.join(', '),
+    }))) return
+
+    setAlignApplying(true); setError('')
+    try {
+      const res = await playersApi.bulkAlignTimedPerms({
+        player_ids: Array.from(selectedIds),
+        groups:     alignGroups,
+      })
+      setSuccess(t('players.bulkAlign.done', {
+        aligned: res.data.aligned_players,
+        entries: res.data.aligned_entries,
+        skipped: res.data.skipped_players,
+        missing: res.data.missing_ids.length,
+      }))
+      setAlignModalOpen(false)
+      clearSelection()
+      loadPlayers()
+    } catch (err: any) {
+      setError(err.response?.data?.detail || t('players.bulkAlign.failed'))
+    } finally {
+      setAlignApplying(false)
+    }
+  }
+
   async function handleSyncNames(machineId?: number, containerName?: string) {
     setSyncing(true); setError(''); setSyncResult(null)
     try {
@@ -733,6 +799,19 @@ export default function PlayersPage() {
           >
             <Clock size={14} />
             {t('players.bulkPerm.headerButton', { count: selectedIds.size })}
+          </button>
+          <button
+            onClick={openAlignModal}
+            disabled={selectedIds.size === 0 || alignApplying}
+            className="btn btn-secondary btn-sm"
+            title={
+              selectedIds.size === 0
+                ? t('players.bulkAlign.headerTitleDisabled')
+                : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
+            }
+          >
+            <ArrowUpDown size={14} />
+            {t('players.bulkAlign.headerButton', { count: selectedIds.size })}
           </button>
           <button
             onClick={handleSyncTribes}
@@ -1464,6 +1543,141 @@ export default function PlayersPage() {
                 {bulkApplying
                   ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkPerm.applying')}</>
                   : <><Save size={12} /> {t('players.bulkPerm.apply', { count: selectedIds.size })}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk align timed-perm modal ───────────────────────────────
+          Picks a "family" of related groups (default: VIP, Dead,
+          Decadimento) and aligns the expiry of every ACTIVE entry
+          in the family to the latest active timestamp present per
+          player.  Expired entries are NEVER touched.  The chosen
+          family is persisted in localStorage so the operator
+          doesn't have to re-pick it on every visit. */}
+      {alignModalOpen && (
+        <div
+          onClick={() => setAlignModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 200,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="card"
+            style={{ width: 520, maxWidth: '92vw', padding: '1.25rem' }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <ArrowUpDown size={16} /> {t('players.bulkAlign.modalTitle', { count: selectedIds.size })}
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              {t('players.bulkAlign.modalHint')}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <label className="form-label" style={{ fontSize: '0.78rem' }}>
+                  {t('players.bulkAlign.familyLabel')}
+                </label>
+
+                {/* Quick-pick checkboxes built from the distinct groups
+                    discovered in the loaded players (so typos are
+                    impossible).  Falls back to the persisted custom
+                    list if a group has been added to alignGroups but
+                    is not currently visible. */}
+                <div style={{
+                  display: 'flex', gap: '0.35rem', flexWrap: 'wrap',
+                  padding: '0.4rem', background: 'var(--bg-card-muted)',
+                  borderRadius: 'var(--radius)',
+                }}>
+                  {Array.from(new Set([
+                    ...distinctValues.timedActive.filter(g => g !== NO_VALUE_KEY),
+                    ...distinctValues.timedExpired.filter(g => g !== NO_VALUE_KEY),
+                    ...alignGroups,    // ensure persisted entries always show
+                  ])).sort((a, b) => a.localeCompare(b)).map(name => {
+                    const checked = alignGroups.includes(name)
+                    return (
+                      <label
+                        key={name}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: 999,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                          border: '1px solid ' + (checked ? 'var(--accent)' : 'var(--border)'),
+                          background: checked ? 'var(--accent-light)' : 'transparent',
+                          color: checked ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: checked ? 600 : 400,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleAlignGroup(name)}
+                          style={{ marginRight: 2 }}
+                        />
+                        {name}
+                      </label>
+                    )
+                  })}
+                </div>
+
+                {/* Add a custom group name not present in the loaded
+                    players (useful before the relevant entries exist). */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+                  <input
+                    type="text"
+                    placeholder={t('players.bulkAlign.addPlaceholder')}
+                    className="form-input"
+                    style={{ flex: 1, padding: '0.25rem 0.4rem', fontSize: '0.78rem' }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const v = (e.target as HTMLInputElement).value.trim()
+                        if (v && !alignGroups.includes(v)) {
+                          persistAlignGroups([...alignGroups, v])
+                        }
+                        ;(e.target as HTMLInputElement).value = ''
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    {t('players.bulkAlign.addHint')}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{
+                fontSize: '0.74rem', color: 'var(--text-muted)',
+                padding: '0.5rem 0.65rem', background: 'var(--bg-card-muted)',
+                borderRadius: 'var(--radius)', lineHeight: 1.45,
+                whiteSpace: 'pre-wrap',
+              }}>
+                {t('players.bulkAlign.semanticsHint')}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', marginTop: '1.1rem' }}>
+              <button
+                onClick={() => setAlignModalOpen(false)}
+                disabled={alignApplying}
+                className="btn btn-ghost btn-sm"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {t('players.bulkAlign.cancel')}
+              </button>
+              <button
+                onClick={handleBulkAlign}
+                disabled={alignApplying || alignGroups.length < 2}
+                className="btn btn-primary btn-sm"
+              >
+                {alignApplying
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkAlign.applying')}</>
+                  : <><Save size={12} /> {t('players.bulkAlign.apply', { count: selectedIds.size })}</>}
               </button>
             </div>
           </div>

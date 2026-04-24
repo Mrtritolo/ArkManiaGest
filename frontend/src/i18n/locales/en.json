@@ -914,6 +914,25 @@
       "flagLabel": "Flag",
       "expiresLabel": "Expires"
     },
+    "bulkAlign": {
+      "headerButton":           "Align ({{count}})",
+      "headerTitleEnabled":     "Open the align-timed-perms modal for the {{count}} selected player(s)",
+      "headerTitleDisabled":    "Tick at least one row in the table to enable align",
+      "modalTitle":             "Align timed-permission expiries ({{count}} players)",
+      "modalHint":              "Pick a family of related groups (e.g. VIP, Dead, Decadimento). For each player, every ACTIVE entry in the family gets bumped to the latest active expiry in that family.",
+      "familyLabel":            "Family of related groups",
+      "addPlaceholder":         "Add a custom group name…",
+      "addHint":                "Press Enter",
+      "semanticsHint":          "Per-player rules:\n  • Find the latest expiry among active family entries.\n  • Bump every other active family entry to that date.\n  • Expired entries are NEVER touched.\n  • Players with 0 or 1 active family members are skipped.",
+      "cancel":                 "Cancel",
+      "apply":                  "Align {{count}} player(s)",
+      "applying":               "Aligning…",
+      "confirm":                "Align timed-perm expiries for {{count}} player(s) within the family [{{groups}}]?\n\nFor each player we set every active family entry to the latest active timestamp present.  Expired entries are NOT touched.",
+      "done":                   "Alignment done: {{aligned}} player(s) updated ({{entries}} entries), {{skipped}} skipped, {{missing}} not found.",
+      "failed":                 "Alignment failed.",
+      "errorNoneSelected":      "No players selected.",
+      "errorTooFewGroups":      "Pick at least 2 group names to align together."
+    },
     "filterPopup": {
       "tabActive":            "Active",
       "tabExpired":           "Expired",

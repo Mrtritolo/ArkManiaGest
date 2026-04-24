@@ -553,6 +553,27 @@ export const playersApi = {
       duration_seconds:  number;
     }>("/players/bulk-add-timed-perm", { flag: "0", ...data }),
 
+  /**
+   * Align expiry dates inside a family of related timed permissions.
+   * Per player: every ACTIVE entry whose group is in `groups` is bumped
+   * to the latest active timestamp in the family.  Expired entries are
+   * never modified; players with 0 or 1 active family members are
+   * counted under `skipped_players`.
+   */
+  bulkAlignTimedPerms: (data: {
+    player_ids: number[];
+    groups:     string[];
+  }) =>
+    api.post<{
+      success:          boolean;
+      requested:        number;
+      aligned_players:  number;
+      aligned_entries:  number;
+      skipped_players:  number;
+      missing_ids:      number[];
+      family:           string[];
+    }>("/players/bulk-align-timed-perms", data),
+
   syncTribes: (machineId?: number, containerName?: string) => {
     const params: Record<string, unknown> = {};
     if (machineId) params.machine_id = machineId;
