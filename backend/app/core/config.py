@@ -91,6 +91,32 @@ class ServerSettings(BaseSettings):
     # repos; the check still works unauthenticated.
     GITHUB_TOKEN: str = ""
 
+    # --- Discord integration ------------------------------------------
+    # See docs/DISCORD_INTEGRATION.md for the full rollout plan.
+    # All these are optional: when CLIENT_ID + CLIENT_SECRET are blank,
+    # the /auth/discord/* and /discord/* endpoints return HTTP 503 with
+    # a "Discord not configured" hint instead of crashing.
+    #
+    # Where to find each value (Discord Developer Portal):
+    #   * DISCORD_CLIENT_ID     — General Information -> Application ID
+    #                             (public; used in OAuth URLs)
+    #   * DISCORD_CLIENT_SECRET — OAuth2 -> Client Secret  (PRIVATE)
+    #   * DISCORD_BOT_TOKEN     — Bot tab -> Token         (PRIVATE)
+    #   * DISCORD_PUBLIC_KEY    — General Information -> Public Key
+    #                             (public; only needed for HTTP-based
+    #                              Interactions / slash commands)
+    #   * DISCORD_GUILD_ID      — Discord client (Developer Mode on),
+    #                             right-click the server -> Copy Server ID
+    #   * DISCORD_REDIRECT_URI  — OAuth2 -> Redirects; must EXACTLY match
+    #                             the value the panel sends.  Example:
+    #                             https://gestionale.arkmania.it/auth/discord/callback
+    DISCORD_CLIENT_ID:     str = ""
+    DISCORD_CLIENT_SECRET: str = ""
+    DISCORD_BOT_TOKEN:     str = ""
+    DISCORD_PUBLIC_KEY:    str = ""
+    DISCORD_GUILD_ID:      str = ""
+    DISCORD_REDIRECT_URI:  str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -274,3 +274,102 @@ class ARKMMariaDBInstance(Base):
     last_started_at   = Column(DateTime, nullable=True)
     created_at        = Column(DateTime, server_default=func.now())
     updated_at        = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+
+# =============================================
+#  Discord integration (panel DB)
+# =============================================
+#
+# See docs/DISCORD_INTEGRATION.md for the rollout plan.  These two
+# tables are the persistence layer for Phases 1-7:
+#
+#   * arkmaniagest_discord_accounts  — 1:1 link between a Discord
+#     identity and an ARK player (matched on EOS_Id).  Holds the
+#     OAuth2 access + refresh token for the Discord API, encrypted
+#     with the same AES-256-GCM helper used for SSH credentials.
+#
+#   * arkmaniagest_discord_role_map  — admin-defined mapping from an
+#     application permission group (panel-side) to a Discord role
+#     (guild + role IDs).  The sync engine (Phase 5) walks every
+#     linked account and reconciles role membership both ways.
+
+class DiscordAccount(Base):
+    """
+    Persistent link between a Discord user and an ARK player record.
+
+    The link is 1:1 in BOTH directions: a Discord user can be linked
+    to at most one player and vice-versa (enforced via UNIQUE indexes
+    on ``discord_user_id`` and ``eos_id``).
+
+    OAuth tokens are stored AES-256-GCM-encrypted in the ``*_enc``
+    columns -- the store layer decrypts on read, never on the wire.
+    """
+    __tablename__ = "arkmaniagest_discord_accounts"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    # Discord identity (snowflake -- 17-19 digit base-10 string).
+    discord_user_id     = Column(String(32), nullable=False, unique=True, index=True)
+    discord_username    = Column(String(64), nullable=True)
+    discord_global_name = Column(String(128), nullable=True)
+    discord_avatar      = Column(String(64), nullable=True)
+    # Linked player (matched on Players.EOS_Id from the plugin DB).
+    # Stored as a string here rather than a real FK because Players
+    # lives in the plugin DB, which is a separate connection.
+    eos_id              = Column(String(64), nullable=True, unique=True, index=True)
+
+    # OAuth tokens (AES-256-GCM via app.core.encryption).  refresh_token
+    # is rotated by Discord on every refresh; access_token has a short
+    # life (~10 min) so the panel always refreshes lazily before use.
+    access_token_enc    = Column(Text, nullable=True)
+    refresh_token_enc   = Column(Text, nullable=True)
+    token_expires_at    = Column(DateTime, nullable=True)
+    # Space-separated OAuth scopes the token was issued with (e.g.
+    # "identify guilds.members.read").
+    scope               = Column(String(256), nullable=True)
+
+    # Audit
+    linked_at           = Column(DateTime, nullable=True)
+    linked_by_user_id   = Column(
+        Integer,
+        ForeignKey("arkmaniagest_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    last_sync_at        = Column(DateTime, nullable=True)
+
+    created_at          = Column(DateTime, server_default=func.now())
+    updated_at          = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class DiscordRoleMap(Base):
+    """
+    Mapping between a panel-side application role and a Discord guild role.
+
+    Direction controls how the sync engine reconciles disagreements:
+      * ``panel_to_discord`` -- panel is authoritative; Discord is updated
+        to match.
+      * ``discord_to_panel`` -- Discord is authoritative; panel
+        PermissionGroups is updated to match.
+      * ``both``             -- bidirectional union; ``priority`` breaks
+        ties (higher wins).
+
+    Multiple mappings per ``app_role_name`` are allowed (one role can
+    grant multiple Discord roles, possibly across multiple guilds).
+    """
+    __tablename__ = "arkmaniagest_discord_role_map"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    app_role_name       = Column(String(64), nullable=False, index=True)
+    discord_guild_id    = Column(String(32), nullable=False)
+    discord_role_id     = Column(String(32), nullable=False)
+    # Cached human-readable Discord role name; refreshed by the sync
+    # engine so the admin UI doesn't need to call Discord every page.
+    discord_role_name   = Column(String(128), nullable=True)
+    # 'both' | 'panel_to_discord' | 'discord_to_panel'
+    direction           = Column(String(24), nullable=False, default="both")
+    priority            = Column(Integer, nullable=False, default=0)
+    is_active           = Column(Boolean, nullable=False, default=True)
+
+    notes               = Column(Text, nullable=True)
+    created_at          = Column(DateTime, server_default=func.now())
+    updated_at          = Column(DateTime, server_default=func.now(), onupdate=func.now())

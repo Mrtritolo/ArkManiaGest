@@ -21,6 +21,7 @@ from app.api.routes import (
     servers,
     instance_actions,
     system_update,
+    discord,
     ssh,
     settings,
     machines,
@@ -119,6 +120,12 @@ router.include_router(
     prefix="/system-update",
     tags=["System Update"],
     dependencies=_viewer,   # endpoint-level admin check inside the module
+)
+router.include_router(
+    discord.router,
+    prefix="/discord",
+    tags=["Discord"],
+    dependencies=_viewer,   # endpoint-level admin/self checks per route
 )
 router.include_router(
     ssh.router,
