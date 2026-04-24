@@ -683,6 +683,8 @@ export default function PlayersPage() {
                           </div>
                         </div>
                         <div className="pl-timed-actions">
+                          <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 7*24*3600)}
+                            className="pl-btn-xs pl-btn-extend">+7d</button>
                           <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 30*24*3600)}
                             className="pl-btn-xs pl-btn-extend">+1m</button>
                           <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 90*24*3600)}
