@@ -27,7 +27,7 @@ from sqlalchemy import select, text
 
 from app.core.auth import require_admin
 from app.db.models.app import AppUser
-from app.db.session import get_db
+from app.db.session import get_db, get_plugin_db
 from app.discord.config import get_discord_config
 from app.discord import store as dc_store
 
@@ -211,6 +211,217 @@ async def unlink_app_user(
         db, discord_user_id=discord_user_id, app_user_id=None,
     )
     return _row_with_app_user(fresh, None)
+
+
+# ── Discord <-> ARK player linking (admin only) ──────────────────────────────
+#
+# Per the operator: "il link giocatore-discord lo farei io a mano dal pannello
+# admin, cosi ho sicurezza del link tra i due".  Self-link is intentionally
+# NOT exposed; only an admin can bind a Discord identity to an EOS player.
+# The 1:1 enforcement is the existing UNIQUE index on
+# arkmaniagest_discord_accounts.eos_id.
+
+class _LinkEosRequest(BaseModel):
+    """Body for :func:`link_eos_player`."""
+    eos_id: str
+
+
+class _PlayerSearchResult(BaseModel):
+    """Single hit returned by :func:`search_players`."""
+    eos_id:     str
+    name:       Optional[str] = None
+    tribe_name: Optional[str] = None
+
+
+@router.get(
+    "/players/search",
+    response_model=list[_PlayerSearchResult],
+    dependencies=[Depends(require_admin)],
+)
+async def search_players(
+    q: str,
+    limit: int = 25,
+    plugin_db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Autocomplete-friendly search across the ARK Players table.
+
+    Used by the admin "Link player" modal to resolve a partial name / EOS
+    suffix / tribe substring into a concrete player row.  Matches against
+    Players.Giocatore, Players.EOS_Id and ARKM_player_tribes.tribe_name
+    (so 'Tritolo Tribe' resolves the tribe leader's row even when the
+    operator only knows the tribe name).
+
+    Capped at ``limit`` rows (default 25) to keep dropdowns snappy --
+    operators are expected to refine the query, not paginate this.
+    """
+    q_clean = (q or "").strip()
+    if len(q_clean) < 2:
+        return []
+    like = f"%{q_clean}%"
+    limit = max(1, min(int(limit), 100))
+
+    # Tribe-name match: collect EOS IDs whose tribe matches, then fold
+    # them into the main Players query so a single hit set comes back.
+    tribe_hits = await plugin_db.execute(
+        text(
+            "SELECT DISTINCT eos_id, tribe_name "
+            "FROM ARKM_player_tribes "
+            "WHERE tribe_name LIKE :q "
+            "ORDER BY last_login DESC "
+            "LIMIT :lim"
+        ),
+        {"q": like, "lim": limit * 4},
+    )
+    tribe_eos_to_name: dict[str, str] = {}
+    for row in tribe_hits.fetchall():
+        if row[0] and row[0] not in tribe_eos_to_name:
+            tribe_eos_to_name[row[0]] = (row[1] or "").strip()
+
+    # Main Players query: name OR EOS_Id OR EOS_Id IN tribe_eos
+    if tribe_eos_to_name:
+        eos_ids = list(tribe_eos_to_name.keys())
+        placeholders = ",".join(f":e{i}" for i in range(len(eos_ids)))
+        params = {f"e{i}": eid for i, eid in enumerate(eos_ids)}
+        params["q"] = like
+        params["lim"] = limit
+        sql = (
+            "SELECT EOS_Id, Giocatore FROM Players "
+            f"WHERE Giocatore LIKE :q OR EOS_Id LIKE :q OR EOS_Id IN ({placeholders}) "
+            "ORDER BY (CASE WHEN Giocatore LIKE :q THEN 0 ELSE 1 END), Id DESC "
+            "LIMIT :lim"
+        )
+    else:
+        sql = (
+            "SELECT EOS_Id, Giocatore FROM Players "
+            "WHERE Giocatore LIKE :q OR EOS_Id LIKE :q "
+            "ORDER BY (CASE WHEN Giocatore LIKE :q THEN 0 ELSE 1 END), Id DESC "
+            "LIMIT :lim"
+        )
+        params = {"q": like, "lim": limit}
+
+    rows = (await plugin_db.execute(text(sql), params)).fetchall()
+
+    # Backfill tribe_name for rows we hit via name/EOS but the operator
+    # might still want to disambiguate by tribe.  One quick lookup per
+    # batch keeps this O(1) per result row.
+    seen_eos = [r[0] for r in rows]
+    if seen_eos:
+        ph = ",".join(f":t{i}" for i in range(len(seen_eos)))
+        tparams = {f"t{i}": eid for i, eid in enumerate(seen_eos)}
+        tribe_rows = (await plugin_db.execute(
+            text(
+                f"SELECT eos_id, tribe_name FROM ARKM_player_tribes "
+                f"WHERE eos_id IN ({ph}) ORDER BY last_login DESC"
+            ),
+            tparams,
+        )).fetchall()
+        for tr in tribe_rows:
+            tribe_eos_to_name.setdefault(tr[0], (tr[1] or "").strip())
+
+    return [
+        _PlayerSearchResult(
+            eos_id     = r[0],
+            name       = r[1],
+            tribe_name = tribe_eos_to_name.get(r[0]) or None,
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/link-eos/{discord_user_id}",
+    response_model=_DiscordAccountRead,
+    dependencies=[Depends(require_admin)],
+)
+async def link_eos_player(
+    discord_user_id: str,
+    body: _LinkEosRequest,
+    db: AsyncSession = Depends(get_db),
+    plugin_db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Bind a Discord identity to an existing ARK player by EOS ID.
+
+    The Discord row must already exist (Discord OAuth login at least once),
+    and the EOS ID must resolve to a row in the plugin's ``Players`` table
+    -- we refuse the link if either is missing so the admin doesn't end up
+    with a dangling pointer.
+
+    The 1:1 invariant (one Discord <-> one EOS) is enforced by the UNIQUE
+    index on ``eos_id``: an attempt to bind two Discord identities to the
+    same player raises an IntegrityError that we surface as 409.
+    """
+    # 1. Discord side must exist
+    existing = await dc_store.get_by_discord_id(db, discord_user_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Discord account known for ID {discord_user_id}.  "
+                "Ask the user to Sign in with Discord at least once first."
+            ),
+        )
+
+    # 2. EOS side must exist (otherwise the link is meaningless)
+    eos_id = (body.eos_id or "").strip()
+    if not eos_id:
+        raise HTTPException(status_code=422, detail="eos_id is required.")
+    player_row = (await plugin_db.execute(
+        text("SELECT EOS_Id, Giocatore FROM Players WHERE EOS_Id = :e LIMIT 1"),
+        {"e": eos_id},
+    )).fetchone()
+    if not player_row:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No ARK player found with EOS_Id={eos_id}.",
+        )
+
+    # 3. Reject if that EOS is already bound to ANOTHER Discord identity.
+    other = await dc_store.get_by_eos_id(db, eos_id)
+    if other and other["discord_user_id"] != discord_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"EOS {eos_id} is already linked to Discord ID "
+                f"{other['discord_user_id']}.  Unlink that one first."
+            ),
+        )
+
+    fresh = await dc_store.set_link(
+        db, discord_user_id=discord_user_id, eos_id=eos_id,
+    )
+    # Re-fetch the AppUser link side so the response stays a complete row.
+    app_user = None
+    if fresh.get("app_user_id"):
+        app_user = await db.scalar(
+            select(AppUser).where(AppUser.id == fresh["app_user_id"])
+        )
+    return _row_with_app_user(fresh, app_user)
+
+
+@router.delete(
+    "/link-eos/{discord_user_id}",
+    response_model=_DiscordAccountRead,
+    dependencies=[Depends(require_admin)],
+)
+async def unlink_eos_player(
+    discord_user_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sever the Discord <-> EOS link (does NOT touch the AppUser link)."""
+    existing = await dc_store.get_by_discord_id(db, discord_user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Discord account not found.")
+    fresh = await dc_store.set_link(
+        db, discord_user_id=discord_user_id, eos_id=None,
+    )
+    app_user = None
+    if fresh.get("app_user_id"):
+        app_user = await db.scalar(
+            select(AppUser).where(AppUser.id == fresh["app_user_id"])
+        )
+    return _row_with_app_user(fresh, app_user)
 
 
 @router.get(
