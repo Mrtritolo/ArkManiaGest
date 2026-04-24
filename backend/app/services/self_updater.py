@@ -127,6 +127,48 @@ def read_status() -> UpdateStatus:
     })
 
 
+def write_failure_status(
+    *,
+    target_version: Optional[str] = None,
+    message:        str = "Unknown error",
+    traceback_text: Optional[str] = None,
+) -> None:
+    """
+    Persist a 'failed' record to the status JSON, with an optional
+    Python traceback inlined into the log_tail field.
+
+    Used by the HTTP route as a last-resort writer when an exception
+    bubbles past run_self_update_async itself -- so the next status
+    poll has SOMETHING to show rather than the previous run's stale
+    "success" record.
+    """
+    started = datetime.now(timezone.utc).isoformat()
+    status = UpdateStatus(
+        state="failed",
+        target_version=target_version,
+        started_at=started,
+        finished_at=started,
+        message=message,
+        progress_pct=0,
+    )
+    _write_status(status)
+    if traceback_text:
+        # Append the traceback to the live log file so the UI's log_tail
+        # shows it (read_log_tail returns the last 200 lines of LOG_PATH).
+        try:
+            with LOG_PATH.open("ab") as fh:
+                header = (
+                    "\n--- write_failure_status ("
+                    + datetime.now(timezone.utc).isoformat()
+                    + ") ---\n"
+                )
+                fh.write(header.encode("utf-8"))
+                fh.write(traceback_text.encode("utf-8", errors="replace"))
+        except Exception:
+            # Disk full / permission denied -- nothing more we can do.
+            pass
+
+
 def read_log_tail(max_lines: int = 200) -> str:
     """Return the last *max_lines* of the update log file (or empty string)."""
     if not LOG_PATH.exists():

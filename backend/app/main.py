@@ -164,6 +164,50 @@ async def health_check():
 
 
 # =============================================
+#  Global exception handler
+# =============================================
+#
+# Default FastAPI behaviour for any uncaught exception is to log
+# `Exception in ASGI application` to stderr and reply with
+# `Internal Server Error` (no JSON body, no detail).  That gives
+# the frontend nothing to display and us nothing to debug, which is
+# exactly what bit the v2.3.8 -> v2.3.9 self-update flow ("Request
+# failed with status code 500" + an empty backend-error.log).
+#
+# This handler:
+#   * always returns a proper JSON `{detail: ...}` body so the UI's
+#     existing axios interceptor + error handlers show a real message,
+#   * logs the full traceback at ERROR level (which systemd routes to
+#     /var/log/arkmaniagest/backend-error.log via StandardError=append),
+#   * includes the exception class name so a single-line UI toast
+#     stays useful ("AttributeError: 'NoneType' object has no ...").
+import logging as _logging
+import traceback as _traceback
+from fastapi import Request as _Request
+from fastapi.responses import JSONResponse as _JSONResponse
+
+_log = _logging.getLogger("arkmaniagest.exceptions")
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: _Request, exc: Exception):
+    _log.exception(
+        "Unhandled exception during %s %s: %s",
+        request.method, request.url.path, exc,
+    )
+    # Best-effort: include path + class + message in the response body
+    # so the UI can show "POST /system-update/install: AttributeError: ..."
+    # instead of an empty 500.
+    return _JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"{type(exc).__name__}: {exc}",
+            "path":   request.url.path,
+        },
+    )
+
+
+# =============================================
 #  API routes
 # =============================================
 from app.api.routes import router as api_router

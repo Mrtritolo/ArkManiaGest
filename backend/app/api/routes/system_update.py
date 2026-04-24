@@ -18,12 +18,17 @@ only the HTTP shell.
 
 from __future__ import annotations
 
+import logging
+import traceback
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.auth import require_admin
 from app.core.config import server_settings
 from app.services import self_updater
+
+log = logging.getLogger("arkmaniagest.system_update")
 
 
 router = APIRouter()
@@ -135,18 +140,55 @@ async def install_update() -> InstallResponse:
     afterwards to learn how it went.
 
     Refuses to start when preflight fails (no sudoers, no script, etc.).
+
+    Defensive logging
+    -----------------
+    The backend used to return an opaque 500 when run_self_update_async
+    raised an unhandled exception (the v2.3.8 -> v2.3.9 ticket).  Every
+    branch now persists a status row to /tmp/arkmaniagest-update-status.json
+    AND logs the full traceback to backend-error.log, so the UI poll
+    + tail of the error log together always answer "what went wrong"
+    rather than the empty 500 + empty log we had before.
     """
-    pre = preflight()
+    try:
+        pre = preflight()
+    except Exception as exc:                       # noqa: BLE001 -- want the catch-all
+        tb = traceback.format_exc()
+        log.exception("system-update preflight raised: %s", exc)
+        self_updater.write_failure_status(
+            target_version=None,
+            message=f"preflight crashed: {type(exc).__name__}: {exc}",
+            traceback_text=tb,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Preflight check failed: {type(exc).__name__}: {exc}",
+        )
+
     if not pre.can_self_update:
         raise HTTPException(status_code=412, detail=pre.hint)
 
-    status = await self_updater.run_self_update_async(
-        repo=server_settings.GITHUB_REPO.strip(),
-        github_token=server_settings.GITHUB_TOKEN.strip() or None,
-    )
+    try:
+        status = await self_updater.run_self_update_async(
+            repo=server_settings.GITHUB_REPO.strip(),
+            github_token=server_settings.GITHUB_TOKEN.strip() or None,
+        )
+    except Exception as exc:                       # noqa: BLE001
+        tb = traceback.format_exc()
+        log.exception("system-update orchestrator raised: %s", exc)
+        self_updater.write_failure_status(
+            target_version=None,
+            message=f"update orchestrator crashed: {type(exc).__name__}: {exc}",
+            traceback_text=tb,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Update orchestrator crashed: {type(exc).__name__}: {exc}",
+        )
 
     if status.state == "failed":
         # Surface failure as 500 + body so the UI can show the message.
+        # run_self_update_async has already persisted the status JSON.
         raise HTTPException(status_code=500, detail=status.message or "Update failed.")
 
     return InstallResponse(
