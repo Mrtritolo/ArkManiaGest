@@ -914,6 +914,24 @@
       "flagLabel": "Flag",
       "expiresLabel": "Scadenza"
     },
+    "bulkPerm": {
+      "selectedCount":     "{{count}} selezionati",
+      "groupLabel":        "Gruppo:",
+      "groupPlaceholder":  "— scegli gruppo —",
+      "durationLabel":     "Durata:",
+      "setDurationTitle":  "Imposta scadenza a +{{label}} da adesso",
+      "apply":             "Applica a {{count}}",
+      "applying":          "Applicazione…",
+      "clear":             "Annulla",
+      "selectAllAria":     "Seleziona / deseleziona tutti i giocatori visibili",
+      "selectRowAria":     "Seleziona {{name}}",
+      "confirm":           "Assegnare il permesso temporaneo '{{group}}' a {{count}} giocatore/i fino al {{expires}}?\n\nSe un giocatore ha già questo gruppo, viene aggiornata solo la scadenza. Gli altri permessi temporanei NON vengono toccati.",
+      "done":              "Assegnazione massiva completata: {{updated}} aggiornati, {{missing}} non trovati.",
+      "failed":            "Assegnazione massiva fallita.",
+      "errorNoneSelected": "Nessun giocatore selezionato.",
+      "errorNoGroup":      "Scegli prima un gruppo.",
+      "errorPastDate":     "La data di scadenza è nel passato."
+    },
     "kits": {
       "sectionTitle": "Kits"
     },

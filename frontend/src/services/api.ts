@@ -525,6 +525,27 @@ export const playersApi = {
    * .arkprofile and writes the discovered tribe display names into
    * ARKM_player_tribes + ARKM_tribe_decay (matched by targeting_team).
    */
+  /**
+   * Grant the same timed permission group to a batch of players in one call.
+   * Server-side it loops the player list, upserts the (group -> flag,
+   * expires_at) tuple in TimedPermissionGroups, leaving every other
+   * timed permission untouched.
+   */
+  bulkAddTimedPerm: (data: {
+    player_ids: number[];
+    group:      string;
+    expires_at: number;          // unix seconds
+    flag?:      string;
+  }) =>
+    api.post<{
+      success:     boolean;
+      requested:   number;
+      updated:     number;
+      missing_ids: number[];
+      group:       string;
+      expires_at:  number;
+    }>("/players/bulk-add-timed-perm", { flag: "0", ...data }),
+
   syncTribes: (machineId?: number, containerName?: string) => {
     const params: Record<string, unknown> = {};
     if (machineId) params.machine_id = machineId;

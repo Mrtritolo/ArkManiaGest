@@ -914,6 +914,24 @@
       "flagLabel": "Flag",
       "expiresLabel": "Expires"
     },
+    "bulkPerm": {
+      "selectedCount":     "{{count}} selected",
+      "groupLabel":        "Group:",
+      "groupPlaceholder":  "— select group —",
+      "durationLabel":     "Duration:",
+      "setDurationTitle":  "Set expiry to {{label}} from now",
+      "apply":             "Apply to {{count}}",
+      "applying":          "Applying…",
+      "clear":             "Clear",
+      "selectAllAria":     "Select / deselect all visible players",
+      "selectRowAria":     "Select {{name}}",
+      "confirm":           "Grant timed permission '{{group}}' to {{count}} player(s) until {{expires}}?\n\nIf a player already has this group, only the expiry is updated. Other timed permissions on those players are NOT touched.",
+      "done":              "Bulk grant applied: {{updated}} player(s) updated, {{missing}} not found.",
+      "failed":            "Bulk grant failed.",
+      "errorNoneSelected": "No players selected.",
+      "errorNoGroup":      "Pick a group first.",
+      "errorPastDate":     "Expiry date is in the past."
+    },
     "kits": {
       "sectionTitle": "Kits"
     },

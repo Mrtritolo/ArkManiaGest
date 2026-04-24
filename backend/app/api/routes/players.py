@@ -18,6 +18,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update, text
 
@@ -685,6 +686,106 @@ async def update_player(
         player.TimedPermissionGroups = updates["timed_permission_groups"]
 
     return {"success": True, "message": f"Player {player.EOS_Id} updated."}
+
+
+# ── Bulk timed-permission grant ──────────────────────────────────────────────
+#
+# Same on-disk format as the single-player editor:
+#   `<flag>;<unix_ts>;<group>,<flag>;<unix_ts>;<group>,...`
+# (entries comma-separated, fields semicolon-separated within an entry).
+
+class _BulkTimedPermRequest(BaseModel):
+    """Body for :func:`bulk_add_timed_perm`."""
+
+    player_ids: list[int] = Field(..., min_length=1, max_length=2000)
+    group:      str       = Field(..., min_length=1, max_length=64)
+    expires_at: int       = Field(..., ge=0)
+    flag:       str       = Field(default="0", max_length=8)
+
+
+def _upsert_timed_perm(raw: str, group: str, flag: str, ts: int) -> str:
+    """
+    Parse the existing TimedPermissionGroups string, set / replace the
+    entry for *group* and re-serialise.
+
+    Format quirks: empty / whitespace-only flag fields are normalised to
+    "0", and entries that fail to parse are kept verbatim so we never
+    accidentally drop unrelated permissions during a bulk grant.
+    """
+    entries: list[tuple[str, str, str]] = []
+    found = False
+    for chunk in (raw or "").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = chunk.split(";")
+        if len(parts) >= 3 and parts[2].strip():
+            f = (parts[0] or "0").strip() or "0"
+            t = parts[1].strip()
+            g = parts[2].strip()
+            if g == group:
+                entries.append((flag, str(ts), g))
+                found = True
+            else:
+                entries.append((f, t, g))
+        else:
+            # Unrecognisable entry -- keep it as-is rather than silently
+            # losing permissions.
+            entries.append((chunk, "", ""))
+    if not found:
+        entries.append((flag, str(ts), group))
+    return ",".join(
+        f"{f};{t};{g}" if g else f
+        for (f, t, g) in entries
+    )
+
+
+@router.post("/bulk-add-timed-perm")
+async def bulk_add_timed_perm(
+    body: _BulkTimedPermRequest,
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Grant the same timed permission to a batch of players in one round-trip.
+
+    For each ``player_ids`` entry the endpoint:
+      * loads the row;
+      * upserts the (group -> flag, expires_at) tuple into
+        ``TimedPermissionGroups`` (replaces the existing entry for that
+        group, leaves all other entries untouched);
+      * commits at the end of the loop.
+
+    Returns the per-player update count plus the list of player ids that
+    weren't found in the DB so the UI can flag stale selections.
+    """
+    rows = await db.execute(
+        select(Player).where(Player.Id.in_(body.player_ids))
+    )
+    found_players = list(rows.scalars().all())
+
+    found_ids = {p.Id for p in found_players}
+    missing   = [pid for pid in body.player_ids if pid not in found_ids]
+
+    updated = 0
+    for player in found_players:
+        new_value = _upsert_timed_perm(
+            player.TimedPermissionGroups or "",
+            group=body.group,
+            flag=body.flag,
+            ts=body.expires_at,
+        )
+        player.TimedPermissionGroups = new_value
+        updated += 1
+
+    await db.commit()
+    return {
+        "success":         True,
+        "requested":       len(body.player_ids),
+        "updated":         updated,
+        "missing_ids":     missing,
+        "group":           body.group,
+        "expires_at":      body.expires_at,
+    }
 
 
 @router.put("/{player_id}/points")

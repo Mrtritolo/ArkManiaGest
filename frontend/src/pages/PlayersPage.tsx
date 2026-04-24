@@ -31,6 +31,17 @@ export default function PlayersPage() {
   const [permInput, setPermInput] = useState('')
   const [timedPerms, setTimedPerms] = useState<{flag: string; timestamp: number; group: string}[]>([])
   const [syncing, setSyncing] = useState(false)
+
+  // ── Bulk timed-permission grant ─────────────────────────────────
+  // selectedIds tracks the player.Id values toggled via the checkbox
+  // column.  bulkGroup / bulkExpiresAt drive the action-bar form;
+  // bulkApplying gates the button + spinner.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkGroup, setBulkGroup] = useState<string>('')
+  const [bulkExpiresAt, setBulkExpiresAt] = useState<number>(
+    Math.floor(Date.now() / 1000) + 30 * 24 * 3600,   // default +30d
+  )
+  const [bulkApplying, setBulkApplying] = useState(false)
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null)
   const [syncContainers, setSyncContainers] = useState<Record<string, unknown>[]>([])
   const [showSyncPanel, setShowSyncPanel] = useState(false)
@@ -238,6 +249,69 @@ export default function PlayersPage() {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || t('players.errors.banFailed'))
     } finally { setBanning(false) }
+  }
+
+  // ── Bulk-selection helpers ─────────────────────────────────────
+
+  function toggleSelected(id: number) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleSelectAll(visibleIds: number[]) {
+    setSelectedIds(prev => {
+      // If every visible row is already selected -> clear; else add all.
+      const allSelected = visibleIds.length > 0 && visibleIds.every(id => prev.has(id))
+      if (allSelected) {
+        const next = new Set(prev)
+        visibleIds.forEach(id => next.delete(id))
+        return next
+      }
+      const next = new Set(prev)
+      visibleIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+  function clearSelection() { setSelectedIds(new Set()) }
+
+  // Translate a duration shortcut into the absolute Unix expires_at.
+  function bulkSetDurationFromNow(seconds: number) {
+    setBulkExpiresAt(Math.floor(Date.now() / 1000) + seconds)
+  }
+
+  async function handleBulkApply() {
+    if (selectedIds.size === 0) { setError(t('players.bulkPerm.errorNoneSelected')); return }
+    if (!bulkGroup)             { setError(t('players.bulkPerm.errorNoGroup'));     return }
+    if (bulkExpiresAt <= Math.floor(Date.now() / 1000)) {
+      setError(t('players.bulkPerm.errorPastDate')); return
+    }
+    if (!window.confirm(t('players.bulkPerm.confirm', {
+      count:   selectedIds.size,
+      group:   bulkGroup,
+      expires: new Date(bulkExpiresAt * 1000).toLocaleString(undefined),
+    }))) return
+
+    setBulkApplying(true); setError('')
+    try {
+      const res = await playersApi.bulkAddTimedPerm({
+        player_ids: Array.from(selectedIds),
+        group:      bulkGroup,
+        expires_at: bulkExpiresAt,
+      })
+      setSuccess(t('players.bulkPerm.done', {
+        updated: res.data.updated,
+        missing: res.data.missing_ids.length,
+      }))
+      clearSelection()
+      loadPlayers()
+    } catch (err: any) {
+      setError(err.response?.data?.detail || t('players.bulkPerm.failed'))
+    } finally {
+      setBulkApplying(false)
+    }
   }
 
   async function handleSyncNames(machineId?: number, containerName?: string) {
@@ -462,6 +536,87 @@ export default function PlayersPage() {
       <div className={`pl-layout ${selectedPlayer ? 'pl-layout-split' : ''}`}>
 
         {/* Table */}
+        {/* ── Bulk timed-permission action bar ───────────────────────────
+            Visible only while at least one player is selected.  Lets the
+            operator pick a group + duration shortcut (or a custom date)
+            and apply the same temporary permission to every checked row
+            in a single API call. */}
+        {selectedIds.size > 0 && (
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap',
+              padding: '0.6rem 0.85rem', marginBottom: '0.5rem',
+              background: 'var(--accent-glow)',
+              border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius)',
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+              {t('players.bulkPerm.selectedCount', { count: selectedIds.size })}
+            </span>
+
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              {t('players.bulkPerm.groupLabel')}
+            </span>
+            <select
+              value={bulkGroup}
+              onChange={e => setBulkGroup(e.target.value)}
+              className="form-input"
+              style={{ minWidth: 160, padding: '0.25rem 0.4rem', fontSize: '0.82rem' }}
+            >
+              <option value="">{t('players.bulkPerm.groupPlaceholder')}</option>
+              {groups.map(g => (
+                <option key={g.id} value={g.group_name}>{g.group_name}</option>
+              ))}
+            </select>
+
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              {t('players.bulkPerm.durationLabel')}
+            </span>
+            {[
+              { label: '7d',  s: 7   * 24 * 3600 },
+              { label: '1m',  s: 30  * 24 * 3600 },
+              { label: '3m',  s: 90  * 24 * 3600 },
+              { label: '12m', s: 365 * 24 * 3600 },
+            ].map(opt => (
+              <button
+                key={opt.label}
+                onClick={() => bulkSetDurationFromNow(opt.s)}
+                className="btn btn-ghost btn-sm"
+                style={{ borderColor: 'var(--border)' }}
+                title={t('players.bulkPerm.setDurationTitle', { label: opt.label })}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <input
+              type="datetime-local"
+              value={tsToInput(bulkExpiresAt)}
+              onChange={e => setBulkExpiresAt(inputToTs(e.target.value))}
+              className="form-input"
+              style={{ padding: '0.25rem 0.4rem', fontSize: '0.78rem' }}
+            />
+
+            <button
+              onClick={handleBulkApply}
+              disabled={bulkApplying || !bulkGroup}
+              className="btn btn-primary btn-sm"
+              style={{ marginLeft: 'auto' }}
+            >
+              {bulkApplying
+                ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkPerm.applying')}</>
+                : <><Save size={12} /> {t('players.bulkPerm.apply', { count: selectedIds.size })}</>}
+            </button>
+            <button
+              onClick={clearSelection}
+              className="btn btn-ghost btn-sm"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <X size={12} /> {t('players.bulkPerm.clear')}
+            </button>
+          </div>
+        )}
+
         <div className="pl-table-wrap" style={{ overflowX: 'auto' }}>
           {loading ? (
             <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> {t('players.loading')}</div>
@@ -471,6 +626,23 @@ export default function PlayersPage() {
             <table className="pl-table" style={{ minWidth: 900 }}>
               <thead>
                 <tr>
+                  <th style={{ width: '32px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={t('players.bulkPerm.selectAllAria')}
+                      checked={
+                        sortedPlayers.length > 0 &&
+                        sortedPlayers.every(p => selectedIds.has(p.id))
+                      }
+                      ref={el => {
+                        // Indeterminate when SOME but not all are selected.
+                        if (el) el.indeterminate =
+                          sortedPlayers.some(p => selectedIds.has(p.id)) &&
+                          !sortedPlayers.every(p => selectedIds.has(p.id))
+                      }}
+                      onChange={() => toggleSelectAll(sortedPlayers.map(p => p.id))}
+                    />
+                  </th>
                   <th className="pl-th-sort" onClick={() => toggleSort('name')} style={{width:'18%'}}>{t('players.table.player')} <SortIcon col="name" /></th>
                   <th className="pl-th-sort" onClick={() => toggleSort('tribe')} style={{width:'14%'}}>{t('players.table.tribe')} <SortIcon col="tribe" /></th>
                   <th className="pl-th-sort" onClick={() => toggleSort('points')} style={{width:'8%'}}>{t('players.table.points')} <SortIcon col="points" /></th>
@@ -492,6 +664,14 @@ export default function PlayersPage() {
                   return (
                   <tr key={p.id} onClick={() => openDetail(p.id)}
                     className={selectedPlayer?.id === p.id ? 'pl-row-active' : ''}>
+                    <td onClick={e => e.stopPropagation()} style={{ textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        aria-label={t('players.bulkPerm.selectRowAria', { name: p.name || '?' })}
+                        checked={selectedIds.has(p.id)}
+                        onChange={() => toggleSelected(p.id)}
+                      />
+                    </td>
                     <td>
                       <div className="pl-cell-player">
                         <div className="pl-avatar">{(p.name || '?')[0].toUpperCase()}</div>
