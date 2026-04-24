@@ -131,6 +131,19 @@ class ServerSettings(BaseSettings):
     DISCORD_OPERATOR_USER_IDS: str = ""
     DISCORD_VIEWER_USER_IDS:   str = ""
 
+    # --- Discord VIP role to mirror onto the ARK 'VIP' permission group -
+    # Set this to the snowflake ID of the Discord role that represents
+    # 'VIP' on your server (right-click the role on Discord with Developer
+    # Mode on -> Copy Role ID).  Leave empty to disable the manual
+    # POST /api/v1/discord/sync-vip endpoint.
+    #
+    # Direction is panel -> Discord (ARK plugin DB is authoritative): a
+    # player gets the Discord role iff they have 'VIP' in either
+    # PermissionGroups (permanent) OR an active TimedPermissionGroups
+    # entry.  Discord-side strangers (have role, no link) are reported
+    # but never touched.
+    DISCORD_VIP_ROLE_ID:       str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

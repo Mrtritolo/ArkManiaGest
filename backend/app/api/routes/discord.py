@@ -26,11 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
 from app.core.auth import require_admin
+from app.core.config import server_settings
 from app.db.models.app import AppUser
 from app.db.session import get_db, get_plugin_db
 from app.discord import client as dc_client
 from app.discord.config import get_discord_config
 from app.discord import store as dc_store
+from app.discord.sync_vip import sync_vip_role, VipSyncReport
 
 
 router = APIRouter()
@@ -61,6 +63,10 @@ class DiscordConfigStatus(BaseModel):
     admin_user_ids:    list[str] = []
     operator_user_ids: list[str] = []
     viewer_user_ids:   list[str] = []
+    # Phase 4 VIP sync: when set, the Settings -> Discord page enables
+    # the manual 'Sync VIP' button.  Empty -> sync endpoint 503s.
+    vip_role_id:       str = ""
+    vip_sync_ready:    bool = False
 
 
 @router.get(
@@ -97,6 +103,8 @@ def get_config_status() -> DiscordConfigStatus:
         admin_user_ids    = _split_ids(_s.DISCORD_ADMIN_USER_IDS),
         operator_user_ids = _split_ids(_s.DISCORD_OPERATOR_USER_IDS),
         viewer_user_ids   = _split_ids(_s.DISCORD_VIEWER_USER_IDS),
+        vip_role_id       = (_s.DISCORD_VIP_ROLE_ID or "").strip(),
+        vip_sync_ready    = bool((_s.DISCORD_VIP_ROLE_ID or "").strip()) and cfg.has_bot,
     )
 
 
@@ -751,6 +759,49 @@ async def unban_member_endpoint(user_id: str):
 
 
 # ── DM ───────────────────────────────────────────────────────────────────────
+
+# ── VIP sync (Phase 4) ───────────────────────────────────────────────────────
+
+@router.post(
+    "/sync-vip",
+    response_model=VipSyncReport,
+    dependencies=[Depends(require_admin)],
+)
+async def sync_vip_endpoint(
+    db:        AsyncSession = Depends(get_db),
+    plugin_db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Reconcile the Discord VIP role with the panel/plugin DB (manual run).
+
+    Direction is fixed: ARK plugin DB is authoritative.  The endpoint
+    walks every linked discord_account, computes 'should be VIP' from
+    the Players row (permanent OR active timed entry for the 'VIP'
+    permission group), and pushes the diff into Discord by adding /
+    removing the role.  Discord-side members who carry the role but
+    are NOT in our linked-accounts set are observed only -- never
+    stripped, the operator gets the list back to act on manually.
+
+    Requires both bot credentials AND a configured DISCORD_VIP_ROLE_ID.
+    A 503 with the missing key list is returned otherwise so the admin
+    UI can render the actual fix.
+    """
+    bot_token, guild_id = _require_bot_ready()
+    vip_role_id = (server_settings.DISCORD_VIP_ROLE_ID or "").strip()
+    if not vip_role_id:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Discord VIP sync not configured.  Set DISCORD_VIP_ROLE_ID "
+                "in .env (the Discord snowflake of the VIP role) and "
+                "restart the service."
+            ),
+        )
+    return await sync_vip_role(
+        db=db, plugin_db=plugin_db,
+        bot_token=bot_token, guild_id=guild_id, vip_role_id=vip_role_id,
+    )
+
 
 @router.post(
     "/dm/{user_id}",
