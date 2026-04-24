@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { Settings as SettingsIcon, Users as UsersIcon, Sliders } from "lucide-react";
 import DiscordIcon from "../components/DiscordIcon";
 import AccountsTab from "./discord/AccountsTab";
+import MembersTab from "./discord/MembersTab";
 
 type TabKey = "accounts" | "members" | "config";
 
@@ -76,14 +77,9 @@ export default function DiscordSettingsPage() {
         />
       </div>
 
-      {/* Per-tab panels — Members + Config land in the next two commits. */}
+      {/* Per-tab panels — Config lands in the next commit. */}
       {tab === "accounts" && <AccountsTab />}
-      {tab === "members" && (
-        <div className="pl-loading" style={{ textAlign: "left" }}>
-          <SettingsIcon size={14} />{" "}
-          {t("discord.tab.membersPlaceholder", "Members tab — coming up next.")}
-        </div>
-      )}
+      {tab === "members"  && <MembersTab />}
       {tab === "config" && (
         <div className="pl-loading" style={{ textAlign: "left" }}>
           <SettingsIcon size={14} />{" "}
