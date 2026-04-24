@@ -110,6 +110,52 @@ async def create_app_tables() -> None:
         await conn.run_sync(
             lambda sync_conn: Base.metadata.create_all(sync_conn, tables=panel_tables)
         )
+        # Idempotent in-place migrations.  SQLAlchemy create_all() never
+        # ALTERs an existing table, so any column we add to an
+        # already-created model needs an explicit ALTER here -- guarded
+        # by INFORMATION_SCHEMA so re-runs are no-ops.
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_discord_accounts",
+            column="app_user_id",
+            ddl=(
+                "ALTER TABLE arkmaniagest_discord_accounts "
+                "ADD COLUMN app_user_id INT NULL, "
+                "ADD UNIQUE KEY uq_discord_app_user (app_user_id), "
+                "ADD CONSTRAINT fk_discord_app_user "
+                "  FOREIGN KEY (app_user_id) "
+                "  REFERENCES arkmaniagest_users(id) ON DELETE SET NULL"
+            ),
+        )
+
+
+async def _add_column_if_missing(conn, *, table: str, column: str, ddl: str) -> None:
+    """
+    Run *ddl* only when *column* does not yet exist on *table*.
+
+    Used to push tiny in-place migrations on top of create_all().  Pure
+    DDL guarded by INFORMATION_SCHEMA so the function is safe to call
+    on every boot.
+    """
+    from sqlalchemy import text as _sql_text
+    res = await conn.execute(
+        _sql_text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = DATABASE() "
+            "  AND table_name   = :t "
+            "  AND column_name  = :c "
+            "LIMIT 1"
+        ),
+        {"t": table, "c": column},
+    )
+    if res.scalar() is None:
+        try:
+            await conn.execute(_sql_text(ddl))
+        except Exception:
+            # Most likely the table itself doesn't exist yet (fresh
+            # install) -- create_all() above already handled it, so
+            # the column is in place via the column definition itself.
+            pass
 
 
 async def get_db() -> AsyncSession:

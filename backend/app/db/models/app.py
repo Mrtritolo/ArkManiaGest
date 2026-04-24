@@ -317,6 +317,17 @@ class DiscordAccount(Base):
     # Stored as a string here rather than a real FK because Players
     # lives in the plugin DB, which is a separate connection.
     eos_id              = Column(String(64), nullable=True, unique=True, index=True)
+    # Linked panel AppUser (e.g. operator, admin).  When set, the
+    # OAuth callback issues a panel JWT for THIS user so a single
+    # Discord login powers both the player dashboard (via eos_id)
+    # AND the admin panel (via app_user_id).  Independent of eos_id:
+    # an admin can be linked to a Discord identity that is NOT also
+    # linked to a player record, and vice versa.
+    app_user_id         = Column(
+        Integer,
+        ForeignKey("arkmaniagest_users.id", ondelete="SET NULL"),
+        nullable=True, unique=True, index=True,
+    )
 
     # OAuth tokens (AES-256-GCM via app.core.encryption).  refresh_token
     # is rotated by Discord on every refresh; access_token has a short

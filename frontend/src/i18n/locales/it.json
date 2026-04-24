@@ -54,7 +54,12 @@
       "submit": "Accedi",
       "submitting": "Accesso in corso…",
       "errorInvalid": "Nome utente o password non validi.",
-      "errorNetwork": "Impossibile contattare il backend. Riprova."
+      "errorNetwork": "Impossibile contattare il backend. Riprova.",
+      "or": "OPPURE",
+      "discordButton": "Accedi con Discord",
+      "discordRedirecting": "Reindirizzamento a Discord…",
+      "discordStartFailed": "Impossibile avviare il login Discord: {{message}}",
+      "discordErr": "Login Discord fallito: {{reason}}"
     },
     "logout": "Esci"
   },

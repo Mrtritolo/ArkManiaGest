@@ -109,13 +109,27 @@ class ServerSettings(BaseSettings):
     #                             right-click the server -> Copy Server ID
     #   * DISCORD_REDIRECT_URI  — OAuth2 -> Redirects; must EXACTLY match
     #                             the value the panel sends.  Example:
-    #                             https://gestionale.arkmania.it/auth/discord/callback
+    #                             https://your-panel.example.com/auth/discord/callback
     DISCORD_CLIENT_ID:     str = ""
     DISCORD_CLIENT_SECRET: str = ""
     DISCORD_BOT_TOKEN:     str = ""
     DISCORD_PUBLIC_KEY:    str = ""
     DISCORD_GUILD_ID:      str = ""
     DISCORD_REDIRECT_URI:  str = ""
+
+    # --- Discord -> panel role bootstrap (whitelist) ------------------
+    # Comma-separated lists of Discord user IDs that automatically get
+    # an AppUser provisioned with the matching panel role on their
+    # first Discord OAuth login.  Provides a way to bootstrap admin
+    # access without first having an admin/password account on the
+    # panel itself; superseded by the proper role-mapping CRUD landing
+    # in Phase 4 (still useful as a last-resort failsafe even after).
+    #
+    # Example:
+    #   DISCORD_ADMIN_USER_IDS=123456789012345678,234567890123456789
+    DISCORD_ADMIN_USER_IDS:    str = ""
+    DISCORD_OPERATOR_USER_IDS: str = ""
+    DISCORD_VIEWER_USER_IDS:   str = ""
 
     class Config:
         env_file = ".env"

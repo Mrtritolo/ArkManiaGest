@@ -84,6 +84,21 @@ function App() {
         return;
       }
 
+      // Discord OAuth callback returns the panel JWT via the URL
+      // fragment (#token=...).  Pick it up BEFORE the existing
+      // sessionStorage check so a fresh Discord login wins over a
+      // stale token left in the previous tab.  We scrub the fragment
+      // immediately so a refresh / share-link doesn't leak it.
+      const hash = window.location.hash || "";
+      if (hash.startsWith("#token=")) {
+        const fragmentToken = decodeURIComponent(hash.substring("#token=".length));
+        if (fragmentToken) {
+          setAuthToken(fragmentToken);
+          window.history.replaceState({}, "",
+            window.location.pathname + window.location.search);
+        }
+      }
+
       // If we have a JWT in sessionStorage from a previous page (e.g. the
       // user just hit F5), try to resolve it via /auth/me before falling
       // back to the login screen.  The axios interceptor already attaches

@@ -84,7 +84,7 @@ Database, config, dependency.
   * `DISCORD_CLIENT_SECRET`
   * `DISCORD_BOT_TOKEN`     (server-side bot used for guild calls)
   * `DISCORD_GUILD_ID`
-  * `DISCORD_REDIRECT_URI`  (e.g. `https://gestionale.arkmania.it/auth/discord/callback`)
+  * `DISCORD_REDIRECT_URI`  (e.g. `https://your-panel.example.com/auth/discord/callback`)
 * New dep: `httpx` already present, `authlib` for OAuth helpers
   (or a hand-rolled minimal flow using stdlib + `httpx` to keep the
   dependency set lean).

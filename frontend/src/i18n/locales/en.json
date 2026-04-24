@@ -54,7 +54,12 @@
       "submit": "Sign in",
       "submitting": "Signing in…",
       "errorInvalid": "Invalid username or password.",
-      "errorNetwork": "Cannot reach the backend. Please try again."
+      "errorNetwork": "Cannot reach the backend. Please try again.",
+      "or": "OR",
+      "discordButton": "Sign in with Discord",
+      "discordRedirecting": "Redirecting to Discord…",
+      "discordStartFailed": "Could not start Discord login: {{message}}",
+      "discordErr": "Discord login failed: {{reason}}"
     },
     "logout": "Log out"
   },

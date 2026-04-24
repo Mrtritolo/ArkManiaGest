@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends
 from app.core.auth import require_viewer
 from app.api.routes import (
     auth,
+    auth_discord,
     servers,
     instance_actions,
     system_update,
@@ -45,6 +46,10 @@ router = APIRouter()
 
 # ── Public routes (no JWT) ────────────────────────────────────────────────────
 router.include_router(auth.router,     tags=["Auth"])
+# Discord OAuth callback MUST be reachable without the panel JWT --
+# the user is mid-redirect-flow and hasn't proven any panel identity
+# yet.  The session cookie issued by the callback is the auth.
+router.include_router(auth_discord.router, tags=["Auth (Discord)"])
 router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 router.include_router(public.router,   prefix="/public",   tags=["Public"])
 
