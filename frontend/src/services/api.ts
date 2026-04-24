@@ -526,24 +526,31 @@ export const playersApi = {
    * ARKM_player_tribes + ARKM_tribe_decay (matched by targeting_team).
    */
   /**
-   * Grant the same timed permission group to a batch of players in one call.
-   * Server-side it loops the player list, upserts the (group -> flag,
-   * expires_at) tuple in TimedPermissionGroups, leaving every other
-   * timed permission untouched.
+   * Extend (or grant) the same timed permission group across a batch of
+   * players in one call.  Server-side semantics:
+   *
+   *   * Player already has the group -> expiry := max(current, now)
+   *                                              + duration_seconds
+   *   * Player does NOT have it      -> entry created with
+   *                                     now + duration_seconds
+   *
+   * Other timed-permission entries are never touched.
    */
   bulkAddTimedPerm: (data: {
-    player_ids: number[];
-    group:      string;
-    expires_at: number;          // unix seconds
-    flag?:      string;
+    player_ids:        number[];
+    group:             string;
+    duration_seconds:  number;        // delta to add to current expiry
+    flag?:             string;
   }) =>
     api.post<{
-      success:     boolean;
-      requested:   number;
-      updated:     number;
-      missing_ids: number[];
-      group:       string;
-      expires_at:  number;
+      success:           boolean;
+      requested:         number;
+      updated:           number;       // = extended + added
+      extended:          number;       // had the group already
+      added:             number;       // did NOT have the group
+      missing_ids:       number[];
+      group:             string;
+      duration_seconds:  number;
     }>("/players/bulk-add-timed-perm", { flag: "0", ...data }),
 
   syncTribes: (machineId?: number, containerName?: string) => {

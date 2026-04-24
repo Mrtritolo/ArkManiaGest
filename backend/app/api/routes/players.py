@@ -697,23 +697,46 @@ async def update_player(
 class _BulkTimedPermRequest(BaseModel):
     """Body for :func:`bulk_add_timed_perm`."""
 
-    player_ids: list[int] = Field(..., min_length=1, max_length=2000)
-    group:      str       = Field(..., min_length=1, max_length=64)
-    expires_at: int       = Field(..., ge=0)
-    flag:       str       = Field(default="0", max_length=8)
+    player_ids:       list[int] = Field(..., min_length=1, max_length=2000)
+    group:            str       = Field(..., min_length=1, max_length=64)
+    # Delta to ADD to the player's current expiry for *group*.  Bulk
+    # semantics: if the player already has the group, the new expiry is
+    # max(current_ts, now) + duration_seconds (i.e. we never shorten an
+    # entry; an already-expired entry is extended from "now").
+    # If the player does NOT have the group yet, the entry is created
+    # with expiry = now + duration_seconds.
+    duration_seconds: int       = Field(..., ge=60, le=10 * 365 * 24 * 3600)
+    flag:             str       = Field(default="0", max_length=8)
 
 
-def _upsert_timed_perm(raw: str, group: str, flag: str, ts: int) -> str:
+def _extend_timed_perm(
+    raw: str,
+    *,
+    group: str,
+    flag: str,
+    delta_seconds: int,
+    now_ts: int,
+) -> tuple[str, int, int]:
     """
-    Parse the existing TimedPermissionGroups string, set / replace the
-    entry for *group* and re-serialise.
+    Parse the existing ``TimedPermissionGroups`` string, ADD ``delta_seconds``
+    to the entry for *group* (creating it when missing), and re-serialise.
 
-    Format quirks: empty / whitespace-only flag fields are normalised to
-    "0", and entries that fail to parse are kept verbatim so we never
-    accidentally drop unrelated permissions during a bulk grant.
+    Returns ``(serialised, previous_ts, new_ts)`` so the caller can report
+    the before/after expiry per player.
+
+    Format quirks:
+      * Empty / whitespace-only flag fields are normalised to ``"0"``.
+      * Entries that fail to parse are kept verbatim so we never silently
+        drop unrelated permissions during a bulk grant.
+      * For an already-expired entry (or one with ts=0), the extension
+        starts from ``now_ts`` -- we never want a "+7 days" click to
+        actually move the expiry into the past because the existing one
+        was years old.
     """
     entries: list[tuple[str, str, str]] = []
-    found = False
+    previous_ts = 0
+    new_ts      = 0
+    found       = False
     for chunk in (raw or "").split(","):
         chunk = chunk.strip()
         if not chunk:
@@ -724,19 +747,31 @@ def _upsert_timed_perm(raw: str, group: str, flag: str, ts: int) -> str:
             t = parts[1].strip()
             g = parts[2].strip()
             if g == group:
-                entries.append((flag, str(ts), g))
+                try:
+                    previous_ts = int(t) if t else 0
+                except ValueError:
+                    previous_ts = 0
+                # Never let a stale (already expired) entry shorten the
+                # extension -- start the +delta clock from "now" if the
+                # current ts is in the past.
+                base = max(previous_ts, now_ts)
+                new_ts = base + delta_seconds
+                entries.append((flag, str(new_ts), g))
                 found = True
             else:
                 entries.append((f, t, g))
         else:
-            # Unrecognisable entry -- keep it as-is rather than silently
-            # losing permissions.
             entries.append((chunk, "", ""))
     if not found:
-        entries.append((flag, str(ts), group))
-    return ",".join(
-        f"{f};{t};{g}" if g else f
-        for (f, t, g) in entries
+        new_ts = now_ts + delta_seconds
+        entries.append((flag, str(new_ts), group))
+    return (
+        ",".join(
+            f"{f};{t};{g}" if g else f
+            for (f, t, g) in entries
+        ),
+        previous_ts,
+        new_ts,
     )
 
 
@@ -746,17 +781,22 @@ async def bulk_add_timed_perm(
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """
-    Grant the same timed permission to a batch of players in one round-trip.
+    Extend (or grant) the same timed permission to a batch of players.
 
-    For each ``player_ids`` entry the endpoint:
-      * loads the row;
-      * upserts the (group -> flag, expires_at) tuple into
-        ``TimedPermissionGroups`` (replaces the existing entry for that
-        group, leaves all other entries untouched);
-      * commits at the end of the loop.
+    Per-player rules:
+      * Player already has *group*  ->  expiry := max(current, now) + delta
+      * Player does NOT have *group* ->  expiry := now + delta
+        and the entry is appended.
 
-    Returns the per-player update count plus the list of player ids that
-    weren't found in the DB so the UI can flag stale selections.
+    Other timed-permission entries on each player are left untouched.
+
+    Returns:
+      * ``updated``    -- count of players whose row got rewritten
+      * ``extended``   -- subset of ``updated`` where the group already
+                          existed (extension case)
+      * ``added``      -- subset of ``updated`` where the group was new
+      * ``missing_ids`` -- player ids from the request that don't exist
+                           in the DB so the UI can flag stale selections
     """
     rows = await db.execute(
         select(Player).where(Player.Id.in_(body.player_ids))
@@ -766,25 +806,33 @@ async def bulk_add_timed_perm(
     found_ids = {p.Id for p in found_players}
     missing   = [pid for pid in body.player_ids if pid not in found_ids]
 
-    updated = 0
+    now_ts  = int(datetime.now().timestamp())
+    extended = 0
+    added    = 0
     for player in found_players:
-        new_value = _upsert_timed_perm(
+        new_value, prev_ts, _new_ts = _extend_timed_perm(
             player.TimedPermissionGroups or "",
             group=body.group,
             flag=body.flag,
-            ts=body.expires_at,
+            delta_seconds=body.duration_seconds,
+            now_ts=now_ts,
         )
         player.TimedPermissionGroups = new_value
-        updated += 1
+        if prev_ts > 0:
+            extended += 1
+        else:
+            added += 1
 
     await db.commit()
     return {
         "success":         True,
         "requested":       len(body.player_ids),
-        "updated":         updated,
+        "updated":         extended + added,
+        "extended":        extended,
+        "added":           added,
         "missing_ids":     missing,
         "group":           body.group,
-        "expires_at":      body.expires_at,
+        "duration_seconds": body.duration_seconds,
     }
 
 

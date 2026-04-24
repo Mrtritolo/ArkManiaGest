@@ -34,13 +34,15 @@ export default function PlayersPage() {
 
   // ── Bulk timed-permission grant ─────────────────────────────────
   // selectedIds tracks the player.Id values toggled via the checkbox
-  // column.  bulkGroup / bulkExpiresAt drive the action-bar form;
-  // bulkApplying gates the button + spinner.
+  // column.  The actual configuration UI lives in a modal so the page
+  // header stays uncluttered; bulkModalOpen drives that.
+  // bulkDurationSeconds is a DELTA (extend by N seconds) -- when the
+  // player already has the group its current expiry is bumped by that
+  // delta, otherwise the entry is created with `now + delta`.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [bulkGroup, setBulkGroup] = useState<string>('')
-  const [bulkExpiresAt, setBulkExpiresAt] = useState<number>(
-    Math.floor(Date.now() / 1000) + 30 * 24 * 3600,   // default +30d
-  )
+  const [bulkDurationSeconds, setBulkDurationSeconds] = useState<number>(7 * 24 * 3600)
   const [bulkApplying, setBulkApplying] = useState(false)
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null)
   const [syncContainers, setSyncContainers] = useState<Record<string, unknown>[]>([])
@@ -77,7 +79,11 @@ export default function PlayersPage() {
   const loadPlayers = useCallback(async (s?: string, g?: string) => {
     setLoading(true)
     try {
-      const res = await playersApi.list({ search: (s ?? search) || undefined, group: (g ?? groupFilter) || undefined, limit: 100 })
+      // Use the backend-side max (500) so the table actually shows every
+      // registered player on small/medium clusters.  When we cross the
+      // 500 mark we'll need real pagination (offset-based) -- for now a
+      // single batch covers it.
+      const res = await playersApi.list({ search: (s ?? search) || undefined, group: (g ?? groupFilter) || undefined, limit: 500 })
       setPlayers(res.data)
     } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.load')) }
     finally { setLoading(false) }
@@ -275,35 +281,38 @@ export default function PlayersPage() {
       return next
     })
   }
-  function clearSelection() { setSelectedIds(new Set()) }
+  function clearSelection() { setSelectedIds(new Set()); setBulkModalOpen(false) }
 
-  // Translate a duration shortcut into the absolute Unix expires_at.
-  function bulkSetDurationFromNow(seconds: number) {
-    setBulkExpiresAt(Math.floor(Date.now() / 1000) + seconds)
+  function openBulkModal() {
+    setBulkGroup('')
+    setBulkDurationSeconds(7 * 24 * 3600)
+    setBulkModalOpen(true)
   }
 
   async function handleBulkApply() {
-    if (selectedIds.size === 0) { setError(t('players.bulkPerm.errorNoneSelected')); return }
-    if (!bulkGroup)             { setError(t('players.bulkPerm.errorNoGroup'));     return }
-    if (bulkExpiresAt <= Math.floor(Date.now() / 1000)) {
-      setError(t('players.bulkPerm.errorPastDate')); return
-    }
+    if (selectedIds.size === 0)    { setError(t('players.bulkPerm.errorNoneSelected')); return }
+    if (!bulkGroup)                { setError(t('players.bulkPerm.errorNoGroup'));     return }
+    if (bulkDurationSeconds < 60)  { setError(t('players.bulkPerm.errorBadDuration')); return }
+
+    const humanDuration = formatDurationSeconds(bulkDurationSeconds)
     if (!window.confirm(t('players.bulkPerm.confirm', {
-      count:   selectedIds.size,
-      group:   bulkGroup,
-      expires: new Date(bulkExpiresAt * 1000).toLocaleString(undefined),
+      count:    selectedIds.size,
+      group:    bulkGroup,
+      duration: humanDuration,
     }))) return
 
     setBulkApplying(true); setError('')
     try {
       const res = await playersApi.bulkAddTimedPerm({
-        player_ids: Array.from(selectedIds),
-        group:      bulkGroup,
-        expires_at: bulkExpiresAt,
+        player_ids:       Array.from(selectedIds),
+        group:            bulkGroup,
+        duration_seconds: bulkDurationSeconds,
       })
       setSuccess(t('players.bulkPerm.done', {
-        updated: res.data.updated,
-        missing: res.data.missing_ids.length,
+        updated:  res.data.updated,
+        extended: res.data.extended,
+        added:    res.data.added,
+        missing:  res.data.missing_ids.length,
       }))
       clearSelection()
       loadPlayers()
@@ -312,6 +321,14 @@ export default function PlayersPage() {
     } finally {
       setBulkApplying(false)
     }
+  }
+
+  /** Render a delta in seconds as '7 days' / '30 days' / '1 year' etc. */
+  function formatDurationSeconds(s: number): string {
+    const day = 24 * 3600
+    if (s % (365 * day) === 0) return t('players.bulkPerm.fmtYears',  { n: s / (365 * day) })
+    if (s % (30  * day) === 0) return t('players.bulkPerm.fmtMonths', { n: s / (30  * day) })
+    return t('players.bulkPerm.fmtDays', { n: Math.round(s / day) })
   }
 
   async function handleSyncNames(machineId?: number, containerName?: string) {
@@ -536,16 +553,16 @@ export default function PlayersPage() {
       <div className={`pl-layout ${selectedPlayer ? 'pl-layout-split' : ''}`}>
 
         {/* Table */}
-        {/* ── Bulk timed-permission action bar ───────────────────────────
-            Visible only while at least one player is selected.  Lets the
-            operator pick a group + duration shortcut (or a custom date)
-            and apply the same temporary permission to every checked row
-            in a single API call. */}
+        {/* ── Selection strip ───────────────────────────────────────────
+            Visible only while at least one player is selected.  Holds
+            JUST a counter + 'Configure' button + 'Clear'; the actual
+            group / duration form lives in a popup modal so this strip
+            stays one line on every screen size. */}
         {selectedIds.size > 0 && (
           <div
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap',
-              padding: '0.6rem 0.85rem', marginBottom: '0.5rem',
+              display: 'flex', alignItems: 'center', gap: '0.6rem',
+              padding: '0.55rem 0.85rem', marginBottom: '0.5rem',
               background: 'var(--accent-glow)',
               border: '1px solid var(--accent)',
               borderRadius: 'var(--radius)',
@@ -554,58 +571,12 @@ export default function PlayersPage() {
             <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
               {t('players.bulkPerm.selectedCount', { count: selectedIds.size })}
             </span>
-
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              {t('players.bulkPerm.groupLabel')}
-            </span>
-            <select
-              value={bulkGroup}
-              onChange={e => setBulkGroup(e.target.value)}
-              className="form-input"
-              style={{ minWidth: 160, padding: '0.25rem 0.4rem', fontSize: '0.82rem' }}
-            >
-              <option value="">{t('players.bulkPerm.groupPlaceholder')}</option>
-              {groups.map(g => (
-                <option key={g.id} value={g.group_name}>{g.group_name}</option>
-              ))}
-            </select>
-
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              {t('players.bulkPerm.durationLabel')}
-            </span>
-            {[
-              { label: '7d',  s: 7   * 24 * 3600 },
-              { label: '1m',  s: 30  * 24 * 3600 },
-              { label: '3m',  s: 90  * 24 * 3600 },
-              { label: '12m', s: 365 * 24 * 3600 },
-            ].map(opt => (
-              <button
-                key={opt.label}
-                onClick={() => bulkSetDurationFromNow(opt.s)}
-                className="btn btn-ghost btn-sm"
-                style={{ borderColor: 'var(--border)' }}
-                title={t('players.bulkPerm.setDurationTitle', { label: opt.label })}
-              >
-                {opt.label}
-              </button>
-            ))}
-            <input
-              type="datetime-local"
-              value={tsToInput(bulkExpiresAt)}
-              onChange={e => setBulkExpiresAt(inputToTs(e.target.value))}
-              className="form-input"
-              style={{ padding: '0.25rem 0.4rem', fontSize: '0.78rem' }}
-            />
-
             <button
-              onClick={handleBulkApply}
-              disabled={bulkApplying || !bulkGroup}
+              onClick={openBulkModal}
               className="btn btn-primary btn-sm"
               style={{ marginLeft: 'auto' }}
             >
-              {bulkApplying
-                ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkPerm.applying')}</>
-                : <><Save size={12} /> {t('players.bulkPerm.apply', { count: selectedIds.size })}</>}
+              <Clock size={12} /> {t('players.bulkPerm.openModal')}
             </button>
             <button
               onClick={clearSelection}
@@ -996,6 +967,126 @@ export default function PlayersPage() {
           </div>
         )}
       </div>
+
+      {/* ── Bulk timed-permission modal ─────────────────────────────────
+          Opens when the operator clicks "Configure" on the selection
+          strip.  Picks ONE group + ONE duration shortcut (or a custom
+          number of days), then POSTs to /players/bulk-add-timed-perm.
+          Backend semantics: existing entries get extended by the chosen
+          delta, missing ones get inserted with `now + delta`. */}
+      {bulkModalOpen && (
+        <div
+          onClick={() => setBulkModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 200,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="card"
+            style={{ width: 480, maxWidth: '92vw', padding: '1.25rem' }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Clock size={16} /> {t('players.bulkPerm.modalTitle', { count: selectedIds.size })}
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              {t('players.bulkPerm.modalHint')}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <label className="form-label" style={{ fontSize: '0.78rem' }}>
+                  {t('players.bulkPerm.groupLabel')}
+                </label>
+                <select
+                  value={bulkGroup}
+                  onChange={e => setBulkGroup(e.target.value)}
+                  className="form-input"
+                  autoFocus
+                >
+                  <option value="">{t('players.bulkPerm.groupPlaceholder')}</option>
+                  {groups.map(g => (
+                    <option key={g.id} value={g.group_name}>{g.group_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <label className="form-label" style={{ fontSize: '0.78rem' }}>
+                  {t('players.bulkPerm.durationLabel')}
+                </label>
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {[
+                    { label: '+7d',  s: 7   * 24 * 3600 },
+                    { label: '+1m',  s: 30  * 24 * 3600 },
+                    { label: '+3m',  s: 90  * 24 * 3600 },
+                    { label: '+12m', s: 365 * 24 * 3600 },
+                  ].map(opt => (
+                    <button
+                      key={opt.label}
+                      onClick={() => setBulkDurationSeconds(opt.s)}
+                      className={`btn btn-sm ${bulkDurationSeconds === opt.s ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    {t('players.bulkPerm.customDaysLabel')}
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={Math.round(bulkDurationSeconds / (24 * 3600))}
+                    onChange={e => {
+                      const days = Math.max(1, Math.min(3650, parseInt(e.target.value, 10) || 1))
+                      setBulkDurationSeconds(days * 24 * 3600)
+                    }}
+                    className="form-input"
+                    style={{ width: 80, padding: '0.25rem 0.4rem', fontSize: '0.82rem' }}
+                  />
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    {t('players.bulkPerm.customDaysSuffix')}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{
+                fontSize: '0.74rem', color: 'var(--text-muted)',
+                padding: '0.5rem 0.65rem', background: 'var(--bg-card-muted)',
+                borderRadius: 'var(--radius)', lineHeight: 1.45,
+              }}>
+                {t('players.bulkPerm.semanticsHint')}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', marginTop: '1.1rem' }}>
+              <button
+                onClick={() => setBulkModalOpen(false)}
+                disabled={bulkApplying}
+                className="btn btn-ghost btn-sm"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {t('players.bulkPerm.cancel')}
+              </button>
+              <button
+                onClick={handleBulkApply}
+                disabled={bulkApplying || !bulkGroup}
+                className="btn btn-primary btn-sm"
+              >
+                {bulkApplying
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkPerm.applying')}</>
+                  : <><Save size={12} /> {t('players.bulkPerm.apply', { count: selectedIds.size })}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
