@@ -1115,6 +1115,9 @@ export interface DiscordConfigStatus {
   bot_ready:           boolean;
   missing_for_oauth:   string[];
   missing_for_bot:     string[];
+  admin_user_ids:      string[];
+  operator_user_ids:   string[];
+  viewer_user_ids:     string[];
 }
 
 /** Single row from /api/v1/discord/accounts. */

@@ -15,10 +15,11 @@
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, Users as UsersIcon, Sliders } from "lucide-react";
+import { Users as UsersIcon, Sliders } from "lucide-react";
 import DiscordIcon from "../components/DiscordIcon";
 import AccountsTab from "./discord/AccountsTab";
 import MembersTab from "./discord/MembersTab";
+import ConfigTab from "./discord/ConfigTab";
 
 type TabKey = "accounts" | "members" | "config";
 
@@ -77,15 +78,10 @@ export default function DiscordSettingsPage() {
         />
       </div>
 
-      {/* Per-tab panels — Config lands in the next commit. */}
+      {/* Per-tab panels */}
       {tab === "accounts" && <AccountsTab />}
       {tab === "members"  && <MembersTab />}
-      {tab === "config" && (
-        <div className="pl-loading" style={{ textAlign: "left" }}>
-          <SettingsIcon size={14} />{" "}
-          {t("discord.tab.configPlaceholder", "Config tab — coming up next.")}
-        </div>
-      )}
+      {tab === "config"   && <ConfigTab />}
     </div>
   );
 }

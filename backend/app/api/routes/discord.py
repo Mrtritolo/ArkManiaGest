@@ -53,6 +53,14 @@ class DiscordConfigStatus(BaseModel):
     # Hint listing the .env keys still empty (e.g. ['DISCORD_BOT_TOKEN']).
     missing_for_oauth: list[str]
     missing_for_bot:   list[str]
+    # Auto-promotion whitelists: every Discord ID listed here gets a
+    # matching panel AppUser (`discord:<id>`) auto-created with the
+    # listed role on first Discord login -- bypassing the explicit
+    # link-app-user binding.  Read from .env, so editing requires a
+    # service restart (Settings -> Discord -> Config tab spells this out).
+    admin_user_ids:    list[str] = []
+    operator_user_ids: list[str] = []
+    viewer_user_ids:   list[str] = []
 
 
 @router.get(
@@ -69,6 +77,12 @@ def get_config_status() -> DiscordConfigStatus:
     still need to fill in?" hint banner.
     """
     cfg = get_discord_config()
+    # Whitelists live on ServerSettings, not on DiscordConfig (DiscordConfig
+    # is the OAuth/bot credential surface).  Parse the CSVs here so the
+    # admin UI can show them without re-implementing the split.
+    from app.core.config import server_settings as _s
+    def _split_ids(raw: str) -> list[str]:
+        return [x.strip() for x in (raw or "").split(",") if x.strip()]
     return DiscordConfigStatus(
         client_id     = cfg.client_id,
         public_key    = cfg.public_key,
@@ -80,6 +94,9 @@ def get_config_status() -> DiscordConfigStatus:
         bot_ready         = cfg.has_bot,
         missing_for_oauth = cfg.missing_for_oauth(),
         missing_for_bot   = cfg.missing_for_bot(),
+        admin_user_ids    = _split_ids(_s.DISCORD_ADMIN_USER_IDS),
+        operator_user_ids = _split_ids(_s.DISCORD_OPERATOR_USER_IDS),
+        viewer_user_ids   = _split_ids(_s.DISCORD_VIEWER_USER_IDS),
     )
 
 
