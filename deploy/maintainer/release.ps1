@@ -256,10 +256,12 @@ if ($changelogRaw -match "## \[$([regex]::Escape($Version))\]") {
     $newSection = "## [$Version] - $today`r`n`r`n$notesBody`r`n`r`n---`r`n"
 
     # Insert just after the first "---" line (that ends the intro block).
-    $sep = "`n---`n"
-    $idx = $changelogRaw.IndexOf($sep)
-    if ($idx -lt 0) { Fail "Cannot locate '---' separator in CHANGELOG.md" }
-    $insertAt = $idx + $sep.Length
+    # Match the separator with a CRLF-tolerant regex: CHANGELOG.md is committed
+    # with LF on Linux but Git on Windows checks it out as CRLF unless
+    # `* text=auto eol=lf` is set, so we accept either.
+    $sepMatch = [regex]::Match($changelogRaw, "(\r?\n)---(\r?\n)")
+    if (-not $sepMatch.Success) { Fail "Cannot locate '---' separator in CHANGELOG.md" }
+    $insertAt = $sepMatch.Index + $sepMatch.Length
 
     $new_changelog = $changelogRaw.Substring(0, $insertAt) + "`r`n" + $newSection + $changelogRaw.Substring($insertAt).TrimStart("`r", "`n")
 
