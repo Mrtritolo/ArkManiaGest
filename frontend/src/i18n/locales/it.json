@@ -917,6 +917,9 @@
     "bulkPerm": {
       "selectedCount":     "{{count}} selezionati",
       "openModal":         "Configura assegnazione massiva…",
+      "headerButton":      "Assegna massivo ({{count}})",
+      "headerTitleEnabled":"Apri il modal di assegnazione massiva per i {{count}} giocatori selezionati",
+      "headerTitleDisabled":"Spunta almeno una riga della tabella per abilitare l'assegnazione massiva",
       "modalTitle":        "Assegnazione massiva permesso temporaneo ({{count}} giocatori)",
       "modalHint":         "Scegli un gruppo e una durata; ESTENDIAMO la scadenza esistente per chi già ha il gruppo e AGGIUNGIAMO una nuova entry per chi non ce l'ha.",
       "groupLabel":        "Gruppo",

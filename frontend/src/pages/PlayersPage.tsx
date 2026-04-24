@@ -423,6 +423,19 @@ export default function PlayersPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
           <button
+            onClick={openBulkModal}
+            disabled={selectedIds.size === 0 || bulkApplying}
+            className="btn btn-secondary btn-sm"
+            title={
+              selectedIds.size === 0
+                ? t('players.bulkPerm.headerTitleDisabled')
+                : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
+            }
+          >
+            <Clock size={14} />
+            {t('players.bulkPerm.headerButton', { count: selectedIds.size })}
+          </button>
+          <button
             onClick={handleSyncTribes}
             disabled={syncing || syncingTribes}
             className="btn btn-secondary btn-sm"
@@ -553,41 +566,6 @@ export default function PlayersPage() {
       <div className={`pl-layout ${selectedPlayer ? 'pl-layout-split' : ''}`}>
 
         {/* Table */}
-        {/* ── Selection strip ───────────────────────────────────────────
-            Visible only while at least one player is selected.  Holds
-            JUST a counter + 'Configure' button + 'Clear'; the actual
-            group / duration form lives in a popup modal so this strip
-            stays one line on every screen size. */}
-        {selectedIds.size > 0 && (
-          <div
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.6rem',
-              padding: '0.55rem 0.85rem', marginBottom: '0.5rem',
-              background: 'var(--accent-glow)',
-              border: '1px solid var(--accent)',
-              borderRadius: 'var(--radius)',
-            }}
-          >
-            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
-              {t('players.bulkPerm.selectedCount', { count: selectedIds.size })}
-            </span>
-            <button
-              onClick={openBulkModal}
-              className="btn btn-primary btn-sm"
-              style={{ marginLeft: 'auto' }}
-            >
-              <Clock size={12} /> {t('players.bulkPerm.openModal')}
-            </button>
-            <button
-              onClick={clearSelection}
-              className="btn btn-ghost btn-sm"
-              style={{ borderColor: 'var(--border)' }}
-            >
-              <X size={12} /> {t('players.bulkPerm.clear')}
-            </button>
-          </div>
-        )}
-
         <div className="pl-table-wrap" style={{ overflowX: 'auto' }}>
           {loading ? (
             <div className="pl-loading"><Loader2 size={20} className="pl-spin" /> {t('players.loading')}</div>

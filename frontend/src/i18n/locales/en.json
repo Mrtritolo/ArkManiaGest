@@ -917,6 +917,9 @@
     "bulkPerm": {
       "selectedCount":     "{{count}} selected",
       "openModal":         "Configure bulk grant…",
+      "headerButton":      "Bulk grant ({{count}})",
+      "headerTitleEnabled":"Open the bulk timed-permission modal for the {{count}} selected player(s)",
+      "headerTitleDisabled":"Tick at least one row in the table to enable bulk grant",
       "modalTitle":        "Bulk grant temporary permission ({{count}} players)",
       "modalHint":         "Pick a group and a duration; we'll EXTEND existing entries by that delta and ADD new ones for players that don't yet have the group.",
       "groupLabel":        "Group",
