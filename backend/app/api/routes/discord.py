@@ -27,6 +27,7 @@ from sqlalchemy import select, text
 
 from app.core.auth import require_admin
 from app.core.config import server_settings
+from app.core.env_writer import update_env_file
 from app.db.models.app import AppUser
 from app.db.session import get_db, get_plugin_db
 from app.discord import client as dc_client
@@ -106,6 +107,124 @@ def get_config_status() -> DiscordConfigStatus:
         vip_role_id       = (_s.DISCORD_VIP_ROLE_ID or "").strip(),
         vip_sync_ready    = bool((_s.DISCORD_VIP_ROLE_ID or "").strip()) and cfg.has_bot,
     )
+
+
+# ── Edit Discord configuration in .env (admin only) ─────────────────────────
+#
+# The panel can write back to the backend's .env so the operator doesn't
+# have to SSH in to rotate a token.  Pydantic loads .env once at boot, so
+# changes take effect ONLY after a service restart -- the response carries
+# `restart_required=True` and the client surfaces a banner with the exact
+# command to run.
+#
+# Secret-field semantics:
+#   - field absent or null -> leave unchanged (the form's empty default)
+#   - field set to "" (empty string) -> CLEAR the value in .env
+#   - field set to a non-empty string -> WRITE that value
+# Non-secret fields use the same convention but their current value is
+# already exposed in the GET, so the form pre-fills them.
+
+class DiscordConfigUpdate(BaseModel):
+    """Editable subset of DISCORD_* keys.  All fields optional."""
+    client_id:         Optional[str]       = None
+    client_secret:     Optional[str]       = None   # secret
+    bot_token:         Optional[str]       = None   # secret
+    public_key:        Optional[str]       = None
+    guild_id:          Optional[str]       = None
+    redirect_uri:      Optional[str]       = None
+    vip_role_id:       Optional[str]       = None
+    admin_user_ids:    Optional[list[str]] = None
+    operator_user_ids: Optional[list[str]] = None
+    viewer_user_ids:   Optional[list[str]] = None
+
+
+class _ConfigUpdateResponse(BaseModel):
+    """Response to a successful PUT /discord/config."""
+    updated_keys:     list[str]
+    restart_required: bool = True
+    restart_hint:     str  = "systemctl restart arkmaniagest"
+
+
+def _strip_or_none(v: Optional[str]) -> Optional[str]:
+    """Trim whitespace; None passes through.  Used for token-shaped fields."""
+    if v is None:
+        return None
+    return v.strip()
+
+
+def _sanitize_id_list(ids: Optional[list[str]]) -> Optional[list[str]]:
+    """De-dupe + strip a list of Discord snowflake ids; None -> None."""
+    if ids is None:
+        return None
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in ids:
+        s = (raw or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+@router.put(
+    "/config",
+    response_model=_ConfigUpdateResponse,
+    dependencies=[Depends(require_admin)],
+)
+def update_discord_config(body: DiscordConfigUpdate):
+    """
+    Persist edited DISCORD_* keys back to the backend's .env file.
+
+    Only the keys present (non-None) in the request body are touched;
+    every other line in .env is preserved.  Comments and surrounding
+    key order are preserved by the line-based writer.
+
+    Returns the list of updated env keys + a `restart_required` flag
+    (always True in the current implementation; pydantic loads .env
+    once at boot, so the new values are NOT live until the service
+    restarts).
+    """
+    updates: dict[str, str] = {}
+
+    # String fields (with whitespace trim to defang Windows paste).
+    string_map = [
+        ("DISCORD_CLIENT_ID",      _strip_or_none(body.client_id)),
+        ("DISCORD_CLIENT_SECRET",  _strip_or_none(body.client_secret)),
+        ("DISCORD_BOT_TOKEN",      _strip_or_none(body.bot_token)),
+        ("DISCORD_PUBLIC_KEY",     _strip_or_none(body.public_key)),
+        ("DISCORD_GUILD_ID",       _strip_or_none(body.guild_id)),
+        ("DISCORD_REDIRECT_URI",   _strip_or_none(body.redirect_uri)),
+        ("DISCORD_VIP_ROLE_ID",    _strip_or_none(body.vip_role_id)),
+    ]
+    for env_key, value in string_map:
+        if value is not None:
+            updates[env_key] = value
+
+    # CSV-list fields (admin / operator / viewer whitelists).
+    csv_map = [
+        ("DISCORD_ADMIN_USER_IDS",    _sanitize_id_list(body.admin_user_ids)),
+        ("DISCORD_OPERATOR_USER_IDS", _sanitize_id_list(body.operator_user_ids)),
+        ("DISCORD_VIEWER_USER_IDS",   _sanitize_id_list(body.viewer_user_ids)),
+    ]
+    for env_key, ids in csv_map:
+        if ids is not None:
+            updates[env_key] = ",".join(ids)
+
+    if not updates:
+        raise HTTPException(status_code=422, detail="No editable fields supplied.")
+
+    try:
+        update_env_file(updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from None
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to write .env: {exc}",
+        ) from None
+
+    return _ConfigUpdateResponse(updated_keys=sorted(updates.keys()))
 
 
 # ── Discord <-> AppUser linking (admin only) ─────────────────────────────────
