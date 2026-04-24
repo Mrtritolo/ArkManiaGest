@@ -93,3 +93,9 @@ deploy/imports/_parse_dododex_items.py
 
 # --- Release build artefacts (produced by deploy/package-release.ps1) ---
 release-build/
+
+# --- One-shot release notes (consumed by deploy/maintainer/release.ps1 -NotesFile) ---
+# Hand-written per release, fed into the CHANGELOG, then deleted.  Never
+# committed -- the canonical record lives in CHANGELOG.md.
+next-release-notes.md
+release-notes-*.md
