@@ -33,10 +33,26 @@ StandardError=append:/var/log/arkmaniagest/backend-error.log
 # the tarball to server-update.sh via /tmp/arkmaniagest-update.tar.gz
 # and reads progress via /tmp/arkmaniagest-update.log; both files need
 # to be visible to both the parent (panel) and the detached sudo child.
+#
+# ReadWritePaths needs to whitelist every /etc location the self-update
+# can touch -- ProtectSystem=strict makes /etc read-only EVEN for sudo'd
+# children of this unit (the mount-namespace restriction is inherited).
+# The current self-update can rewrite:
+#   * /etc/systemd/system/arkmaniagest.service     -- unit file itself
+#                                                     (when the bundled
+#                                                     copy differs)
+#   * /etc/sudoers.d/arkmaniagest-update           -- the sudoers entry
+#                                                     that lets the panel
+#                                                     re-invoke the update
+#   * /etc/nginx/sites-available/arkmaniagest      -- nginx vhost (when
+#                                                     a new release tweaks
+#                                                     proxy / cache rules)
+# Each path is a single explicit literal, so the blast radius stays
+# bounded to "files this codebase already manages".
 NoNewPrivileges=no
 ProtectSystem=strict
 ProtectHome=no
-ReadWritePaths=/opt/arkmaniagest /var/log/arkmaniagest /tmp
+ReadWritePaths=/opt/arkmaniagest /var/log/arkmaniagest /tmp /etc/systemd/system /etc/sudoers.d /etc/nginx/sites-available /etc/nginx/sites-enabled
 PrivateTmp=no
 PrivateDevices=yes
 
