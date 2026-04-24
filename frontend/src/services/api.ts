@@ -191,9 +191,24 @@ api.interceptors.response.use(
       );
     }
 
-    // 401 on a protected endpoint = expired / invalid token → force re-login
-    const isLoginEndpoint = url.includes("/auth/login");
-    if (status === 401 && _authToken && !isLoginEndpoint) {
+    // 401 on a protected endpoint = expired / invalid token → force re-login.
+    // Two endpoints are EXEMPT because they probe an OPTIONAL credential and
+    // a 401 there does NOT mean the panel JWT is broken:
+    //   * /auth/login         -- the user is trying to authenticate; a
+    //                            wrong-password 401 must surface to the
+    //                            caller, not redirect them to /login again.
+    //   * /auth/discord/me    -- this probes the Discord-session cookie,
+    //                            which can be absent even when the panel
+    //                            JWT is fine (admin who never logged via
+    //                            Discord).  401 here is a "no Discord
+    //                            session" signal, not a panel-JWT failure.
+    //   * /me/dashboard       -- same shape: 401 means the Discord session
+    //                            is gone or expired, not the panel JWT.
+    const isExemptFrom401 =
+      url.includes("/auth/login")
+      || url.includes("/auth/discord/me")
+      || url.includes("/me/dashboard");
+    if (status === 401 && _authToken && !isExemptFrom401) {
       console.warn("[AUTH] Token expired or invalid — redirecting to login.");
       _authToken = null;
       _onAuthError?.();
@@ -1221,6 +1236,90 @@ export const discordApi = {
       `/discord/dm/${user_id}`,
       { content },
     ),
+};
+
+// ---------------------------------------------------------------------------
+// Player dashboard (Phase 6) -- /api/v1/me/* via the disc_session cookie
+// ---------------------------------------------------------------------------
+//
+// These endpoints are NOT JWT-authenticated.  The disc_session cookie set
+// by the Phase-2 OAuth callback identifies the Discord user; the backend
+// then resolves the linked EOS_Id via discord_accounts.  Cookies travel
+// automatically with same-origin requests, so we just call the endpoints.
+
+export interface DashboardCharacter {
+  eos_id:     string;
+  name:       string | null;
+  tribe_id:   number | null;
+  tribe_name: string | null;
+  last_login: string | null;
+  permission_groups:        string[];
+  timed_permission_groups:  Array<{ group: string; expires_at_iso: string | null; expired: boolean }>;
+}
+
+export interface DashboardShop {
+  points:      number;
+  total_spent: number;
+  kits_raw:    string | null;
+}
+
+export interface DashboardDecay {
+  has_tribe:           boolean;
+  tribe_id:            number | null;
+  tribe_name:          string | null;
+  expire_at:           string | null;
+  hours_left:          number | null;     // negative when expired
+  status:              "safe" | "expiring" | "expired" | null;
+  scheduled_for_purge: boolean;
+  last_refresh_at:     string | null;
+  last_refresh_name:   string | null;
+  last_refresh_days:   number | null;
+}
+
+export interface DashboardDiscord {
+  discord_user_id:     string;
+  discord_username:    string | null;
+  discord_global_name: string | null;
+  discord_avatar:      string | null;
+}
+
+export interface DashboardResponse {
+  discord:   DashboardDiscord;
+  character: DashboardCharacter;
+  shop:      DashboardShop;
+  decay:     DashboardDecay;
+}
+
+export const meApi = {
+  /**
+   * Pull the combined character + shop + decay snapshot for the player
+   * bound to the current Discord session.  Throws 401 when the
+   * disc_session cookie is missing/expired, 403 when the Discord identity
+   * has no linked EOS yet, 404 when the linked EOS is not present in the
+   * live plugin DB.
+   */
+  dashboard: () => api.get<DashboardResponse>("/me/dashboard"),
+};
+
+// ---------------------------------------------------------------------------
+// Discord OAuth session (Phase 2 + 6)
+// ---------------------------------------------------------------------------
+
+export interface DiscordMeResponse {
+  discord_user_id:     string;
+  discord_username:    string | null;
+  discord_global_name: string | null;
+  discord_avatar:      string | null;
+  eos_id:              string | null;
+  linked_at:           string | null;
+}
+
+/** Discord-session-cookie probe and logout. */
+export const discordAuthApi = {
+  /** GET /auth/discord/me -- returns the Discord identity for this browser tab, or 401. */
+  me:     () => api.get<DiscordMeResponse>("/auth/discord/me"),
+  /** POST /auth/discord/logout -- clears the disc_session cookie server-side. */
+  logout: () => api.post("/auth/discord/logout"),
 };
 
 // ---------------------------------------------------------------------------
