@@ -7,6 +7,100 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.9] - 2026-04-23
+
+Quality-of-life batch focused on the daily ops workflows: bulk
+permission management, single-tribe purge controls, and
+fast-iteration knobs across the panel.
+
+### Added
+
+- **Bulk timed-permission grant** on Players: per-row checkboxes +
+  a master select-all in the table header drive a 'Bulk grant (N)'
+  button in the page header.  Click opens a modal with a group
+  dropdown, four duration shortcuts (+7d / +1m / +3m / +12m) and a
+  custom 'N days' input.  Backed by the new
+  `POST /api/v1/players/bulk-add-timed-perm` endpoint with
+  EXTENSION semantics: existing entries get bumped by the chosen
+  delta (clamped to `now` for already-expired ones), missing
+  entries get inserted with `now + delta`.  Other timed
+  permissions on those players are never touched; the response
+  reports `extended` / `added` counts separately.
+- **Excel-style column filters** on the Players table (Tribe,
+  Groups, Timed-Active, Timed-Expired).  Each filterable column
+  has a small filter icon next to its sort caret; click opens a
+  popup with a search box, select-all-with-indeterminate
+  master checkbox, a Clear button and one row per distinct
+  value found across the loaded players (plus an '(empty)'
+  sentinel for rows that have no value in the column).  Filters
+  AND across columns, ANY-match within a column, and the
+  Timed-perms popup is split into ACTIVE / EXPIRED tabs so 'who
+  currently has VIP' is separable from 'who once had VIP that's
+  now expired'.
+- **'+7d' quick-extend button** in the per-player timed-permission
+  editor, alongside the existing +1m / +3m / +12m for short-term
+  grants.
+- **Tribe-name sync** (`POST /api/v1/players/sync-tribes`):
+  sibling of the player-name sync.  Walks each scanned
+  container's SavedArks dir for `*.arktribe` files, extracts the
+  TribeName via a new `ark_parse_tribe.py` parser uploaded to the
+  remote host, and updates `tribe_name` in both
+  `ARKM_player_tribes` and `ARKM_tribe_decay` matched by
+  `targeting_team`.  New 'Sync Tribù' button next to 'Sync Nomi'
+  on the Players page.
+- **Per-row decay actions** (Tribes tab): a new red `Trash2 +
+  'Now'` button schedules a single tribe AND immediately fires
+  `ARKM.DM.Purge` over RCON on every active ARK instance via the
+  existing `exec_rcon` plumbing -- so the destructive sweep
+  doesn't have to wait for the next periodic plugin tick.  A
+  smaller `Clock` button next to it is the queue-only schedule
+  (legacy behaviour).  Pending tab gains a per-row `XCircle +
+  Cancel` button to remove the queued entry without firing the
+  sweep.
+- **Cluster-wide 'Run DM.Purge' button** on the Decay page header
+  (admin only).  Sends `ARKM.DM.Purge` to every active ARK
+  instance, returns a per-instance result with stdout/stderr
+  tails so the operator can confirm each server actually
+  executed the command.
+- **'Clear PvE' / 'Clear PvP' buttons** on the Leaderboard page
+  header.  Each wipes both the score table (`ARKM_lb_scores`)
+  and the per-event log (`ARKM_lb_events`) for the matching
+  `server_type` only -- the other mode's history is untouched.
+- **'Clear spawn table' button** on the Rare Dinos page.
+  Truncates `ARKM_rare_spawns` (the event log) without touching
+  the configured pool in `ARKM_rare_dinos`.
+
+### Changed
+
+- Players list cap raised from 100 to 500 to match the backend
+  default; the subtitle 'N registered' and the filtered/sorted
+  table now agree on small/medium clusters (real offset
+  pagination is still needed beyond 500).
+- The bulk-grant entry point lives in the page header now
+  (next to Sync buttons), not in an inline strip above the
+  table -- one less context jump, button-disabled state shows
+  immediately when no rows are selected.
+- 'Containers' was removed from the sidebar in 2.3.8; 2.3.9 has
+  no further nav changes.
+- Dashboard right-side 'Server status' box was removed in 2.3.8.
+
+### Fixed
+
+- Route-ordering bug: `DELETE /arkmania/rare-dinos/spawns` was
+  returning HTTP 422 because FastAPI matches routes in
+  declaration order and `DELETE /{dino_id}` was registered first
+  -- the literal string 'spawns' got parsed as int and validation
+  rejected it.  Same pattern fixed for the new
+  `/decay/run-purge` and `/decay/purge-tribe/{team}` endpoints.
+- React 'Minified error #31' (object passed to JSX) when a
+  FastAPI 422 validation array reached `setError(detail)`.  The
+  global axios response interceptor now coerces
+  `error.response.data.detail` to a single-line string when it's
+  an array or object, so every page is safe regardless of which
+  FastAPI failure mode it hits.
+
+---
+
 ## [2.3.8] - 2026-04-22
 
 UI consolidation, light theme, fresh blueprint catalog and rare-dino
