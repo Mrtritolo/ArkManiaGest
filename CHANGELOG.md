@@ -7,6 +7,171 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.0.0] - 2026-04-24
+
+First major release introducing **Discord integration** as a
+new capability of the panel.  Operators can now sign in to the
+admin UI with their Discord account, and the foundations are in
+place for player-link, role-mapping and dashboard features
+landing across the next minor releases.
+
+This release also bundles the self-update hardening completed
+during the 2.3.9 -> 3.0.0 cycle (no more empty 500s on install
+failure).
+
+### Added
+
+- **Discord OAuth2 sign-in** on the LoginPage: a new "Sign in
+  with Discord" button (Discord blurple, inline icon) kicks off
+  the Authorization Code flow against
+  `/api/v1/auth/discord/start`.  The callback at
+  `/api/v1/auth/discord/callback` finishes the exchange,
+  upserts the Discord identity into
+  `arkmaniagest_discord_accounts`, and redirects back to the
+  panel with the freshly-minted JWT delivered via URL fragment
+  (`#token=...`) so it never lands in nginx access logs.  The
+  React shell intercepts the fragment in `App.tsx`, scrubs it
+  immediately, and resolves the token via `authApi.me()`.
+- **Discord -> AppUser bridge** (admin-only):
+  `POST /api/v1/discord/link-app-user/{discord_user_id}` binds
+  a Discord identity to an existing panel `AppUser` (by id OR
+  username).  After linking, "Sign in with Discord" alone logs
+  the operator in as that AppUser with the AppUser's role --
+  no whitelist required.  `DELETE` unlinks.  A `UNIQUE` index
+  on `app_user_id` enforces a strict 1:1 mapping (linking the
+  same AppUser to two different Discord IDs returns 409).
+- **Whitelist-based auto-promotion** as a fallback path:
+  `DISCORD_ADMIN_USER_IDS`, `DISCORD_OPERATOR_USER_IDS` and
+  `DISCORD_VIEWER_USER_IDS` (CSV of Discord snowflakes) auto-
+  upsert a `discord:<id>` AppUser at the matching role on
+  first login -- handy for spinning up a small fleet of
+  trusted operators without pre-creating AppUsers.
+- **Discord diagnostic endpoint**
+  (`GET /api/v1/discord/config`, admin-only): reports which
+  `.env` keys are still missing for OAuth and bot
+  capabilities, never exposing the secret values themselves.
+  Drives the upcoming Settings -> Discord page banner.
+- **Discord accounts admin endpoint**
+  (`GET /api/v1/discord/accounts`): lists every known Discord
+  identity together with its current AppUser link and (where
+  set) ARK player link, ready to power the Phase-3 admin UI.
+- **Encrypted token storage**: Discord access + refresh tokens
+  travel through `app/discord/store.py` and are stored
+  AES-256-GCM-encrypted in `arkmaniagest_discord_accounts`,
+  reusing the existing `core/encryption.py` envelope.  Routes
+  never see plaintext unless they explicitly ask via
+  `include_tokens=True`.
+- **Discord HTTP wrapper** (`app/discord/client.py`): thin
+  httpx layer that handles both OAuth (Bearer) and bot
+  (`Bot <token>`) auth modes, honours one `429 Retry-After`
+  bounce, and exposes `exchange_code`, `refresh_token`,
+  `get_current_user`, `list_guild_roles`,
+  `add_guild_member_role`, `remove_guild_member_role` as
+  building blocks for the upcoming role-sync engine.
+- **DiscordRoleMap ORM table**
+  (`arkmaniagest_discord_role_map`): persists `app_role_name`
+  -> `discord_guild_id + discord_role_id` mappings with
+  `direction` (`discord->panel`, `panel->discord`,
+  `bidirectional`) and `priority` columns.  Schema only -- the
+  CRUD UI ships in a follow-up minor.
+
+### Changed
+
+- **Self-update install endpoint** is now wrapped in a
+  defensive try/except around both `preflight()` and
+  `run_self_update_async()`: any exception (subprocess
+  failure, missing sudoers entry, etc.) is now persisted to
+  `/tmp/arkmaniagest-update-status.json` AND surfaced to the
+  caller as a JSON `{detail, path}` payload, so the
+  Settings -> Update card no longer renders an empty "HTTP 500"
+  banner.  Pairs with a global FastAPI exception handler in
+  `main.py` that converts any uncaught exception to the same
+  JSON shape and logs the full traceback to
+  `backend-error.log`.
+- **JWT storage** now lives in `sessionStorage` (not
+  `localStorage`) keyed at `arkmaniagest.authToken`.  The
+  shell restores the token on F5 by calling `authApi.me()`
+  before falling back to the login screen, so a hard refresh
+  no longer forces re-login while keeping the token out of
+  cross-tab reach.
+- **systemd hardening trade-off**: `NoNewPrivileges` is now
+  `no` so the in-UI self-update can call `sudo
+  /opt/arkmaniagest/deploy/server-update.sh`.  The blast
+  radius stays bounded by a single literal-path entry in
+  `/etc/sudoers.d/arkmaniagest-update`.
+- **Beacon import endpoint** is exempted from the global 10 MB
+  request cap (raised the per-route ceiling so multi-mod
+  bundles up to 100 MB can be imported).  nginx
+  `client_max_body_size` is bumped to match.
+
+### Database
+
+- **New migration on boot**: idempotent ALTER on
+  `arkmaniagest_discord_accounts` adds `app_user_id INT NULL`,
+  a `UNIQUE` index `uq_discord_app_user`, and a foreign key
+  `fk_discord_app_user -> arkmaniagest_users(id) ON DELETE SET
+  NULL`.  Driven by the new `_add_column_if_missing()` helper
+  in `app/db/session.py`, guarded by `INFORMATION_SCHEMA` so
+  re-runs are no-ops.
+- **New table**: `arkmaniagest_discord_role_map` (id,
+  app_role_name, discord_guild_id, discord_role_id, direction,
+  priority, created_at, updated_at) -- created automatically
+  on first boot of 3.0.0.
+
+### Configuration
+
+- New `.env` keys (template in `deploy/.env.production`):
+  - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
+    `DISCORD_PUBLIC_KEY`
+  - `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`
+  - `DISCORD_REDIRECT_URI` (must match the URI registered on
+    the Discord Developer Portal *exactly*; the panel ships
+    `https://<host>/api/v1/auth/discord/callback`)
+  - `DISCORD_ADMIN_USER_IDS`, `DISCORD_OPERATOR_USER_IDS`,
+    `DISCORD_VIEWER_USER_IDS` (CSV, optional)
+
+### Security
+
+- Discord OAuth state + session cookies are JWT-signed with
+  the existing `JWT_SECRET` and segregated by `audience`
+  (`discord:state` vs `discord:session`) so a captured cookie
+  cannot be replayed across audiences.
+- The panel JWT issued at the end of the OAuth flow is
+  delivered to the SPA via URL fragment, so it never reaches
+  nginx access logs or upstream proxies.
+- All OAuth tokens are AES-256-GCM-encrypted at rest using
+  the existing envelope helper -- a snapshot of the panel DB
+  cannot be replayed against Discord without
+  `ARKM_ENCRYPTION_KEY`.
+
+### Documentation
+
+- New `docs/DISCORD_INTEGRATION.md` describing the 7-phase
+  rollout plan, the security model, and the operational
+  notes (what to register on the Discord Dev Portal, how to
+  rotate credentials, expected DB row layout).
+
+### Migration notes (2.3.9 -> 3.0.0)
+
+The release is **drop-in**: the panel boots normally without
+any of the `DISCORD_*` keys set (the Discord button is hidden
+in that case).  To enable Discord login:
+
+1. Create an application on the Discord Developer Portal,
+   copy the Client ID, Client Secret, Bot Token and Public
+   Key into `.env`.
+2. Register the redirect URI **exactly** as
+   `https://<your-host>/api/v1/auth/discord/callback` under
+   the application's "OAuth2 -> Redirects" tab.
+3. (Optional) Pre-populate `DISCORD_ADMIN_USER_IDS` so the
+   first Discord login lands directly in the admin UI; or,
+   log in as an existing admin AppUser and call `POST
+   /api/v1/discord/link-app-user/{discord_user_id}` to bind
+   that Discord identity to the AppUser explicitly.
+4. Restart the service -- the `app_user_id` column is added
+   automatically by the boot-time migration.
+
+---
 ## [2.3.9] - 2026-04-23
 
 Quality-of-life batch focused on the daily ops workflows: bulk
