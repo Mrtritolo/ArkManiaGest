@@ -1133,6 +1133,33 @@ export interface DiscordConfigStatus {
   admin_user_ids:      string[];
   operator_user_ids:   string[];
   viewer_user_ids:     string[];
+  vip_role_id:         string;
+  vip_sync_ready:      boolean;
+}
+
+/** Single per-player action row in a VipSyncReport. */
+export interface VipSyncAction {
+  discord_user_id: string;
+  eos_id:          string;
+  player_name:     string | null;
+  action:          "assigned" | "removed" | "noop" | "error";
+  detail:          string | null;
+}
+
+/** /api/v1/discord/sync-vip response (Phase 4 manual VIP reconciliation). */
+export interface VipSyncReport {
+  started_at_iso:    string;
+  finished_at_iso:   string;
+  duration_seconds:  number;
+  role_id:           string;
+  guild_id:          string;
+  linked_total:      number;
+  assigned_count:    number;
+  removed_count:     number;
+  noop_count:        number;
+  error_count:       number;
+  unmapped_with_vip: string[];
+  actions:           VipSyncAction[];
 }
 
 /** Single row from /api/v1/discord/accounts. */
@@ -1236,6 +1263,17 @@ export const discordApi = {
       `/discord/dm/${user_id}`,
       { content },
     ),
+
+  // -- VIP sync (Phase 4) ---------------------------------------------------
+  /**
+   * Manual VIP-role reconciliation.  Compares the panel/plugin DB's VIP
+   * status with the Discord role state for every linked discord_account
+   * and applies the diff.  Long-running for large guilds (one Discord
+   * call per linked player) -- the UI shows a spinner while it walks.
+   */
+  syncVip: () => api.post<VipSyncReport>("/discord/sync-vip", undefined, {
+    timeout: 300_000,   // 5 min: large guilds may need it
+  }),
 };
 
 // ---------------------------------------------------------------------------

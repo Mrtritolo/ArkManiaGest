@@ -25,10 +25,12 @@ import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, CheckCircle, RefreshCw,
   ShieldAlert, ShieldCheck, KeyRound, Bot, Users as UsersIcon, Copy,
+  Star, ArrowDownUp,
 } from "lucide-react";
 import {
   discordApi,
   type DiscordConfigStatus, type DiscordGuildInfo,
+  type VipSyncReport,
 } from "../../services/api";
 
 function extractError(err: unknown, fallback: string): string {
@@ -216,6 +218,9 @@ export default function ConfigTab() {
         )}
       </Section>
 
+      {/* VIP sync (Phase 4) */}
+      <VipSyncSection config={config} />
+
       {/* Auto-promotion whitelists */}
       <Section
         title={t("discord.config.section.whitelists", "Auto-promotion whitelists")}
@@ -264,6 +269,229 @@ export default function ConfigTab() {
       )}
     </div>
   );
+}
+
+// ── VIP sync section ─────────────────────────────────────────────────────────
+
+function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
+  const { t } = useTranslation();
+  const [running, setRunning] = useState(false);
+  const [report,  setReport]  = useState<VipSyncReport | null>(null);
+  const [error,   setError]   = useState("");
+  const [showAll, setShowAll] = useState(false);
+
+  async function runSync(): Promise<void> {
+    setRunning(true);
+    setError("");
+    try {
+      const res = await discordApi.syncVip();
+      setReport(res.data);
+    } catch (err: unknown) {
+      setError(extractError(err, t(
+        "discord.config.vipSync.errors.run",
+        { defaultValue: "VIP sync failed." },
+      )));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Section
+      title={t("discord.config.section.vipSync", { defaultValue: "VIP sync (panel -> Discord)" })}
+      ready={config.vip_sync_ready}
+      readyLabel={t("discord.config.ready.vipSync", { defaultValue: "Ready" })}
+      notReadyLabel={t("discord.config.notReady.vipSync", { defaultValue: "Not configured" })}
+      icon={<Star size={14} />}
+    >
+      <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
+        {t(
+          "discord.config.vipSync.explain",
+          {
+            defaultValue:
+              "Manual reconciliation.  Reads the VIP permission group (permanent OR active timed) from the plugin DB for every linked player and mirrors it onto the configured Discord role.  Players outside the link mapping are reported but never touched.",
+          },
+        )}
+      </p>
+      <KV
+        label={t("discord.config.field.vipRoleId", { defaultValue: "VIP role ID" })}
+        value={config.vip_role_id || "—"}
+        hint={!config.vip_role_id
+          ? t(
+              "discord.config.hint.vipRoleMissing",
+              { defaultValue: "Set DISCORD_VIP_ROLE_ID in .env and restart the service." },
+            )
+          : undefined}
+      />
+
+      {error && (
+        <div className="alert alert-error" style={{ marginTop: "0.5rem" }}>
+          <AlertCircle size={14} /> {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.6rem" }}>
+        <button
+          onClick={runSync}
+          disabled={running || !config.vip_sync_ready}
+          className="btn btn-primary btn-sm"
+        >
+          {running
+            ? <Loader2 size={12} className="pl-spin" />
+            : <ArrowDownUp size={12} />}
+          {" "}
+          {running
+            ? t("discord.config.vipSync.running", { defaultValue: "Syncing…" })
+            : t("discord.config.vipSync.run",     { defaultValue: "Sync VIP now" })}
+        </button>
+        {report && (
+          <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+            {t(
+              "discord.config.vipSync.lastRun",
+              {
+                defaultValue: "last run {{d}} -- {{s}}s, {{n}} checked",
+                d: new Date(report.finished_at_iso).toLocaleString(),
+                s: report.duration_seconds.toFixed(1),
+                n: report.linked_total,
+              },
+            )}
+          </span>
+        )}
+      </div>
+
+      {report && (
+        <div style={{
+          marginTop: "0.5rem",
+          padding: "0.55rem 0.7rem",
+          background: "var(--bg-card-muted, #f5f5f7)",
+          borderRadius: 6,
+          fontSize: "0.8rem",
+          display: "flex", flexDirection: "column", gap: "0.3rem",
+        }}>
+          <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
+            <Metric value={report.assigned_count} label="assegnati" color="#16a34a" />
+            <Metric value={report.removed_count}  label="rimossi"   color="#d97706" />
+            <Metric value={report.noop_count}     label="no-op"     color="#6b7280" />
+            <Metric value={report.error_count}    label="errori"    color={report.error_count > 0 ? "#dc2626" : "#6b7280"} />
+            <Metric value={report.unmapped_with_vip.length} label="stranger VIP" color="#6b7280" />
+          </div>
+
+          {report.unmapped_with_vip.length > 0 && (
+            <details style={{ fontSize: "0.75rem" }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
+                {t(
+                  "discord.config.vipSync.strangerVips",
+                  {
+                    defaultValue: "Discord members with VIP role but no EOS link ({{n}})",
+                    n: report.unmapped_with_vip.length,
+                  },
+                )}
+              </summary>
+              <div style={{
+                marginTop: "0.3rem", display: "flex", flexWrap: "wrap", gap: "0.25rem",
+              }}>
+                {report.unmapped_with_vip.map(id => (
+                  <span key={id} className="pl-chip" style={{ fontFamily: "monospace", fontSize: "0.7rem" }}>
+                    {id}
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {report.actions.length > 0 && (
+            <details style={{ fontSize: "0.75rem" }}>
+              <summary
+                style={{ cursor: "pointer", color: "var(--text-secondary)" }}
+                onClick={() => setShowAll(true)}
+              >
+                {t(
+                  "discord.config.vipSync.perRow",
+                  {
+                    defaultValue: "Per-row actions ({{n}})",
+                    n: report.actions.length,
+                  },
+                )}
+              </summary>
+              <div style={{ marginTop: "0.3rem", maxHeight: 240, overflowY: "auto" }}>
+                <table className="pl-table" style={{ fontSize: "0.72rem" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("discord.config.vipSync.col.player", { defaultValue: "Player" })}</th>
+                      <th>{t("discord.config.vipSync.col.discord", { defaultValue: "Discord" })}</th>
+                      <th>{t("discord.config.vipSync.col.action", { defaultValue: "Action" })}</th>
+                      <th>{t("discord.config.vipSync.col.detail", { defaultValue: "Detail" })}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(showAll ? report.actions : report.actions.slice(0, 50)).map((a, i) => (
+                      <tr key={`${a.discord_user_id}-${i}`}>
+                        <td>{a.player_name || a.eos_id.slice(0, 8) + "…"}</td>
+                        <td style={{ fontFamily: "monospace", fontSize: "0.68rem" }}>
+                          {a.discord_user_id}
+                        </td>
+                        <td>
+                          <span
+                            className="pl-chip"
+                            style={{
+                              background: actionBg(a.action),
+                              color:      actionColor(a.action),
+                              borderColor: actionBorder(a.action),
+                            }}
+                          >
+                            {a.action}
+                          </span>
+                        </td>
+                        <td style={{ color: "var(--text-secondary)" }}>{a.detail || ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!showAll && report.actions.length > 50 && (
+                  <div style={{ textAlign: "center", marginTop: "0.3rem" }}>
+                    <button onClick={() => setShowAll(true)} className="btn btn-secondary btn-sm">
+                      {t("common.showAll", { defaultValue: "Show all" })}
+                      {" "}({report.actions.length})
+                    </button>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function Metric({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 64 }}>
+      <div style={{ fontSize: "1.1rem", fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: "0.65rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function actionBg(a: string): string {
+  if (a === "assigned") return "#16a34a15";
+  if (a === "removed")  return "#d9770615";
+  if (a === "error")    return "#dc262615";
+  return "#6b728015";
+}
+function actionColor(a: string): string {
+  if (a === "assigned") return "#16a34a";
+  if (a === "removed")  return "#d97706";
+  if (a === "error")    return "#dc2626";
+  return "#6b7280";
+}
+function actionBorder(a: string): string {
+  if (a === "assigned") return "#16a34a40";
+  if (a === "removed")  return "#d9770640";
+  if (a === "error")    return "#dc262640";
+  return "#6b728040";
 }
 
 // ── Layout helpers ───────────────────────────────────────────────────────────
