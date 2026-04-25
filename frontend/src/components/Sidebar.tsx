@@ -88,6 +88,7 @@ const NAV_MAIN: NavItem[] = [
   // hint when the operator's Discord identity is not bound to an EOS, so
   // the entry is safe even for admins who never linked.
   { to: "/me",              i18nKey: "nav.myDashboard", icon: User },
+  { to: "/market",          i18nKey: "nav.market",      icon: ShoppingBag },
   { to: "/serverforge",     i18nKey: "nav.serverForge", icon: Server },
   { to: "/online",          i18nKey: "nav.online",     icon: Users },
   { to: "/players",         i18nKey: "nav.players",    icon: Database },

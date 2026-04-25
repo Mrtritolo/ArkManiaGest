@@ -341,6 +341,91 @@ async def get_plugin_db() -> AsyncSession:
             await session.close()
 
 
+async def create_marketplace_tables() -> None:
+    """
+    Create the ARKM_market_* tables in the PLUGIN database if missing.
+
+    These tables are panel-owned at boot (we create them) but written
+    by both plugin and panel at runtime; see
+    docs/MARKETPLACE_API_CONTRACT.md for the strict ownership matrix.
+
+    Idempotent: re-runs are no-ops thanks to ``CREATE TABLE IF NOT EXISTS``.
+    """
+    global _plugin_engine
+    if _plugin_engine is None:
+        return
+
+    from sqlalchemy import text as _t
+
+    async with _plugin_engine.begin() as conn:
+        await conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ARKM_market_items ("
+            "  id            BIGINT       PRIMARY KEY AUTO_INCREMENT,"
+            "  owner_eos_id  VARCHAR(64)  NOT NULL,"
+            "  owner_name    VARCHAR(64),"
+            "  buyer_eos_id  VARCHAR(64),"
+            "  buyer_name    VARCHAR(64),"
+            "  blueprint     VARCHAR(512) NOT NULL,"
+            "  quantity      INT          NOT NULL DEFAULT 1,"
+            "  quality       INT          NOT NULL DEFAULT 0,"
+            "  is_blueprint  TINYINT(1)   NOT NULL DEFAULT 0,"
+            "  durability    FLOAT        NOT NULL DEFAULT 0,"
+            "  rating        FLOAT        NOT NULL DEFAULT 0,"
+            "  item_data     LONGBLOB     NOT NULL,"
+            "  item_hash     CHAR(64)     NOT NULL UNIQUE,"
+            "  price         BIGINT       NOT NULL DEFAULT 0,"
+            "  status        ENUM('draft','listed','sold','claimed') "
+            "                NOT NULL DEFAULT 'draft',"
+            "  listed_at     TIMESTAMP    NULL,"
+            "  sold_at       TIMESTAMP    NULL,"
+            "  claimed_at    TIMESTAMP    NULL,"
+            "  created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
+            "  updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP "
+            "                ON UPDATE CURRENT_TIMESTAMP,"
+            "  INDEX ix_status (status),"
+            "  INDEX ix_owner (owner_eos_id),"
+            "  INDEX ix_buyer (buyer_eos_id),"
+            "  INDEX ix_blueprint (blueprint(128))"
+            ") ENGINE=InnoDB"
+        ))
+        await conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ARKM_market_wallets ("
+            "  eos_id     VARCHAR(64) PRIMARY KEY,"
+            "  balance    BIGINT      NOT NULL DEFAULT 0,"
+            "  updated_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP "
+            "             ON UPDATE CURRENT_TIMESTAMP"
+            ") ENGINE=InnoDB"
+        ))
+        await conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ARKM_market_transactions ("
+            "  id            BIGINT       PRIMARY KEY AUTO_INCREMENT,"
+            "  item_id       BIGINT       NOT NULL,"
+            "  buyer_eos_id  VARCHAR(64)  NOT NULL,"
+            "  seller_eos_id VARCHAR(64)  NOT NULL,"
+            "  price         BIGINT       NOT NULL,"
+            "  blueprint     VARCHAR(512),"
+            "  quantity      INT          NOT NULL DEFAULT 1,"
+            "  created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
+            "  INDEX ix_buyer  (buyer_eos_id),"
+            "  INDEX ix_seller (seller_eos_id),"
+            "  INDEX ix_item   (item_id)"
+            ") ENGINE=InnoDB"
+        ))
+        await conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ARKM_market_audit ("
+            "  id           BIGINT       PRIMARY KEY AUTO_INCREMENT,"
+            "  actor_eos_id VARCHAR(64),"
+            "  action       VARCHAR(32)  NOT NULL,"
+            "  item_id      BIGINT,"
+            "  amount       BIGINT,"
+            "  detail       VARCHAR(512),"
+            "  created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
+            "  INDEX ix_actor (actor_eos_id),"
+            "  INDEX ix_item  (item_id)"
+            ") ENGINE=InnoDB"
+        ))
+
+
 async def close_plugin_engine() -> None:
     """Dispose the plugin engine and reset the module-level singletons."""
     global _plugin_engine, _plugin_async_session

@@ -47,6 +47,9 @@ import LoginPage from "./pages/LoginPage";
 // session cookie but no panel JWT.
 import PlayerDashboardPage from "./pages/PlayerDashboardPage";
 
+// Marketplace (Phase 8) -- both Discord-standalone and admin-embedded.
+import MarketPage from "./pages/MarketPage";
+
 // App pages
 import DashboardPage from "./pages/DashboardPage";
 import DatabaseSettingsPage from "./pages/DatabaseSettingsPage";
@@ -281,6 +284,11 @@ function App() {
               <Route
                 path="/me"
                 element={<PlayerDashboardPage embedded />}
+              />
+              {/* Marketplace inside admin layout (embedded) */}
+              <Route
+                path="/market"
+                element={<MarketPage embedded />}
               />
               <Route path="/serverforge" element={<ServerForgePage />} />
               <Route path="/online" element={<OnlinePlayersPage />} />

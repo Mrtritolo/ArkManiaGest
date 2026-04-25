@@ -1637,6 +1637,143 @@ export const discordAuthApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Marketplace (Phase 8) -- /api/v1/market/*
+// ---------------------------------------------------------------------------
+//
+// Mixed-auth: browse / wallet / buy work via the disc_session cookie
+// (player view); admin can pass `?for_eos=...` on the read endpoints.
+
+export interface MarketListedItem {
+  id:           number;
+  blueprint:    string;
+  quantity:     number;
+  quality:      number;
+  is_blueprint: boolean;
+  durability:   number;
+  rating:       number;
+  price:        number;
+  owner_eos_id: string;
+  owner_name:   string | null;
+  listed_at:    string | null;
+}
+
+export interface MarketListedResponse {
+  total: number;
+  items: MarketListedItem[];
+}
+
+export interface MarketWallet {
+  eos_id:  string;
+  balance: number;
+}
+
+export interface MarketMyItem {
+  id:           number;
+  role:         "owner" | "buyer";
+  blueprint:    string;
+  quantity:     number;
+  quality:      number;
+  price:        number;
+  status:       "draft" | "listed" | "sold" | "claimed";
+  owner_eos_id: string;
+  owner_name:   string | null;
+  buyer_eos_id: string | null;
+  buyer_name:   string | null;
+  created_at:   string | null;
+  listed_at:    string | null;
+  sold_at:      string | null;
+  claimed_at:   string | null;
+}
+
+export interface MarketTransaction {
+  id:               number;
+  role:             "buyer" | "seller";
+  item_id:          number;
+  blueprint:        string | null;
+  quantity:         number;
+  price:            number;
+  counterpart_eos:  string;
+  counterpart_name: string | null;
+  created_at:       string | null;
+}
+
+export interface MarketBuyResult {
+  ok:             boolean;
+  transaction_id: number;
+  item_id:        number;
+  price:          number;
+  new_balance:    number;
+}
+
+export const marketApi = {
+  /**
+   * Browse listed items.  Public to any authenticated caller; query
+   * params support pagination, blueprint search, seller filter, price
+   * range, and sort.
+   */
+  listed: (params?: {
+    limit?:     number;
+    offset?:    number;
+    blueprint?: string;
+    seller?:    string;
+    min_price?: number;
+    max_price?: number;
+    sort?:      "newest" | "price_asc" | "price_desc";
+  }) => api.get<MarketListedResponse>("/market/listed", { params }),
+
+  /** Wallet balance for the current player (auto-creates row at 0). */
+  myWallet: (forEos?: string) => api.get<MarketWallet>("/market/me/wallet", {
+    params: forEos ? { for_eos: forEos } : undefined,
+  }),
+
+  /** Items I own (every status) + items queued for me. */
+  myItems: (forEos?: string) => api.get<MarketMyItem[]>("/market/me/items", {
+    params: forEos ? { for_eos: forEos } : undefined,
+  }),
+
+  /** Last 100 transactions where I'm buyer or seller. */
+  myTransactions: (forEos?: string) =>
+    api.get<{ transactions: MarketTransaction[] }>("/market/me/transactions", {
+      params: forEos ? { for_eos: forEos } : undefined,
+    }),
+
+  /** Owner: set price + flip from draft to listed. */
+  listForSale: (itemId: number, price: number) =>
+    api.post<MarketMyItem>(`/market/list/${itemId}`, { price }),
+
+  /** Owner: cancel a listing (item returns via /market claim). */
+  cancel: (itemId: number) =>
+    api.post<{ ok: boolean; item_id: number; hint: string }>(`/market/cancel/${itemId}`),
+
+  /** Buy a listed item (atomic; debits wallet, credits seller). */
+  buy: (itemId: number) =>
+    api.post<MarketBuyResult>(`/market/buy/${itemId}`),
+
+  // -- Admin --------------------------------------------------------------
+  adminCredit: (body: { eos_id: string; amount: number; reason?: string }) =>
+    api.post<{ ok: boolean; eos_id: string; new_balance: number }>(
+      "/market/admin/wallet/credit", body,
+    ),
+  adminAudit: (params?: {
+    limit?:   number;
+    offset?:  number;
+    actor?:   string;
+    action?:  string;
+    item_id?: number;
+  }) => api.get<{
+    items: Array<{
+      id:           number;
+      actor_eos_id: string | null;
+      action:       string;
+      item_id:      number | null;
+      amount:       number | null;
+      detail:       string | null;
+      created_at:   string | null;
+    }>
+  }>("/market/admin/audit", { params }),
+};
+
+// ---------------------------------------------------------------------------
 // SQL Console (admin only)
 // ---------------------------------------------------------------------------
 

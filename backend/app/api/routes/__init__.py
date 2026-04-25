@@ -20,6 +20,7 @@ from app.api.routes import (
     auth,
     auth_discord,
     me,
+    market,
     servers,
     instance_actions,
     system_update,
@@ -56,6 +57,9 @@ router.include_router(auth_discord.router, tags=["Auth (Discord)"])
 # linked EOS gets 403; an unauthenticated caller gets 401.  No router-level
 # guard so the dependency can speak for itself.
 router.include_router(me.router, prefix="/me", tags=["Me (player dashboard)"])
+# Marketplace (Phase 8) -- mixed auth (disc_session + admin JWT)
+# handled inside each handler.  No router-level guard.
+router.include_router(market.router, prefix="/market", tags=["Marketplace"])
 router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 router.include_router(public.router,   prefix="/public",   tags=["Public"])
 

@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
     # 3. Initialise the async DB engines (panel + plugin)
     from app.db.session import (
         init_engine, init_plugin_engine, create_app_tables,
+        create_marketplace_tables,
     )
     if server_settings.DB_PASSWORD:
         init_engine(server_settings.database_url, debug=server_settings.DEBUG)
@@ -77,6 +78,15 @@ async def lifespan(app: FastAPI):
             )
         else:
             log.info("Plugin DB: shared with panel DB (no PLUGIN_DB_* configured)")
+
+        # 5b. Create the marketplace tables in the plugin DB if missing.
+        # See docs/MARKETPLACE_API_CONTRACT.md -- panel-owned at boot,
+        # written by both plugin and panel at runtime.
+        try:
+            await create_marketplace_tables()
+            log.info("ARKM_market_* marketplace tables verified / created")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Marketplace table init failed (non-fatal): %s", exc)
     else:
         log.warning(
             "DB_PASSWORD not set in .env — backend running in limited mode"

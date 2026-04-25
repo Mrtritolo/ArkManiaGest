@@ -46,6 +46,7 @@
     "sqlConsole": "SQL Console",
     "discord": "Discord",
     "myDashboard": "My dashboard",
+    "market":      "Marketplace",
     "logout": "Log out"
   },
   "auth": {
