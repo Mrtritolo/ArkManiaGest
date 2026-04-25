@@ -594,6 +594,47 @@ export const playersApi = {
     }>("/players/sync-names/resolve", { resolutions }),
 
   /**
+   * Insert orphan EOS rows (from sync-names not_matched) into Players.
+   * Each entry needs eos_id; player_name is optional but recommended.
+   */
+  importFromProfiles: (
+    players: Array<{ eos_id: string; player_name?: string | null }>,
+    default_groups: string = "Default,",
+  ) => api.post<{
+    success:          boolean;
+    requested:        number;
+    inserted:         number;
+    skipped_existing: number;
+    errors:           string[];
+  }>("/players/import-from-profiles", { players, default_groups }),
+
+  /**
+   * Preview every .arkprofile file across the cluster for a given EOS.
+   * Used by the 'Wipe character cluster-wide' modal as the confirmation
+   * step BEFORE the destructive DELETE call.
+   */
+  listCharacterFiles: (eos_id: string) =>
+    api.get<{
+      eos_id:      string;
+      total_files: number;
+      files:       Array<{ path: string; container: string; machine_id: number }>;
+      errors:      string[];
+    }>(`/players/${eos_id}/character-files`),
+
+  /**
+   * Wipe every .arkprofile for an EOS across the cluster (cluster-wide
+   * character delete).  Destructive: the player respawns as a brand-new
+   * character on next login.  The Players row is NOT touched.
+   */
+  deleteCharacterFiles: (eos_id: string) =>
+    api.delete<{
+      eos_id:        string;
+      total_deleted: number;
+      deleted:       Array<{ path: string; container: string; machine_id: number }>;
+      errors:        string[];
+    }>(`/players/${eos_id}/character-files`),
+
+  /**
    * Sibling of syncNames: scans .arktribe binary files instead of
    * .arkprofile and writes the discovered tribe display names into
    * ARKM_player_tribes + ARKM_tribe_decay (matched by targeting_team).

@@ -1324,6 +1324,248 @@ async def resolve_ambiguous_player_names(
     }
 
 
+# ── Import orphan EOS rows from the not_matched list ─────────────────────────
+
+class _PlayerImportEntry(BaseModel):
+    """One profile to insert into the Players table."""
+    eos_id:      str
+    player_name: Optional[str] = None
+
+
+class _PlayersImportRequest(BaseModel):
+    players: list[_PlayerImportEntry]
+    # Default permission group(s) -- the plugin treats trailing comma as
+    # part of the format, so we keep "Default," verbatim.
+    default_groups: str = "Default,"
+
+
+@router.post("/import-from-profiles")
+async def import_players_from_profiles(
+    body: _PlayersImportRequest,
+    db:   AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Insert orphan EOS rows discovered by ``/sync-names`` (the
+    ``not_matched`` list) into the ``Players`` table.
+
+    Use case: players whose ``.arkprofile`` files exist on the cluster
+    but who were never registered by the Permissions plugin -- typically
+    because the plugin was missing/disabled when they first joined, or
+    they disconnected too fast for the insert to fire.
+
+    Per entry:
+      * EOS already in DB -> skipped (no double-insert)
+      * EOS missing       -> inserted with PermissionGroups = default_groups
+                             (default: 'Default,'), Giocatore = player_name
+
+    Returns: requested / inserted / skipped_existing / errors.
+    """
+    requested = len(body.players)
+    if not body.players:
+        return {"success": True, "requested": 0, "inserted": 0,
+                "skipped_existing": 0, "errors": []}
+
+    # Pre-load existing EOS to skip dup inserts (case-insensitive compare)
+    existing_rows = await db.execute(select(Player.EOS_Id))
+    existing_lower: set[str] = {r[0].lower() for r in existing_rows.all() if r[0]}
+
+    inserted = 0
+    skipped  = 0
+    errors:  list[str] = []
+    seen_in_batch: set[str] = set()  # de-dupe within the same request
+
+    for entry in body.players:
+        eos = (entry.eos_id or "").strip()
+        if not eos:
+            skipped += 1
+            continue
+        eos_lower = eos.lower()
+        if eos_lower in existing_lower or eos_lower in seen_in_batch:
+            skipped += 1
+            continue
+        seen_in_batch.add(eos_lower)
+        name = (entry.player_name or "").strip() or None
+        try:
+            db.add(Player(
+                EOS_Id                = eos,
+                Giocatore             = name,
+                PermissionGroups      = body.default_groups,
+                TimedPermissionGroups = "",
+            ))
+            inserted += 1
+        except Exception as exc:
+            errors.append(f"{eos}: {exc}")
+
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        return {
+            "success":          False,
+            "requested":        requested,
+            "inserted":         0,
+            "skipped_existing": skipped,
+            "errors":           [f"commit failed: {exc}"],
+        }
+
+    return {
+        "success":          True,
+        "requested":        requested,
+        "inserted":         inserted,
+        "skipped_existing": skipped,
+        "errors":           errors,
+    }
+
+
+# ── Cluster-wide character file wipe (per EOS) ───────────────────────────────
+
+@router.get("/{eos_id}/character-files")
+async def list_character_files_for_eos(
+    eos_id: str,
+):
+    """
+    Preview which ``.arkprofile`` files exist for *eos_id* across every
+    container's SavedArks directory.  Read-only; pair with the DELETE
+    endpoint below for the actual wipe.
+
+    Returns: { eos_id, total_files, files: [{path, container, machine_id}] }
+    """
+    containers_map = get_plugin_config_sync("containers_map")
+    if not containers_map or not containers_map.get("machines"):
+        raise HTTPException(
+            status_code=404,
+            detail="No containers scanned. Run a container scan first.",
+        )
+
+    eos_clean = (eos_id or "").strip()
+    if not eos_clean:
+        raise HTTPException(status_code=422, detail="eos_id is required.")
+
+    found: list[dict] = []
+    errors: list[str] = []
+
+    # Build per-machine target list as in /sync-names so we touch every
+    # container that has a SavedArks path declared.
+    for mid_str, mdata in containers_map["machines"].items():
+        mid = int(mid_str)
+        machine = get_machine_sync(mid)
+        if not machine:
+            errors.append(f"Machine {mid} not found in DB.")
+            continue
+        for container in mdata.get("containers", []):
+            saved = container.get("paths", {}).get("saved_arks")
+            if not saved:
+                continue
+            try:
+                with SSHManager(
+                    host=machine["hostname"],
+                    username=machine["ssh_user"],
+                    password=machine.get("ssh_password"),
+                    key_path=machine.get("ssh_key_path"),
+                    port=machine.get("ssh_port", 22),
+                ) as ssh:
+                    out, _, code = ssh.execute(
+                        f'find "{saved}" -maxdepth 3 -name "{eos_clean}.arkprofile" -type f 2>/dev/null'
+                    )
+                    if code == 0 and out.strip():
+                        for p in (l.strip() for l in out.strip().splitlines() if l.strip()):
+                            found.append({
+                                "path":       p,
+                                "container":  container["name"],
+                                "machine_id": mid,
+                            })
+            except Exception as exc:
+                errors.append(f"SSH {machine['hostname']}/{container.get('name')}: {exc}")
+
+    return {
+        "eos_id":      eos_clean,
+        "total_files": len(found),
+        "files":       found,
+        "errors":      errors,
+    }
+
+
+@router.delete("/{eos_id}/character-files")
+async def delete_character_files_for_eos(
+    eos_id: str,
+):
+    """
+    Wipe every ``<eos_id>.arkprofile`` file across every container's
+    SavedArks directory.
+
+    Destructive!  After this:
+      * The player's character is gone from every map of the cluster.
+      * Their next login spawns them as a brand-new character.
+      * The ``Players`` row in the plugin DB is NOT touched -- delete
+        it separately if you also want to wipe their permissions.
+
+    Returns: { eos_id, total_deleted, deleted: [...], errors: [...] }
+    """
+    containers_map = get_plugin_config_sync("containers_map")
+    if not containers_map or not containers_map.get("machines"):
+        raise HTTPException(
+            status_code=404,
+            detail="No containers scanned. Run a container scan first.",
+        )
+
+    eos_clean = (eos_id or "").strip()
+    if not eos_clean:
+        raise HTTPException(status_code=422, detail="eos_id is required.")
+    # Guard against trivially-bad inputs that would expand the find filter
+    # into something dangerous (path separators, wildcards, double-quotes).
+    if any(ch in eos_clean for ch in "/\\*?\"'`;|&$<>"):
+        raise HTTPException(status_code=422, detail="eos_id contains invalid characters.")
+
+    deleted: list[dict] = []
+    errors:  list[str] = []
+
+    for mid_str, mdata in containers_map["machines"].items():
+        mid = int(mid_str)
+        machine = get_machine_sync(mid)
+        if not machine:
+            errors.append(f"Machine {mid} not found in DB.")
+            continue
+        for container in mdata.get("containers", []):
+            saved = container.get("paths", {}).get("saved_arks")
+            if not saved:
+                continue
+            try:
+                with SSHManager(
+                    host=machine["hostname"],
+                    username=machine["ssh_user"],
+                    password=machine.get("ssh_password"),
+                    key_path=machine.get("ssh_key_path"),
+                    port=machine.get("ssh_port", 22),
+                ) as ssh:
+                    # First find which files exist (so we can report precisely)
+                    out, _, code = ssh.execute(
+                        f'find "{saved}" -maxdepth 3 -name "{eos_clean}.arkprofile" -type f 2>/dev/null'
+                    )
+                    if code != 0 or not out.strip():
+                        continue
+                    for p in (l.strip() for l in out.strip().splitlines() if l.strip()):
+                        # Wrap path in quotes; the EOS-format means it's
+                        # safe ASCII hex but we belt-and-braces anyway.
+                        rm_out, rm_err, rm_code = ssh.execute(f'rm -f "{p}"')
+                        if rm_code == 0:
+                            deleted.append({
+                                "path":       p,
+                                "container":  container["name"],
+                                "machine_id": mid,
+                            })
+                        else:
+                            errors.append(f"rm failed on {p}: {rm_err.strip() or rm_out.strip() or 'exit '+str(rm_code)}")
+            except Exception as exc:
+                errors.append(f"SSH {machine['hostname']}/{container.get('name')}: {exc}")
+
+    return {
+        "eos_id":         eos_clean,
+        "total_deleted":  len(deleted),
+        "deleted":        deleted,
+        "errors":         errors,
+    }
+
+
 @router.post("/sync-tribes")
 async def sync_tribe_names_from_files(
     machine_id: Optional[int] = Query(None, description="Restrict sync to a single machine"),

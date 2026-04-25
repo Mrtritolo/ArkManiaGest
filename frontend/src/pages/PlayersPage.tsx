@@ -614,6 +614,26 @@ export default function PlayersPage() {
   const [chosenNames, setChosenNames]     = useState<Record<number, string>>({})
   const [applyingAmbig, setApplyingAmbig] = useState(false)
 
+  // Phase 7+: orphan profiles found by sync-names (EOS present on disk
+  // but not in Players DB).  Banner + modal lets the admin import them
+  // in bulk into Players with a default permission group.
+  const [notMatchedList, setNotMatchedList] = useState<Array<{ eos_id: string; player_name: string; source: string }>>([])
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importChecked, setImportChecked]     = useState<Record<string, boolean>>({})
+  const [importing, setImporting]             = useState(false)
+
+  // Phase 7+: cluster-wide character file wipe modal.  Two-step:
+  // (1) preview the .arkprofile files via GET, (2) confirm + DELETE.
+  const [wipeOpen, setWipeOpen] = useState(false)
+  const [wipePreview, setWipePreview] = useState<{
+    eos_id: string
+    total_files: number
+    files: Array<{ path: string; container: string; machine_id: number }>
+    errors: string[]
+  } | null>(null)
+  const [wipeLoading, setWipeLoading] = useState(false)
+  const [wiping, setWiping]           = useState(false)
+
   async function handleSyncNames(machineId?: number, containerName?: string) {
     setSyncing(true); setError(''); setSyncResult(null)
     try {
@@ -635,6 +655,26 @@ export default function PlayersPage() {
           initial[row.player_id] = row.candidates[0]?.name ?? ''
         }
         setChosenNames(initial)
+      }
+
+      // Orphan profiles -- EOS exists on disk but never inserted into
+      // Players.  Surface a persistent banner + a bulk-import modal.
+      // Filter: file_id is the EOS (32-char hex), use it as the source
+      // of truth (eos_id from the binary parser is often null for
+      // orphan profiles).
+      if (res.data.not_matched && res.data.not_matched.length > 0) {
+        const orphans = res.data.not_matched
+          .map(n => ({
+            eos_id:      n.file_id,                           // filename = EOS
+            player_name: n.player_name || '',
+            source:      n.source,
+          }))
+          // Drop entries where filename isn't EOS-shaped (32 hex chars)
+          .filter(n => /^[0-9a-f]{32}$/i.test(n.eos_id))
+        setNotMatchedList(orphans)
+        const checks: Record<string, boolean> = {}
+        for (const o of orphans) checks[o.eos_id] = true
+        setImportChecked(checks)
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || t('players.errors.syncNames'))
@@ -664,6 +704,75 @@ export default function PlayersPage() {
         || t('players.ambiguous.errors.apply', { defaultValue: 'Failed to apply choices.' }))
     } finally {
       setApplyingAmbig(false)
+    }
+  }
+
+  async function applyImportMissing(): Promise<void> {
+    const selected = notMatchedList.filter(o => importChecked[o.eos_id])
+    if (selected.length === 0) {
+      setImportModalOpen(false)
+      return
+    }
+    setImporting(true)
+    try {
+      const res = await playersApi.importFromProfiles(
+        selected.map(o => ({ eos_id: o.eos_id, player_name: o.player_name || null })),
+      )
+      setSuccess(t('players.importMissing.done', {
+        defaultValue: 'Importati {{n}} giocatori ({{s}} già presenti).',
+        n: res.data.inserted,
+        s: res.data.skipped_existing,
+      }))
+      // Drop imported ones from the orphan list so the banner count goes
+      // down; admin can re-open the modal to retry partial failures.
+      setNotMatchedList(prev => prev.filter(o => !importChecked[o.eos_id]))
+      setImportChecked({})
+      setImportModalOpen(false)
+      loadPlayers(); loadStats()
+    } catch (err: any) {
+      setError(err.response?.data?.detail
+        || t('players.importMissing.errors.apply', { defaultValue: 'Import failed.' }))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function openWipeModal(): Promise<void> {
+    if (!selectedPlayer) return
+    setWipeOpen(true)
+    setWipePreview(null)
+    setWipeLoading(true)
+    try {
+      const res = await playersApi.listCharacterFiles(selectedPlayer.eos_id)
+      setWipePreview(res.data)
+    } catch (err: any) {
+      setError(err.response?.data?.detail
+        || t('players.wipe.errors.preview', { defaultValue: 'Failed to scan files.' }))
+      setWipeOpen(false)
+    } finally {
+      setWipeLoading(false)
+    }
+  }
+
+  async function confirmWipe(): Promise<void> {
+    if (!selectedPlayer || !wipePreview) return
+    setWiping(true)
+    try {
+      const res = await playersApi.deleteCharacterFiles(selectedPlayer.eos_id)
+      setSuccess(t('players.wipe.done', {
+        defaultValue: 'Eliminati {{n}} file personaggio sul cluster.',
+        n: res.data.total_deleted,
+      }))
+      if (res.data.errors?.length > 0) {
+        setError(res.data.errors.join('; '))
+      }
+      setWipeOpen(false)
+      setWipePreview(null)
+    } catch (err: any) {
+      setError(err.response?.data?.detail
+        || t('players.wipe.errors.delete', { defaultValue: 'Wipe failed.' }))
+    } finally {
+      setWiping(false)
     }
   }
 
@@ -971,6 +1080,31 @@ export default function PlayersPage() {
         </div>
       )}
 
+      {/* Phase 7+: orphan profiles banner -- always-visible call-to-action
+          when sync-names found EOS files that are NOT yet in Players DB. */}
+      {notMatchedList.length > 0 && (
+        <div className="pl-alert pl-alert-warn" style={{ marginBottom: '0.5rem', alignItems: 'center', gap: '0.5rem' }}>
+          <AlertCircle size={14} />
+          <span style={{ flex: 1 }}>
+            {t('players.importMissing.banner', {
+              defaultValue: 'Trovati {{n}} profili .arkprofile senza riga in Players. Vuoi importarli?',
+              n: notMatchedList.length,
+            })}
+          </span>
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="btn btn-primary btn-sm"
+          >
+            <Download size={12} />{' '}
+            {t('players.importMissing.openModal', {
+              defaultValue: 'Importa giocatori mancanti ({{n}})',
+              n: notMatchedList.length,
+            })}
+          </button>
+          <button onClick={() => setNotMatchedList([])} className="pl-alert-x"><X size={14}/></button>
+        </div>
+      )}
+
       {/* Messaggi */}
       {error && <div className="pl-alert pl-alert-err"><X size={14} /> {error}<button onClick={() => setError('')} className="pl-alert-x"><X size={14}/></button></div>}
       {success && <div className="pl-alert pl-alert-ok"><UserCheck size={14} /> {success}</div>}
@@ -1259,6 +1393,16 @@ export default function PlayersPage() {
                 <p className="pl-detail-eos">{selectedPlayer.eos_id}</p>
               </div>
               <button onClick={() => setShowBanDialog(true)} className="pl-btn-icon" title={t('players.detail.banTooltip')} style={{ color: 'var(--danger)' }}><ShieldOff size={16} /></button>
+              <button
+                onClick={openWipeModal}
+                className="pl-btn-icon"
+                title={t('players.detail.wipeTooltip', {
+                  defaultValue: 'Elimina personaggio cluster-wide (.arkprofile)',
+                })}
+                style={{ color: 'var(--danger)' }}
+              >
+                <Skull size={16} />
+              </button>
               <button onClick={() => setSelectedPlayer(null)} className="pl-btn-icon"><X size={16} /></button>
             </div>
 
@@ -2062,6 +2206,269 @@ export default function PlayersPage() {
                   {t('players.discord.dmSend', { defaultValue: 'Send DM' })}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import-missing modal: lists every orphan EOS with a checkbox.
+          Default = all checked.  Submit calls /import-from-profiles. */}
+      {importModalOpen && (
+        <div
+          onClick={() => !importing && setImportModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, var(--bg-card, #fff))',
+              color: 'var(--text)', padding: '1rem 1.1rem',
+              borderRadius: 8, minWidth: 'min(640px, 95vw)',
+              maxWidth: 'min(720px, 95vw)', maxHeight: '85vh',
+              boxShadow: '0 12px 50px rgba(0,0,0,0.4)',
+              display: 'flex', flexDirection: 'column',
+            }}
+          >
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: '0.6rem', borderBottom: '1px solid var(--border)',
+              paddingBottom: '0.5rem',
+            }}>
+              <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Download size={16} />
+                {t('players.importMissing.title', {
+                  defaultValue: 'Importa {{n}} giocatori mancanti',
+                  n: notMatchedList.length,
+                })}
+              </span>
+              <button
+                onClick={() => setImportModalOpen(false)}
+                disabled={importing}
+                className="pl-btn-icon"
+                style={{ width: 26, height: 26 }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
+              {t('players.importMissing.intro', {
+                defaultValue: 'Verranno inserite righe in `Players` con `PermissionGroups=Default,`.  Le entry già presenti vengono saltate automaticamente.',
+              })}
+            </div>
+
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              marginBottom: '0.5rem', fontSize: '0.78rem',
+            }}>
+              <button
+                onClick={() => setImportChecked(Object.fromEntries(notMatchedList.map(o => [o.eos_id, true])))}
+                disabled={importing}
+                className="btn btn-secondary btn-sm"
+              >
+                {t('players.importMissing.checkAll', { defaultValue: 'Seleziona tutti' })}
+              </button>
+              <button
+                onClick={() => setImportChecked({})}
+                disabled={importing}
+                className="btn btn-secondary btn-sm"
+              >
+                {t('players.importMissing.uncheckAll', { defaultValue: 'Deseleziona tutti' })}
+              </button>
+              <span style={{ marginLeft: 'auto', color: 'var(--text-secondary)' }}>
+                {Object.values(importChecked).filter(Boolean).length} / {notMatchedList.length}
+              </span>
+            </div>
+
+            <div style={{
+              flex: 1, overflowY: 'auto',
+              border: '1px solid var(--border)', borderRadius: 6,
+              padding: '0.25rem 0',
+            }}>
+              {notMatchedList.map(o => {
+                const checked = !!importChecked[o.eos_id]
+                return (
+                  <label key={o.eos_id} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.3rem 0.55rem',
+                    cursor: importing ? 'not-allowed' : 'pointer',
+                    background: checked ? 'var(--accent-50, #2563eb12)' : 'transparent',
+                    borderBottom: '1px solid var(--border)',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={importing}
+                      onChange={() => setImportChecked(prev => ({ ...prev, [o.eos_id]: !prev[o.eos_id] }))}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                        {o.player_name || <span style={{ color: 'var(--text-secondary)' }}>(no name)</span>}
+                      </div>
+                      <div style={{
+                        fontSize: '0.7rem', color: 'var(--text-secondary)',
+                        fontFamily: 'monospace', wordBreak: 'break-all',
+                      }}>
+                        {o.eos_id}
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.7rem' }}>
+              <button
+                onClick={() => setImportModalOpen(false)}
+                disabled={importing}
+                className="btn btn-ghost btn-sm"
+              >
+                {t('common.cancel', { defaultValue: 'Annulla' })}
+              </button>
+              <button
+                onClick={applyImportMissing}
+                disabled={importing || Object.values(importChecked).every(v => !v)}
+                className="btn btn-primary btn-sm"
+              >
+                {importing
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.importMissing.importing', { defaultValue: 'Importo…' })}</>
+                  : <><Download size={12} /> {t('players.importMissing.confirm', {
+                      defaultValue: 'Importa ({{n}})',
+                      n: Object.values(importChecked).filter(Boolean).length,
+                    })}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cluster-wide character wipe modal: opens from the Skull button on
+          the player detail panel.  Two-step: GET the list of files, then
+          confirm + DELETE. */}
+      {wipeOpen && (
+        <div
+          onClick={() => !wiping && (setWipeOpen(false), setWipePreview(null))}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, var(--bg-card, #fff))',
+              color: 'var(--text)', padding: '1rem 1.1rem',
+              borderRadius: 8, minWidth: 'min(560px, 95vw)',
+              maxWidth: 'min(680px, 95vw)', maxHeight: '85vh',
+              boxShadow: '0 12px 50px rgba(0,0,0,0.4)',
+              display: 'flex', flexDirection: 'column',
+            }}
+          >
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: '0.6rem', borderBottom: '1px solid #dc262640',
+              paddingBottom: '0.5rem',
+            }}>
+              <span style={{ fontWeight: 600, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Skull size={16} />
+                {t('players.wipe.title', {
+                  defaultValue: 'Elimina personaggio cluster-wide',
+                })}
+              </span>
+              <button
+                onClick={() => { setWipeOpen(false); setWipePreview(null) }}
+                disabled={wiping}
+                className="pl-btn-icon"
+                style={{ width: 26, height: 26 }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+              {t('players.wipe.intro', {
+                defaultValue: 'Verranno cancellati tutti i file `.arkprofile` di questo EOS dai SavedArks di ogni container.  Il giocatore al prossimo login spawn-erà come personaggio nuovo.  La riga in `Players` (permessi) NON viene toccata.',
+              })}
+            </div>
+
+            <div style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+              <strong>{t('players.wipe.player', { defaultValue: 'Giocatore:' })}</strong>{' '}
+              {selectedPlayer?.name || '(no name)'}
+              <br />
+              <strong>EOS:</strong>{' '}
+              <span style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                {selectedPlayer?.eos_id}
+              </span>
+            </div>
+
+            <div style={{
+              flex: 1, overflowY: 'auto',
+              border: '1px solid var(--border)', borderRadius: 6,
+              padding: '0.5rem 0.6rem', minHeight: 100,
+              background: 'var(--bg-card-muted, #f5f5f7)',
+              fontSize: '0.78rem',
+            }}>
+              {wipeLoading || !wipePreview ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
+                  <Loader2 size={12} className="pl-spin" />{' '}
+                  {t('players.wipe.scanning', { defaultValue: 'Scansiono i container…' })}
+                </div>
+              ) : wipePreview.total_files === 0 ? (
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  {t('players.wipe.noFiles', { defaultValue: 'Nessun file .arkprofile trovato per questo EOS.  Il personaggio è già pulito.' })}
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: '0.4rem', fontWeight: 600 }}>
+                    {t('players.wipe.found', {
+                      defaultValue: '{{n}} file da eliminare:',
+                      n: wipePreview.total_files,
+                    })}
+                  </div>
+                  {wipePreview.files.map((f, i) => (
+                    <div key={i} style={{
+                      fontFamily: 'monospace', fontSize: '0.7rem',
+                      color: 'var(--text-secondary)', wordBreak: 'break-all',
+                      padding: '0.15rem 0',
+                    }}>
+                      {f.path}
+                    </div>
+                  ))}
+                  {wipePreview.errors?.length > 0 && (
+                    <div style={{ marginTop: '0.4rem', color: '#dc2626' }}>
+                      {wipePreview.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.7rem' }}>
+              <button
+                onClick={() => { setWipeOpen(false); setWipePreview(null) }}
+                disabled={wiping}
+                className="btn btn-ghost btn-sm"
+              >
+                {t('common.cancel', { defaultValue: 'Annulla' })}
+              </button>
+              <button
+                onClick={confirmWipe}
+                disabled={wiping || wipeLoading || !wipePreview || wipePreview.total_files === 0}
+                className="btn btn-primary btn-sm"
+                style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              >
+                {wiping
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.wipe.deleting', { defaultValue: 'Elimino…' })}</>
+                  : <><Skull size={12} /> {t('players.wipe.confirm', {
+                      defaultValue: 'Elimina {{n}} file',
+                      n: wipePreview?.total_files ?? 0,
+                    })}</>}
+              </button>
             </div>
           </div>
         </div>
