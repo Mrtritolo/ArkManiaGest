@@ -103,10 +103,58 @@ class UpdateStatus:
 # ── Status file helpers ──────────────────────────────────────────────────────
 
 def _write_status(status: UpdateStatus) -> None:
-    """Atomically replace the JSON status file."""
+    """
+    Atomically replace the JSON status file.
+
+    The atomic-rename pattern (write tmp, then rename over destination)
+    can fail with EPERM under /tmp's sticky bit when the destination
+    file was created by a different user -- which happens here whenever
+    server-update.sh (running as root via sudo) writes a status entry
+    and the next invocation comes from the panel process (running as
+    the unprivileged service user `arkmania`).  Linux sticky-bit
+    semantics: only the file owner OR root can delete/rename a file
+    they don't own, even when the directory is world-writable.
+
+    Two-stage fallback so we never crash the caller on a status write:
+      1. Try the normal atomic rename.
+      2. On PermissionError (EPERM), try to chmod 666 the target so we
+         can replace it next time, then fall back to a non-atomic
+         direct write.
+      3. On any further failure, swallow the exception -- the status
+         file is best-effort observability, never load-bearing for the
+         actual update flow.
+    """
+    payload = json.dumps(asdict(status), indent=2)
     tmp = STATUS_PATH.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(asdict(status), indent=2), encoding="utf-8")
-    tmp.replace(STATUS_PATH)
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        tmp.replace(STATUS_PATH)
+        # Make the file group/world-writable so the next caller (root or
+        # service user, doesn't matter which) can keep updating in place
+        # without falling back here again.
+        try:
+            STATUS_PATH.chmod(0o666)
+        except OSError:
+            pass
+    except PermissionError:
+        # Tmp file may still be hanging around; try to clean it.
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        # Last resort: open the destination directly and overwrite.  Loses
+        # atomicity but unblocks observability.  If THIS also fails (e.g.
+        # destination owned by root with mode 600), give up silently.
+        try:
+            STATUS_PATH.write_text(payload, encoding="utf-8")
+            try:
+                STATUS_PATH.chmod(0o666)
+            except OSError:
+                pass
+        except OSError:
+            return
+    except OSError:
+        return
 
 
 def read_status() -> UpdateStatus:
