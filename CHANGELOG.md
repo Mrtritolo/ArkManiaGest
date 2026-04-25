@@ -7,6 +7,86 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.0] - 2026-04-25
+
+**Phase 8 — Player Marketplace** lands as the panel half of a
+two-component feature.  The C++ ARK plugin owns the in-game flow
+(`/market upload`, `/market claim`); the panel owns commerce (set
+price, browse, buy, wallet, audit).  Strict ownership matrix +
+contract documented in `docs/MARKETPLACE_API_CONTRACT.md`.
+
+### Added
+
+- **Marketplace dashboard** at `/market` (admin sidebar entry
+  'Mercato'), three tabs:
+
+    * **Sfoglia** -- grid of listed items with search by blueprint,
+      sort by newest / price asc / price desc, per-card Buy button.
+      Saldo wallet shown at the top; Buy button disabled when
+      balance < price.
+    * **I miei item** -- per-status counters (Bozza / In vendita /
+      Venduti in claim / Conclusi) + a table of every item I own
+      OR have queued for claim.  Inline 'Pubblica' (set price +
+      list) on drafts; 'Annulla' (cancel listing -- item returns
+      to me via /market claim in-game) on listed items.
+    * **Storico** -- last 100 transactions where I'm buyer or
+      seller, role-coloured ±price chips.
+
+- **Atomic purchase**: `POST /api/v1/market/buy/{id}` runs a SQL
+  transaction with `FOR UPDATE` row locks on the item AND on both
+  wallet rows so concurrent buyers can't race.  Wallets
+  auto-create at balance=0 on first read.
+
+- **Cancel-by-owner via reuse of claim flow**: cancelling a
+  listing flips it to `status='sold'` with `buyer_eos_id =
+  owner_eos_id`, so the plugin's `/market claim` returns the item
+  to its original owner via the same code path that delivers
+  purchased items.  No special plugin path needed.
+
+- **Admin endpoints**: `POST /api/v1/market/admin/wallet/credit`
+  (top up / debit any wallet, audited) +
+  `GET /api/v1/market/admin/audit` (paginated audit log filterable
+  by actor / action / item).
+
+### Backend
+
+- New `app/api/routes/market.py` (10 endpoints, mixed-auth: most
+  resolve the player from the `disc_session` cookie; admin endpoints
+  guarded by `Depends(require_admin)`).
+- New `create_marketplace_tables()` boot-time idempotent migration
+  in `app/db/session.py` -- creates the four `ARKM_market_*`
+  tables in the **plugin** DB (panel-owned at boot, shared at
+  runtime per the contract).
+
+### Frontend
+
+- New `marketApi` namespace in `services/api.ts` (10 methods +
+  typed responses).
+- New `pages/MarketPage.tsx` with the standard standalone /
+  embedded dual-mode pattern (matches PlayerDashboardPage).
+
+### Plugin contract
+
+`docs/MARKETPLACE_API_CONTRACT.md` is the canonical source of
+truth for the schema and ownership matrix.  Mirrored in the C++
+plugin repo (`C:/Claude/ArkMania-Plugin/docs/`) so the plugin chat
+session can implement `/market upload` and `/market claim` against
+it.  No other plugin work is required for v3.5.0 to be useful on
+the panel side -- admins can already credit wallets, players can
+already browse and buy listed items even before the plugin lands.
+
+### Operational notes
+
+- The marketplace tables are created automatically on first boot of
+  v3.5.0 (no manual migration).  All tables prefixed `ARKM_market_*`
+  to match the plugin DB convention.
+- Tokens have no in-game source until the plugin's faucet (or
+  admin credit) is in place.  Use `POST /admin/wallet/credit` to
+  bootstrap a wallet.
+- The web dashboard works for both admin (via panel JWT) and
+  Discord-only player sessions (via `disc_session` cookie).
+
+---
 ## [3.4.2] - 2026-04-25
 
 Two new operator actions on the Players page, both born from the
