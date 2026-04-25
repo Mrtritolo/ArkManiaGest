@@ -1064,8 +1064,24 @@ async def sync_player_names_from_profiles(
       2. The .arkprofile filename (which equals the internal ARK player GUID).
       3. Substring match between the extracted EOS_Id and the DB EOS_Id.
 
-    Returns a summary with counts of scanned profiles, matched players, and
-    updated rows, plus a list of unmatched profiles for debugging.
+    Per-EOS resolution (Phase 7+ multi-character handling):
+      * 0 candidates                       -> ignored
+      * 1 candidate, name == DB            -> noop
+      * 1 candidate, name != DB            -> auto-update
+      * N candidates, ONE unique name      -> auto-update (cluster-wide
+                                              replicas of same character)
+      * N candidates, MULTIPLE distinct    -> AMBIGUOUS: kept aside in
+        names                                'ambiguous' for the admin
+                                              to resolve via
+                                              POST /players/sync-names/resolve
+
+    Returns:
+      success / total_profiles_scanned / matched / updated /
+      ambiguous (multi-char cases waiting for admin choice) /
+      no_name_extracted (parser failed to read a name from the file --
+        previously dropped silently, now surfaced) /
+      not_matched (parsed name but EOS unknown to DB) /
+      errors
     """
     containers_map = get_plugin_config_sync("containers_map")
     if not containers_map or not containers_map.get("machines"):
@@ -1104,10 +1120,14 @@ async def sync_player_names_from_profiles(
     }
 
     total_profiles = 0
-    matched = 0
-    updated = 0
-    not_matched: list[dict] = []
+    no_name_extracted: list[dict] = []  # binary parser couldn't pull a name
+    not_matched: list[dict] = []        # parsed name but EOS unknown to DB
     errors: list[str] = []
+
+    # Group ALL successful profile parses by the resolved DB Player.Id, so we
+    # can detect multi-character cases (one EOS -> N distinct names from N
+    # different .arkprofile files across the cluster).
+    by_player: dict[int, list[dict]] = {}
 
     for mid, saved_paths in machines_to_scan.items():
         machine = get_machine_sync(mid)
@@ -1135,6 +1155,15 @@ async def sync_player_names_from_profiles(
             file_id_lower = prof["file_id"].lower()
 
             if not player_name:
+                # Surface to the admin instead of silently dropping.  The
+                # previous version dropped these profiles entirely which
+                # made it impossible to know the parser had failed.
+                no_name_extracted.append({
+                    "file_id":    prof["file_id"],
+                    "eos_id":     profile_eos_id,
+                    "source":     prof.get("source_path", ""),
+                    "machine_id": mid,
+                })
                 continue
 
             # Match 1: EOS_Id extracted from the binary file
@@ -1154,32 +1183,144 @@ async def sync_player_names_from_profiles(
 
             if not player_data:
                 not_matched.append({
-                    "file_id": prof["file_id"],
-                    "eos_id": profile_eos_id,
-                    "player_name": player_name,
-                    "source": prof.get("source_path", ""),
+                    "file_id":    prof["file_id"],
+                    "eos_id":     profile_eos_id,
+                    "player_name":player_name,
+                    "source":     prof.get("source_path", ""),
                 })
                 continue
 
-            matched += 1
-            if player_data["current_name"] != player_name:
+            by_player.setdefault(player_data["id"], []).append({
+                "name":         player_name,
+                "source_path":  prof.get("source_path", ""),
+                "profile_eos":  profile_eos_id,
+                "file_id":      prof["file_id"],
+                "machine_id":   mid,
+                "_db":          player_data,
+            })
+
+    # ── Per-player resolution: auto-update OR mark ambiguous ─────────────
+
+    matched   = 0
+    updated   = 0
+    ambiguous: list[dict] = []
+
+    for pid, candidates in by_player.items():
+        matched += len(candidates)
+        unique_names = {c["name"] for c in candidates}
+        db_data      = candidates[0]["_db"]
+        current_name = db_data.get("current_name")
+
+        if len(unique_names) == 1:
+            # Cluster-wide replicas of the same character -- safe to apply.
+            (only_name,) = tuple(unique_names)
+            if current_name != only_name:
                 await db.execute(
                     update(Player)
-                    .where(Player.Id == player_data["id"])
-                    .values(Giocatore=player_name)
+                    .where(Player.Id == pid)
+                    .values(Giocatore=only_name)
                 )
                 updated += 1
+            continue
+
+        # 2+ distinct names for the same DB player: present the choice to
+        # the admin instead of guessing.  De-duplicate candidates by name
+        # so the modal doesn't list the same option N times when a player
+        # has the same name on multiple servers AND a different one on a
+        # third.
+        seen_names: set[str] = set()
+        deduped: list[dict] = []
+        for c in candidates:
+            if c["name"] in seen_names:
+                continue
+            seen_names.add(c["name"])
+            deduped.append({
+                "name":        c["name"],
+                "source_path": c["source_path"],
+                "file_id":     c["file_id"],
+                "machine_id":  c["machine_id"],
+            })
+        ambiguous.append({
+            "player_id":    pid,
+            "eos_id":       db_data["eos_id"],
+            "current_name": current_name,
+            "candidates":   deduped,
+        })
 
     await db.commit()
 
     return {
-        "success": True,
-        "total_profiles_scanned": total_profiles,
-        "matched": matched,
-        "updated": updated,
-        "not_matched": not_matched[:20],
-        "not_matched_total": len(not_matched),
-        "errors": errors,
+        "success":                 True,
+        "total_profiles_scanned":  total_profiles,
+        "matched":                 matched,
+        "updated":                 updated,
+        "ambiguous":               ambiguous,
+        "no_name_extracted":       no_name_extracted[:50],
+        "no_name_extracted_total": len(no_name_extracted),
+        "not_matched":             not_matched[:50],
+        "not_matched_total":       len(not_matched),
+        "errors":                  errors,
+    }
+
+
+# ── Resolve admin's choice for an ambiguous EOS -> name binding ──────────────
+
+class _SyncNameResolution(BaseModel):
+    """One entry in the body of POST /players/sync-names/resolve."""
+    player_id:    int
+    chosen_name:  str
+
+
+class _SyncNameResolveRequest(BaseModel):
+    resolutions: list[_SyncNameResolution]
+
+
+@router.post("/sync-names/resolve")
+async def resolve_ambiguous_player_names(
+    body: _SyncNameResolveRequest,
+    db:   AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Apply the admin's per-player choice for the ``ambiguous`` list returned
+    by ``POST /players/sync-names``.
+
+    Each entry must reference a real ``Player.Id``; ``chosen_name`` is
+    written verbatim to ``Players.Giocatore``.  Skips no-op writes (chosen
+    name already matches DB).
+
+    Returns counts: requested / applied / skipped / not_found.
+    """
+    requested = len(body.resolutions)
+    applied   = 0
+    skipped   = 0
+    not_found_ids: list[int] = []
+
+    for r in body.resolutions:
+        chosen = (r.chosen_name or "").strip()
+        if not chosen:
+            skipped += 1
+            continue
+        existing = await db.scalar(select(Player).where(Player.Id == r.player_id))
+        if not existing:
+            not_found_ids.append(r.player_id)
+            continue
+        if existing.Giocatore == chosen:
+            skipped += 1
+            continue
+        await db.execute(
+            update(Player)
+            .where(Player.Id == r.player_id)
+            .values(Giocatore=chosen)
+        )
+        applied += 1
+
+    await db.commit()
+    return {
+        "success":   True,
+        "requested": requested,
+        "applied":   applied,
+        "skipped":   skipped,
+        "not_found": not_found_ids,
     }
 
 

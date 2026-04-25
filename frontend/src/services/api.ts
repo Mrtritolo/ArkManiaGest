@@ -492,6 +492,50 @@ export const sfApi = {
 // Players
 // ---------------------------------------------------------------------------
 
+/** Single ambiguous-EOS row in a SyncNamesResponse.ambiguous list. */
+export interface SyncNamesAmbiguousCandidate {
+  name:        string;
+  source_path: string;
+  file_id:     string;
+  machine_id:  number;
+}
+export interface SyncNamesAmbiguousEntry {
+  player_id:    number;
+  eos_id:       string;
+  current_name: string | null;
+  candidates:   SyncNamesAmbiguousCandidate[];
+}
+
+/** A single .arkprofile that the parser couldn't read a name out of. */
+export interface SyncNamesNoNameEntry {
+  file_id:     string;
+  eos_id:      string | null;
+  source:      string;
+  machine_id:  number;
+}
+
+/** A profile with a name, but the EOS isn't in the DB. */
+export interface SyncNamesUnmatchedEntry {
+  file_id:     string;
+  eos_id:      string | null;
+  player_name: string;
+  source:      string;
+}
+
+/** Full response of POST /players/sync-names. */
+export interface SyncNamesResponse {
+  success:                   boolean;
+  total_profiles_scanned:    number;
+  matched:                   number;
+  updated:                   number;
+  ambiguous:                 SyncNamesAmbiguousEntry[];
+  no_name_extracted:         SyncNamesNoNameEntry[];
+  no_name_extracted_total:   number;
+  not_matched:               SyncNamesUnmatchedEntry[];
+  not_matched_total:         number;
+  errors:                    string[];
+}
+
 /** Player management: list, points, permissions, name sync, character copy. */
 export const playersApi = {
   list: (params?: {
@@ -532,8 +576,22 @@ export const playersApi = {
     const params: Record<string, unknown> = {};
     if (machineId) params.machine_id = machineId;
     if (containerName) params.container_name = containerName;
-    return api.post("/players/sync-names", null, { params, timeout: 120_000 });
+    return api.post<SyncNamesResponse>("/players/sync-names", null, { params, timeout: 120_000 });
   },
+
+  /**
+   * Apply the admin's choice for the ``ambiguous`` players returned by
+   * syncNames -- one chosen_name per player_id.  Used by the multi-character
+   * picker modal in PlayersPage.
+   */
+  resolveAmbiguousNames: (resolutions: Array<{ player_id: number; chosen_name: string }>) =>
+    api.post<{
+      success:   boolean;
+      requested: number;
+      applied:   number;
+      skipped:   number;
+      not_found: number[];
+    }>("/players/sync-names/resolve", { resolutions }),
 
   /**
    * Sibling of syncNames: scans .arktribe binary files instead of

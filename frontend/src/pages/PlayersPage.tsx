@@ -16,7 +16,7 @@ import {
   Map as MapIcon, Copy, CheckCircle, ShieldOff
 } from 'lucide-react'
 import { playersApi, arkBansApi, discordApi } from '../services/api'
-import type { DiscordAccount } from '../services/api'
+import type { DiscordAccount, SyncNamesAmbiguousEntry } from '../services/api'
 import type { PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
 import DiscordIcon from '../components/DiscordIcon'
 
@@ -606,20 +606,65 @@ export default function PlayersPage() {
     }
   }
 
+  // Phase 7+: when one EOS produces multiple distinct names across the
+  // cluster (multi-character case), the backend returns them in
+  // `ambiguous` instead of guessing.  We open a modal so the admin
+  // picks the correct name per row.
+  const [ambiguousList, setAmbiguousList] = useState<SyncNamesAmbiguousEntry[] | null>(null)
+  const [chosenNames, setChosenNames]     = useState<Record<number, string>>({})
+  const [applyingAmbig, setApplyingAmbig] = useState(false)
+
   async function handleSyncNames(machineId?: number, containerName?: string) {
     setSyncing(true); setError(''); setSyncResult(null)
     try {
       const res = await playersApi.syncNames(machineId, containerName)
-      setSyncResult(res.data)
+      setSyncResult(res.data as unknown as Record<string, unknown>)
       if (res.data.updated > 0) {
         loadPlayers(); loadStats()
       }
       if (res.data.errors?.length > 0) {
         setError(t('players.messages.syncErrors', { errors: res.data.errors.join('; ') }))
       }
+      // If the scan found multi-character cases, hand them off to the
+      // picker modal.  Pre-select the first candidate of each row so
+      // an Apply-without-touching is a sensible default.
+      if (res.data.ambiguous && res.data.ambiguous.length > 0) {
+        setAmbiguousList(res.data.ambiguous)
+        const initial: Record<number, string> = {}
+        for (const row of res.data.ambiguous) {
+          initial[row.player_id] = row.candidates[0]?.name ?? ''
+        }
+        setChosenNames(initial)
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || t('players.errors.syncNames'))
     } finally { setSyncing(false) }
+  }
+
+  async function applyAmbiguousResolutions(): Promise<void> {
+    if (!ambiguousList) return
+    const resolutions = Object.entries(chosenNames)
+      .filter(([, name]) => Boolean(name && name.trim()))
+      .map(([pid, name]) => ({ player_id: Number(pid), chosen_name: name }))
+    if (resolutions.length === 0) {
+      setAmbiguousList(null); setChosenNames({})
+      return
+    }
+    setApplyingAmbig(true)
+    try {
+      const res = await playersApi.resolveAmbiguousNames(resolutions)
+      setSuccess(t('players.ambiguous.applied', {
+        defaultValue: '{{n}} nomi applicati.',
+        n: res.data.applied,
+      }))
+      setAmbiguousList(null); setChosenNames({})
+      if (res.data.applied > 0) { loadPlayers(); loadStats() }
+    } catch (err: any) {
+      setError(err.response?.data?.detail
+        || t('players.ambiguous.errors.apply', { defaultValue: 'Failed to apply choices.' }))
+    } finally {
+      setApplyingAmbig(false)
+    }
   }
 
   // Sibling of handleSyncNames: targets .arktribe files instead of
@@ -1734,6 +1779,173 @@ export default function PlayersPage() {
                 {alignApplying
                   ? <><Loader2 size={12} className="pl-spin" /> {t('players.bulkAlign.applying')}</>
                   : <><Save size={12} /> {t('players.bulkAlign.apply', { count: selectedIds.size })}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-character resolution modal -- opens after a sync-names run
+          when the backend reports `ambiguous` rows (one EOS, N distinct
+          names across the cluster).  Per-row radio picker; Apply submits
+          the chosen names in one batch via /sync-names/resolve. */}
+      {ambiguousList && ambiguousList.length > 0 && (
+        <div
+          onClick={() => !applyingAmbig && (setAmbiguousList(null), setChosenNames({}))}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, var(--bg-card, #fff))',
+              color: 'var(--text)',
+              padding: '1rem 1.1rem',
+              borderRadius: 8,
+              minWidth: 'min(640px, 95vw)',
+              maxWidth: 'min(720px, 95vw)',
+              maxHeight: '85vh',
+              boxShadow: '0 12px 50px rgba(0,0,0,0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: '0.6rem', borderBottom: '1px solid var(--border)',
+              paddingBottom: '0.5rem',
+            }}>
+              <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <AlertCircle size={16} color="#d97706" />
+                {t('players.ambiguous.title', {
+                  defaultValue: 'Più personaggi trovati per {{n}} giocatori',
+                  n: ambiguousList.length,
+                })}
+              </span>
+              <button
+                onClick={() => { setAmbiguousList(null); setChosenNames({}) }}
+                disabled={applyingAmbig}
+                className="pl-btn-icon"
+                style={{ width: 26, height: 26 }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
+              {t('players.ambiguous.intro', {
+                defaultValue:
+                  'Per ognuno di questi giocatori ho trovato più di un nome distinto sul cluster (un personaggio diverso per server, oppure un rename non propagato). Scegli il nome corretto per ciascuno e premi Applica.',
+              })}
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '0.5rem 0' }}>
+              {ambiguousList.map(row => (
+                <div key={row.player_id} style={{
+                  marginBottom: '0.7rem',
+                  padding: '0.55rem 0.7rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  background: 'var(--bg-card-muted, #f5f5f7)',
+                }}>
+                  <div style={{ marginBottom: '0.35rem', fontSize: '0.82rem' }}>
+                    <strong>EOS:</strong>{' '}
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                      {row.eos_id}
+                    </span>
+                    <span style={{ marginLeft: '0.6rem', color: 'var(--text-secondary)' }}>
+                      {t('players.ambiguous.currentName', {
+                        defaultValue: 'attuale nel DB: ',
+                      })}
+                      <strong style={{ color: 'var(--text)' }}>{row.current_name || '—'}</strong>
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {row.candidates.map((c, i) => {
+                      const checked = chosenNames[row.player_id] === c.name
+                      return (
+                        <label key={i}
+                          style={{
+                            display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
+                            padding: '0.3rem 0.45rem',
+                            border: checked ? '2px solid var(--accent, #2563eb)' : '1px solid var(--border)',
+                            borderRadius: 4,
+                            cursor: applyingAmbig ? 'not-allowed' : 'pointer',
+                            background: checked ? 'var(--accent-50, #2563eb15)' : 'var(--surface, #fff)',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`pick-${row.player_id}`}
+                            value={c.name}
+                            disabled={applyingAmbig}
+                            checked={checked}
+                            onChange={() => setChosenNames(prev => ({ ...prev, [row.player_id]: c.name }))}
+                            style={{ marginTop: 3 }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{c.name}</div>
+                            <div style={{
+                              fontSize: '0.7rem', color: 'var(--text-secondary)',
+                              fontFamily: 'monospace',
+                              wordBreak: 'break-all', marginTop: 2,
+                            }}>
+                              {c.source_path}
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
+
+                    {/* "Skip this one" option -- selecting it sends an
+                        empty chosen_name to the backend, which is filtered
+                        out before submission. */}
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.25rem 0.45rem',
+                      fontSize: '0.78rem', color: 'var(--text-secondary)',
+                      cursor: applyingAmbig ? 'not-allowed' : 'pointer',
+                    }}>
+                      <input
+                        type="radio"
+                        name={`pick-${row.player_id}`}
+                        value=""
+                        disabled={applyingAmbig}
+                        checked={(chosenNames[row.player_id] || '') === ''}
+                        onChange={() => setChosenNames(prev => ({ ...prev, [row.player_id]: '' }))}
+                      />
+                      {t('players.ambiguous.skipThis', {
+                        defaultValue: 'Non aggiornare ora (lascia il nome attuale nel DB)',
+                      })}
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.7rem' }}>
+              <button
+                onClick={() => { setAmbiguousList(null); setChosenNames({}) }}
+                disabled={applyingAmbig}
+                className="btn btn-ghost btn-sm"
+              >
+                {t('common.cancel', { defaultValue: 'Annulla' })}
+              </button>
+              <button
+                onClick={applyAmbiguousResolutions}
+                disabled={applyingAmbig}
+                className="btn btn-primary btn-sm"
+              >
+                {applyingAmbig
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.ambiguous.applying', { defaultValue: 'Applico…' })}</>
+                  : <><Save size={12} /> {t('players.ambiguous.apply', {
+                      defaultValue: 'Applica scelte ({{n}})',
+                      n: Object.values(chosenNames).filter(v => v && v.trim()).length,
+                    })}</>}
               </button>
             </div>
           </div>

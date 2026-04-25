@@ -60,18 +60,41 @@ _EOS_ID_MARKERS: tuple[bytes, ...] = (
     b"SavedNetworkAddress",
 )
 
-# Lowercase substrings that classify a decoded string as a technical identifier
-# rather than a human-readable player name
+# Strong-evidence technical fragments.  Any decoded string CONTAINING one of
+# these (case-insensitive) is rejected as an engine identifier.  This list
+# ONLY includes patterns that are vanishingly unlikely to appear in a real
+# player display name (URL-style separators, blueprint suffixes, namespace
+# qualifiers).  The previous version blacklisted entire common English words
+# (e.g. "name", "map", "level", "str", "bool", "int", "float", "primal") and
+# rejected legitimate names like "Mapmaker", "Levellord", "Aristocrat" as
+# false positives -- that's what caused the 'sync-names skips some players'
+# bug reported by the operator.
 _TECHNICAL_FRAGMENTS: tuple[str, ...] = (
-    "property", "script/", "game/", "/script", "blueprint",
-    "primal", "shooter", "struct", "object", "class",
-    "component", "character_bp", "buff", "persistent",
-    "testgamemode", "level", "island", "map", "submap",
-    "saved", "config", "engine", "none", "default",
-    "status", "inventory", "tribe", "array", "bool",
-    "float", "int", "byte", "str", "text", "name",
-    "enum", "soft", "guid", "vector", "rotator",
-    "transform", "linear", "color",
+    "/script/", "/game/", "blueprintgenerated",
+    "default__", "::",
+    "primalcharacter", "shootercharacter", "playercharacter_",
+    "character_bp_", "_buff_c", "structurebp_",
+)
+
+# Exact-match (case-insensitive) reserved words.  A decoded string that
+# IS exactly one of these gets rejected.  Substring containment is no longer
+# enough -- this catches the bare property type tokens UE serialises
+# alongside player data without mistaking real-world player names that
+# happen to contain the same letters.
+_TECHNICAL_EXACT: frozenset[str] = frozenset(
+    s.lower() for s in (
+        "None", "Default", "True", "False",
+        "BoolProperty", "ByteProperty", "IntProperty", "FloatProperty",
+        "DoubleProperty", "StrProperty", "TextProperty", "NameProperty",
+        "ObjectProperty", "ArrayProperty", "MapProperty", "SetProperty",
+        "StructProperty", "EnumProperty", "SoftObjectProperty",
+        "Guid", "Vector", "Rotator", "Transform", "Color",
+        "PrimalCharacterStatusComponent", "PrimalInventoryComponent",
+        "PersistentLevel", "TheIsland", "TheCenter", "Ragnarok",
+        "Aberration_P", "Extinction", "ScorchedEarth_P", "Genesis",
+        "Genesis_Part_2", "CrystalIsles", "Valguero_P", "LostIsland",
+        "Fjordur", "BobsMissions", "Astraeos",
+    )
 )
 
 # Regex patterns that match known EOS / platform player ID formats
@@ -121,7 +144,7 @@ def extract_fstrings(
                 if raw[-1:] == b"\x00":
                     try:
                         decoded = raw[:-1].decode("utf-8", errors="ignore")
-                        if len(decoded) >= min_length and decoded.isprintable():
+                        if len(decoded) >= min_length and _is_human_readable(decoded):
                             strings.append((pos, decoded))
                             pos = end
                             continue
@@ -136,7 +159,7 @@ def extract_fstrings(
                 raw = data[pos + 4:end]
                 try:
                     decoded = raw.decode("utf-16-le", errors="ignore").rstrip("\x00")
-                    if len(decoded) >= min_length and decoded.isprintable():
+                    if len(decoded) >= min_length and _is_human_readable(decoded):
                         strings.append((pos, decoded))
                         pos = end
                         continue
@@ -150,26 +173,56 @@ def extract_fstrings(
 
 # ── Classifier helpers ────────────────────────────────────────────────────────
 
+def _is_human_readable(value: str) -> bool:
+    """
+    Permissive printable-text check used in place of bare ``str.isprintable()``.
+
+    Python's ``str.isprintable()`` rejects whitespace categories that are
+    perfectly legitimate inside player nicknames -- notably the non-breaking
+    space (``\\xa0``), the ideographic space (``\\u3000``), and tabs.  Many
+    ARK players use stylised names with those characters; the previous
+    parser silently dropped them.
+
+    A name passes this check when:
+      * it contains at least one alphanumeric character (defends against
+        files where the only candidate string is a separator run);
+      * every char is either Python-printable OR one of the well-known
+        non-printable whitespace categories used in display names.
+    """
+    if not any(c.isalnum() for c in value):
+        return False
+    extra_allowed = (" ", "\t", " ", "　", " ", " ")
+    return all(c.isprintable() or c in extra_allowed for c in value)
+
+
 def _is_technical_string(value: str) -> bool:
     """
     Return True if *value* looks like an engine/blueprint identifier rather
     than a human-readable player name.
 
     Heuristics applied (in order):
-      1. Contains known UE4/game-engine keyword fragments (case-insensitive).
-      2. Contains a filesystem or asset-path separator (``/`` or ``\\``).
-      3. Starts with ``_`` or ends with ``_C`` (Blueprint class naming convention).
-      4. Is a long pure-hex string (raw binary ID, not a name).
-      5. Is numeric after stripping common punctuation.
+      1. The string is exactly one of the reserved-word tokens UE serialises
+         alongside data (case-insensitive exact match).
+      2. The string contains a strong-evidence technical fragment
+         (``/script/``, ``blueprintgenerated``, ``default__``, ``::``, ...).
+      3. The string contains a filesystem or asset-path separator
+         (``/`` or ``\\``).
+      4. The string starts with ``_`` or ends with ``_C`` (Blueprint class
+         naming convention).
+      5. The string is a long pure-hex blob (raw binary ID, not a name).
+      6. The string is numeric after stripping common punctuation.
 
-    Args:
-        value: Candidate decoded string.
-
-    Returns:
-        True when the string is classified as a technical identifier.
+    Notes for maintainers: this filter used to use a much wider blacklist
+    of common English words (``name``, ``map``, ``level``, ``str``,
+    ``bool``, ``int``, ``float``, ``primal``, ...).  That false-positived
+    legitimate player names like ``Mapmaker``, ``Levellord`` and
+    ``Aristocrat``, which is what caused the 'sync-names skips some
+    players' bug.  Keep additions surgical -- prefer adding to
+    ``_TECHNICAL_EXACT`` over adding a substring fragment.
     """
+    if value.lower() in _TECHNICAL_EXACT:
+        return True
     lower = value.lower()
-
     if any(fragment in lower for fragment in _TECHNICAL_FRAGMENTS):
         return True
     if "/" in value or "\\" in value:
