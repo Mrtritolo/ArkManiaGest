@@ -7,6 +7,60 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.4.2] - 2026-04-25
+
+Two new operator actions on the Players page, both born from the
+post-v3.4.1 sync-names diagnostic.
+
+### Added
+
+- **Import missing players.** `/sync-names` now returns up to 124
+  'orphan' profiles per scan (EOS files on disk but no row in the
+  `Players` table -- typically players who joined before the
+  Permissions plugin was registered).  A persistent banner appears
+  whenever orphans are detected; click 'Importa N giocatori
+  mancanti' to open a modal with a checkbox per orphan (default
+  all selected) and a single Submit that calls the new
+  `POST /api/v1/players/import-from-profiles` endpoint.  Inserts
+  rows with `PermissionGroups='Default,'`; existing EOS are
+  skipped automatically (no double inserts).
+
+- **Cluster-wide character wipe.**  Per-player action exposed as
+  a Skull button next to the existing Ban button on the player
+  detail panel.  Click opens a two-step modal:
+
+    1. `GET /api/v1/players/{eos_id}/character-files` lists every
+       `<eos>.arkprofile` found across every container's
+       SavedArks directory (with full paths so the operator can
+       audit before confirming).
+    2. Confirm calls `DELETE /api/v1/players/{eos_id}/character-files`
+       which `rm -f`s each match across the cluster.
+
+  After the wipe the player respawns as a brand-new character on
+  next login.  The `Players` row (permissions) is intentionally
+  NOT touched -- that's a separate delete.
+
+### API
+
+- `POST /api/v1/players/import-from-profiles` (admin)
+  - Body: `{ players: [{ eos_id, player_name? }], default_groups }`
+  - Returns: `{ requested, inserted, skipped_existing, errors }`
+- `GET /api/v1/players/{eos_id}/character-files` (admin)
+  - Returns: `{ eos_id, total_files, files: [{path, container, machine_id}], errors }`
+- `DELETE /api/v1/players/{eos_id}/character-files` (admin)
+  - Returns: `{ eos_id, total_deleted, deleted: [...], errors }`
+
+### Operational notes
+
+- The wipe is destructive on disk; the modal preview step is the
+  intentional safety net.  Keep it open and verify the file list
+  matches what you expect before confirming.
+- EOS-id input is validated against a strict charset to defang
+  shell-injection through the find filter.
+- Re-running `/import-from-profiles` is safe -- existing EOS rows
+  are skipped silently.
+
+---
 ## [3.4.1] - 2026-04-25
 
 Patch + small feature: fixes the sync-names function that was
