@@ -7,6 +7,99 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.4.1] - 2026-04-25
+
+Patch + small feature: fixes the sync-names function that was
+silently dropping legitimate player names, surfaces what was
+previously dropped in the response, and adds a multi-character
+picker modal so an admin chooses the right name when the same EOS
+has different .arkprofile names across the cluster.
+
+### Fixed
+
+- **'Sync nomi' was skipping some players silently.**  Two root
+  causes:
+
+    * The technical-string blacklist used by the .arkprofile parser
+      substring-matched a wide list of common English words
+      (`name`, `map`, `level`, `str`, `bool`, `int`, `float`,
+      `primal`, ...) and rejected legitimate player names that
+      happened to contain those letters as 'engine identifiers'.
+      Names like **Mapmaker**, **Levellord**, **Aristocrat** were
+      dropped.  Replaced with two narrower checks:
+
+        * `_TECHNICAL_FRAGMENTS` -- only strong-evidence patterns
+          (`/script/`, `blueprintgenerated`, `default__`, `::`,
+          `primalcharacter`, `character_bp_`, ...) that cannot
+          appear in a real display name.
+        * `_TECHNICAL_EXACT` -- exact-match (case-insensitive)
+          reserved-word frozenset (`BoolProperty`, `NameProperty`,
+          `None`, `Default`, vector type names, map filenames).
+
+    * `str.isprintable()` was rejecting Unicode whitespace
+      categories used in stylised nicknames (NBSP ` `,
+      ideographic `　`, tabs).  Replaced with
+      `_is_human_readable()` that accepts those + requires at
+      least one alphanumeric character.
+
+- **`/sync-names` no longer silently drops profiles with no name.**
+  The previous version skipped them at `if not player_name:
+  continue` without surfacing them anywhere.  The response now
+  includes `no_name_extracted[] / no_name_extracted_total` so the
+  admin can see exactly which `.arkprofile` files the parser
+  failed on and report them.
+
+### Added
+
+- **Multi-character picker modal on Players page.**  When the
+  cluster scan finds multiple `.arkprofile` files for the same EOS
+  with **different** player names (common case: a player has one
+  character per map, or a rename hasn't propagated yet), the
+  endpoint no longer guesses last-wins.  Instead it returns the
+  ambiguous list and the page opens a modal:
+
+    * One block per ambiguous EOS with the current DB name and a
+      radio-button list of every distinct candidate name (each
+      showing the source `.arkprofile` path so the admin can tell
+      servers apart).
+    * A 'Non aggiornare ora' option per row to skip a single
+      player's resolution.
+    * Apply button submits the chosen names in one batch via
+      the new `POST /api/v1/players/sync-names/resolve` endpoint
+      and reloads the table.
+    * Cancel discards all picks without touching the DB.
+
+  Cluster-wide replicas of the **same** character (most common
+  case) still auto-apply silently as before.
+
+### API
+
+- `POST /api/v1/players/sync-names` response gains:
+    * `ambiguous`              -- list of multi-character EOS rows
+                                   waiting for admin choice
+    * `no_name_extracted`      -- profiles whose name the parser
+                                   couldn't read
+    * `no_name_extracted_total`
+- `POST /api/v1/players/sync-names/resolve` (NEW, admin only):
+    * Body  : `{ resolutions: [{ player_id, chosen_name }] }`
+    * Empty `chosen_name` = skip that row.
+    * Returns `{ success, requested, applied, skipped, not_found }`.
+
+### Operational notes
+
+- The ambiguous modal opens automatically after a sync.  The
+  default selection for each row is the first candidate so an
+  Apply-without-touching is a sensible 'pick whichever' shortcut.
+- Cluster-wide replicas of the same character (common scenario)
+  remain auto-applied -- the modal only appears for genuine
+  multi-character ambiguity, not for routine cluster duplicates.
+- The parser change is permissive: if you spot a clearly-technical
+  string getting through and ending up as a player name, please
+  add it to `_TECHNICAL_EXACT` (preferred) rather than to
+  `_TECHNICAL_FRAGMENTS`.  Substring fragments are kept surgical
+  on purpose.
+
+---
 ## [3.4.0] - 2026-04-24
 
 Big release: configurable Discord role -> ARK group sync engine,
