@@ -7,6 +7,87 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.2] - 2026-04-26
+
+Cryopod-aware marketplace cards: species, level, gender and stat
+distribution extracted from the dino payload embedded in the
+item.  Plus the durability `2591980%` glitch that also showed on
+cryopods is now suppressed.
+
+### Added
+
+- **Cryopod cards on the marketplace dashboard.**  When a
+  marketplace listing's blueprint name contains `cryopod` (stock
+  Empty / Socketable cryopods + modded variants), the card now
+  surfaces the dino inside instead of just rendering 'Empty
+  Cryopod':
+
+    * Headline becomes `Moschops · Lvl 197` (species + level).
+    * Image background gets a purple gradient so cryopods stand
+      out from regular resources at a glance.
+    * Top-right overlay: gold `Lvl N` badge (replaces the
+      `×quantity` badge -- cryopods are always qty 1).
+    * Top-left overlay: gender symbol (♀ pink / ♂ blue) when
+      detected.
+    * Stat row: 7-column grid showing the dino's stat distribution
+      (`HP / St / Ox / Fd / Wt / Dm / Sp` -- whichever values the
+      blob carries) instead of the generic Q/durability/rating
+      chips used for regular items.
+
+  All extraction is best-effort and lossless: when the blob
+  doesn't yield a usable parse the card falls back to the
+  standard layout.
+
+### Backend
+
+- New `app/services/cryopod_parser.py` -- decodes the base64
+  `item_data` blob, walks every UE FString in the outer envelope
+  AND in the embedded zlib-compressed dino character payload,
+  matches against the canonical patterns
+  (`Name - Lvl N (Species)`, `Name_Character_BP_C[_id]`,
+  `\d+,\d+,...,?`, `MALE`/`FEMALE`, `/Game/.../Dinos/.../X`).
+  Returns `CryopodInfo` with whatever fields could be matched;
+  None on bad blob.  ~1-3 ms per cryopod.
+
+- `GET /api/v1/market/listed` and `GET /api/v1/market/me/items`
+  now SELECT `item_data` too, parse it lazily for any row whose
+  blueprint contains `cryopod`, and attach the result as a new
+  `dino: { species, level, display_name, stats, gender,
+  blueprint, colors }` field on each list item.  Non-cryopod
+  rows get `dino: null` and the rest of the response shape is
+  unchanged.
+
+### Frontend
+
+- New `MarketDinoCard` typed interface in `services/api.ts`;
+  `MarketListedItem` and `MarketMyItem` both extended with
+  `dino: MarketDinoCard | null`.
+- `MarketPage` ItemCard branches on `it.dino` to switch the
+  card into 'cryopod mode'.
+
+### Fixed (carryover from v3.5.1)
+
+- **Durability `2591980%` chip** on Empty Cryopod cards.  ARK's
+  ItemDurability field is supposed to live in 0..100 but plugins
+  occasionally stuff non-percentage data there for special items
+  (cryopods being the most obvious case).  The chip now only
+  renders when the value is in the canonical 0..100 range.
+  Cryopods take the new dino-stats grid path instead of any
+  durability chip, so the regression is gone for them either way.
+
+### Operational notes
+
+- No DB schema change; no migration.  The parser is purely
+  read-side over the existing `item_data` LONGBLOB.
+- A future plugin update can pre-populate dedicated dino_*
+  columns at upload time to skip the parse on every list
+  request; the contract doc will document that path when the
+  plugin chat picks it up.
+- Parser tolerates 1-3 byte truncations in the base64 data
+  (occasional copy-paste damage when investigating in the SQL
+  console) -- best-effort decode rather than a strict reject.
+
+---
 ## [3.5.1] - 2026-04-26
 
 Marketplace GUI upgrade: visually richer cards with ARK item
