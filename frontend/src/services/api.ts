@@ -1643,6 +1643,16 @@ export const discordAuthApi = {
 // Mixed-auth: browse / wallet / buy work via the disc_session cookie
 // (player view); admin can pass `?for_eos=...` on the read endpoints.
 
+export interface MarketDinoCard {
+  species:      string | null;
+  level:        number | null;
+  display_name: string | null;
+  stats:        string | null;     // e.g. "35,13,24,20,33,8,"
+  gender:       string | null;     // "MALE" | "FEMALE"
+  blueprint:    string | null;     // dino BP path (different from item BP)
+  colors:       string[] | null;
+}
+
 export interface MarketListedItem {
   id:           number;
   blueprint:    string;
@@ -1655,6 +1665,7 @@ export interface MarketListedItem {
   owner_eos_id: string;
   owner_name:   string | null;
   listed_at:    string | null;
+  dino:         MarketDinoCard | null;
 }
 
 export interface MarketListedResponse {
@@ -1683,6 +1694,7 @@ export interface MarketMyItem {
   listed_at:    string | null;
   sold_at:      string | null;
   claimed_at:   string | null;
+  dino:         MarketDinoCard | null;
 }
 
 export interface MarketTransaction {

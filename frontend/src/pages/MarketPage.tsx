@@ -539,9 +539,19 @@ function ItemCard({
   onBuy: () => void;
 }) {
   const { t } = useTranslation();
-  const display    = arkItemDisplayName(it.blueprint);
+  const baseName   = arkItemDisplayName(it.blueprint);
+  const isCryo     = !!it.dino;
+  // For cryopods we override the headline with the species + level
+  const display    = isCryo && it.dino?.species
+    ? `${it.dino.species}${it.dino.level ? ` · Lvl ${it.dino.level}` : ""}`
+    : baseName;
   const canAfford  = walletLoaded && walletBal >= it.price;
   const hasEnough  = !walletLoaded ? false : canAfford;
+  const stats      = it.dino?.stats?.split(",").map(s => parseInt(s, 10)).filter(n => !isNaN(n)) ?? [];
+  // ARK stat order on the level-up screen: HP / Stamina / Oxygen / Food /
+  // Weight / MeleeDamage / MovementSpeed.  Cryopods sometimes record
+  // 6 (no movement-speed) or 7 values; we render whatever we have.
+  const STAT_LABELS = ["HP", "St", "Ox", "Fd", "Wt", "Dm", "Sp"];
 
   return (
     <div style={{
@@ -563,17 +573,22 @@ function ItemCard({
       }}
     >
       {/* Image header -- square aspect, dark backdrop so the wiki PNG
-          (transparent background) reads against any theme. */}
+          (transparent background) reads against any theme.  For
+          cryopods we paint a purple-ish gradient so they stand out
+          from regular resources. */}
       <div style={{
         width: "100%", aspectRatio: "1 / 1",
-        background: "linear-gradient(135deg, #1f2937 0%, #374151 100%)",
+        background: isCryo
+          ? "linear-gradient(135deg, #4c1d95 0%, #1e1b4b 100%)"
+          : "linear-gradient(135deg, #1f2937 0%, #374151 100%)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "0.5rem", position: "relative",
       }}>
         <ItemImage blueprint={it.blueprint} size={140} />
 
-        {/* Quantity badge overlay (top-right) */}
-        {it.quantity > 1 && (
+        {/* Quantity badge overlay (top-right).  Cryopods are always
+            quantity=1 so the badge is suppressed for them. */}
+        {it.quantity > 1 && !isCryo && (
           <span style={{
             position: "absolute", top: 6, right: 6,
             background: "#000000aa", color: "#fff",
@@ -582,6 +597,20 @@ function ItemCard({
             pointerEvents: "none",
           }}>
             ×{it.quantity}
+          </span>
+        )}
+
+        {/* Cryopod top-right: Lvl badge */}
+        {isCryo && it.dino?.level && (
+          <span style={{
+            position: "absolute", top: 6, right: 6,
+            background: "linear-gradient(135deg, #f59e0b, #d97706)",
+            color: "#fff",
+            fontSize: "0.78rem", fontWeight: 700,
+            padding: "0.15rem 0.55rem", borderRadius: 99,
+            pointerEvents: "none",
+          }}>
+            Lvl {it.dino.level}
           </span>
         )}
 
@@ -598,6 +627,20 @@ function ItemCard({
             BP
           </span>
         )}
+
+        {/* Cryopod top-left: gender icon */}
+        {isCryo && it.dino?.gender && (
+          <span style={{
+            position: "absolute", top: 6, left: 6,
+            background: it.dino.gender === "FEMALE" ? "#ec4899" : "#3b82f6",
+            color: "#fff",
+            fontSize: "0.7rem", fontWeight: 700,
+            padding: "0.15rem 0.4rem", borderRadius: 4,
+            pointerEvents: "none",
+          }}>
+            {it.dino.gender === "FEMALE" ? "♀" : "♂"}
+          </span>
+        )}
       </div>
 
       {/* Body -- name + meta */}
@@ -611,28 +654,55 @@ function ItemCard({
           {display}
         </div>
 
-        {/* Stat chips row (small) */}
-        <div style={{
-          display: "flex", flexWrap: "wrap", gap: "0.25rem",
-          marginTop: "0.3rem",
-          fontSize: "0.68rem", color: "var(--text-secondary)",
-        }}>
-          {it.quality > 0 && (
-            <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
-              Q{it.quality}
-            </span>
-          )}
-          {it.durability > 0 && (
-            <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
-              {Math.round(it.durability)}%
-            </span>
-          )}
-          {it.rating > 0 && (
-            <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
-              ★ {it.rating.toFixed(1)}
-            </span>
-          )}
-        </div>
+        {/* Stat chips row.  For cryopods we replace the generic
+            Q/durability/rating triplet with the dino's stat
+            distribution (HP/St/Ox/Fd/Wt/Dm/Sp -- whatever the blob
+            gave us). */}
+        {isCryo && stats.length > 0 ? (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${Math.min(stats.length, 7)}, 1fr)`,
+            gap: "0.2rem", marginTop: "0.4rem",
+          }}>
+            {stats.map((v, i) => (
+              <div key={i} style={{
+                background: "var(--bg-card-muted, #f5f5f7)",
+                borderRadius: 4, padding: "0.2rem 0.1rem",
+                textAlign: "center", fontSize: "0.7rem",
+              }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.6rem", lineHeight: 1 }}>
+                  {STAT_LABELS[i] ?? `S${i+1}`}
+                </div>
+                <div style={{ fontWeight: 700, lineHeight: 1.1 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: "0.25rem",
+            marginTop: "0.3rem",
+            fontSize: "0.68rem", color: "var(--text-secondary)",
+          }}>
+            {it.quality > 0 && (
+              <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
+                Q{it.quality}
+              </span>
+            )}
+            {/* Durability rendered as % ONLY when in canonical 0-100
+                range; cryopods (and some plugin-managed items) stuff
+                non-percentage data here. */}
+            {it.durability > 0 && it.durability <= 100 && (
+              <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
+                {Math.round(it.durability)}%
+              </span>
+            )}
+            {it.rating > 0 && (
+              <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
+                ★ {it.rating.toFixed(1)}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Seller line */}
         <div style={{

@@ -35,6 +35,48 @@ from app.core.auth import require_admin
 from app.db.session import get_db, get_plugin_db
 from app.api.routes.me import get_current_player, _PlayerSession
 from app.services.market_thumbs import get_or_fetch_thumb, sanitize_thumb_name
+from app.services.cryopod_parser import parse_cryopod_blob, CryopodInfo
+
+# Heuristic: cryopod-class blueprints contain 'cryopod' in their path.
+# Includes stock 'PrimalItem_WeaponEmptyCryopod' and 'PrimalItem_WeaponSocketableCryopod'
+# plus any modded cryopod variants that follow the naming convention.
+def _looks_like_cryopod(blueprint: Optional[str]) -> bool:
+    if not blueprint:
+        return False
+    return "cryopod" in blueprint.lower()
+
+
+def _dino_card_from_blob(item_data) -> Optional[_DinoCard]:
+    """
+    Convert ARKM_market_items.item_data (LONGBLOB / BYTES coming from
+    pymysql) to a _DinoCard via the cryopod parser.  Returns None on
+    parse miss; never raises.
+    """
+    if item_data is None:
+        return None
+    # The DB stores the blob as binary (LONGBLOB).  The parser wants
+    # a base64 string -- the simplest tolerant conversion is to
+    # round-trip via base64.
+    import base64 as _b64
+    try:
+        if isinstance(item_data, (bytes, bytearray, memoryview)):
+            b64 = _b64.b64encode(bytes(item_data)).decode("ascii")
+        else:
+            b64 = str(item_data)
+    except Exception:
+        return None
+    info: Optional[CryopodInfo] = parse_cryopod_blob(b64)
+    if not info:
+        return None
+    return _DinoCard(
+        species      = info.dino_species,
+        level        = info.dino_level,
+        display_name = info.dino_display_name,
+        stats        = info.dino_stats,
+        gender       = info.dino_gender,
+        blueprint    = info.dino_blueprint,
+        colors       = info.dino_colors,
+    )
 
 
 router = APIRouter()
@@ -64,6 +106,17 @@ async def _resolve_eos_for_read(
 
 # ── Pydantic shapes ─────────────────────────────────────────────────────────
 
+class _DinoCard(BaseModel):
+    """Best-effort cryopod payload extracted from item_data."""
+    species:        Optional[str] = None
+    level:          Optional[int] = None
+    display_name:   Optional[str] = None    # "Moschops - Lvl 197 (Moschops)"
+    stats:          Optional[str] = None    # "35,13,24,20,33,8,"
+    gender:         Optional[str] = None    # "MALE" | "FEMALE"
+    blueprint:      Optional[str] = None    # /Game/.../Moschops_Character_BP_C
+    colors:         Optional[list[str]] = None
+
+
 class _ListedItem(BaseModel):
     id:           int
     blueprint:    str
@@ -76,6 +129,7 @@ class _ListedItem(BaseModel):
     owner_eos_id: str
     owner_name:   Optional[str] = None
     listed_at:    Optional[str] = None
+    dino:         Optional[_DinoCard] = None
 
 
 class _ListedResponse(BaseModel):
@@ -100,6 +154,7 @@ class _MyItem(BaseModel):
     listed_at:    Optional[str] = None
     sold_at:      Optional[str] = None
     claimed_at:   Optional[str] = None
+    dino:         Optional[_DinoCard] = None
 
 
 class _WalletResponse(BaseModel):
@@ -272,35 +327,38 @@ async def list_market_items(
         text(f"SELECT COUNT(*) FROM ARKM_market_items WHERE {where_sql}"), params,
     )).scalar() or 0)
 
+    # Fetch item_data too -- it's a LONGBLOB but in practice cryopods
+    # carry a few KB at most.  We only forward the parsed dino card
+    # to the response (never the raw blob).
     rows = (await plugin_db.execute(
         text(
             f"SELECT id, blueprint, quantity, quality, is_blueprint, durability, rating, "
-            f"       price, owner_eos_id, owner_name, listed_at "
+            f"       price, owner_eos_id, owner_name, listed_at, item_data "
             f"FROM ARKM_market_items WHERE {where_sql} "
             f"ORDER BY {order} LIMIT :lim OFFSET :off"
         ),
         params,
     )).mappings().fetchall()
 
-    return _ListedResponse(
-        total=total,
-        items=[
-            _ListedItem(
-                id           = int(r["id"]),
-                blueprint    = r["blueprint"] or "",
-                quantity     = int(r["quantity"] or 1),
-                quality      = int(r["quality"] or 0),
-                is_blueprint = bool(r["is_blueprint"]),
-                durability   = float(r["durability"] or 0),
-                rating       = float(r["rating"] or 0),
-                price        = int(r["price"] or 0),
-                owner_eos_id = r["owner_eos_id"],
-                owner_name   = r.get("owner_name"),
-                listed_at    = _iso(r.get("listed_at")),
-            )
-            for r in rows
-        ],
-    )
+    items: list[_ListedItem] = []
+    for r in rows:
+        bp = r["blueprint"] or ""
+        dino = _dino_card_from_blob(r.get("item_data")) if _looks_like_cryopod(bp) else None
+        items.append(_ListedItem(
+            id           = int(r["id"]),
+            blueprint    = bp,
+            quantity     = int(r["quantity"] or 1),
+            quality      = int(r["quality"] or 0),
+            is_blueprint = bool(r["is_blueprint"]),
+            durability   = float(r["durability"] or 0),
+            rating       = float(r["rating"] or 0),
+            price        = int(r["price"] or 0),
+            owner_eos_id = r["owner_eos_id"],
+            owner_name   = r.get("owner_name"),
+            listed_at    = _iso(r.get("listed_at")),
+            dino         = dino,
+        ))
+    return _ListedResponse(total=total, items=items)
 
 
 # ── /me/* (player-scoped) ───────────────────────────────────────────────────
@@ -325,7 +383,7 @@ async def list_my_items(
         text(
             "SELECT id, blueprint, quantity, quality, price, status, "
             "       owner_eos_id, owner_name, buyer_eos_id, buyer_name, "
-            "       created_at, listed_at, sold_at, claimed_at "
+            "       created_at, listed_at, sold_at, claimed_at, item_data "
             "FROM ARKM_market_items "
             "WHERE owner_eos_id = :e OR buyer_eos_id = :e "
             "ORDER BY id DESC LIMIT 200"
@@ -335,9 +393,11 @@ async def list_my_items(
     out: list[_MyItem] = []
     for r in rows:
         role = "owner" if r["owner_eos_id"] == eos else "buyer"
+        bp = r["blueprint"] or ""
+        dino = _dino_card_from_blob(r.get("item_data")) if _looks_like_cryopod(bp) else None
         out.append(_MyItem(
             id=int(r["id"]), role=role,
-            blueprint=r["blueprint"] or "", quantity=int(r["quantity"] or 1),
+            blueprint=bp, quantity=int(r["quantity"] or 1),
             quality=int(r["quality"] or 0), price=int(r["price"] or 0),
             status=r["status"],
             owner_eos_id=r["owner_eos_id"], owner_name=r.get("owner_name"),
@@ -346,6 +406,7 @@ async def list_my_items(
             listed_at=_iso(r.get("listed_at")),
             sold_at=_iso(r.get("sold_at")),
             claimed_at=_iso(r.get("claimed_at")),
+            dino=dino,
         ))
     return out
 
