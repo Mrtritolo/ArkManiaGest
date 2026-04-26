@@ -22,6 +22,7 @@ import {
   type MarketListedItem, type MarketMyItem, type MarketWallet,
   type MarketTransaction,
 } from "../services/api";
+import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 
 type TabKey = "browse" | "mine" | "history";
 
@@ -161,7 +162,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
   async function handleBuy(item: MarketListedItem) {
     if (!confirm(t("market.confirmBuy", {
       defaultValue: "Acquisti '{{n}}' per {{p}} coins?",
-      n: shortBp(item.blueprint), p: item.price,
+      n: arkItemDisplayName(item.blueprint), p: item.price,
     }))) return;
     try {
       const res = await marketApi.buy(item.id);
@@ -359,44 +360,19 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                 <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "0.4rem" }}>
                   {t("market.totalCount", { defaultValue: "{{n}} item disponibili", n: listedTotal })}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.6rem" }}>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: "0.7rem",
+                }}>
                   {listed.map(it => (
-                    <div key={it.id} className="pl-sync-panel" style={{ padding: "0.7rem 0.85rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontWeight: 600, fontSize: "0.95rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {shortBp(it.blueprint)}
-                          </div>
-                          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: 2 }}>
-                            {t("market.qty", { defaultValue: "Qta:" })} {it.quantity}
-                            {it.is_blueprint ? " · BP" : ""}
-                            {it.quality > 0 ? ` · Q${it.quality}` : ""}
-                            {it.durability > 0 ? ` · ${Math.round(it.durability)}%` : ""}
-                          </div>
-                          <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: 2 }}>
-                            {t("market.seller", { defaultValue: "Venditore:" })}{" "}
-                            <strong style={{ color: "var(--text)" }}>{it.owner_name || it.owner_eos_id.slice(0, 8) + "…"}</strong>
-                            {it.listed_at ? ` · ${fmtRelative(it.listed_at)}` : ""}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        marginTop: "0.7rem", gap: "0.5rem",
-                      }}>
-                        <span style={{ fontSize: "1.2rem", fontWeight: 700, color: "#16a34a" }}>
-                          <Coins size={14} /> {it.price.toLocaleString()}
-                        </span>
-                        <button
-                          onClick={() => handleBuy(it)}
-                          className="btn btn-primary btn-sm"
-                          disabled={!wallet || wallet.balance < it.price}
-                          title={!wallet ? "Wallet non disponibile" : (wallet.balance < it.price ? "Saldo insufficiente" : "")}
-                        >
-                          <ShoppingBag size={12} /> {t("market.buy", { defaultValue: "Acquista" })}
-                        </button>
-                      </div>
-                    </div>
+                    <ItemCard
+                      key={it.id}
+                      it={it}
+                      walletBal={wallet?.balance ?? 0}
+                      walletLoaded={wallet !== null}
+                      onBuy={() => handleBuy(it)}
+                    />
                   ))}
                 </div>
               </>
@@ -434,9 +410,22 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                   {myItems.map(it => (
                     <tr key={it.id}>
                       <td>
-                        <div style={{ fontWeight: 500 }}>{shortBp(it.blueprint)}</div>
-                        <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                          Qta: {it.quantity} {it.quality > 0 ? `· Q${it.quality}` : ""}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+                          <div style={{
+                            width: 38, height: 38,
+                            background: "linear-gradient(135deg, #1f2937 0%, #374151 100%)",
+                            borderRadius: 6, padding: 3, flexShrink: 0,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            <ItemImage blueprint={it.blueprint} size={32} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 500 }}>{arkItemDisplayName(it.blueprint)}</div>
+                            <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                              Qta: {it.quantity}
+                              {it.quality > 0 ? ` · Q${it.quality}` : ""}
+                            </div>
+                          </div>
                         </div>
                       </td>
                       <td>
@@ -519,7 +508,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                           {tx.role === "buyer" ? t("market.bought2", { defaultValue: "comprato" }) : t("market.sold", { defaultValue: "venduto" })}
                         </span>
                       </td>
-                      <td>{shortBp(tx.blueprint || "?")}</td>
+                      <td>{tx.blueprint ? arkItemDisplayName(tx.blueprint) : "?"}</td>
                       <td style={{ fontSize: "0.78rem" }}>
                         {tx.counterpart_name || tx.counterpart_eos.slice(0, 8) + "…"}
                       </td>
@@ -538,6 +527,200 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
     </Wrapper>
   );
 }
+
+// ── Item card (Browse tab) ────────────────────────────────────────────────
+
+function ItemCard({
+  it, walletBal, walletLoaded, onBuy,
+}: {
+  it: MarketListedItem;
+  walletBal: number;
+  walletLoaded: boolean;
+  onBuy: () => void;
+}) {
+  const { t } = useTranslation();
+  const display    = arkItemDisplayName(it.blueprint);
+  const canAfford  = walletLoaded && walletBal >= it.price;
+  const hasEnough  = !walletLoaded ? false : canAfford;
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column",
+      background: "var(--bg-card, #fff)",
+      border: "1px solid var(--border)",
+      borderRadius: 10,
+      overflow: "hidden",
+      transition: "transform 0.15s, box-shadow 0.15s",
+      cursor: "default",
+    }}
+      onMouseEnter={e => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 6px 18px rgba(0,0,0,0.12)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = "";
+      }}
+    >
+      {/* Image header -- square aspect, dark backdrop so the wiki PNG
+          (transparent background) reads against any theme. */}
+      <div style={{
+        width: "100%", aspectRatio: "1 / 1",
+        background: "linear-gradient(135deg, #1f2937 0%, #374151 100%)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "0.5rem", position: "relative",
+      }}>
+        <ItemImage blueprint={it.blueprint} size={140} />
+
+        {/* Quantity badge overlay (top-right) */}
+        {it.quantity > 1 && (
+          <span style={{
+            position: "absolute", top: 6, right: 6,
+            background: "#000000aa", color: "#fff",
+            fontSize: "0.78rem", fontWeight: 700,
+            padding: "0.1rem 0.5rem", borderRadius: 99,
+            pointerEvents: "none",
+          }}>
+            ×{it.quantity}
+          </span>
+        )}
+
+        {/* Blueprint badge overlay (top-left) when applicable */}
+        {it.is_blueprint && (
+          <span style={{
+            position: "absolute", top: 6, left: 6,
+            background: "#2563eb", color: "#fff",
+            fontSize: "0.65rem", fontWeight: 700,
+            padding: "0.1rem 0.4rem", borderRadius: 4,
+            letterSpacing: 0.5, textTransform: "uppercase",
+            pointerEvents: "none",
+          }}>
+            BP
+          </span>
+        )}
+      </div>
+
+      {/* Body -- name + meta */}
+      <div style={{ padding: "0.6rem 0.7rem", flex: 1, display: "flex", flexDirection: "column" }}>
+        <div style={{
+          fontWeight: 600, fontSize: "0.95rem",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}
+          title={display}
+        >
+          {display}
+        </div>
+
+        {/* Stat chips row (small) */}
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: "0.25rem",
+          marginTop: "0.3rem",
+          fontSize: "0.68rem", color: "var(--text-secondary)",
+        }}>
+          {it.quality > 0 && (
+            <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
+              Q{it.quality}
+            </span>
+          )}
+          {it.durability > 0 && (
+            <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
+              {Math.round(it.durability)}%
+            </span>
+          )}
+          {it.rating > 0 && (
+            <span className="pl-chip" style={{ padding: "0.1rem 0.35rem" }}>
+              ★ {it.rating.toFixed(1)}
+            </span>
+          )}
+        </div>
+
+        {/* Seller line */}
+        <div style={{
+          fontSize: "0.7rem", color: "var(--text-secondary)",
+          marginTop: "0.4rem",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {t("market.byShort", { defaultValue: "Da" })}{" "}
+          <strong style={{ color: "var(--text)" }}>
+            {it.owner_name || it.owner_eos_id.slice(0, 8) + "…"}
+          </strong>
+          {it.listed_at && (
+            <span style={{ marginLeft: 6, opacity: 0.85 }}>
+              · {fmtRelative(it.listed_at)}
+            </span>
+          )}
+        </div>
+
+        {/* Price + buy footer */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          marginTop: "0.65rem", paddingTop: "0.55rem",
+          borderTop: "1px solid var(--border)",
+          gap: "0.4rem",
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: "0.25rem",
+            fontSize: "1.15rem", fontWeight: 700,
+            color: hasEnough ? "#16a34a" : "#dc2626",
+          }}>
+            <Coins size={14} /> {it.price.toLocaleString()}
+          </div>
+          <button
+            onClick={onBuy}
+            className="btn btn-primary btn-sm"
+            disabled={!walletLoaded || !canAfford}
+            title={
+              !walletLoaded ? "Wallet non disponibile"
+              : !canAfford  ? "Saldo insufficiente" : ""
+            }
+            style={{ padding: "0.35rem 0.65rem" }}
+          >
+            <ShoppingBag size={12} /> {t("market.buy", { defaultValue: "Acquista" })}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Item image with graceful fallback.  Triggers an onError swap to a
+ * generic ARK-style placeholder when the wiki has no image (mod
+ * items, typos in the blueprint name).
+ */
+function ItemImage({ blueprint, size }: { blueprint: string; size: number }) {
+  const [errored, setErrored] = useState(false);
+  const url = arkItemThumbUrl(blueprint);
+
+  if (!url || errored) {
+    return (
+      <div style={{
+        width: size, height: size,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "#ffffff10", color: "#9ca3af", borderRadius: 8,
+      }}>
+        <Package size={Math.round(size * 0.45)} />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt={arkItemDisplayName(blueprint)}
+      width={size}
+      height={size}
+      loading="lazy"
+      onError={() => setErrored(true)}
+      style={{
+        width: size, height: size, objectFit: "contain",
+        // Subtle drop-shadow so light icons read against the gradient.
+        filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))",
+      }}
+    />
+  );
+}
+
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

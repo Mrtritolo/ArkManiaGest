@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import require_admin
 from app.db.session import get_db, get_plugin_db
 from app.api.routes.me import get_current_player, _PlayerSession
+from app.services.market_thumbs import get_or_fetch_thumb, sanitize_thumb_name
 
 
 router = APIRouter()
@@ -184,6 +186,49 @@ async def _audit(plugin_db: AsyncSession, *,
         # Audit is best-effort; never fail a real op because of it.
         try: await plugin_db.rollback()
         except Exception: pass
+
+
+# ── Item thumbnail proxy (Phase 8 GUI) ──────────────────────────────────────
+# Public-ish: any authenticated caller can fetch.  No auth dependency
+# at all -- the images are not sensitive (every player can see what's
+# on the market) and removing the auth lookup makes the response
+# trivially cacheable by browser + nginx.
+
+@router.get("/thumb/{display_name}")
+async def get_item_thumb(display_name: str):
+    """
+    Return the cached PNG for *display_name* (e.g. ``Mejoberry``).
+
+    The first request triggers a fetch from ark.wiki.gg, which can
+    take ~500-800 ms; every subsequent request is served from local
+    disk with a 1-year browser cache header.
+
+    Use ``arkItemDisplayName(blueprint)`` on the frontend to derive
+    *display_name* from a raw blueprint path, then concatenate with
+    ``/api/v1/market/thumb/`` (URL-encode the name -- the backend
+    accepts spaces and most ASCII).
+
+    Responds 404 when the wiki has no matching image (mod items,
+    typos).  The 404 is cached on disk for 24h so we don't keep
+    hammering the wiki.
+    """
+    # Strip the optional ``.png`` suffix to support both forms.
+    name = display_name[:-4] if display_name.lower().endswith(".png") else display_name
+    safe = sanitize_thumb_name(name)
+    if not safe:
+        raise HTTPException(status_code=422, detail="Invalid item name")
+
+    data = await get_or_fetch_thumb(name)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Image not found on wiki")
+
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )
 
 
 # ── Browse listed items (any authenticated caller) ──────────────────────────
