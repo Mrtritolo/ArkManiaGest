@@ -7,6 +7,73 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.1] - 2026-04-26
+
+Marketplace GUI upgrade: visually richer cards with ARK item
+images served same-origin from a local on-disk cache.
+
+### Added
+
+- **Item image proxy + cache.**  New
+  `GET /api/v1/market/thumb/{display_name}` endpoint fetches the
+  matching PNG from `ark.wiki.gg/wiki/Special:FilePath/<name>.png`
+  on first request, persists it to
+  `backend/data/market_thumbs/<safe>.png`, then serves every
+  subsequent hit from local disk with a 1-year browser-cache
+  header.
+
+  Why proxy instead of pointing the `<img>` straight at the wiki:
+    - keeps the panel's CSP locked to `img-src 'self' data:
+      cdn.discordapp.com` (no need to also whitelist ark.wiki.gg)
+    - shields us from any wiki-side URL drift / page renames
+    - cold latency stays at ~600 ms only the first time per item
+
+  Negative-cache: when the wiki has no image (mod items, typos
+  in the BP), a zero-byte `.404` marker is written that suppresses
+  re-fetches for 24h.
+
+- **Frontend item-name helpers** in `src/utils/arkItem.ts`:
+    * `arkItemDisplayName(blueprint)` -- maps
+      `Blueprint'/Game/.../PrimalItemConsumable_Berry_Mejoberry'`
+      to `Mejoberry`.  Handles the `Blueprint'...'` wrapper, the
+      `_C` Blueprint Class suffix, every `PrimalItem*_` prefix,
+      categorical sub-prefixes (Berry / Egg / Kibble / Soup /
+      Veggie), and CamelCase splitting.  Validated against the
+      4 real blueprints in the operator's plugin output.
+    * `arkItemThumbUrl(blueprint)` -- returns the relative URL
+      `/api/v1/market/thumb/<encoded name>` for use as `<img src=>`.
+
+- **Item card redesign** (Browse tab).  Each marketplace listing
+  is now a dedicated card with:
+    * 1:1 image header on a dark gradient backdrop
+    * `×N` quantity badge (top-right)
+    * `BP` badge (top-left) when `is_blueprint`
+    * Pretty display name + Q / durability / rating chips
+    * Seller line with relative timestamp
+    * Price footer (red when wallet can't afford) + Buy button
+    * Hover lift (translateY -2px + shadow)
+    * `loading="lazy"` on every image
+    * Graceful fallback to a Lucide Package icon when the wiki
+      has no image for that item
+
+- **My-items + History tables** also pick up the new display name
+  and a small (32px) item thumbnail in the Item column.
+
+### Operational notes
+
+- Cache lives at `backend/data/market_thumbs/` (already gitignored
+  via `backend/data/`).  Override the base directory via the
+  `ARKM_DATA_DIR` env var when running in containers / on
+  ephemeral filesystems where you want the cache on a persistent
+  volume.
+- ~5-30 KB per image; 100 distinct items = 0.5-3 MB on disk.  Safe
+  to nuke the directory at any point -- next request rebuilds the
+  cache from the wiki.
+- The cache is per-image-name, not per-blueprint, so two BPs that
+  resolve to the same display name (rare; happens with mod items
+  copying vanilla names) share one disk file.
+
+---
 ## [3.5.0] - 2026-04-25
 
 **Phase 8 — Player Marketplace** lands as the panel half of a
