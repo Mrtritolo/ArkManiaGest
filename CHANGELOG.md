@@ -7,6 +7,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.5] - 2026-04-27
+
+UI fix: floating dropdowns and modal panels were unreadable because
+they inherited the translucent `--bg-card` background.  Introduces
+a dedicated `--bg-popover` variable + theme-aware alias defaults so
+every overlay paints against a solid colour on both themes.
+
+### Fixed
+
+- **Rare-dinos blueprint dropdown** rendered illegible on both
+  themes because the dropdown used `var(--bg-card)`, which on the
+  dark theme is `rgba(255,255,255,0.03)` -- a 3% white wash designed
+  for static cards sitting on the dark page background.  As a
+  floating overlay over the form fields below, the bleed-through
+  made the suggestion list unreadable.
+
+- **PlayersPage column-filter popup** (Excel-style filter on
+  Tribe / Groups / Timed-Active / Timed-Expired): same root cause,
+  same fix.
+
+- **'Nuovo Ban' modal**, **'Nuovo dino raro' modal**: same.  The
+  modal panels now paint against an opaque background so the text
+  inside stays legible regardless of what was underneath the
+  overlay.
+
+- **Discord tabs popovers** (member role picker etc.) were rendering
+  with a hardcoded white fallback (`var(--surface, #fff)`), which
+  forced bright white on the dark theme.  The new `--surface`
+  alias points at `--bg-popover` for both themes so they pick up
+  the correct surface colour without code changes.
+
+### Internal
+
+- New CSS variable `--bg-popover`: solid background for floating
+  overlays.
+    * dark : `#0f1410`
+    * light: `#ffffff`
+- New aliases `--surface` and `--text` (point at `--bg-popover`
+  and `--text-primary`) so legacy fallbacks like
+  `var(--surface, #fff)` and `var(--text)` resolve to the right
+  theme-aware colours instead of dropping to bright white / system
+  defaults.
+- The translucent `--bg-card` is preserved for static surfaces
+  (stats panels, list rows) where it gives the panel its signature
+  look against the dark page background.  This patch only flips
+  the FLOATING surfaces.
+
+---
 ## [3.5.4] - 2026-04-27
 
 Two visual refinements to the cryopod marketplace cards.
