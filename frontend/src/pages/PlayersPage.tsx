@@ -106,11 +106,15 @@ function ColumnFilterPopup(p: ColumnFilterPopupProps) {
       onClick={e => e.stopPropagation()}
       style={{
         position: 'absolute', top: '100%', left: 0, marginTop: 4,
-        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        // Opaque popover background -- the translucent --bg-card would
+        // let the table behind the column filter bleed through and make
+        // the option labels unreadable.
+        background: 'var(--bg-popover)', border: '1px solid var(--border)',
         borderRadius: 'var(--radius)',
         boxShadow: 'var(--shadow-lg)',
         zIndex: 50, minWidth: 220, maxWidth: 320,
         padding: '0.4rem',
+        color: 'var(--text-primary)',
       }}
     >
       <input
@@ -1244,7 +1248,7 @@ export default function PlayersPage() {
                         {/* Two-tab popup: ACTIVE / EXPIRED.  Both filters
                             stack so the operator can build queries like
                             'has Patreon active OR has VIP expired'. */}
-                        <div style={{ display: 'flex', gap: 4, marginBottom: 4, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 3 }}>
+                        <div style={{ display: 'flex', gap: 4, marginBottom: 4, background: 'var(--bg-popover)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 3 }}>
                           <button
                             onClick={() => setOpenFilter('timedActive')}
                             className={`btn btn-sm ${openFilter === 'timedActive' ? 'btn-primary' : 'btn-ghost'}`}

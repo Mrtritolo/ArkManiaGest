@@ -19,6 +19,17 @@
   --bg-input: rgba(255,255,255,0.05);
   --bg-hover: rgba(74,222,128,0.06);
   --bg-active: rgba(74,222,128,0.1);
+  /* Opaque surface for floating elements (dropdown / popover / tooltip).
+     Cards and inputs use translucent backgrounds for the panel's signature
+     look, but free-floating overlays NEED solid backgrounds or the text
+     under them bleeds through and becomes unreadable -- the rare-dino
+     blueprint search dropdown was the canonical victim. */
+  --bg-popover: #0f1410;
+  /* Aliases used by older code paths.  Keeping --surface and --text as
+     theme-aware aliases lets components written against shadcn/headless-ui
+     conventions render correctly in both themes without rewrites. */
+  --surface: var(--bg-popover);
+  --text:    var(--text-primary);
 
   --border: rgba(74,222,128,0.12);
   --border-focus: #4ade80;
@@ -78,6 +89,9 @@
   --bg-input:       #ffffff;
   --bg-hover:       rgba(22,163,74,0.06);
   --bg-active:      rgba(22,163,74,0.12);
+  --bg-popover:     #ffffff;        /* solid white for floating overlays */
+  --surface:        var(--bg-popover);
+  --text:           var(--text-primary);
 
   --border:         #e2e8f0;        /* slate-200 */
   --border-focus:   #16a34a;        /* green-600 -- darker for contrast */

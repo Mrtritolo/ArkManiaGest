@@ -495,7 +495,7 @@ export default function RareDinosPage() {
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(2px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto' }}>
+          <div style={{ background: 'var(--bg-popover)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto' }}>
             {/* Modal header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -535,8 +535,13 @@ export default function RareDinosPage() {
                       (bpSearched && !bpLoading && bpSearch.length >= 2)) && (
                       <div style={{
                         position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
-                        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                        // Use the opaque popover background so the search
+                        // results don't bleed through to the form below
+                        // (the translucent --bg-card was the cause of the
+                        // 'illegible dropdown' bug).
+                        background: 'var(--bg-popover)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
                         boxShadow: 'var(--shadow-lg)', maxHeight: 200, overflowY: 'auto',
+                        color: 'var(--text-primary)',
                       }}>
                         {bpResults.length > 0 ? (
                           bpResults.map((bp, i) => (
@@ -544,6 +549,7 @@ export default function RareDinosPage() {
                               style={{
                                 display: 'block', width: '100%', padding: '0.45rem 0.75rem', border: 'none',
                                 background: 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: '0.82rem',
+                                color: 'var(--text-primary)',
                               }}
                               onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
                               onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
