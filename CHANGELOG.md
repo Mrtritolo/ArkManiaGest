@@ -7,6 +7,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.4] - 2026-04-27
+
+Two visual refinements to the cryopod marketplace cards.
+
+### Changed
+
+- **Cryopod thumbnail now shows the DINO**, not the empty cryopod's
+  grey icon.  When the panel parses out the dino's species from the
+  cryopod blob, the image header fetches `Moschops.png` (or `Rex.png`,
+  etc.) from the ARK wiki instead of the cryopod item's image.
+
+  Same on-disk cache (`backend/data/market_thumbs/<species>.png`)
+  with the same 1-year browser cache header, so the very first dino
+  costs a wiki round-trip and every subsequent card hits local disk
+  instantly.
+
+- **Gender chip** on the cryopod card is now a 36px circular badge
+  with a soft drop-shadow and a thin white outline so the symbol
+  reads at a glance from across the listings grid -- previously it
+  was a tiny chip the operator had to squint at.  Pink for FEMALE,
+  blue for MALE; unchanged visual language.
+
+### Internal
+
+- `ItemImage` gains an optional `nameOverride` prop so any caller
+  can route the thumbnail through the local cache for a different
+  wiki page than the blueprint would derive.  Useful for the
+  cryopod-shows-dino case here, and any future "show this item but
+  use a friendlier icon" scenarios.
+- The component also resets its local `errored` flag on URL change,
+  so a brief network blip on one image doesn't leave the placeholder
+  pinned in place after the next render.
+
+---
 ## [3.5.3] - 2026-04-27
 
 Hot-fix for v3.5.2: cryopod cards on the marketplace dashboard
