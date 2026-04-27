@@ -584,7 +584,15 @@ function ItemCard({
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "0.5rem", position: "relative",
       }}>
-        <ItemImage blueprint={it.blueprint} size={140} />
+        {/* When this is a cryopod with a parsed species, fetch the
+            DINO's image (e.g. 'Moschops.png') instead of the empty
+            cryopod's icon.  The thumb proxy caches both kinds the
+            same way. */}
+        <ItemImage
+          blueprint={it.blueprint}
+          size={140}
+          nameOverride={isCryo && it.dino?.species ? it.dino.species : undefined}
+        />
 
         {/* Quantity badge overlay (top-right).  Cryopods are always
             quantity=1 so the badge is suppressed for them. */}
@@ -628,16 +636,24 @@ function ItemCard({
           </span>
         )}
 
-        {/* Cryopod top-left: gender icon */}
+        {/* Cryopod top-left: gender icon -- bigger than a regular
+            badge so it reads at a glance from across the listings
+            grid (operator request). */}
         {isCryo && it.dino?.gender && (
           <span style={{
             position: "absolute", top: 6, left: 6,
             background: it.dino.gender === "FEMALE" ? "#ec4899" : "#3b82f6",
             color: "#fff",
-            fontSize: "0.7rem", fontWeight: 700,
-            padding: "0.15rem 0.4rem", borderRadius: 4,
+            // Bigger circular chip with the gender glyph centred.
+            width: 36, height: 36, borderRadius: "50%",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "1.6rem", fontWeight: 700, lineHeight: 1,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+            border: "2px solid #ffffff66",
             pointerEvents: "none",
-          }}>
+          }}
+          title={it.dino.gender}
+          >
             {it.dino.gender === "FEMALE" ? "♀" : "♂"}
           </span>
         )}
@@ -757,10 +773,32 @@ function ItemCard({
  * Item image with graceful fallback.  Triggers an onError swap to a
  * generic ARK-style placeholder when the wiki has no image (mod
  * items, typos in the blueprint name).
+ *
+ * Optional `nameOverride` lets a caller request a different wiki page
+ * than the one derived from the blueprint -- used by cryopod cards
+ * to fetch the dino's species image (e.g. 'Moschops') instead of
+ * the cryopod item's own icon.
  */
-function ItemImage({ blueprint, size }: { blueprint: string; size: number }) {
+function ItemImage({
+  blueprint, size, nameOverride,
+}: {
+  blueprint: string;
+  size: number;
+  nameOverride?: string;
+}) {
   const [errored, setErrored] = useState(false);
-  const url = arkItemThumbUrl(blueprint);
+
+  // Build the URL: when nameOverride is supplied, hit the thumb proxy
+  // with that name directly; otherwise derive from the blueprint as
+  // before.  Both go through /api/v1/market/thumb/<name> which caches
+  // the wiki response on first hit.
+  const url = nameOverride
+    ? `/api/v1/market/thumb/${encodeURIComponent(nameOverride)}`
+    : arkItemThumbUrl(blueprint);
+
+  // Reset the error flag when the image source changes (e.g. a sync
+  // re-fetch hands us a different blueprint mid-render).
+  useEffect(() => { setErrored(false); }, [url]);
 
   if (!url || errored) {
     return (
@@ -777,7 +815,7 @@ function ItemImage({ blueprint, size }: { blueprint: string; size: number }) {
   return (
     <img
       src={url}
-      alt={arkItemDisplayName(blueprint)}
+      alt={nameOverride ?? arkItemDisplayName(blueprint)}
       width={size}
       height={size}
       loading="lazy"
