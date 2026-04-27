@@ -46,21 +46,48 @@ def _looks_like_cryopod(blueprint: Optional[str]) -> bool:
     return "cryopod" in blueprint.lower()
 
 
+_BASE64_ALPHABET = set(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+)
+
+
 def _dino_card_from_blob(item_data) -> Optional[_DinoCard]:
     """
-    Convert ARKM_market_items.item_data (LONGBLOB / BYTES coming from
-    pymysql) to a _DinoCard via the cryopod parser.  Returns None on
-    parse miss; never raises.
+    Convert ARKM_market_items.item_data (LONGBLOB) to a _DinoCard via
+    the cryopod parser.  Returns None on parse miss; never raises.
+
+    The C++ plugin stores the FItemNetInfo as a base64 STRING inside
+    the LONGBLOB column rather than the raw binary bytes (cleaner for
+    SQL inspection, and aligned with the panel's expectation in the
+    /upload endpoint contract).  pymysql gives us those ASCII bytes
+    back as `bytes`; if we re-base64-encode them on the way to the
+    parser we end up with double-encoded data and the parser finds
+    nothing.
+
+    Strategy: sniff whether the bytes are already a base64 string
+    (every char in the standard alphabet) -- if so, decode them as
+    UTF-8 and feed the parser directly.  Otherwise treat them as raw
+    binary and base64-encode for the parser.
     """
     if item_data is None:
         return None
-    # The DB stores the blob as binary (LONGBLOB).  The parser wants
-    # a base64 string -- the simplest tolerant conversion is to
-    # round-trip via base64.
     import base64 as _b64
     try:
         if isinstance(item_data, (bytes, bytearray, memoryview)):
-            b64 = _b64.b64encode(bytes(item_data)).decode("ascii")
+            raw_bytes = bytes(item_data)
+            # Sniff: if every byte (modulo whitespace) is in the base64
+            # alphabet, the blob is an ASCII base64 string -- decode in
+            # place rather than re-encoding.
+            sample = raw_bytes[:128]
+            cleaned_sample = bytes(b for b in sample if b not in (0x0a, 0x0d, 0x20, 0x09))
+            looks_b64 = (
+                len(cleaned_sample) > 0
+                and all(b in _BASE64_ALPHABET for b in cleaned_sample)
+            )
+            if looks_b64:
+                b64 = raw_bytes.decode("ascii", errors="ignore")
+            else:
+                b64 = _b64.b64encode(raw_bytes).decode("ascii")
         else:
             b64 = str(item_data)
     except Exception:
