@@ -7,6 +7,51 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.3] - 2026-04-27
+
+Hot-fix for v3.5.2: cryopod cards on the marketplace dashboard
+were still rendering empty after the previous release.
+
+### Fixed
+
+- **Cryopod parser failed on every live blob** because the C++
+  plugin writes the FItemNetInfo into the `ARKM_market_items.item_data`
+  LONGBLOB column as a base64 *string* (cleaner for SQL inspection)
+  rather than as raw binary bytes.  `pymysql` returns those ASCII
+  bytes as Python `bytes`, and the panel-side glue was
+  unconditionally `base64.b64encode()`-ing them again — producing
+  a double-encoded payload (`'TUtSQQUA...'` becomes
+  `'VFV0U1FRVUE...'`) that the parser couldn't make sense of.
+
+  Fix: sniff the first 128 bytes of the blob.  When every
+  non-whitespace byte is in the standard base64 alphabet
+  (A-Za-z0-9+/=), treat the blob as ASCII and feed it directly to
+  the parser without re-encoding.  Otherwise (raw binary path,
+  preserved as a fallback) base64-encode and forward.
+
+  Verified live against the Moschops cryopod sitting at item id=7:
+
+      species:       Moschops
+      level:         197
+      display_name:  Moschops - Lvl 197 (Moschops)
+      stats:         35,13,24,20,33,8,
+      gender:        MALE
+      colors:        Dino Albino / Black / Dino Light Green /
+                     Dino Light Orange / Dino Dark Brown /
+                     Light Brown
+
+### Operational notes
+
+- No DB schema change.  Pure read-side detection.
+- After updating, the cryopod cards on the dashboard fill in with
+  the dino metadata immediately — no backend restart needed beyond
+  the standard self-update flow.
+- The fix is idempotent and tolerant: if a future plugin variant
+  switches to writing raw binary into the column, the sniffer
+  detects the non-base64 case and falls back to the original
+  encoding path.
+
+---
 ## [3.5.2] - 2026-04-26
 
 Cryopod-aware marketplace cards: species, level, gender and stat
