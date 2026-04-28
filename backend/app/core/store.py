@@ -271,6 +271,37 @@ def save_plugin_config_sync(plugin_name: str, config: dict) -> None:
     )
 
 
+def get_containers_map_sync() -> dict:
+    """
+    Read the persisted ``containers_map`` plugin config with the
+    excluded-container filter applied at read time.
+
+    Centralised here because numerous routes (players, servers, public,
+    containers) iterate over the map; doing the filtering once at load
+    means a stale entry like ``BobsMissions`` doesn't leak into any
+    consumer just because nobody triggered a re-scan.
+
+    Returns:
+        Dict with ``machines`` (keyed by machine_id string) and
+        ``last_scan``.  Returns an empty structure when the blob does
+        not exist.
+    """
+    # Late import: app.ssh.scanner pulls in SSHManager which has its
+    # own dependency tree, and store.py is imported very early in
+    # bootstrap.  Importing here keeps the module-load order safe.
+    from app.ssh.scanner import _is_excluded_container
+
+    raw = get_plugin_config_sync("containers_map") or {"machines": {}, "last_scan": None}
+    machines = raw.get("machines") or {}
+    for mdata in machines.values():
+        containers = mdata.get("containers") or []
+        mdata["containers"] = [
+            c for c in containers
+            if not _is_excluded_container(c.get("name", ""))
+        ]
+    return raw
+
+
 # =============================================
 #  Machines — async
 # =============================================

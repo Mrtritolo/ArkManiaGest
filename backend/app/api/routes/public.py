@@ -20,7 +20,7 @@ from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer
 from sqlalchemy import text as sa_text
 from app.core.config import server_settings
-from app.core.store import get_machine_sync, get_plugin_config_sync
+from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles
 
@@ -302,8 +302,8 @@ async def cron_sync_names(
     if client_ip not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Local requests only.")
 
-    containers_map = get_plugin_config_sync("containers_map")
-    if not containers_map or not containers_map.get("machines"):
+    containers_map = get_containers_map_sync()
+    if not containers_map.get("machines"):
         return {"success": False, "error": "No containers scanned."}
 
     all_players_result = await db.execute(

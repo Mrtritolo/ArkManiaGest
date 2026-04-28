@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import server_settings
-from app.core.store import get_machine_sync, get_plugin_config_sync
+from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.scanner import read_remote_file, write_remote_file, backup_remote_file
 from app.ssh.ini_parser import (
@@ -70,8 +70,8 @@ def _ssh_for_machine(m: dict) -> SSHManager:
 
 
 def _get_containers_map() -> dict:
-    """Load the scanned container map from the settings DB."""
-    return get_plugin_config_sync(_CONTAINERS_MAP_KEY) or {"machines": {}, "last_scan": None}
+    """Load the scanned container map from the settings DB (with exclusion filter)."""
+    return get_containers_map_sync()
 
 
 def _find_container(cmap: dict, machine_id: int, container_name: str) -> Optional[dict]:

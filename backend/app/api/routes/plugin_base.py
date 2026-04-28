@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.store import (
+    get_containers_map_sync,
     get_machine_sync,
     get_plugin_config_sync,
     save_plugin_config_sync,
@@ -201,8 +202,8 @@ def create_plugin_router(
         Returns:
             List of dicts with machine and config path information.
         """
-        cmap = get_plugin_config_sync(_CONTAINERS_MAP_KEY)
-        if not cmap:
+        cmap = get_containers_map_sync()
+        if not cmap.get("machines"):
             return []
 
         results = []

@@ -16,7 +16,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import server_settings
-from app.core.store import get_machine_sync, get_plugin_config_sync, save_plugin_config_sync
+from app.core.store import (
+    get_machine_sync, get_plugin_config_sync, save_plugin_config_sync,
+    get_containers_map_sync,
+)
 from app.ssh.manager import SSHManager
 from app.ssh.scanner import (
     scan_containers, scan_single_container,
@@ -76,13 +79,14 @@ def _ssh_for_machine(machine: dict) -> SSHManager:
 
 def _load_containers_map() -> dict:
     """
-    Load the persisted container map from the application database.
+    Load the persisted container map (with exclusion filter applied).
 
-    Returns:
-        Dict with ``machines`` (keyed by machine_id string) and
-        ``last_scan`` timestamp.  Returns an empty structure when not found.
+    Thin alias around :func:`app.core.store.get_containers_map_sync`
+    kept here so existing call-sites in this module don't have to be
+    updated; the centralised loader is what every consumer (players,
+    servers, public, …) should be using going forward.
     """
-    return get_plugin_config_sync(_CONTAINERS_MAP_KEY) or {"machines": {}, "last_scan": None}
+    return get_containers_map_sync()
 
 
 def _save_containers_map(data: dict) -> None:

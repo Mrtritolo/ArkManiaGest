@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.db.session import get_plugin_db
-from app.core.store import get_plugin_config_sync
+from app.db.session import get_plugin_db, get_db
+from app.api.routes.blueprints import is_official_or_s_variant_dino
 
 router = APIRouter()
 
@@ -409,25 +409,39 @@ def _extract_display_name(bp: str) -> str:
 async def generate_random_dinos(
     body: GenerateRequest,
     db: AsyncSession = Depends(get_plugin_db),
+    panel_db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate a random selection of dinos from the blueprint DB.
+    Generate a random selection of dinos from the blueprint catalog.
 
     Returns a preview list in RareDinoCreate format — does NOT auto-insert.
     Use the ``/bulk`` endpoint to actually insert the generated list.
     """
-    # 1. Load blueprint DB and filter dinos
-    bp_db = get_plugin_config_sync("blueprints_db")
-    if not bp_db or not bp_db.get("blueprints"):
+    # 1. Load dino blueprints from ARKM_blueprints (panel DB).
+    res = await panel_db.execute(text(
+        "SELECT blueprint, name, type, category, source, gfi "
+        "FROM ARKM_blueprints WHERE type = 'dino'"
+    ))
+    rows = [
+        {
+            "blueprint": r["blueprint"],
+            "name":      r["name"],
+            "type":      r["type"],
+            "category":  r["category"],
+            "source":    r["source"],
+            "gfi":       r["gfi"],
+        }
+        for r in res.mappings().fetchall()
+    ]
+    if not rows:
         raise HTTPException(
             status_code=404,
-            detail="Blueprint database is empty. Run a sync first.",
+            detail="Blueprint catalog is empty. Run a sync first.",
         )
 
-    all_dinos = [
-        bp for bp in bp_db["blueprints"]
-        if bp.get("type") == "dino" and bp.get("blueprint")
-    ]
+    # Restrict to official ARK creatures + S-variation packs so the
+    # picker stays focused on content the cluster actually spawns.
+    all_dinos = [bp for bp in rows if is_official_or_s_variant_dino(bp)]
 
     if not all_dinos:
         raise HTTPException(status_code=404, detail="No dino blueprints found in database.")

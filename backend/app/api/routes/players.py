@@ -24,7 +24,7 @@ from sqlalchemy import select, func, or_, update, text
 
 from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer, PermissionGroup, TribePermission
-from app.core.store import get_machine_sync, get_plugin_config_sync
+from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles, extract_player_data, scan_and_match_tribes
 from app.schemas.players import (
@@ -307,7 +307,7 @@ async def test_profile_extraction(
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found.")
 
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     saved_arks: Optional[str] = None
     if containers_map:
         for mid, mdata in containers_map.get("machines", {}).items():
@@ -377,7 +377,7 @@ async def list_sync_containers():
     Return all containers that have a known SavedArks path and are therefore
     eligible for the player-name sync operation.
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         return {"containers": []}
 
@@ -417,7 +417,7 @@ async def find_player_maps(
     Returns a list of :class:`~app.schemas.players.PlayerMapResult` entries
     describing every map where the player's profile was located.
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,
@@ -486,7 +486,7 @@ async def copy_character(data: CopyCharacterRequest):
     The profile is transferred as raw bytes via base64 to avoid binary corruption
     in the SSH stream.
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(status_code=404, detail="No containers scanned.")
 
@@ -1083,7 +1083,7 @@ async def sync_player_names_from_profiles(
       not_matched (parsed name but EOS unknown to DB) /
       errors
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,
@@ -1430,7 +1430,7 @@ async def list_character_files_for_eos(
 
     Returns: { eos_id, total_files, files: [{path, container, machine_id}] }
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,
@@ -1488,20 +1488,28 @@ async def list_character_files_for_eos(
 @router.delete("/{eos_id}/character-files")
 async def delete_character_files_for_eos(
     eos_id: str,
+    db: AsyncSession = Depends(get_plugin_db),
 ):
     """
     Wipe every ``<eos_id>.arkprofile`` file across every container's
-    SavedArks directory.
+    SavedArks directory AND drop the matching ``Players`` row from the
+    plugin DB.
 
     Destructive!  After this:
       * The player's character is gone from every map of the cluster.
       * Their next login spawns them as a brand-new character.
-      * The ``Players`` row in the plugin DB is NOT touched -- delete
-        it separately if you also want to wipe their permissions.
+      * Their permissions / "Giocatore" name in the ``Players`` table
+        are removed -- the row is recreated by the Permissions plugin
+        at next login with the default group.
 
-    Returns: { eos_id, total_deleted, deleted: [...], errors: [...] }
+    The ``ArkShopPlayers`` row is intentionally NOT removed: shop
+    points are usually meant to survive a character wipe.  Wipe that
+    separately if needed.
+
+    Returns: { eos_id, total_deleted, deleted: [...], db_row_removed,
+    errors: [...] }
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,
@@ -1558,11 +1566,26 @@ async def delete_character_files_for_eos(
             except Exception as exc:
                 errors.append(f"SSH {machine['hostname']}/{container.get('name')}: {exc}")
 
+    # Remove the matching Players row so wiping a character also clears
+    # the in-DB profile (permissions, Giocatore display name).  Done
+    # AFTER the file wipe so we don't drop the row on a partial failure
+    # that left files behind on disk.
+    db_row_removed = False
+    try:
+        res = await db.execute(
+            text("DELETE FROM Players WHERE EOS_Id = :eos"),
+            {"eos": eos_clean},
+        )
+        db_row_removed = (res.rowcount or 0) > 0
+    except Exception as exc:                                       # noqa: BLE001
+        errors.append(f"DELETE Players row failed: {type(exc).__name__}: {exc}")
+
     return {
-        "eos_id":         eos_clean,
-        "total_deleted":  len(deleted),
-        "deleted":        deleted,
-        "errors":         errors,
+        "eos_id":          eos_clean,
+        "total_deleted":   len(deleted),
+        "deleted":         deleted,
+        "db_row_removed":  db_row_removed,
+        "errors":          errors,
     }
 
 
@@ -1591,7 +1614,7 @@ async def sync_tribe_names_from_files(
     the binary parser couldn't recover a name (usually means the file is
     truncated or the tribe was never named in-game).
     """
-    containers_map = get_plugin_config_sync("containers_map")
+    containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,

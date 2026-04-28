@@ -122,6 +122,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     POLLING_EXEMPT_PATHS = (
         "/api/v1/settings/status",
         "/api/v1/system-update/status",
+        # Image proxy: per-request bandwidth is bounded (PNG-only,
+        # disk-cached, returns 304/cache-headers), and a single
+        # blueprint-list paint can fan out 50+ requests at once which
+        # would otherwise eat a chunk of the per-IP budget for no
+        # security benefit.
+        "/api/v1/market/thumb/",
         "/health",
     )
 

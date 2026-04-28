@@ -8,13 +8,71 @@ import { useTranslation } from 'react-i18next'
 import {
   Database, Download, Upload, Search, RefreshCw, Loader2, CheckCircle,
   AlertCircle, X, Copy, Box, Sword, Shield, Home, Utensils,
-  Gem, Crown, Terminal, Package, Edit3, Check, ChevronDown
+  Gem, Crown, Terminal, Package, Edit3, Check, Trash2
 } from 'lucide-react'
 import { blueprintsApi } from '../services/api'
+import { arkItemThumbUrl } from '../utils/arkItem'
 
 interface BpItem {
-  id: string; name: string; blueprint: string; category: string
-  type: string; gfi: string | null; source: string; description?: string
+  id: number; name: string; blueprint: string; category: string
+  type: string; gfi: string | null; source: string | null; description?: string
+}
+
+// In-memory cache of thumb URLs that have already responded 404/429.
+// Shared across renders so paging back to a previously visited row
+// doesn't re-hammer the wiki proxy with the same misses -- the
+// marketplace only renders ~20 items per page so it never noticed,
+// but the blueprints catalog can include hundreds of command / emote
+// rows that have no wiki page at all.
+const _bpThumbFailures = new Set<string>()
+
+// Names we always skip the thumb fetch for: admin commands have no
+// icon, and "..." emote-style entries don't resolve to a wiki page.
+function _shouldSkipThumb(type: string, name: string): boolean {
+  if (type === 'command') return true
+  if (name.startsWith('"') || name.startsWith('“')) return true
+  return false
+}
+
+/**
+ * Square thumbnail rendered to the left of the name in each row.
+ *
+ * Asks ``/api/v1/market/thumb/{name}`` (same proxy the marketplace uses).
+ * Prefers the row's display name -- for blueprints whose path contains
+ * mod / variant prefixes (S-Allo_Character_BP, ...) the wiki page is
+ * keyed on the human-readable creature name, not the class.  Falls back
+ * to a Package icon when (a) the type has no wiki icon (commands,
+ * emotes), (b) a previous request for this URL already failed.
+ */
+function BpThumb({ name, blueprint, type, size = 28 }: {
+  name: string; blueprint: string; type: string; size?: number
+}) {
+  const fromName = name && name !== '?' ? `/api/v1/market/thumb/${encodeURIComponent(name)}` : null
+  const url = fromName ?? arkItemThumbUrl(blueprint)
+
+  const shouldSkip = _shouldSkipThumb(type, name)
+  const cachedFailure = url ? _bpThumbFailures.has(url) : false
+  const [errored, setErrored] = useState(cachedFailure)
+
+  if (!url || shouldSkip || errored) {
+    return (
+      <span style={{
+        width: size, height: size, flexShrink: 0,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg-card-muted)', color: 'var(--text-muted)',
+        borderRadius: 4, border: '1px solid var(--border)',
+      }}>
+        <Package size={Math.round(size * 0.55)} />
+      </span>
+    )
+  }
+  return (
+    <img
+      src={url} alt={name} width={size} height={size} loading="lazy"
+      onError={() => { _bpThumbFailures.add(url); setErrored(true) }}
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, borderRadius: 4 }}
+    />
+  )
 }
 
 const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
@@ -41,10 +99,12 @@ export default function BlueprintsPage() {
   const [total, setTotal] = useState(0)
   const [categories, setCategories] = useState<{ name: string; count: number }[]>([])
   const [types, setTypes] = useState<{ name: string; count: number }[]>([])
+  const [sourcesList, setSourcesList] = useState<{ name: string; count: number }[]>([])
   const [allCategories, setAllCategories] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
   const [page, setPage] = useState(0)
   const LIMIT = 50
 
@@ -54,13 +114,14 @@ export default function BlueprintsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Category editing
-  const [editingCat, setEditingCat] = useState<string | null>(null) // bp id being edited
+  const [editingCat, setEditingCat] = useState<number | null>(null) // bp id being edited
   const [editCatValue, setEditCatValue] = useState('')
 
   // Bulk selection
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkCat, setBulkCat] = useState('')
 
   // Import
@@ -90,12 +151,13 @@ export default function BlueprintsPage() {
     } catch {} finally { setLoading(false) }
   }
 
-  async function loadData(s?: string, cat?: string, typ?: string, pg?: number) {
+  async function loadData(s?: string, cat?: string, typ?: string, src?: string, pg?: number) {
     try {
       const res = await blueprintsApi.list({
         search: (s ?? search) || undefined,
         category: (cat ?? catFilter) || undefined,
         type: (typ ?? typeFilter) || undefined,
+        source: (src ?? sourceFilter) || undefined,
         limit: LIMIT, offset: (pg ?? page) * LIMIT,
       })
       setItems(res.data.items as BpItem[])
@@ -105,9 +167,12 @@ export default function BlueprintsPage() {
 
   async function loadFilters() {
     try {
-      const [catRes, typRes] = await Promise.allSettled([blueprintsApi.categories(), blueprintsApi.types()])
+      const [catRes, typRes, srcRes] = await Promise.allSettled([
+        blueprintsApi.categories(), blueprintsApi.types(), blueprintsApi.sources(),
+      ])
       if (catRes.status === 'fulfilled') setCategories(catRes.value.data.categories)
       if (typRes.status === 'fulfilled') setTypes(typRes.value.data.types)
+      if (srcRes.status === 'fulfilled') setSourcesList(srcRes.value.data.sources)
     } catch {}
   }
 
@@ -128,7 +193,7 @@ export default function BlueprintsPage() {
         setError(t('blueprints.messages.syncNone', { sources: d.sources.join(', ') || t('blueprints.messages.syncNoneSourcesNone') }))
       }
       setHasData(true); setTotalBp(d.total_blueprints); setSources(d.sources); setLastSync(new Date().toISOString())
-      resetFilters(); loadData('', '', '', 0); loadFilters(); loadAllCategories()
+      resetFilters(); loadData('', '', '', '', 0); loadFilters(); loadAllCategories()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || t('blueprints.messages.syncFailed'))
@@ -150,25 +215,107 @@ export default function BlueprintsPage() {
         total: d.total_blueprints, items: d.items_count, dinos: d.dinos_count,
       }))
       setHasData(true); setTotalBp(d.total_blueprints); setSources(d.sources); setLastSync(new Date().toISOString())
-      resetFilters(); loadData('', '', '', 0); loadFilters(); loadAllCategories()
+      resetFilters(); loadData('', '', '', '', 0); loadFilters(); loadAllCategories()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || t('blueprints.beacon.importFailed'))
     } finally { setSyncing(false) }
   }
 
-  function resetFilters() { setSearch(''); setCatFilter(''); setTypeFilter(''); setPage(0); setSelected(new Set()) }
+  function resetFilters() { setSearch(''); setCatFilter(''); setTypeFilter(''); setSourceFilter(''); setPage(0); setSelected(new Set()) }
 
-  function doSearch() { setPage(0); loadData(search, catFilter, typeFilter, 0) }
-  function handleCatChange(val: string) { setCatFilter(val); setPage(0); loadData(search, val, typeFilter, 0) }
-  function handleTypeChange(val: string) { setTypeFilter(val); setPage(0); loadData(search, catFilter, val, 0) }
-  function handlePage(p: number) { setPage(p); loadData(search, catFilter, typeFilter, p) }
+  function doSearch() { setPage(0); loadData(search, catFilter, typeFilter, sourceFilter, 0) }
+  function handleCatChange(val: string) { setCatFilter(val); setPage(0); loadData(search, val, typeFilter, sourceFilter, 0) }
+  function handleTypeChange(val: string) { setTypeFilter(val); setPage(0); loadData(search, catFilter, val, sourceFilter, 0) }
+  function handleSourceChange(val: string) { setSourceFilter(val); setPage(0); loadData(search, catFilter, typeFilter, val, 0) }
+  function handlePage(p: number) { setPage(p); loadData(search, catFilter, typeFilter, sourceFilter, p) }
+
+  // ── Deletion ──────────────────────────────────────────────────
+  async function handleDeleteSelected() {
+    if (selected.size === 0) return
+    if (!window.confirm(`Delete ${selected.size} blueprint(s)?`)) return
+    setDeleting(true); setError('')
+    try {
+      let removed = 0
+      for (const id of selected) {
+        await blueprintsApi.deleteOne(id)
+        removed++
+      }
+      setSuccess(`${removed} blueprint(s) deleted`)
+      setSelected(new Set())
+      loadStatus()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Delete failed')
+    } finally { setDeleting(false) }
+  }
+
+  async function handleDeleteFiltered() {
+    if (!search && !catFilter && !typeFilter && !sourceFilter) {
+      setError('Apply at least one filter before bulk-deleting filtered rows')
+      return
+    }
+    if (!window.confirm(`Delete ALL ${total} blueprints matching the current filter?`)) return
+    setDeleting(true); setError('')
+    try {
+      const res = await blueprintsApi.deleteByFilter({
+        search: search || undefined,
+        category: catFilter || undefined,
+        type: typeFilter || undefined,
+        source: sourceFilter || undefined,
+      })
+      setSuccess(`${res.data.removed} blueprint(s) deleted`)
+      loadStatus()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Delete failed')
+    } finally { setDeleting(false) }
+  }
+
+  async function handleDeleteSource(src: string) {
+    if (!window.confirm(`Delete every blueprint with source "${src}"?`)) return
+    setDeleting(true); setError('')
+    try {
+      const res = await blueprintsApi.deleteBySource(src)
+      setSuccess(`${res.data.removed} blueprint(s) deleted from source "${src}"`)
+      loadStatus()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Delete failed')
+    } finally { setDeleting(false) }
+  }
+
+  async function handlePruneNonOfficial() {
+    if (!window.confirm('Drop every entry that is NOT vanilla / DLC / ASA?')) return
+    setDeleting(true); setError('')
+    try {
+      const res = await blueprintsApi.pruneNonOfficial()
+      setSuccess(`${res.data.removed} non-official blueprint(s) removed (${res.data.kept} kept)`)
+      loadStatus()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Prune failed')
+    } finally { setDeleting(false) }
+  }
+
+  async function handleDeleteOne(id: number, name: string) {
+    if (!window.confirm(`Delete blueprint "${name}"?`)) return
+    try {
+      await blueprintsApi.deleteOne(id)
+      setItems(prev => prev.filter(i => i.id !== id))
+      setTotal(t => Math.max(0, t - 1))
+      setTotalBp(t => Math.max(0, t - 1))
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Delete failed')
+    }
+  }
 
   function copyBp(bp: string) { navigator.clipboard.writeText(bp); setCopied(bp) }
   function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString(undefined) : t('blueprints.never') }
 
   // ── Category editing ──────────────────────────────────────────
-  async function saveCategoryEdit(bpId: string) {
+  async function saveCategoryEdit(bpId: number) {
     if (!editCatValue.trim()) return
     try {
       await blueprintsApi.updateCategory(bpId, editCatValue.trim())
@@ -189,7 +336,7 @@ export default function BlueprintsPage() {
   }
 
   // ── Selection ─────────────────────────────────────────────────
-  function toggleSelect(id: string) {
+  function toggleSelect(id: number) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
   function toggleSelectAll() {
@@ -390,8 +537,42 @@ export default function BlueprintsPage() {
           <option value="">{t('blueprints.filters.allCategories')}</option>
           {categories.map(c => <option key={c.name} value={c.name}>{t('blueprints.filters.categoryOption', { name: c.name, count: c.count })}</option>)}
         </select>
+        <select value={sourceFilter} onChange={e => handleSourceChange(e.target.value)} className="dc-select" title="Filter by source / import label">
+          <option value="">All sources</option>
+          {sourcesList.map(s => <option key={s.name} value={s.name}>{s.name || '(none)'} ({s.count})</option>)}
+        </select>
         <button onClick={doSearch} className="pl-btn-search">{t('blueprints.filters.searchButton')}</button>
       </div>
+
+      {/* Source / bulk-delete management */}
+      {sourcesList.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', marginBottom: '0.6rem' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginRight: 4 }}>Sources:</span>
+          {sourcesList.map(s => (
+            <span key={s.name || '_none'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0.2rem 0.5rem', borderRadius: 12, border: '1px solid var(--border)', fontSize: '0.74rem', background: 'var(--bg-card-muted)' }}>
+              <strong>{s.name || '(none)'}</strong>
+              <span style={{ color: 'var(--text-muted)' }}>{s.count}</span>
+              {s.name && (
+                <button onClick={() => handleDeleteSource(s.name)} disabled={deleting}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0, lineHeight: 1 }}
+                  title={`Delete every blueprint from "${s.name}"`}>
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </span>
+          ))}
+          <span style={{ flex: 1 }} />
+          <button onClick={handleDeleteFiltered} disabled={deleting || total === 0}
+            className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
+            title="Delete every blueprint matching the current filter">
+            <Trash2 size={13} /> Delete filtered ({total})
+          </button>
+          <button onClick={handlePruneNonOfficial} disabled={deleting}
+            className="btn btn-ghost btn-sm" title="Drop every entry that is NOT vanilla/DLC/ASA">
+            <Trash2 size={13} /> Prune non-official
+          </button>
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
@@ -402,6 +583,9 @@ export default function BlueprintsPage() {
             {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           {bulkCat && <button onClick={handleBulkCategory} className="btn btn-primary btn-sm"><Check size={13} /> {t('blueprints.bulk.apply')}</button>}
+          <button onClick={handleDeleteSelected} disabled={deleting} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}>
+            <Trash2 size={13} /> Delete selected
+          </button>
           <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm"><X size={13} /> {t('blueprints.bulk.clear')}</button>
         </div>
       )}
@@ -431,6 +615,7 @@ export default function BlueprintsPage() {
               <th style={{ width: '8%' }}>{t('blueprints.table.type')}</th>
               <th style={{ width: '14%' }}>{t('blueprints.table.category')}</th>
               <th>{t('blueprints.table.blueprintPath')}</th>
+              <th style={{ width: 36 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -442,7 +627,12 @@ export default function BlueprintsPage() {
               return (
                 <tr key={`${item.id}-${i}`} style={{ background: isSelected ? 'var(--accent-glow)' : undefined }}>
                   <td><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(item.id)} /></td>
-                  <td><span className="bp-cell-name">{item.name}</span></td>
+                  <td>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <BpThumb name={item.name} blueprint={item.blueprint} type={item.type} />
+                      <span className="bp-cell-name">{item.name}</span>
+                    </span>
+                  </td>
                   <td>
                     <span className="bp-cell-type" style={{ color, borderColor: color + '33', background: color + '0a' }}>
                       <Icon size={11} /> {item.type}
@@ -473,6 +663,13 @@ export default function BlueprintsPage() {
                         {copied === item.blueprint ? <CheckCircle size={13} style={{ color: 'var(--success)' }} /> : <Copy size={13} />}
                       </button>
                     </div>
+                  </td>
+                  <td>
+                    <button onClick={() => handleDeleteOne(item.id, item.name)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2 }}
+                      title="Delete this blueprint">
+                      <Trash2 size={13} />
+                    </button>
                   </td>
                 </tr>
               )

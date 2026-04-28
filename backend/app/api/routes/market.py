@@ -302,7 +302,14 @@ async def get_item_thumb(display_name: str):
 
     data = await get_or_fetch_thumb(name)
     if data is None:
-        raise HTTPException(status_code=404, detail="Image not found on wiki")
+        # Tell the browser to cache the negative response for 24h so
+        # rendering a long catalog (Blueprints page) doesn't spam the
+        # endpoint on every paint.  TTL matches the on-disk marker.
+        return Response(
+            status_code=404,
+            content=b"",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     return Response(
         content=data,

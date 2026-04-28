@@ -20,6 +20,17 @@ CONTAINER_BASE = "/gameadmin/containers"
 # Directory name fragments that indicate a non-map subdirectory in SavedArks
 _NON_MAP_DIR_FRAGMENTS = ("backup", "temp", "old", "logs", "config")
 
+# Container directory names to skip during the scan.  ``bobsmissions`` runs
+# the BobsMissions standalone map (story content, no player data we need
+# to manage) and only adds noise to the player/profile dashboards -- the
+# operator wants it hidden from the panel.  Match is case-insensitive on
+# the trimmed directory name.
+_EXCLUDED_CONTAINER_NAMES = frozenset({"bobsmissions"})
+
+
+def _is_excluded_container(name: str) -> bool:
+    return name.strip().lower() in _EXCLUDED_CONTAINER_NAMES
+
 
 def scan_containers(ssh: SSHManager, base_path: str = CONTAINER_BASE) -> List[Dict]:
     """
@@ -40,7 +51,10 @@ def scan_containers(ssh: SSHManager, base_path: str = CONTAINER_BASE) -> List[Di
     if exit_code != 0 or not stdout.strip():
         return []
 
-    container_names = [n.strip() for n in stdout.strip().splitlines() if n.strip()]
+    container_names = [
+        n.strip() for n in stdout.strip().splitlines()
+        if n.strip() and not _is_excluded_container(n.strip())
+    ]
     return [
         scan_single_container(ssh, name, f"{base_path}/{name}")
         for name in container_names

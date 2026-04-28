@@ -33,6 +33,7 @@ from app.core.store import (
     create_instance_async,
     delete_instance_async,
     get_all_instances_async,
+    get_containers_map_sync,
     get_instance_async,
     get_machine_async,
     get_plugin_config_sync,
@@ -362,7 +363,7 @@ async def import_from_container(
     """
     machine = await _get_machine_or_404(db, data.machine_id)
 
-    containers_map = get_plugin_config_sync("containers_map") or {}
+    containers_map = get_containers_map_sync()
     machine_data   = (containers_map.get("machines") or {}).get(str(data.machine_id)) or {}
     discovered = next(
         (c for c in (machine_data.get("containers") or [])

@@ -1,25 +1,44 @@
 """
-api/routes/blueprints.py — ARK blueprint database.
+api/routes/blueprints.py — ARK Blueprint catalog (per-row storage).
 
-Two ways to populate the local blueprint catalog:
+Storage model
+-------------
+Each entry lives as a single row in ``ARKM_blueprints`` (panel DB),
+keyed on ``blueprint_hash`` (SHA-256 of the lowercased path) so re-imports
+are idempotent.  This replaces the legacy single-JSON-blob layout under
+``arkmaniagest_settings.key='plugin.blueprints_db'``; on first boot a
+one-shot migration in :func:`app.db.session.create_app_tables` lifts the
+old blob into rows automatically (see ``_migrate_blueprints_blob_to_rows``).
 
-* ``POST /sync``                — fetches the Dododex GitHub mirror.  Fast
-                                  and zero-config, but the upstream is
-                                  stale (last refresh 2024-11-08, missing
-                                  most ASA-era creatures like Maeguana).
-* ``POST /import-beacondata``   — uploads a Beacon `.beacondata` bundle
-                                  (gzipped tar of JSON files) exported
-                                  from the Beacon admin tool.  Covers
-                                  every official ASA creature plus all
-                                  modded content the operator has loaded
-                                  in Beacon, with up-to-date paths +
-                                  GFI commands.  Recommended.
+Lightweight metadata (last sync timestamp, source labels, version) lives
+in a slim companion blob ``plugin.blueprints_meta`` so it survives
+operations that wipe / reshape the catalog.
 
-Both write to the same ``blueprints_db`` plugin-config blob; whichever
-ran most recently wins.  ``GET /`` searches the resulting catalog.
+Population paths
+----------------
+* ``POST /sync``               — Dododex GitHub mirror.  UPSERTS into the
+                                 table (no longer wipes), so repeated
+                                 syncs accumulate / refresh in place.
+* ``POST /import-beacondata``  — Beacon ``.beacondata`` bundle.  Same
+                                 UPSERT semantics — the operator can
+                                 import multiple bundles and have them
+                                 merge instead of overwriting each other.
+* ``POST /import``             — Inline JSON payload.  ``mode='merge'``
+                                 upserts; ``mode='replace'`` wipes the
+                                 table first.
+
+Deletion paths
+--------------
+* ``DELETE /``                 — wipe everything
+* ``DELETE /non-official``     — drop modded entries (paths outside the
+                                 ``/Game/<official map>/`` trees)
+* ``DELETE /by-source``        — drop every entry with a given source
+                                 label (e.g. ``beacon:Mods.beacondata``)
+* ``DELETE /by-filter``        — drop entries matching arbitrary
+                                 search/category/type filters
+* ``DELETE /{bp_id}``          — drop a single row by id
 """
-import asyncio
-import gzip
+import hashlib
 import io
 import json
 import re
@@ -29,41 +48,30 @@ from typing import Optional, List
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Depends
 from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.store import get_plugin_config_sync, save_plugin_config_sync
+from app.db.session import get_db
 
 router = APIRouter()
 log = logging.getLogger("arkmaniagest.blueprints")
 
-_PLUGIN_NAME = "blueprints_db"
 _TIMEOUT_SECS = 30
+_META_KEY     = "plugin.blueprints_meta"
 
 # Upstream data sources
 _DODODEX_BP_URL       = "https://raw.githubusercontent.com/dododex/dododex.github.io/master/bp.json"
 _DODODEX_COMMANDS_URL = "https://raw.githubusercontent.com/dododex/dododex.github.io/master/commands.json"
 
-# ARK Wiki API — item tables split across 19 category subpages
-_WIKI_API_BASE = "https://ark.wiki.gg/api.php"
-_WIKI_ITEM_CATEGORIES = [
-    "Resources", "Tools", "Armor", "Saddles", "Structures", "Vehicles",
-    "Dye", "Consumables", "Recipes", "Eggs", "Farming", "Seeds",
-    "Weapons", "Ammunition", "Skins", "Chibi Pets", "Artifacts", "Trophy",
-]
 
+# ── Hash helper ───────────────────────────────────────────────────────────────
 
-# ── In-process storage helpers ────────────────────────────────────────────────
-
-def _get_db() -> dict:
-    config = get_plugin_config_sync(_PLUGIN_NAME)
-    return config if config else {
-        "blueprints": [], "last_sync": None, "sources": [], "version": 0
-    }
-
-
-def _save_db(db: dict) -> None:
-    save_plugin_config_sync(_PLUGIN_NAME, db)
+def _bp_hash(path: str) -> str:
+    """Stable identity for a blueprint path: SHA-256 of the lowercased / stripped form."""
+    norm = (path or "").strip().lower()
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
 # ── Name normalisation ────────────────────────────────────────────────────────
@@ -147,12 +155,10 @@ def _clean_dino_name(raw: str) -> str:
         return raw
     lower   = raw.lower().strip()
     no_under = lower.replace("_", " ").replace("  ", " ").strip()
-    # Exact match
     if lower in _DINO_NAME_MAP:
         return _DINO_NAME_MAP[lower]
     if no_under in _DINO_NAME_MAP:
         return _DINO_NAME_MAP[no_under]
-    # Longest match first to avoid prefix collisions
     for key, full in sorted(_DINO_NAME_MAP.items(), key=lambda x: -len(x[0])):
         if lower == key or no_under == key:
             return full
@@ -184,11 +190,89 @@ def _extract_name(blueprint: str) -> str:
 
 
 def _improve_name(name: str, blueprint: str) -> str:
-    """Return an improved display name for a blueprint."""
     if not name:
         return _extract_name(blueprint)
     improved = _clean_dino_name(name)
     return improved if improved != name else name
+
+
+# ── Official-content classification ───────────────────────────────────────────
+
+# Path fragments that identify "official" ARK creature content (vanilla
+# + DLC maps + ASA).  Used by the rare-dino picker and the
+# /non-official prune endpoint.
+_OFFICIAL_DINO_PATH_FRAGMENTS: tuple[str, ...] = (
+    "/game/primalearth/dinos/",
+    "/game/scorchedearth/dinos/",
+    "/game/aberration/dinos/",
+    "/game/extinction/dinos/",
+    "/game/genesis/dinos/",
+    "/game/genesis2/dinos/",
+    "/game/asa/dinos/",
+    "/game/lostisland/dinos/",
+    "/game/lostcolony/dinos/",
+)
+
+# Path fragments shared by every official blueprint type (creatures,
+# items, structures, weapons, ...).  Distinct from the dino-specific
+# tuple because items live outside `/Dinos/`.
+_OFFICIAL_PATH_FRAGMENTS: tuple[str, ...] = (
+    "/game/primalearth/",
+    "/game/scorchedearth/",
+    "/game/aberration/",
+    "/game/extinction/",
+    "/game/genesis/",
+    "/game/genesis2/",
+    "/game/asa/",
+    "/game/lostisland/",
+    "/game/lostcolony/",
+)
+
+# Path fragments that mark the "S-" variation packs the operator treats
+# as on par with official content for the rare-dino picker.
+_S_VARIATION_PATH_FRAGMENTS: tuple[str, ...] = (
+    "/sdinovariants/",
+    "/sdinovariantsfantastictames/",
+)
+
+
+def is_official_blueprint(bp: dict) -> bool:
+    """
+    Generalised "official content" check across every blueprint type.
+
+    Admin command rows carry no `/Game/` path but are still vanilla
+    content, so they are kept.
+    """
+    if bp.get("type") == "command":
+        return True
+    path = (bp.get("blueprint") or "").lower()
+    if not path:
+        return False
+    raw = path.replace("blueprint'", "").lstrip("'").strip()
+    return any(frag in raw for frag in _OFFICIAL_PATH_FRAGMENTS)
+
+
+def is_official_or_s_variant_dino(bp: dict) -> bool:
+    """
+    Return True for dino blueprints from official ARK content or the
+    "S-" variation packs.  Skin / chibi entries that upstream tags as
+    ``type=dino`` are excluded so creature pickers don't surface them.
+    """
+    path = (bp.get("blueprint") or "").lower()
+    name = (bp.get("name") or "").strip()
+    if not path:
+        return False
+    raw = path.replace("blueprint'", "").lstrip("'").strip()
+
+    if any(frag in raw for frag in _S_VARIATION_PATH_FRAGMENTS):
+        return True
+    if name.startswith("S-"):
+        return True
+
+    if "/skin/" in raw or "chibidino" in raw:
+        return False
+
+    return any(frag in raw for frag in _OFFICIAL_DINO_PATH_FRAGMENTS)
 
 
 def _classify_type(bp: str) -> str:
@@ -227,110 +311,7 @@ def _guess_category(bp: str) -> str:
 
 
 def _make_id(name: str) -> str:
-    """Convert a display name to a safe slug for use as an ID."""
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-
-
-def _parse_wiki_item_table(wikitext: str, category: str) -> list[dict]:
-    """
-    Parse a MediaWiki table from the ARK Wiki Item_IDs subpages.
-
-    Each row has pipe-separated cells.  The expected columns are:
-      Name | Category | Stack Size | Item ID | Class Name | Blueprint Path
-
-    Returns a list of blueprint dicts ready for the local database.
-    """
-    results: list[dict] = []
-    in_table = False
-    cells: list[str] = []
-
-    for raw_line in wikitext.split("\n"):
-        line = raw_line.strip()
-
-        # Table start / header
-        if line.startswith("{|"):
-            in_table = True
-            continue
-        if line.startswith("|}"):
-            in_table = False
-            continue
-        if not in_table:
-            continue
-        # Skip header row and sort markers
-        if line.startswith("!") or line.startswith("|-"):
-            if cells:
-                _flush_wiki_row(cells, category, results)
-                cells = []
-            continue
-
-        # Cell lines: "| value" or "| value || value2 || value3"
-        if line.startswith("|"):
-            parts = line[1:].split("||")
-            for p in parts:
-                cells.append(p.strip())
-
-    # Flush last row
-    if cells:
-        _flush_wiki_row(cells, category, results)
-
-    return results
-
-
-def _flush_wiki_row(cells: list[str], category: str, out: list[dict]) -> None:
-    """Process a single wiki table row and append to *out* if valid."""
-    if len(cells) < 6:
-        return
-
-    raw_name = _strip_wiki_markup(cells[0])
-    class_name = _strip_wiki_markup(cells[4]).strip()
-    bp_path = _strip_wiki_markup(cells[5]).strip()
-
-    if not bp_path or not raw_name:
-        return
-
-    # Normalize blueprint path
-    if not bp_path.startswith("/Game/") and not bp_path.startswith("Blueprint'"):
-        bp_path = f"/Game/{bp_path}"
-
-    # Map wiki category to our type system
-    type_map: dict[str, str] = {
-        "Resources": "resource", "Tools": "item", "Armor": "armor",
-        "Saddles": "armor", "Structures": "structure", "Vehicles": "structure",
-        "Dye": "consumable", "Consumables": "consumable", "Recipes": "consumable",
-        "Eggs": "consumable", "Farming": "resource", "Seeds": "resource",
-        "Weapons": "weapon", "Ammunition": "weapon", "Skins": "cosmetic",
-        "Chibi Pets": "cosmetic", "Artifacts": "artifact", "Trophy": "artifact",
-    }
-    bp_type = type_map.get(category, "item")
-
-    gfi_cmd = f"GFI {class_name} 1 0 false" if class_name else None
-
-    out.append({
-        "id":        _make_id(raw_name),
-        "name":      raw_name,
-        "blueprint": bp_path,
-        "category":  category,
-        "type":      bp_type,
-        "gfi":       gfi_cmd,
-        "source":    "ark-wiki",
-    })
-
-
-def _strip_wiki_markup(text: str) -> str:
-    """Remove common MediaWiki markup from a cell value."""
-    # Remove [[File:...]] and [[Image:...]]
-    text = re.sub(r"\[\[(File|Image):[^\]]*\]\]", "", text)
-    # [[Page|Display]] → Display
-    text = re.sub(r"\[\[[^\]]*\|([^\]]*)\]\]", r"\1", text)
-    # [[Simple link]] → Simple link
-    text = re.sub(r"\[\[([^\]]*)\]\]", r"\1", text)
-    # {{Template}} → empty
-    text = re.sub(r"\{\{[^}]*\}\}", "", text)
-    # <br>, <ref>, etc.
-    text = re.sub(r"<[^>]*>", "", text)
-    # '''bold''' and ''italic''
-    text = text.replace("'''", "").replace("''", "")
-    return text.strip()
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -350,7 +331,7 @@ class CategoryUpdate(BaseModel):
 
 
 class BulkCategoryUpdate(BaseModel):
-    ids:      List[str]
+    ids:      List[int]
     category: str
 
 
@@ -367,6 +348,269 @@ _PREDEFINED_CATEGORIES: list[str] = [
     "Consumables", "Tools", "Ammunition", "Skins", "Artifacts",
     "Commands", "Custom",
 ]
+
+
+# ── DB helpers ────────────────────────────────────────────────────────────────
+
+_BP_COLS = "id, blueprint_hash, blueprint, name, category, type, gfi, source, class_name, description, ext_id"
+
+
+def _row_to_bp(row) -> dict:
+    """Convert a SELECT row (mappings) into the public blueprint dict shape."""
+    return {
+        "id":          row["id"],
+        "name":        row["name"],
+        "blueprint":   row["blueprint"],
+        "category":    row["category"],
+        "type":        row["type"],
+        "gfi":         row["gfi"],
+        "source":      row["source"],
+        "class":       row["class_name"],
+        "description": row["description"],
+        "ext_id":      row["ext_id"],
+    }
+
+
+async def _load_meta(db: AsyncSession) -> dict:
+    """Read the slim metadata blob (last_sync, sources, version)."""
+    res = await db.execute(
+        text("SELECT value FROM arkmaniagest_settings WHERE `key` = :k"),
+        {"k": _META_KEY},
+    )
+    row = res.first()
+    if not row or not row[0]:
+        return {"last_sync": None, "sources": [], "version": 0}
+    try:
+        meta = json.loads(row[0]) or {}
+    except (ValueError, TypeError):
+        meta = {}
+    meta.setdefault("last_sync", None)
+    meta.setdefault("sources", [])
+    meta.setdefault("version", 0)
+    return meta
+
+
+async def _save_meta(db: AsyncSession, meta: dict) -> None:
+    """Persist the slim metadata blob."""
+    await db.execute(
+        text(
+            "INSERT INTO arkmaniagest_settings (`key`, `value`, `encrypted`, `description`) "
+            "VALUES (:k, :v, 0, 'Blueprints metadata (rows live in ARKM_blueprints)') "
+            "ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)"
+        ),
+        {"k": _META_KEY, "v": json.dumps(meta, ensure_ascii=False)},
+    )
+
+
+async def _count_total(db: AsyncSession) -> int:
+    res = await db.execute(text("SELECT COUNT(*) FROM ARKM_blueprints"))
+    return int(res.scalar() or 0)
+
+
+async def _upsert_blueprints(
+    db: AsyncSession,
+    items: list[dict],
+    *,
+    default_source: Optional[str] = None,
+) -> tuple[int, int]:
+    """
+    Bulk UPSERT a list of blueprint dicts.
+
+    Returns ``(added, updated)``.  Identity is the SHA-256 of the path;
+    on conflict the existing row's mutable fields are refreshed.
+    Detection of "added vs updated" relies on a probe SELECT before the
+    INSERT batch, since MySQL's ``ROW_COUNT()`` after INSERT … ON
+    DUPLICATE conflates the two.
+    """
+    if not items:
+        return 0, 0
+
+    # 1. Compute hashes + de-dup within the incoming batch (last-write-wins).
+    by_hash: dict[str, dict] = {}
+    for it in items:
+        path = (it.get("blueprint") or "").strip()
+        if not path:
+            continue
+        h = _bp_hash(path)
+        merged = dict(it)
+        merged["_hash"] = h
+        merged["_path"] = path
+        by_hash[h] = merged
+    if not by_hash:
+        return 0, 0
+
+    hashes = list(by_hash.keys())
+
+    # 2. Probe which hashes already exist so we can split added vs updated.
+    existing: set[str] = set()
+    BATCH_PROBE = 500
+    for i in range(0, len(hashes), BATCH_PROBE):
+        chunk = hashes[i:i + BATCH_PROBE]
+        # Build a positional placeholder list.  SQLAlchemy's expanding
+        # bindparam would be cleaner but we already have plain text() here.
+        params = {f"h{j}": h for j, h in enumerate(chunk)}
+        placeholders = ", ".join(f":h{j}" for j in range(len(chunk)))
+        res = await db.execute(
+            text(f"SELECT blueprint_hash FROM ARKM_blueprints WHERE blueprint_hash IN ({placeholders})"),
+            params,
+        )
+        for r in res.fetchall():
+            existing.add(r[0])
+
+    # 3. Bulk INSERT … ON DUPLICATE KEY UPDATE.
+    rows: list[dict] = []
+    for h, it in by_hash.items():
+        rows.append({
+            "h":   h,
+            "bp":  it["_path"],
+            "n":   (it.get("name") or "")[:255] or it["_path"][:255],
+            "c":   it.get("category"),
+            "t":   it.get("type"),
+            "g":   it.get("gfi"),
+            "s":   it.get("source") or default_source,
+            "cl":  it.get("class") or it.get("class_name"),
+            "d":   it.get("description"),
+            "e":   it.get("id") if isinstance(it.get("id"), str) else None,
+        })
+
+    BATCH = 500
+    for i in range(0, len(rows), BATCH):
+        chunk = rows[i:i + BATCH]
+        await db.execute(
+            text(
+                "INSERT INTO ARKM_blueprints "
+                "(blueprint_hash, blueprint, name, category, type, gfi, "
+                " source, class_name, description, ext_id) "
+                "VALUES (:h, :bp, :n, :c, :t, :g, :s, :cl, :d, :e) "
+                "ON DUPLICATE KEY UPDATE "
+                "  blueprint   = VALUES(blueprint), "
+                "  name        = VALUES(name), "
+                "  category    = COALESCE(VALUES(category), category), "
+                "  type        = COALESCE(VALUES(type), type), "
+                "  gfi         = COALESCE(VALUES(gfi), gfi), "
+                "  source      = COALESCE(VALUES(source), source), "
+                "  class_name  = COALESCE(VALUES(class_name), class_name), "
+                "  description = COALESCE(VALUES(description), description), "
+                "  ext_id      = COALESCE(VALUES(ext_id), ext_id)"
+            ),
+            chunk,
+        )
+
+    added = sum(1 for h in by_hash if h not in existing)
+    updated = sum(1 for h in by_hash if h in existing)
+    return added, updated
+
+
+async def _bump_meta(db: AsyncSession, *, source_label: str) -> None:
+    """Append a source-label entry to meta.sources and refresh last_sync/version."""
+    meta = await _load_meta(db)
+    src = list(meta.get("sources") or [])
+    src.append(source_label)
+    # Cap the source-history size so it doesn't grow without bound.
+    src = src[-50:]
+    meta["sources"]   = src
+    meta["last_sync"] = datetime.now(timezone.utc).isoformat()
+    meta["version"]   = int(meta.get("version") or 0) + 1
+    await _save_meta(db, meta)
+
+
+# ── Beacon parser helpers ─────────────────────────────────────────────────────
+
+_BEACON_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+_BEACON_SKIP_PATH_FRAGMENTS = (
+    "/Buffs/", "/Effects/", "/UI/", "/HUD/",
+)
+
+
+def _beacon_normalize_path(path: Optional[str]) -> Optional[str]:
+    if not path:
+        return None
+    p = path.strip()
+    return p if p else None
+
+
+def _beacon_classify_type(path: str, kind: str) -> str:
+    if kind == "creatures":
+        return "dino"
+    return _classify_type(path)
+
+
+def _beacon_record_skipped(path: str) -> bool:
+    if not path:
+        return True
+    return any(frag in path for frag in _BEACON_SKIP_PATH_FRAGMENTS)
+
+
+def _normalize_beacon_creature(c: dict, source: str) -> Optional[dict]:
+    path = _beacon_normalize_path(c.get("path"))
+    if not path or _beacon_record_skipped(path):
+        return None
+    pack = str(c.get("contentPackName") or "").strip() or "Unknown"
+    name = str(c.get("label") or c.get("alternateLabel") or "").strip()
+    if not name:
+        return None
+    class_str = str(c.get("classString") or "").strip()
+    return {
+        "id":        f"bcn_{c.get('creatureId') or _make_id(name + path)}",
+        "name":      name,
+        "blueprint": path,
+        "category":  pack,
+        "type":      "dino",
+        "gfi":       None,
+        "source":    source,
+        "class":     class_str or None,
+    }
+
+
+def _normalize_beacon_engram(e: dict, source: str) -> Optional[dict]:
+    path = _beacon_normalize_path(e.get("path"))
+    if not path or _beacon_record_skipped(path):
+        return None
+    pack = str(e.get("contentPackName") or "").strip() or "Unknown"
+    name = str(e.get("label") or e.get("alternateLabel") or "").strip()
+    if not name:
+        return None
+    class_str = str(e.get("classString") or "").strip()
+    bp_type   = _beacon_classify_type(path, "engrams")
+    spawn = e.get("spawn") or (
+        f"cheat gfi {e['gfi']} 1 1 0" if e.get("gfi") else None
+    )
+    return {
+        "id":        f"bcn_{e.get('engramId') or _make_id(name + path)}",
+        "name":      name,
+        "blueprint": path,
+        "category":  pack,
+        "type":      bp_type,
+        "gfi":       spawn,
+        "source":    source,
+        "class":     class_str or None,
+    }
+
+
+def _iter_beacon_records(archive_bytes: bytes):
+    bio = io.BytesIO(archive_bytes)
+    try:
+        tf = tarfile.open(fileobj=bio, mode="r:gz")
+    except (tarfile.ReadError, OSError):
+        bio.seek(0)
+        tf = tarfile.open(fileobj=bio, mode="r:")
+    with tf:
+        for member in tf:
+            if not member.isfile() or not member.name.endswith(".json"):
+                continue
+            fh = tf.extractfile(member)
+            if fh is None:
+                continue
+            raw = fh.read()
+            try:
+                doc = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            for payload in doc.get("payloads", []) or []:
+                for c in payload.get("creatures", []) or []:
+                    yield ("creature", c)
+                for e in payload.get("engrams", []) or []:
+                    yield ("engram", e)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -395,56 +639,38 @@ async def test_connection():
 
 
 @router.get("/status")
-async def blueprint_status():
+async def blueprint_status(db: AsyncSession = Depends(get_db)):
     """Return metadata about the local blueprint database."""
-    db = _get_db()
+    total = await _count_total(db)
+    meta  = await _load_meta(db)
     return {
-        "has_data":         len(db.get("blueprints", [])) > 0,
-        "total_blueprints": len(db.get("blueprints", [])),
-        "last_sync":        db.get("last_sync"),
-        "sources":          db.get("sources", []),
-        "version":          db.get("version", 0),
+        "has_data":         total > 0,
+        "total_blueprints": total,
+        "last_sync":        meta.get("last_sync"),
+        "sources":          meta.get("sources") or [],
+        "version":          int(meta.get("version") or 0),
     }
 
 
 @router.post("/sync", response_model=SyncResult)
-async def sync_blueprints():
+async def sync_blueprints(db: AsyncSession = Depends(get_db)):
     """
-    Wipe the local blueprint DB and refill it from Dododex.
+    UPSERT Dododex content (creatures + commands) into ``ARKM_blueprints``.
 
-    The sync is deliberately destructive: the previous contents are
-    discarded and the result of the Dododex fetch becomes the new
-    canonical dataset.  This keeps the catalog in lockstep with
-    Dododex's upstream -- entries they removed disappear locally, and
-    there's no chance of stale rows piling up across repeated syncs.
-
-    We used to ALSO scrape the ARK Wiki (18 pages, rate-limited, prone
-    to 429) -- that path has been dropped: Dododex already covers the
-    creature + item + command dataset, and the wiki scrape added ~60s
-    of latency, 18 extra external dependencies, and the occasional
-    rate-limit failure for little gain.  If wiki coverage is ever
-    needed again the removed helpers (``_parse_wiki_item_table`` et al.)
-    still live in this module but are intentionally not called.
+    Repeated syncs accumulate / refresh in place — they no longer wipe
+    the table.  Use ``DELETE /blueprints/by-source?source=base``
+    if you want to remove the previous Dododex import before resyncing.
     """
     blueprints:     list[dict] = []
-    sources:        list[str]  = []
+    sources_added:  list[str]  = []
     errors:         list[str]  = []
     items_count    = 0
     dinos_count    = 0
     commands_count = 0
 
-    # Explicit wipe up front.  _save_db at the tail already replaces the
-    # whole blob, but operators reading the log expect to see the reset
-    # moment so they can tell a "nothing changed" run from a "wiped and
-    # refilled" one.
-    prev_total = len(_get_db().get("blueprints", []))
-    log.info("Blueprint sync: wiping %d previous entries", prev_total)
-
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECS, follow_redirects=True) as client:
 
-        # ── 1. bp.json (creatures/dinos from Dododex GitHub) ────────────────
-        # Keys: "l" = label, "bp" = blueprint path, "t" = category,
-        #        "id" = class name, "cid" = creature id
+        # ── 1. bp.json (creatures from Dododex GitHub) ───────────────────────
         try:
             resp = await client.get(_DODODEX_BP_URL)
             if resp.status_code == 200:
@@ -459,7 +685,6 @@ async def sync_blueprints():
                     bp_path = item.get("bp", "")
                     if not bp_path:
                         continue
-                    # Ensure blueprint has the /Game/ prefix
                     if not bp_path.startswith("/Game/") and not bp_path.startswith("Blueprint'"):
                         bp_path = f"/Game/{bp_path}"
                     raw_name = item.get("l", item.get("n", ""))
@@ -473,7 +698,6 @@ async def sync_blueprints():
                     name = _improve_name(raw_name, bp_path)
                     if not category or category in ("Ark", "Official"):
                         category = _guess_category(bp_path)
-                    # Build a GFI command from the class name
                     gfi_cmd = f"GFI {class_id} 1 0 false" if class_id else None
                     blueprints.append({
                         "id":        item.get("cid") or _make_id(name),
@@ -482,10 +706,10 @@ async def sync_blueprints():
                         "category":  category,
                         "type":      bp_type,
                         "gfi":       gfi_cmd,
-                        "source":    "dododex-github",
+                        "source":    "base",
                     })
                 added = len(blueprints) - bp_before
-                sources.append(f"bp.json ({added} creatures)")
+                sources_added.append(f"bp.json ({added} creatures)")
             else:
                 errors.append(f"bp.json: HTTP {resp.status_code}")
         except Exception as exc:
@@ -517,7 +741,7 @@ async def sync_blueprints():
                             "category":  "Commands",
                             "type":      "command",
                             "gfi":       None,
-                            "source":    "dododex-github",
+                            "source":    "base",
                         })
                         continue
 
@@ -538,203 +762,48 @@ async def sync_blueprints():
                         "category":    str(cat),
                         "type":        "command",
                         "gfi":         example or None,
-                        "source":      "dododex-github",
+                        "source":      "base",
                         "description": str(desc) if desc else None,
                     })
 
-                sources.append(f"commands.json ({commands_count} commands)")
+                sources_added.append(f"commands.json ({commands_count} commands)")
             else:
                 errors.append(f"commands.json: HTTP {resp.status_code}")
         except Exception as exc:
             errors.append(f"commands.json: {type(exc).__name__}: {exc}")
 
-    # ARK Wiki scrape used to live here -- removed on the switch to
-    # "Dododex only".  See the sync_blueprints docstring for the
-    # rationale; the parser helpers below this module are kept in case
-    # coverage has to grow back.
+    added, updated = await _upsert_blueprints(db, blueprints, default_source="base")
+    if added or updated:
+        await _bump_meta(
+            db,
+            source_label=f"base sync ({added} added, {updated} updated)",
+        )
 
-    # Deduplicate by blueprint path (case-insensitive)
-    seen: dict[str, bool] = {}
-    unique = []
-    for bp in blueprints:
-        key = bp["blueprint"].lower().strip()
-        if key and key not in seen:
-            seen[key] = True
-            unique.append(bp)
-
-    _save_db({
-        "blueprints": unique,
-        "last_sync":  datetime.now(timezone.utc).isoformat(),
-        "sources":    sources,
-        "version":    _get_db().get("version", 0) + 1,
-    })
-
+    total_after = await _count_total(db)
     return SyncResult(
-        success          = len(unique) > 0,
-        total_blueprints = len(unique),
+        success          = bool(blueprints),
+        total_blueprints = total_after,
         items_count      = items_count,
         dinos_count      = dinos_count,
         commands_count   = commands_count,
-        sources          = sources,
+        sources          = sources_added,
         errors           = errors,
     )
 
 
 # ── Beacon import ──────────────────────────────────────────────────────────────
-#
-# Beacon (https://usebeacon.app) ships its catalog as a `.beacondata` file --
-# really a gzipped POSIX tar archive of JSON files, one per content pack.
-# Each file contains `payloads[].creatures[]` and/or `payloads[].engrams[]`
-# entries with up-to-date paths and GFI commands, including ASA additions
-# (Maeguana, Helminth, ...) the Dododex GitHub mirror is missing.
-#
-# We accept the file as a multipart upload, walk it entirely in memory
-# (the whole archive is ~60MB uncompressed), normalise creatures + engrams
-# into our flat blueprint shape, and replace the local DB.
-
-# Hard cap on the upload size we will accept.  Beacon's "complete" bundle
-# is ~12MB gzipped today; 50MB leaves plenty of headroom for future growth
-# without exposing the panel to a memory-bomb upload.
-_BEACON_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-
-# Strings inside Beacon's `path` that imply a non-spawnable record we don't
-# want cluttering autocomplete (admin tags, baby variants, broken refs).
-_BEACON_SKIP_PATH_FRAGMENTS = (
-    "/Buffs/", "/Effects/", "/UI/", "/HUD/",
-)
-
-
-def _beacon_normalize_path(path: Optional[str]) -> Optional[str]:
-    """Trim Beacon's `path` field and drop empties.  Already starts with '/'."""
-    if not path:
-        return None
-    p = path.strip()
-    return p if p else None
-
-
-def _beacon_classify_type(path: str, kind: str) -> str:
-    """
-    Map a Beacon record onto our (dino|item|weapon|armor|saddle|...) buckets.
-
-    `kind` is the Beacon section the record came from -- "creatures" maps
-    straight to "dino"; for engrams we re-use the existing _classify_type
-    string-matching against the path so the resulting catalog is shaped
-    identically to Dododex output.
-    """
-    if kind == "creatures":
-        return "dino"
-    return _classify_type(path)
-
-
-def _beacon_record_skipped(path: str) -> bool:
-    """Return True for paths we deliberately drop from the catalog."""
-    if not path:
-        return True
-    return any(frag in path for frag in _BEACON_SKIP_PATH_FRAGMENTS)
-
-
-def _normalize_beacon_creature(c: dict) -> Optional[dict]:
-    """Convert a Beacon `creatures[]` record to our blueprint dict."""
-    path = _beacon_normalize_path(c.get("path"))
-    if not path or _beacon_record_skipped(path):
-        return None
-    pack = str(c.get("contentPackName") or "").strip() or "Unknown"
-    name = str(c.get("label") or c.get("alternateLabel") or "").strip()
-    if not name:
-        return None
-    class_str = str(c.get("classString") or "").strip()
-    return {
-        "id":        f"bcn_{c.get('creatureId') or _make_id(name + path)}",
-        "name":      name,
-        "blueprint": path,
-        # We expose the content pack as the "category" so users can filter
-        # the dropdown by mod / DLC of origin.
-        "category":  pack,
-        "type":      "dino",
-        "gfi":       None,                     # Beacon doesn't carry GFI for creatures.
-        "source":    "beacon",
-        "class":     class_str or None,
-    }
-
-
-def _normalize_beacon_engram(e: dict) -> Optional[dict]:
-    """Convert a Beacon `engrams[]` record to our blueprint dict."""
-    path = _beacon_normalize_path(e.get("path"))
-    if not path or _beacon_record_skipped(path):
-        return None
-    pack = str(e.get("contentPackName") or "").strip() or "Unknown"
-    name = str(e.get("label") or e.get("alternateLabel") or "").strip()
-    if not name:
-        return None
-    class_str = str(e.get("classString") or "").strip()
-    bp_type   = _beacon_classify_type(path, "engrams")
-    # Beacon stores either the short `gfi` string ("dme") or the full
-    # `spawn` command ("cheat gfi dme 1 1 0").  Prefer the latter when
-    # present so the user sees something they can paste straight in.
-    spawn = e.get("spawn") or (
-        f"cheat gfi {e['gfi']} 1 1 0" if e.get("gfi") else None
-    )
-    return {
-        "id":        f"bcn_{e.get('engramId') or _make_id(name + path)}",
-        "name":      name,
-        "blueprint": path,
-        "category":  pack,
-        "type":      bp_type,
-        "gfi":       spawn,
-        "source":    "beacon",
-        "class":     class_str or None,
-    }
-
-
-def _iter_beacon_records(archive_bytes: bytes):
-    """
-    Yield (kind, dict) pairs from a `.beacondata` archive.
-
-    The file is `gzip(tar(json_files))`.  Every JSON file holds a
-    `{ "payloads": [ { "creatures": [...] | "engrams": [...] | ... } ] }`
-    structure -- we ignore everything except those two arrays.
-    """
-    # Beacon archives are gzip-then-tar but Python's tarfile can read both
-    # in one shot via mode='r:gz' on the raw bytes.
-    bio = io.BytesIO(archive_bytes)
-    try:
-        tf = tarfile.open(fileobj=bio, mode="r:gz")
-    except (tarfile.ReadError, OSError):
-        # Some `.beacondata` exports are NOT gzipped (newer Beacon builds).
-        # Try plain tar before giving up.
-        bio.seek(0)
-        tf = tarfile.open(fileobj=bio, mode="r:")
-    with tf:
-        for member in tf:
-            if not member.isfile() or not member.name.endswith(".json"):
-                continue
-            fh = tf.extractfile(member)
-            if fh is None:
-                continue
-            raw = fh.read()
-            try:
-                doc = json.loads(raw)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                continue
-            for payload in doc.get("payloads", []) or []:
-                for c in payload.get("creatures", []) or []:
-                    yield ("creature", c)
-                for e in payload.get("engrams", []) or []:
-                    yield ("engram", e)
-
 
 @router.post("/import-beacondata", response_model=SyncResult)
-async def import_beacondata(file: UploadFile = File(...)):
+async def import_beacondata(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Replace the local blueprint DB with the contents of a Beacon export.
+    UPSERT a Beacon ``.beacondata`` bundle into ``ARKM_blueprints``.
 
-    The user uploads `Complete.beacondata` (or any subset export) from
-    Beacon: https://usebeacon.app .  The file is a gzipped tar of JSON
-    bundles; we parse it in memory, deduplicate by blueprint path, and
-    persist the result to the same plugin-config blob `/sync` writes.
-
-    Errors abort the import without touching the existing DB -- a bad
-    upload never leaves the catalog half-replaced.
+    Multiple imports accumulate.  Each entry is tagged with a source
+    label of ``beacon:<filename>`` so the operator can later wipe a
+    single import via ``DELETE /blueprints/by-source``.
     """
     raw = await file.read()
     if not raw:
@@ -749,12 +818,10 @@ async def import_beacondata(file: UploadFile = File(...)):
             ),
         )
 
-    log.info(
-        "Beacon import: %s (%d bytes); wiping %d previous entries",
-        file.filename or "<no name>",
-        len(raw),
-        len(_get_db().get("blueprints", [])),
-    )
+    fname = file.filename or "beacondata"
+    source_label = fname
+
+    log.info("Beacon import: %s (%d bytes)", fname, len(raw))
 
     blueprints:     list[dict] = []
     items_count:    int = 0
@@ -765,13 +832,13 @@ async def import_beacondata(file: UploadFile = File(...)):
     try:
         for kind, record in _iter_beacon_records(raw):
             if kind == "creature":
-                normalized = _normalize_beacon_creature(record)
+                normalized = _normalize_beacon_creature(record, source_label)
                 if normalized:
                     dinos_count += 1
                     pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
                     blueprints.append(normalized)
             else:  # engram
-                normalized = _normalize_beacon_engram(record)
+                normalized = _normalize_beacon_engram(record, source_label)
                 if normalized:
                     items_count += 1
                     pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
@@ -791,40 +858,24 @@ async def import_beacondata(file: UploadFile = File(...)):
             ),
         )
 
-    # Deduplicate by blueprint path (case-insensitive).  When two packs
-    # ship the same blueprint we keep the FIRST one encountered, which is
-    # usually the one with richer fields because Beacon writes its
-    # primary catalog before user mods.
-    seen: dict[str, bool] = {}
-    unique = []
-    for bp in blueprints:
-        key = bp["blueprint"].lower().strip()
-        if key and key not in seen:
-            seen[key] = True
-            unique.append(bp)
+    added, updated = await _upsert_blueprints(db, blueprints, default_source=source_label)
 
-    # Build a one-line "sources" summary the UI shows on the Updates card.
     top_packs = sorted(pack_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
-    sources = [
-        f"{file.filename or 'beacondata'} -- {len(unique)} unique blueprints across "
+    summary = (
+        f"{fname} -- {added} added, {updated} updated; "
         f"{len(pack_counts)} content packs (top: " +
         ", ".join(f"{n} ({c})" for n, c in top_packs) + ")"
-    ]
+    )
+    await _bump_meta(db, source_label=summary)
 
-    _save_db({
-        "blueprints": unique,
-        "last_sync":  datetime.now(timezone.utc).isoformat(),
-        "sources":    sources,
-        "version":    _get_db().get("version", 0) + 1,
-    })
-
+    total_after = await _count_total(db)
     return SyncResult(
         success          = True,
-        total_blueprints = len(unique),
+        total_blueprints = total_after,
         items_count      = items_count,
         dinos_count      = dinos_count,
-        commands_count   = 0,    # Beacon archives have no /commands section.
-        sources          = sources,
+        commands_count   = 0,
+        sources          = [summary],
         errors           = errors,
     )
 
@@ -836,129 +887,311 @@ async def list_blueprints(
     search:   Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     type:     Optional[str] = Query(None),
+    source:   Optional[str] = Query(None),
+    scope:    Optional[str] = Query(
+        None,
+        description=(
+            "Optional curated filter. 'official_plus_s' keeps only "
+            "official ARK dino blueprints (vanilla + DLC + ASA) and the "
+            "S- variation pack, dropping all other modded content."
+        ),
+    ),
     limit:    int           = Query(100, ge=1, le=1000),
     offset:   int           = Query(0, ge=0),
+    db:       AsyncSession  = Depends(get_db),
 ):
     """
-    Search and paginate the local blueprint database.
+    Search and paginate the blueprint catalog.
 
-    Args:
-        search:   Substring match against name, blueprint path, or GFI.
-        category: Exact category filter (case-insensitive).
-        type:     Exact type filter (e.g. ``dino``, ``weapon``).
-        limit:    Page size (1–1000).
-        offset:   Pagination offset.
+    Filters compose with AND.  ``search`` is a substring match against
+    name, blueprint path, and gfi.
     """
-    items = _get_db().get("blueprints", [])
+    where: list[str] = []
+    params: dict = {}
 
     if search:
-        s = search.lower()
-        items = [
-            i for i in items
-            if s in i.get("name", "").lower()
-            or s in i.get("blueprint", "").lower()
-            or s in (i.get("gfi") or "").lower()
-        ]
-
+        where.append(
+            "(LOWER(name) LIKE :s OR LOWER(blueprint) LIKE :s OR LOWER(COALESCE(gfi, '')) LIKE :s)"
+        )
+        params["s"] = f"%{search.lower()}%"
     if category:
-        cat_lower = category.lower().strip()
-        items = [
-            i for i in items
-            if i.get("category", "").lower().strip() == cat_lower
-        ]
-
+        where.append("LOWER(TRIM(category)) = :cat")
+        params["cat"] = category.lower().strip()
     if type:
-        items = [i for i in items if i.get("type", "") == type]
+        where.append("type = :t")
+        params["t"] = type
+    if source:
+        where.append("source = :src")
+        params["src"] = source
 
-    total = len(items)
-    return {"items": items[offset: offset + limit], "total": total}
+    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+    if scope == "official_plus_s":
+        # Apply the curated filter in Python after fetching, since the
+        # rule combines path + name conditions.  Fetch the whole filtered
+        # set first, then page in memory.
+        res = await db.execute(
+            text(f"SELECT {_BP_COLS} FROM ARKM_blueprints {where_clause} ORDER BY name"),
+            params,
+        )
+        all_items = [_row_to_bp(r) for r in res.mappings().fetchall()]
+        kept = [bp for bp in all_items if is_official_or_s_variant_dino(bp)]
+        total = len(kept)
+        return {"items": kept[offset: offset + limit], "total": total}
+
+    # Count + page in SQL.
+    count_res = await db.execute(
+        text(f"SELECT COUNT(*) FROM ARKM_blueprints {where_clause}"),
+        params,
+    )
+    total = int(count_res.scalar() or 0)
+
+    page_params = dict(params, lim=limit, off=offset)
+    rows = await db.execute(
+        text(
+            f"SELECT {_BP_COLS} FROM ARKM_blueprints {where_clause} "
+            f"ORDER BY name LIMIT :lim OFFSET :off"
+        ),
+        page_params,
+    )
+    items = [_row_to_bp(r) for r in rows.mappings().fetchall()]
+    return {"items": items, "total": total}
 
 
 @router.get("/categories")
-async def list_categories():
+async def list_categories(db: AsyncSession = Depends(get_db)):
     """Return all categories with their blueprint counts."""
-    cats: dict[str, int] = {}
-    for bp in _get_db().get("blueprints", []):
-        cat = bp.get("category", "Other")
-        cats[cat] = cats.get(cat, 0) + 1
-    return {"categories": [{"name": k, "count": v} for k, v in sorted(cats.items())]}
+    res = await db.execute(text(
+        "SELECT COALESCE(category, 'Other') AS c, COUNT(*) AS n "
+        "FROM ARKM_blueprints GROUP BY category ORDER BY c"
+    ))
+    return {"categories": [{"name": r[0], "count": int(r[1])} for r in res.fetchall()]}
 
 
 @router.get("/types")
-async def list_types():
+async def list_types(db: AsyncSession = Depends(get_db)):
     """Return all blueprint types with their counts."""
-    types: dict[str, int] = {}
-    for bp in _get_db().get("blueprints", []):
-        t = bp.get("type", "item")
-        types[t] = types.get(t, 0) + 1
-    return {"types": [{"name": k, "count": v} for k, v in sorted(types.items())]}
+    res = await db.execute(text(
+        "SELECT COALESCE(type, 'item') AS t, COUNT(*) AS n "
+        "FROM ARKM_blueprints GROUP BY type ORDER BY t"
+    ))
+    return {"types": [{"name": r[0], "count": int(r[1])} for r in res.fetchall()]}
 
+
+@router.get("/sources")
+async def list_sources(db: AsyncSession = Depends(get_db)):
+    """Return all distinct source labels with their blueprint counts."""
+    res = await db.execute(text(
+        "SELECT COALESCE(source, '') AS s, COUNT(*) AS n "
+        "FROM ARKM_blueprints GROUP BY source ORDER BY n DESC"
+    ))
+    return {"sources": [{"name": r[0], "count": int(r[1])} for r in res.fetchall()]}
+
+
+# ── Bulk deletion endpoints ───────────────────────────────────────────────────
 
 @router.delete("")
-async def clear_blueprints():
-    """Delete the entire local blueprint database."""
-    save_plugin_config_sync(_PLUGIN_NAME, {})
-    return {"success": True}
+async def clear_blueprints(db: AsyncSession = Depends(get_db)):
+    """Delete every blueprint row.  Metadata blob is reset too."""
+    res = await db.execute(text("DELETE FROM ARKM_blueprints"))
+    removed = res.rowcount or 0
+    await _save_meta(db, {"last_sync": None, "sources": [], "version": 0})
+    return {"success": True, "removed": removed}
+
+
+@router.delete("/non-official")
+async def prune_non_official_blueprints(db: AsyncSession = Depends(get_db)):
+    """
+    Drop every blueprint that is NOT vanilla / DLC / ASA content.
+
+    Admin command rows are kept (no `/Game/` path but still vanilla).
+    The check that decides which rows survive runs in Python because the
+    "official" rule combines path + type and isn't trivially expressible
+    in SQL across our quoting variants.
+    """
+    res = await db.execute(text(
+        "SELECT id, blueprint, type FROM ARKM_blueprints"
+    ))
+    rows = res.mappings().fetchall()
+    before = len(rows)
+    drop_ids = [
+        r["id"] for r in rows
+        if not is_official_blueprint({"blueprint": r["blueprint"], "type": r["type"]})
+    ]
+    removed = await _delete_by_ids(db, drop_ids)
+    if removed:
+        await _bump_meta(db, source_label=f"prune-non-official ({removed} removed)")
+    return {"success": True, "removed": removed, "kept": before - removed, "before": before}
+
+
+@router.delete("/by-source")
+async def delete_by_source(
+    source: str = Query(..., description="Exact source label to delete (case-sensitive)."),
+    db: AsyncSession = Depends(get_db),
+):
+    """Drop every blueprint whose ``source`` column matches *source*."""
+    res = await db.execute(
+        text("DELETE FROM ARKM_blueprints WHERE source = :s"),
+        {"s": source},
+    )
+    removed = res.rowcount or 0
+    if removed:
+        await _bump_meta(db, source_label=f"delete by-source '{source}' ({removed} removed)")
+    return {"success": True, "removed": removed, "source": source}
+
+
+@router.delete("/by-filter")
+async def delete_by_filter(
+    search:   Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    type:     Optional[str] = Query(None),
+    source:   Optional[str] = Query(None),
+    db:       AsyncSession  = Depends(get_db),
+):
+    """
+    Drop every blueprint matching the supplied filters.
+
+    At least one filter MUST be provided -- a request with no filters
+    is rejected to prevent the operator from accidentally wiping the
+    table via this endpoint (use ``DELETE /blueprints`` for that).
+    """
+    if not any((search, category, type, source)):
+        raise HTTPException(
+            status_code=400,
+            detail="At least one filter (search/category/type/source) is required.",
+        )
+
+    where: list[str] = []
+    params: dict = {}
+    if search:
+        where.append(
+            "(LOWER(name) LIKE :s OR LOWER(blueprint) LIKE :s OR LOWER(COALESCE(gfi, '')) LIKE :s)"
+        )
+        params["s"] = f"%{search.lower()}%"
+    if category:
+        where.append("LOWER(TRIM(category)) = :cat")
+        params["cat"] = category.lower().strip()
+    if type:
+        where.append("type = :t")
+        params["t"] = type
+    if source:
+        where.append("source = :src")
+        params["src"] = source
+
+    where_clause = "WHERE " + " AND ".join(where)
+    res = await db.execute(
+        text(f"DELETE FROM ARKM_blueprints {where_clause}"),
+        params,
+    )
+    removed = res.rowcount or 0
+    if removed:
+        applied = ",".join(k for k in ("search", "category", "type", "source")
+                           if locals().get(k))
+        await _bump_meta(db, source_label=f"delete by-filter [{applied}] ({removed} removed)")
+    return {
+        "success": True,
+        "removed": removed,
+        "filter":  {"search": search, "category": category, "type": type, "source": source},
+    }
+
+
+@router.delete("/{bp_id}")
+async def delete_one(bp_id: int, db: AsyncSession = Depends(get_db)):
+    """Drop a single blueprint row by its integer id."""
+    res = await db.execute(
+        text("DELETE FROM ARKM_blueprints WHERE id = :i"),
+        {"i": bp_id},
+    )
+    if (res.rowcount or 0) == 0:
+        raise HTTPException(status_code=404, detail=f"Blueprint id={bp_id} not found.")
+    return {"success": True, "id": bp_id}
+
+
+async def _delete_by_ids(db: AsyncSession, ids: list[int]) -> int:
+    """Delete rows whose id is in *ids*, in chunks; return rows removed."""
+    if not ids:
+        return 0
+    BATCH = 1000
+    total = 0
+    for i in range(0, len(ids), BATCH):
+        chunk = ids[i:i + BATCH]
+        params = {f"i{j}": v for j, v in enumerate(chunk)}
+        placeholders = ", ".join(f":i{j}" for j in range(len(chunk)))
+        res = await db.execute(
+            text(f"DELETE FROM ARKM_blueprints WHERE id IN ({placeholders})"),
+            params,
+        )
+        total += res.rowcount or 0
+    return total
 
 
 # ── Category management ───────────────────────────────────────────────────────
 
 @router.get("/categories/list")
-async def list_all_categories():
-    """Return predefined categories merged with any custom ones from the DB."""
-    db_cats = {
-        bp.get("category", "")
-        for bp in _get_db().get("blueprints", [])
-        if bp.get("category")
-    }
-    all_cats = list(dict.fromkeys(_PREDEFINED_CATEGORIES + sorted(db_cats - set(_PREDEFINED_CATEGORIES))))
+async def list_all_categories(db: AsyncSession = Depends(get_db)):
+    """Return predefined categories merged with any custom ones found in rows."""
+    res = await db.execute(text(
+        "SELECT DISTINCT category FROM ARKM_blueprints WHERE category IS NOT NULL"
+    ))
+    db_cats = {r[0] for r in res.fetchall() if r[0]}
+    all_cats = list(dict.fromkeys(
+        _PREDEFINED_CATEGORIES + sorted(db_cats - set(_PREDEFINED_CATEGORIES))
+    ))
     return {"categories": all_cats}
 
 
 @router.put("/{bp_id}/category")
-async def update_blueprint_category(bp_id: str, body: CategoryUpdate):
-    """Update the category of a single blueprint by its ID."""
-    db = _get_db()
-    blueprints = db.get("blueprints", [])
-    updated = False
-    for bp in blueprints:
-        if bp.get("id") == bp_id:
-            bp["category"] = body.category
-            updated = True
-            break
-    if not updated:
-        raise HTTPException(status_code=404, detail=f"Blueprint '{bp_id}' not found.")
-    db["blueprints"] = blueprints
-    _save_db(db)
+async def update_blueprint_category(
+    bp_id: int,
+    body:  CategoryUpdate,
+    db:    AsyncSession = Depends(get_db),
+):
+    """Update the category of a single blueprint by its id."""
+    res = await db.execute(
+        text("UPDATE ARKM_blueprints SET category = :c WHERE id = :i"),
+        {"c": body.category, "i": bp_id},
+    )
+    if (res.rowcount or 0) == 0:
+        raise HTTPException(status_code=404, detail=f"Blueprint id={bp_id} not found.")
     return {"success": True, "id": bp_id, "category": body.category}
 
 
 @router.put("/bulk-category")
-async def bulk_update_category(body: BulkCategoryUpdate):
+async def bulk_update_category(
+    body: BulkCategoryUpdate,
+    db:   AsyncSession = Depends(get_db),
+):
     """Update the category of multiple blueprints at once."""
-    db = _get_db()
-    blueprints = db.get("blueprints", [])
-    ids_set = set(body.ids)
-    count = 0
-    for bp in blueprints:
-        if bp.get("id") in ids_set:
-            bp["category"] = body.category
-            count += 1
-    db["blueprints"] = blueprints
-    _save_db(db)
-    return {"success": True, "updated": count, "category": body.category}
+    if not body.ids:
+        return {"success": True, "updated": 0, "category": body.category}
+
+    BATCH = 1000
+    updated = 0
+    for i in range(0, len(body.ids), BATCH):
+        chunk = body.ids[i:i + BATCH]
+        params = {f"i{j}": v for j, v in enumerate(chunk)}
+        params["c"] = body.category
+        placeholders = ", ".join(f":i{j}" for j in range(len(chunk)))
+        res = await db.execute(
+            text(f"UPDATE ARKM_blueprints SET category = :c WHERE id IN ({placeholders})"),
+            params,
+        )
+        updated += res.rowcount or 0
+    return {"success": True, "updated": updated, "category": body.category}
 
 
 # ── Import / Export ───────────────────────────────────────────────────────────
 
 @router.get("/export")
-async def export_blueprints():
-    """Export the full blueprint database as a JSON download."""
+async def export_blueprints(db: AsyncSession = Depends(get_db)):
+    """Export the full catalog as a JSON download."""
     from fastapi.responses import JSONResponse
-    db = _get_db()
-    blueprints = db.get("blueprints", [])
+    res = await db.execute(text(
+        f"SELECT {_BP_COLS} FROM ARKM_blueprints ORDER BY name"
+    ))
+    items = [_row_to_bp(r) for r in res.mappings().fetchall()]
     return JSONResponse(
-        content=blueprints,
+        content=items,
         headers={
             "Content-Disposition": (
                 f'attachment; filename="blueprints_{datetime.now(timezone.utc).strftime("%Y-%m-%d")}.json"'
@@ -968,22 +1201,21 @@ async def export_blueprints():
 
 
 @router.post("/import")
-async def import_blueprints(body: ImportRequest):
+async def import_blueprints(
+    body: ImportRequest,
+    db:   AsyncSession = Depends(get_db),
+):
     """
     Import blueprints from a JSON payload.
 
-    Modes:
-      - ``merge``:   add new entries and update existing ones (matched by blueprint path)
-      - ``replace``: wipe the DB and replace with the imported data
-
-    Each entry must have at least ``name`` and ``blueprint`` fields.
-    Missing fields are filled with sensible defaults.
+    * ``mode='merge'`` (default): UPSERT entries — existing rows are
+      refreshed, new rows are appended.
+    * ``mode='replace'``: wipe the table first, then insert.
     """
     incoming = body.blueprints
     if not incoming:
         raise HTTPException(status_code=400, detail="No blueprints in payload.")
 
-    # Validate and normalize
     normalized: list[dict] = []
     for raw in incoming:
         bp_path = raw.get("blueprint", "")
@@ -994,7 +1226,6 @@ async def import_blueprints(body: ImportRequest):
             bp_path = name
         if not name:
             name = _extract_name(bp_path)
-        # Auto-detect type from blueprint path
         bp_type = raw.get("type") or _classify_type(bp_path)
         normalized.append({
             "id":        raw.get("id") or _make_id(name),
@@ -1007,40 +1238,18 @@ async def import_blueprints(body: ImportRequest):
         })
 
     if body.mode == "replace":
-        _save_db({
-            "blueprints": normalized,
-            "last_sync":  datetime.now(timezone.utc).isoformat(),
-            "sources":    [f"manual import ({len(normalized)} entries)"],
-            "version":    _get_db().get("version", 0) + 1,
-        })
-        return {"success": True, "added": len(normalized), "updated": 0, "skipped": 0, "total": len(normalized)}
+        await db.execute(text("DELETE FROM ARKM_blueprints"))
 
-    # Merge mode — deduplicate by blueprint path
-    db = _get_db()
-    existing = db.get("blueprints", [])
-    by_bp: dict[str, int] = {
-        bp["blueprint"].lower().strip(): i
-        for i, bp in enumerate(existing)
+    added, updated = await _upsert_blueprints(db, normalized, default_source="manual-import")
+    total_after = await _count_total(db)
+    label = (
+        f"manual-import {body.mode} ({added} added, {updated} updated)"
+    )
+    await _bump_meta(db, source_label=label)
+    return {
+        "success": True,
+        "added":   added,
+        "updated": updated,
+        "skipped": 0,
+        "total":   total_after,
     }
-
-    added = 0
-    updated = 0
-    skipped = 0
-    for entry in normalized:
-        key = entry["blueprint"].lower().strip()
-        if key in by_bp:
-            idx = by_bp[key]
-            # Update existing — keep source, update other fields
-            for field in ("name", "category", "type", "gfi"):
-                if entry.get(field):
-                    existing[idx][field] = entry[field]
-            updated += 1
-        else:
-            existing.append(entry)
-            by_bp[key] = len(existing) - 1
-            added += 1
-
-    db["blueprints"] = existing
-    db["version"] = db.get("version", 0) + 1
-    _save_db(db)
-    return {"success": True, "added": added, "updated": updated, "skipped": skipped, "total": len(existing)}

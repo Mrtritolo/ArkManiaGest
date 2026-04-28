@@ -104,6 +104,45 @@ class AppSetting(Base):
     updated_at  = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class ARKMBlueprint(Base):
+    """
+    A single ARK blueprint entry — creature, item, structure, weapon, …
+
+    Replaces the legacy single-JSON-blob storage at
+    ``arkmaniagest_settings.key='plugin.blueprints_db'`` with one row per
+    blueprint so the operator can manage entries individually (filter,
+    delete, accumulate from multiple imports).
+
+    Identity:
+      ``blueprint_hash`` is SHA-256 of the lowercased / stripped path —
+      acts as the dedup key across re-imports.  Storing the hash in a
+      fixed-length column keeps the UNIQUE index size predictable
+      regardless of how long the original path is.
+    """
+    __tablename__ = "ARKM_blueprints"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    # Hash of the normalized blueprint path -- stable identity across imports.
+    blueprint_hash = Column(String(64), nullable=False, unique=True, index=True)
+    # Full original blueprint path, kept verbatim for display + GFI usage.
+    blueprint      = Column(Text, nullable=False)
+    name           = Column(String(255), nullable=False)
+    category       = Column(String(100), nullable=True, index=True)
+    type           = Column(String(50), nullable=True, index=True)
+    gfi            = Column(Text, nullable=True)
+    # Where this entry came from -- "dododex-github", "beacon:Complete",
+    # "manual-import", etc.  Used by the by-source delete endpoint so the
+    # operator can wipe a single import at a time.
+    source         = Column(String(150), nullable=True, index=True)
+    class_name     = Column(String(255), nullable=True)
+    description    = Column(Text, nullable=True)
+    # The original `id` field upstream provided (Dododex slug, Beacon
+    # creatureId, …).  Kept as metadata; not used as the primary key.
+    ext_id         = Column(String(150), nullable=True)
+    created_at     = Column(DateTime, server_default=func.now())
+    updated_at     = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ARKMServerInstance(Base):
     """
     A managed ARK: Survival Ascended container instance running on one of

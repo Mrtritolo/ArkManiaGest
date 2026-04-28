@@ -123,6 +123,26 @@ def _cached_bytes(safe_name: str) -> Optional[bytes]:
     return None
 
 
+def _is_negative_cached(safe_name: str) -> bool:
+    """
+    True when a fresh ``.404`` marker exists for *safe_name*.
+
+    Exists separately from :func:`_cached_bytes` because a negative
+    cache hit must short-circuit ``get_or_fetch_thumb`` BEFORE the
+    slow-path wiki fetch -- otherwise we re-hammer the wiki on every
+    request even when we already know the page is missing.
+    """
+    neg = _negative_path_for(safe_name)
+    if not neg.exists():
+        return False
+    if (time.time() - neg.stat().st_mtime) > _NEGATIVE_TTL_SECONDS:
+        # Stale marker; let the caller refresh it.
+        try: neg.unlink(missing_ok=True)
+        except OSError: pass
+        return False
+    return True
+
+
 async def _fetch_from_wiki(display_name: str) -> Optional[bytes]:
     """
     Pull the image from ark.wiki.gg's Special:FilePath redirect.
@@ -164,6 +184,13 @@ async def get_or_fetch_thumb(display_name: str) -> Optional[bytes]:
     if cached is not None:
         return cached
 
+    # Negative cache: known-404 within TTL -- bail without touching
+    # the wiki.  This is the hot path for big catalogs that contain
+    # hundreds of names the wiki has no page for (admin commands,
+    # mod-only items, emote variants).
+    if _is_negative_cached(safe):
+        return None
+
     # Slow path: lock + fetch.  The lock makes sure two concurrent
     # requests for the same brand-new item only hit the wiki once.
     lock = _locks.setdefault(safe, asyncio.Lock())
@@ -172,6 +199,8 @@ async def get_or_fetch_thumb(display_name: str) -> Optional[bytes]:
         cached = _cached_bytes(safe)
         if cached is not None:
             return cached
+        if _is_negative_cached(safe):
+            return None
 
         try:
             data = await _fetch_from_wiki(display_name)

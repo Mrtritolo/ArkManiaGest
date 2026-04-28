@@ -628,10 +628,11 @@ export const playersApi = {
    */
   deleteCharacterFiles: (eos_id: string) =>
     api.delete<{
-      eos_id:        string;
-      total_deleted: number;
-      deleted:       Array<{ path: string; container: string; machine_id: number }>;
-      errors:        string[];
+      eos_id:          string;
+      total_deleted:   number;
+      deleted:         Array<{ path: string; container: string; machine_id: number }>;
+      db_row_removed:  boolean;
+      errors:          string[];
     }>(`/players/${eos_id}/character-files`),
 
   /**
@@ -786,6 +787,8 @@ export const blueprintsApi = {
     search?: string;
     category?: string;
     type?: string;
+    source?: string;
+    scope?: "official_plus_s";
     limit?: number;
     offset?: number;
   }) => api.get<{ items: unknown[]; total: number }>("/blueprints", { params }),
@@ -793,15 +796,36 @@ export const blueprintsApi = {
     api.get<{ categories: { name: string; count: number }[] }>("/blueprints/categories"),
   types: () =>
     api.get<{ types: { name: string; count: number }[] }>("/blueprints/types"),
-  clear: () => api.delete("/blueprints"),
+  sources: () =>
+    api.get<{ sources: { name: string; count: number }[] }>("/blueprints/sources"),
+
+  // Bulk deletion
+  clear: () =>
+    api.delete<{ success: boolean; removed: number }>("/blueprints"),
+  pruneNonOfficial: () =>
+    api.delete<{ success: boolean; removed: number; kept: number; before: number }>(
+      "/blueprints/non-official",
+    ),
+  deleteBySource: (source: string) =>
+    api.delete<{ success: boolean; removed: number; source: string }>(
+      "/blueprints/by-source", { params: { source } },
+    ),
+  deleteByFilter: (filter: { search?: string; category?: string; type?: string; source?: string }) =>
+    api.delete<{ success: boolean; removed: number; filter: Record<string, string | null> }>(
+      "/blueprints/by-filter", { params: filter },
+    ),
+  deleteOne: (id: number) =>
+    api.delete<{ success: boolean; id: number }>(`/blueprints/${id}`),
 
   // Category management
   allCategories: () =>
     api.get<{ categories: string[] }>("/blueprints/categories/list"),
-  updateCategory: (bpId: string, category: string) =>
-    api.put(`/blueprints/${encodeURIComponent(bpId)}/category`, { category }),
-  bulkUpdateCategory: (ids: string[], category: string) =>
-    api.put("/blueprints/bulk-category", { ids, category }),
+  updateCategory: (bpId: number, category: string) =>
+    api.put(`/blueprints/${bpId}/category`, { category }),
+  bulkUpdateCategory: (ids: number[], category: string) =>
+    api.put<{ success: boolean; updated: number; category: string }>(
+      "/blueprints/bulk-category", { ids, category },
+    ),
 
   // Import / Export
   exportAll: () =>

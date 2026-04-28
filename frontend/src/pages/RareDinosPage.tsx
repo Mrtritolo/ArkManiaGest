@@ -135,7 +135,7 @@ export default function RareDinosPage() {
     const timer = setTimeout(async () => {
       setBpLoading(true)
       try {
-        const res = await blueprintsApi.list({ search: bpSearch, type: 'dino', limit: 10 })
+        const res = await blueprintsApi.list({ search: bpSearch, type: 'dino', scope: 'official_plus_s', limit: 10 })
         setBpResults(res.data.items?.map((i: Record<string, string>) => ({ name: i.name, blueprint: i.blueprint, category: i.category })) || [])
       } catch { setBpResults([]) }
       finally {

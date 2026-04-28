@@ -152,6 +152,12 @@ async def create_app_tables() -> None:
             new_type="VARCHAR(64) NULL",
         )
 
+        # One-shot migration: legacy single-JSON-blob blueprint storage
+        # at arkmaniagest_settings.key='plugin.blueprints_db' moves into
+        # the new per-row ARKM_blueprints table.  Idempotent -- runs
+        # only when the table is empty AND the legacy blob exists.
+        await _migrate_blueprints_blob_to_rows(conn)
+
 
 async def _relax_column_to_null(
     conn, *, table: str, column: str, new_type: str,
@@ -187,6 +193,130 @@ async def _relax_column_to_null(
         # Don't crash boot if the column has FK constraints we can't
         # touch transparently -- the operator can investigate.
         pass
+
+
+async def _migrate_blueprints_blob_to_rows(conn) -> None:
+    """
+    Lift the legacy `plugin.blueprints_db` JSON blob into one row per
+    blueprint inside ``ARKM_blueprints``.
+
+    Idempotent guard: skipped when ``ARKM_blueprints`` already has rows
+    (so re-runs after the migration are no-ops).  After the migration
+    succeeds, the original `plugin.blueprints_db` row is replaced with
+    a slim `plugin.blueprints_meta` blob holding only ``last_sync`` /
+    ``sources`` / ``version`` so the legacy structure cannot drift away
+    from the table.
+    """
+    import hashlib
+    import json
+    from sqlalchemy import text as _sql_text
+
+    # 0. Idempotent label rebrand.  Older releases used the verbose
+    # "dododex-github" / "beacon:<file>" labels; the operator UI now shows
+    # "base" / "<file>".  Re-runs are no-ops because the WHERE clauses
+    # exclude already-renamed rows.
+    try:
+        await conn.execute(_sql_text(
+            "UPDATE ARKM_blueprints SET source = 'base' WHERE source = 'dododex-github'"
+        ))
+        await conn.execute(_sql_text(
+            "UPDATE ARKM_blueprints SET source = SUBSTRING(source, 8) "
+            "WHERE source LIKE 'beacon:%'"
+        ))
+    except Exception:
+        # Table doesn't exist yet on a fresh install -- create_all() above
+        # will materialise it before we reach the migration below.
+        pass
+
+    # 1. Bail if the new table is missing or already populated.
+    try:
+        existing = await conn.execute(
+            _sql_text("SELECT COUNT(*) FROM ARKM_blueprints")
+        )
+    except Exception:
+        return
+    if (existing.scalar() or 0) > 0:
+        return
+
+    # 2. Read the legacy blob.
+    legacy = await conn.execute(_sql_text(
+        "SELECT value FROM arkmaniagest_settings WHERE `key` = 'plugin.blueprints_db'"
+    ))
+    row = legacy.first()
+    if row is None or not row[0]:
+        return
+    try:
+        blob = json.loads(row[0])
+    except (ValueError, TypeError):
+        return
+    blueprints = blob.get("blueprints") or []
+    if not blueprints:
+        return
+
+    # 3. Bulk insert.  De-dup at insert time on blueprint_hash to keep
+    #    the migration tolerant of duplicates inside the legacy array.
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for bp in blueprints:
+        path = (bp.get("blueprint") or "").strip()
+        if not path:
+            continue
+        norm = path.strip().lower()
+        h = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        if h in seen:
+            continue
+        seen.add(h)
+        # Rebrand legacy source labels to the slimmer scheme used by the
+        # current API (dododex-github -> base; beacon:<file> -> <file>).
+        src_in = bp.get("source")
+        if src_in == "dododex-github":
+            src_in = "base"
+        elif isinstance(src_in, str) and src_in.startswith("beacon:"):
+            src_in = src_in[len("beacon:"):]
+        rows.append({
+            "h":   h,
+            "bp":  path,
+            "n":   (bp.get("name") or "")[:255] or path[:255],
+            "c":   (bp.get("category") or None),
+            "t":   (bp.get("type") or None),
+            "g":   bp.get("gfi"),
+            "s":   src_in,
+            "cl":  bp.get("class"),
+            "d":   bp.get("description"),
+            "e":   (bp.get("id") or None),
+        })
+
+    # MySQL/MariaDB chunked executemany via SQLAlchemy's parameter binding.
+    BATCH = 500
+    for i in range(0, len(rows), BATCH):
+        chunk = rows[i:i + BATCH]
+        await conn.execute(
+            _sql_text(
+                "INSERT IGNORE INTO ARKM_blueprints "
+                "(blueprint_hash, blueprint, name, category, type, gfi, "
+                " source, class_name, description, ext_id) "
+                "VALUES (:h, :bp, :n, :c, :t, :g, :s, :cl, :d, :e)"
+            ),
+            chunk,
+        )
+
+    # 4. Replace the legacy blob with a slim meta-only blob.
+    meta = {
+        "last_sync": blob.get("last_sync"),
+        "sources":   blob.get("sources") or [],
+        "version":   blob.get("version") or 0,
+    }
+    await conn.execute(
+        _sql_text(
+            "INSERT INTO arkmaniagest_settings (`key`, `value`, `encrypted`, `description`) "
+            "VALUES ('plugin.blueprints_meta', :v, 0, 'Blueprints metadata (rows live in ARKM_blueprints)') "
+            "ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)"
+        ),
+        {"v": json.dumps(meta, ensure_ascii=False)},
+    )
+    await conn.execute(_sql_text(
+        "DELETE FROM arkmaniagest_settings WHERE `key` = 'plugin.blueprints_db'"
+    ))
 
 
 async def _add_column_if_missing(conn, *, table: str, column: str, ddl: str) -> None:
