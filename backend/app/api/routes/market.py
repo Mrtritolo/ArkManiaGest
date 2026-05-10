@@ -25,13 +25,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_admin
+from app.core.auth import require_admin, decode_token
 from app.db.session import get_db, get_plugin_db
 from app.api.routes.me import get_current_player, _PlayerSession
 from app.services.market_thumbs import get_or_fetch_thumb, sanitize_thumb_name
@@ -112,6 +112,7 @@ router = APIRouter()
 # ── Auth: optional player session OR a panel-admin override ─────────────────
 
 async def _resolve_eos_for_read(
+    request: Request,
     player:  _PlayerSession = Depends(get_current_player),
     for_eos: Optional[str]  = Query(None, description="(admin only) view another EOS"),
 ) -> str:
@@ -120,15 +121,39 @@ async def _resolve_eos_for_read(
     player by default; admins can pass `?for_eos=...` to peek at
     another player's data.
 
-    The for_eos override is enforced via require_admin in the route
-    decorator chain when needed -- here we just trust the dependency
-    upstream and return the right EOS.  When for_eos is set, this
-    means an admin is viewing another player; the player session is
-    still required to bypass the disc_session-cookie auth.
+    Admin override is gated HERE (the dependency chain previously
+    only validated the player session, NOT the admin role -- so any
+    Discord-linked player could read another player's wallet/items/
+    transactions by passing `?for_eos=<victim>`).  We require a panel
+    admin JWT in the Authorization header for the override to apply.
     """
-    if for_eos:
-        return for_eos.strip()
-    return player.eos_id
+    if not for_eos:
+        return player.eos_id
+
+    # Admin override: require a valid panel JWT with the admin role in
+    # the Authorization header.  We do not piggy-back on the player
+    # session because that's a Discord-linked identity, not a panel
+    # role; demoting that to admin would bypass `require_admin`.
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=403,
+            detail="for_eos override requires a panel admin JWT.",
+        )
+    token = auth_header.split(" ", 1)[1].strip()
+    try:
+        payload = decode_token(token)
+    except HTTPException:
+        raise HTTPException(
+            status_code=403,
+            detail="for_eos override requires a panel admin JWT.",
+        )
+    if payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="for_eos override is admin-only.",
+        )
+    return for_eos.strip()
 
 
 # ── Pydantic shapes ─────────────────────────────────────────────────────────

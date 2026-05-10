@@ -71,8 +71,20 @@ export default function DashboardPage() {
 
   useEffect(() => { loadAll() }, [])
   useEffect(() => {
-    const id = setInterval(() => loadAll(true), 30_000)
-    return () => clearInterval(id)
+    // Skip the polling tick when the tab is in the background -- a
+    // long-lived admin session would otherwise burn hundreds of XHRs
+    // an hour, plus reset the JWT idle clock so the session never
+    // naturally times out.  We refresh once when the tab becomes
+    // visible again so the dashboard isn't stale.
+    const id = setInterval(() => {
+      if (!document.hidden) loadAll(true)
+    }, 30_000)
+    const onVisible = () => { if (!document.hidden) loadAll(true) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
 

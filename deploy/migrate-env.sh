@@ -28,7 +28,13 @@ if [ ! -f "$LIVE_ENV" ]; then
     exit 0
 fi
 
-# Collect all KEY=... lines from the template (ignore comments and blanks).
+# Collect all KEY=... lines from the template (ignore comments and blanks)
+# and append the missing ones inside a single fence-block.  Re-runs that
+# add additional keys reuse the same fence (so the live .env doesn't
+# accumulate one "Added by migrate-env.sh on …" header per upgrade).
+FENCE_OPEN="# >>> migrate-env: appended keys >>>"
+FENCE_CLOSE="# <<< migrate-env: appended keys <<<"
+
 added=0
 while IFS= read -r line; do
     # Skip comments and empty lines
@@ -40,12 +46,38 @@ while IFS= read -r line; do
     if grep -q "^${key}=" "$LIVE_ENV"; then
         continue
     fi
-    # Preserve the template value (usually empty for new optional keys).
-    # Append a blank line the first time we add something, for readability.
+
+    # Open the fence once; subsequent runs append BEFORE the closing
+    # marker so the file never accumulates duplicated banners.
     if [ "$added" -eq 0 ]; then
-        printf '\n# --- Added by migrate-env.sh on %s ---\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LIVE_ENV"
+        if grep -qF "$FENCE_OPEN" "$LIVE_ENV"; then
+            # Insert BEFORE the closing marker so all migrated keys live
+            # inside the same fence-block.
+            tmp=$(mktemp)
+            awk -v open="$FENCE_OPEN" -v close="$FENCE_CLOSE" -v line="$line" '
+                $0 == close && !done { print line; done = 1 }
+                { print }
+            ' "$LIVE_ENV" > "$tmp"
+            mv "$tmp" "$LIVE_ENV"
+        else
+            {
+                echo ""
+                echo "$FENCE_OPEN"
+                printf '# Inserted by migrate-env.sh on %s\n' \
+                    "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                echo "$line"
+                echo "$FENCE_CLOSE"
+            } >> "$LIVE_ENV"
+        fi
+    else
+        # Fence already opened in this run -- insert before the close.
+        tmp=$(mktemp)
+        awk -v close="$FENCE_CLOSE" -v line="$line" '
+            $0 == close && !done { print line; done = 1 }
+            { print }
+        ' "$LIVE_ENV" > "$tmp"
+        mv "$tmp" "$LIVE_ENV"
     fi
-    printf '%s\n' "$line" >> "$LIVE_ENV"
     echo "  [migrate-env] + $key"
     added=$((added + 1))
 done < "$TEMPLATE"

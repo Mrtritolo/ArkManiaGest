@@ -192,11 +192,17 @@ api.interceptors.response.use(
     }
 
     // 401 on a protected endpoint = expired / invalid token → force re-login.
-    // Two endpoints are EXEMPT because they probe an OPTIONAL credential and
+    // Some endpoints are EXEMPT because they probe an OPTIONAL credential and
     // a 401 there does NOT mean the panel JWT is broken:
     //   * /auth/login         -- the user is trying to authenticate; a
     //                            wrong-password 401 must surface to the
     //                            caller, not redirect them to /login again.
+    //   * /auth/me            -- App.tsx boot probe: a 401 here means the
+    //                            stored token is expired and App.tsx will
+    //                            already wipe + fall through to the Discord
+    //                            probe.  Letting the global handler ALSO
+    //                            fire racing setAuthState callbacks creates
+    //                            a flash of "login" between probe attempts.
     //   * /auth/discord/me    -- this probes the Discord-session cookie,
     //                            which can be absent even when the panel
     //                            JWT is fine (admin who never logged via
@@ -206,6 +212,7 @@ api.interceptors.response.use(
     //                            is gone or expired, not the panel JWT.
     const isExemptFrom401 =
       url.includes("/auth/login")
+      || /\/auth\/me(\?|$)/.test(url)
       || url.includes("/auth/discord/me")
       || url.includes("/me/dashboard");
     if (status === 401 && _authToken && !isExemptFrom401) {

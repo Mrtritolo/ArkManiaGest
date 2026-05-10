@@ -7,6 +7,7 @@ so that a public website can call them without a user session.
 Exposed data: player names, permission groups, leaderboard rankings.
 Never exposed: EOS IDs, shop points, kit cooldowns, internal paths.
 """
+import hmac
 import time
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -81,7 +82,8 @@ def _validate_request(request: Request, api_key: Optional[str] = None) -> None:
         HTTPException 429: Rate limit exceeded.
     """
     key = api_key or request.headers.get("X-API-Key", "")
-    if key != server_settings.PUBLIC_API_KEY:
+    expected = server_settings.PUBLIC_API_KEY
+    if not expected or not hmac.compare_digest(key, expected):
         raise HTTPException(status_code=403, detail="Invalid API key.")
 
     origin    = request.headers.get("origin", "")
@@ -295,7 +297,8 @@ async def cron_sync_names(
     Protected by a shared secret and restricted to localhost callers.
     Deduplicates by EOS ID (first profile wins).
     """
-    if secret != server_settings.CRON_SECRET:
+    expected = server_settings.CRON_SECRET
+    if not expected or not hmac.compare_digest(secret, expected):
         raise HTTPException(status_code=403, detail="Invalid cron secret.")
 
     client_ip = request.client.host if request.client else ""

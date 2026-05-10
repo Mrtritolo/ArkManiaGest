@@ -26,7 +26,14 @@ if [ -z "${CRON_SECRET:-}" ]; then
     exit 1
 fi
 
-API_URL="http://127.0.0.1:8000/api/v1/public/cron/sync-names?secret=${CRON_SECRET}"
+# URL-encode the secret so a value containing &, +, # or whitespace
+# (e.g. operator-supplied base64) doesn't truncate or get mis-decoded
+# server-side as a different secret.
+CRON_SECRET_ENC=$(python3 -c '
+import sys, urllib.parse
+print(urllib.parse.quote(sys.argv[1], safe=""))
+' "$CRON_SECRET")
+API_URL="http://127.0.0.1:8000/api/v1/public/cron/sync-names?secret=${CRON_SECRET_ENC}"
 LOG_FILE="${LOG_DIR:-/var/log/arkmaniagest}/sync-names.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 

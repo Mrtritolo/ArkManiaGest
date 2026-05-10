@@ -43,7 +43,7 @@ class UserCreate(BaseModel):
         pattern=r"^[a-zA-Z0-9_.\-]+$",
         description="Alphanumeric username (letters, digits, underscore, dot, hyphen).",
     )
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=12)
     display_name: str = Field(..., min_length=1, max_length=100)
     role: str = Field(..., pattern=r"^(admin|operator|viewer)$")
 
@@ -54,11 +54,11 @@ class UserUpdate(BaseModel):
     display_name: Optional[str] = Field(None, max_length=100)
     role: Optional[str] = Field(None, pattern=r"^(admin|operator|viewer)$")
     active: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=6)
+    password: Optional[str] = Field(None, min_length=12)
 
 
 class ChangeOwnPasswordRequest(BaseModel):
     """Payload for the change-own-password endpoint."""
 
     old_password: str
-    new_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=12)

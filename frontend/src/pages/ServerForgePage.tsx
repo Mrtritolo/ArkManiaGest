@@ -2,7 +2,7 @@
  * ServerForgePage — ServerForge control dashboard.
  * Displays machines, containers (game servers) and clusters with live controls.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sfApi } from '../services/api'
 import type { SFMachine, SFContainer, SFCluster } from '../types'
@@ -33,12 +33,31 @@ export default function ServerForgePage() {
   // Auto-refresh
   const [autoRefresh, setAutoRefresh] = useState(true)
 
+  // Tracks the post-action delayed reload so it can be cancelled on
+  // unmount (otherwise the timer fires after navigation away and calls
+  // setMachines/setContainers/setClusters on a dead component).
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => { checkConfig() }, [])
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!hasToken || !autoRefresh) return
-    const interval = setInterval(() => loadAll(true), 30000)
-    return () => clearInterval(interval)
+    // Pause polling while the tab is hidden (long-lived admin sessions
+    // would otherwise burn ~120 idle req/h here per open tab).
+    const interval = setInterval(() => {
+      if (!document.hidden) loadAll(true)
+    }, 30000)
+    const onVisible = () => { if (!document.hidden) loadAll(true) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [hasToken, autoRefresh])
 
   useEffect(() => {
@@ -110,7 +129,8 @@ export default function ServerForgePage() {
       setActionIsError(false)
       setActionMsg(t(msgKey, { label }))
       // Reload after a couple of seconds to give the server time to update
-      setTimeout(() => loadAll(true), 3000)
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = setTimeout(() => loadAll(true), 3000)
     } catch (err: any) {
       setActionIsError(true)
       setActionMsg(t('serverForge.errorPrefix', { detail: err.response?.data?.detail || err.message }))

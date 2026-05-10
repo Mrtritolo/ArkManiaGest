@@ -76,8 +76,17 @@ export default function OnlinePlayersPage() {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(() => loadData(true), 30_000)
-    return () => clearInterval(id)
+    // Pause polling while the tab is hidden -- prevents wasted XHRs on
+    // long-lived admin sessions and keeps the JWT idle window honest.
+    const id = setInterval(() => {
+      if (!document.hidden) loadData(true)
+    }, 30_000)
+    const onVisible = () => { if (!document.hidden) loadData(true) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [autoRefresh, loadData])
 
   const filteredPlayers = filterServer === 'all'

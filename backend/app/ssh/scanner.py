@@ -9,6 +9,7 @@ directory layouts without requiring configuration.
 
 import re
 import json
+import shlex
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -400,6 +401,24 @@ def _is_process_running(ssh: SSHManager, container_name: str) -> bool:
 
 # ── Remote file I/O helpers ───────────────────────────────────────────────────
 
+def _safe_remote_path(remote_path: str) -> str:
+    """
+    Reject and shell-quote a remote path before interpolating it into a
+    bash command.
+
+    Paths that originate from filesystem scans on a game host can contain
+    arbitrary characters (filenames the panel does not control); a
+    malicious filename like ``Game.ini";rm -rf $HOME;echo "`` would
+    escape the surrounding double-quotes the previous code used.  We
+    refuse newlines outright (no legitimate config file path needs one)
+    and pass the rest through ``shlex.quote`` so the bash word-splitter
+    cannot interpret it as multiple tokens.
+    """
+    if "\n" in remote_path or "\r" in remote_path:
+        raise ValueError("remote_path must not contain newline characters.")
+    return shlex.quote(remote_path)
+
+
 def read_remote_file(ssh: SSHManager, remote_path: str) -> Optional[str]:
     """
     Read the full text content of a remote file via SSH.
@@ -411,7 +430,8 @@ def read_remote_file(ssh: SSHManager, remote_path: str) -> Optional[str]:
     Returns:
         File content string, or ``None`` if the file does not exist or is empty.
     """
-    stdout, _stderr, exit_code = ssh.execute(f'cat "{remote_path}" 2>/dev/null')
+    quoted = _safe_remote_path(remote_path)
+    stdout, _stderr, exit_code = ssh.execute(f"cat {quoted} 2>/dev/null")
     return stdout if exit_code == 0 and stdout else None
 
 
@@ -432,9 +452,10 @@ def write_remote_file(ssh: SSHManager, remote_path: str, content: str) -> bool:
     """
     import base64
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+    quoted = _safe_remote_path(remote_path)
     # _stdout is empty for a redirect-only command; _stderr captures any error message.
     _stdout, _stderr, exit_code = ssh.execute(
-        f'echo "{encoded}" | base64 -d > "{remote_path}"'
+        f"echo {shlex.quote(encoded)} | base64 -d > {quoted}"
     )
     return exit_code == 0
 
@@ -452,5 +473,7 @@ def backup_remote_file(ssh: SSHManager, remote_path: str) -> Optional[str]:
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_path = f"{remote_path}.bak.{timestamp}"
-    _, _, exit_code = ssh.execute(f'cp "{remote_path}" "{backup_path}" 2>/dev/null')
+    src = _safe_remote_path(remote_path)
+    dst = _safe_remote_path(backup_path)
+    _, _, exit_code = ssh.execute(f"cp {src} {dst} 2>/dev/null")
     return backup_path if exit_code == 0 else None

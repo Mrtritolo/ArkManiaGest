@@ -494,13 +494,22 @@ echo ""
 # =============================================
 echo "=== PHASE 9/9: Security ==="
 
-# UFW
-ufw --force reset >/dev/null 2>&1
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow ssh
-ufw allow 'Nginx Full'
-ufw --force enable
+# UFW.  Idempotent: only reset+seed defaults on the FIRST run (when ufw
+# is inactive).  On reruns we just ensure ssh + Nginx Full are allowed
+# without wiping any operator-added rules (custom monitoring ports,
+# extra ARK ports, IP allowlists, …).
+if ufw status 2>/dev/null | grep -qi '^Status: active'; then
+    echo "  UFW already active -- ensuring required rules"
+    ufw allow ssh >/dev/null 2>&1 || true
+    ufw allow 'Nginx Full' >/dev/null 2>&1 || true
+else
+    ufw --force reset >/dev/null 2>&1
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow ssh
+    ufw allow 'Nginx Full'
+    ufw --force enable
+fi
 echo "  UFW attivo"
 
 # Fail2ban

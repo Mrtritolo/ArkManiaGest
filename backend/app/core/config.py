@@ -68,8 +68,14 @@ class ServerSettings(BaseSettings):
     SF_BASE_URL: str = "https://serverforge.cx/api"
 
     # --- Public API (optional) ---
-    PUBLIC_API_KEY: str = "ark_pub_7f3a9c2e1b5d4f8a6e0c3b7d9a1f5e2c"
-    CRON_SECRET: str = "ark_cron_x9k4m2v7j8f1q3n6w5p0r"
+    # IMPORTANT: leave the defaults empty.  When empty, the protected
+    # endpoints in `app.api.routes.public` reject every request (the
+    # `hmac.compare_digest` guards bail on falsy expected values), so a
+    # forgotten override in .env never silently exposes a publicly known
+    # secret.  `ensure_secrets()` auto-generates one on first boot if
+    # missing, mirroring the JWT_SECRET / FIELD_ENCRYPTION_KEY flow.
+    PUBLIC_API_KEY: str = ""
+    CRON_SECRET: str = ""
     # Comma-separated origins allowed to call /api/v1/public/* endpoints.
     # Empty string disables origin checking (only API key + rate limit apply).
     PUBLIC_ALLOWED_ORIGINS: str = "https://arkmania.it,http://arkmania.it"
@@ -80,6 +86,11 @@ class ServerSettings(BaseSettings):
     # --- Optional ---
     ALLOWED_IPS: str = ""
     SSH_TIMEOUT: int = 30
+    # Comma-separated IPs trusted to set X-Forwarded-For / X-Real-IP
+    # (e.g. your reverse-proxy / load-balancer addresses).  When the
+    # panel is bound directly to the public interface, leave this empty;
+    # 127.0.0.1 / ::1 are always trusted regardless of this value.
+    TRUSTED_PROXY_IPS: str = ""
 
     # --- Update checker ---
     # GitHub repository in "owner/repo" format.  The GET /settings/version-check
@@ -235,11 +246,11 @@ class ServerSettings(BaseSettings):
 
     def ensure_secrets(self) -> bool:
         """
-        Generate JWT_SECRET and FIELD_ENCRYPTION_KEY if they are missing,
-        then persist the new values to .env.
+        Generate JWT_SECRET, FIELD_ENCRYPTION_KEY, PUBLIC_API_KEY and
+        CRON_SECRET if they are missing, then persist the new values to .env.
 
         Returns:
-            True if .env was modified, False if both secrets already existed.
+            True if .env was modified, False if every secret already existed.
         """
         import os
         changed = False
@@ -252,14 +263,28 @@ class ServerSettings(BaseSettings):
             self.FIELD_ENCRYPTION_KEY = secrets.token_hex(32)
             changed = True
 
+        if not self.PUBLIC_API_KEY:
+            self.PUBLIC_API_KEY = "ark_pub_" + secrets.token_hex(16)
+            changed = True
+
+        if not self.CRON_SECRET:
+            self.CRON_SECRET = "ark_cron_" + secrets.token_hex(16)
+            changed = True
+
         if changed:
             self._write_secrets_to_env()
 
         return changed
 
+    # Keys persisted by `_write_secrets_to_env` on first boot.
+    _GENERATED_SECRET_KEYS = (
+        "JWT_SECRET", "FIELD_ENCRYPTION_KEY",
+        "PUBLIC_API_KEY", "CRON_SECRET",
+    )
+
     def _write_secrets_to_env(self):
         """
-        Write (or update) JWT_SECRET and FIELD_ENCRYPTION_KEY in .env.
+        Write (or update) generated secrets in .env.
 
         Existing lines for those keys are replaced; all other lines are kept.
         """
@@ -274,15 +299,15 @@ class ServerSettings(BaseSettings):
             with open(env_path, "r") as fh:
                 for line in fh:
                     key = line.split("=")[0].strip() if "=" in line else ""
-                    # Drop old values for these two keys; they will be re-added below
-                    if key in ("JWT_SECRET", "FIELD_ENCRYPTION_KEY"):
+                    # Drop old values for these keys; re-added below.
+                    if key in self._GENERATED_SECRET_KEYS:
                         continue
                     lines.append(line)
 
-        if self.JWT_SECRET:
-            lines.append(f"JWT_SECRET={self.JWT_SECRET}\n")
-        if self.FIELD_ENCRYPTION_KEY:
-            lines.append(f"FIELD_ENCRYPTION_KEY={self.FIELD_ENCRYPTION_KEY}\n")
+        for key in self._GENERATED_SECRET_KEYS:
+            value = getattr(self, key, "")
+            if value:
+                lines.append(f"{key}={value}\n")
 
         with open(env_path, "w") as fh:
             fh.writelines(lines)

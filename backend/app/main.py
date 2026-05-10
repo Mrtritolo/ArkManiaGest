@@ -59,9 +59,18 @@ async def lifespan(app: FastAPI):
             server_settings.DB_NAME,
         )
 
-        # 4. Create panel tables if they do not exist yet
-        await create_app_tables()
-        log.info("arkmaniagest_* panel tables verified / created")
+        # 4. Create panel tables if they do not exist yet.  If the host
+        # is unreachable / credentials are wrong, log a warning and let
+        # the app come up so /health still answers and the operator can
+        # investigate from the UI instead of staring at a dead service.
+        try:
+            await create_app_tables()
+            log.info("arkmaniagest_* panel tables verified / created")
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "Panel DB schema init failed (continuing in limited mode): %s",
+                exc,
+            )
 
         # 5. Initialise the plugin DB engine (falls back to panel DSN when
         #    no PLUGIN_DB_* variables are configured in .env)
@@ -103,7 +112,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ArkManiaGest",
-    version="3.5.5",
+    version="4.0.0",
     description="Comprehensive manager for ARK: Survival Ascended servers",
     # Docs endpoints are disabled in production
     docs_url=None if IS_PRODUCTION else "/docs",
@@ -166,7 +175,7 @@ async def health_check():
     return {
         "status": "ok",
         "app": "ArkManiaGest",
-        "version": "3.5.5",
+        "version": "4.0.0",
         "db_ready": db_session._async_session is not None,
         "plugin_db_ready": db_session._plugin_async_session is not None,
         "pid": os.getpid(),
@@ -192,29 +201,45 @@ async def health_check():
 #   * includes the exception class name so a single-line UI toast
 #     stays useful ("AttributeError: 'NoneType' object has no ...").
 import logging as _logging
-import traceback as _traceback
+import uuid as _uuid
 from fastapi import Request as _Request
 from fastapi.responses import JSONResponse as _JSONResponse
+from starlette.exceptions import HTTPException as _StarletteHTTPException
 
 _log = _logging.getLogger("arkmaniagest.exceptions")
 
 
 @app.exception_handler(Exception)
 async def _global_exception_handler(request: _Request, exc: Exception):
+    # FastAPI/Starlette HTTPExceptions carry a deliberate status code +
+    # detail body and must reach the default handler unchanged -- if we
+    # caught them here we'd turn legitimate 401/403/404/409s into 500s
+    # and clobber the structured `detail` payload route handlers rely on.
+    if isinstance(exc, _StarletteHTTPException):
+        raise exc
+
+    error_id = _uuid.uuid4().hex[:12]
     _log.exception(
-        "Unhandled exception during %s %s: %s",
-        request.method, request.url.path, exc,
+        "Unhandled exception [%s] during %s %s: %s",
+        error_id, request.method, request.url.path, exc,
     )
-    # Best-effort: include path + class + message in the response body
-    # so the UI can show "POST /system-update/install: AttributeError: ..."
-    # instead of an empty 500.
-    return _JSONResponse(
-        status_code=500,
-        content={
-            "detail": f"{type(exc).__name__}: {exc}",
-            "path":   request.url.path,
-        },
-    )
+
+    # In production, never echo the exception class or message to the
+    # client -- SQLAlchemy / paramiko / OS errors leak table names,
+    # hostnames, key paths and absolute filesystem paths.  Surface a
+    # correlation id instead so the operator can grep the log.
+    if server_settings.DEBUG:
+        body = {
+            "detail":   f"{type(exc).__name__}: {exc}",
+            "path":     request.url.path,
+            "error_id": error_id,
+        }
+    else:
+        body = {
+            "detail":   "Internal server error.",
+            "error_id": error_id,
+        }
+    return _JSONResponse(status_code=500, content=body)
 
 
 # =============================================

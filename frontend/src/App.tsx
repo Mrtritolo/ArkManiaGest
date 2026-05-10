@@ -264,9 +264,19 @@ function App() {
 
       {/* Discord-only players see the dashboard with no admin sidebar.
           The PlayerDashboardPage manages its own logout (clears the
-          Discord session cookie and reloads the page). */}
+          Discord session cookie and reloads the page).  Routes are
+          scoped to the player surface area: dashboard + marketplace,
+          everything else falls back to the dashboard. */}
       {authState === "player" && (
-        <PlayerDashboardPage onLogout={() => setAuthState("login")} />
+        <Routes>
+          <Route path="/market" element={<MarketPage />} />
+          <Route
+            path="*"
+            element={
+              <PlayerDashboardPage onLogout={() => setAuthState("login")} />
+            }
+          />
+        </Routes>
       )}
 
       {authState === "ready" && (

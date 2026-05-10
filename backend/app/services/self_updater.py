@@ -519,7 +519,10 @@ def probe_sudo_authorisation() -> tuple[bool, str]:
             "/etc/sudoers.d/arkmaniagest and reinstall from "
             "/opt/arkmaniagest/deploy/sudoers-arkmaniagest"
         )
-    if "may not run sudo" in combined.lower() or "user .* is not allowed" in combined.lower():
+    if (
+        "may not run sudo" in combined.lower()
+        or re.search(r"user \S+ is not allowed", combined.lower())
+    ):
         return False, "the running user has no sudoers rules at all"
 
     if proc.returncode != 0 and not proc.stdout:

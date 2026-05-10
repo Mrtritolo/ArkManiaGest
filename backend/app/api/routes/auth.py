@@ -189,17 +189,61 @@ async def create_user_route(
 async def update_user_route(
     user_id: int,
     req: UserUpdate,
-    _admin: dict = Depends(require_admin),
+    admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Update a user account (admin only).
 
     A new password included in the request is hashed before storage.
+
+    Two safety guards mirror :func:`delete_user_route`:
+      - An admin cannot demote / deactivate their own account
+        (otherwise a confused-deputy click locks the operator out).
+      - The last remaining active admin cannot be demoted or
+        deactivated by anyone (otherwise the panel becomes unmanageable
+        with no admin login left).
     """
     updates = req.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update.")
+
+    # Resolve the target user up-front so we can run the guards against
+    # the *current* (pre-update) state without re-querying after writes.
+    target = await get_user_by_id(db, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    role_change_to_non_admin = (
+        "role" in updates
+        and target["role"] == "admin"
+        and updates["role"] != "admin"
+    )
+    deactivation = "active" in updates and not updates["active"]
+
+    if role_change_to_non_admin or deactivation:
+        # Self-demotion / self-deactivation: blanket block.
+        if target["username"] == admin["sub"]:
+            raise HTTPException(
+                status_code=400,
+                detail="You cannot demote or deactivate your own account.",
+            )
+
+        # Last-admin guard.  We block when the change WOULD leave zero
+        # active admins -- the caller themselves doesn't count if the
+        # change targets another admin (since the caller is still admin).
+        all_users = await get_all_users(db)
+        remaining_active_admins = [
+            u for u in all_users
+            if u["id"] != user_id
+            and u["role"] == "admin"
+            and u.get("active", True)
+        ]
+        if target["role"] == "admin" and not remaining_active_admins:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot demote / deactivate the last active admin.",
+            )
 
     # Hash the new password before passing it to the store layer
     if "password" in updates:

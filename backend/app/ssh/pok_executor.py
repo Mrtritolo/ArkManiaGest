@@ -26,6 +26,7 @@ FastAPI's event loop never stalls.
 from __future__ import annotations
 
 import asyncio
+import shlex
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -119,12 +120,28 @@ def _rcon_command(container_name: str, rcon_cmd: str) -> str:
 
     The caller is responsible for validating / sanitising the RCON string
     (the container is trusted, but multi-line input is rejected upstream).
+
+    The previous implementation only escaped single quotes inside
+    `rcon_cmd` and then dropped the result into a DOUBLE-quoted bash
+    string, leaving every other shell metacharacter (``"``, ``$``,
+    ```` ` ````, ``\\``) free to break out and execute arbitrary
+    commands inside the container.  We now pass the RCON string via
+    docker exec stdin (``bash -c 'read -r CMD; rcon "$CMD"'``) so the
+    payload is never word-split nor re-evaluated.
     """
-    safe_container = container_name.replace("'", "'\"'\"'")
-    safe_cmd = rcon_cmd.replace("'", "'\"'\"'")
+    safe_container = shlex.quote(container_name)
+    # Reject embedded newlines defensively (also enforced upstream) so
+    # the single-line `read -r` below cannot consume a follow-up shell
+    # statement smuggled past the upstream check.
+    if "\n" in rcon_cmd or "\r" in rcon_cmd:
+        raise ValueError("RCON command must be a single line.")
+    payload = shlex.quote(rcon_cmd)
+    # `docker exec` with no `-i` does not allocate stdin, so feed the
+    # RCON payload via the outer shell using here-string semantics.
     return (
-        f"docker exec '{safe_container}' "
-        f"bash -lc 'rcon \"{safe_cmd}\"'"
+        f"printf '%s' {payload} | "
+        f"docker exec -i {safe_container} "
+        f"bash -lc 'IFS= read -r CMD; rcon \"$CMD\"'"
     )
 
 

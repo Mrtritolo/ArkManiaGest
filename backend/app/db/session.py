@@ -152,6 +152,34 @@ async def create_app_tables() -> None:
             new_type="VARCHAR(64) NULL",
         )
 
+        # Migration 002 mirror: arkmaniagest_machines.os_type / wsl_distro.
+        # The columns are defined on the SSHMachine ORM model, but
+        # create_all() never ALTERs an existing table, so older installs
+        # upgrading via update-panel.{sh,ps1} would crash on the first
+        # SSH-machine query unless the operator manually applied
+        # deploy/migrations/002_ssh_machines_os_type.sql.  Mirror the
+        # ALTERs here so the upgrade is idempotent without operator action.
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_machines",
+            column="os_type",
+            ddl=(
+                "ALTER TABLE arkmaniagest_machines "
+                "ADD COLUMN os_type VARCHAR(16) NOT NULL DEFAULT 'linux' "
+                "AFTER ark_plugins_path"
+            ),
+        )
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_machines",
+            column="wsl_distro",
+            ddl=(
+                "ALTER TABLE arkmaniagest_machines "
+                "ADD COLUMN wsl_distro VARCHAR(64) NULL DEFAULT 'Ubuntu' "
+                "AFTER os_type"
+            ),
+        )
+
         # One-shot migration: legacy single-JSON-blob blueprint storage
         # at arkmaniagest_settings.key='plugin.blueprints_db' moves into
         # the new per-row ARKM_blueprints table.  Idempotent -- runs

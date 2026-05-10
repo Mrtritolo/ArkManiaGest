@@ -21,6 +21,12 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 ROLES = ("admin", "operator", "viewer")
 
+# Audience claim issued on every panel-issued JWT.  We bind tokens to
+# this audience so a Discord-OAuth state cookie / session cookie (which
+# also use HS256 + the same JWT_SECRET, but with their own ``aud``)
+# cannot be replayed as a panel Bearer token.
+JWT_AUDIENCE = "arkmaniagest-panel"
+
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -77,6 +83,7 @@ def create_token(username: str, role: str, hours: int = JWT_EXPIRY_HOURS) -> str
     payload = {
         "sub": username,
         "role": role,
+        "aud": JWT_AUDIENCE,
         "iat": datetime.now(timezone.utc),
         "exp": datetime.now(timezone.utc) + timedelta(hours=hours),
         "jti": secrets.token_hex(8),  # unique token ID (prevents token reuse)
@@ -99,9 +106,20 @@ def decode_token(token: str) -> dict:
     """
     secret = _get_jwt_secret()
     try:
-        return jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
+        # Enforce the panel audience so a Discord state/session cookie
+        # signed with the same secret but a different `aud` cannot be
+        # replayed as a panel Bearer token.
+        return jwt.decode(
+            token, secret,
+            algorithms=[JWT_ALGORITHM],
+            audience=JWT_AUDIENCE,
+        )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired. Please log in again.")
+    except jwt.InvalidAudienceError:
+        # Wrong-audience tokens look identical to invalid tokens from a
+        # caller's perspective; do not leak which one it was.
+        raise HTTPException(status_code=401, detail="Invalid token.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token.")
 
@@ -147,6 +165,26 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="User disabled or not found.")
 
     return payload
+
+
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Optional[dict]:
+    """
+    Like :func:`get_current_user`, but returns ``None`` instead of 401 when
+    no credentials are presented.
+
+    Used by endpoints that can be called either anonymously (during
+    first-run setup, before any user exists) or authenticated (after
+    setup, where they require a real role) -- the route inspects the
+    return value and decides whether to enforce a role.
+    """
+    if credentials is None:
+        return None
+    try:
+        return await get_current_user(credentials)
+    except HTTPException:
+        return None
 
 
 def require_role(*roles: str):

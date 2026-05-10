@@ -18,6 +18,7 @@ only the HTTP shell.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 
@@ -27,6 +28,13 @@ from pydantic import BaseModel
 from app.core.auth import require_admin
 from app.core.config import server_settings
 from app.services import self_updater
+
+# Single-process lock that prevents two admins from triggering the
+# install flow simultaneously.  Two parallel POSTs would otherwise race
+# on the tarball path and fork two `server-update.sh` processes
+# fighting for /opt/arkmaniagest -- whichever finished last would win,
+# and the status JSON would alternate between them.
+_install_lock = asyncio.Lock()
 
 log = logging.getLogger("arkmaniagest.system_update")
 
@@ -168,11 +176,28 @@ async def install_update() -> InstallResponse:
     if not pre.can_self_update:
         raise HTTPException(status_code=412, detail=pre.hint)
 
-    try:
-        status = await self_updater.run_self_update_async(
-            repo=server_settings.GITHUB_REPO.strip(),
-            github_token=server_settings.GITHUB_TOKEN.strip() or None,
+    if _install_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="An update is already in progress. Poll /system-update/status.",
         )
+
+    # Reject double-trigger when a previous update is still downloading
+    # / verifying / running.  Idle state ("idle", "succeeded", "failed")
+    # means the lock should accept a fresh attempt.
+    current = self_updater.read_status()
+    if current and current.state in ("downloading", "verifying", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"An update is already {current.state}. Poll /system-update/status.",
+        )
+
+    try:
+        async with _install_lock:
+            status = await self_updater.run_self_update_async(
+                repo=server_settings.GITHUB_REPO.strip(),
+                github_token=server_settings.GITHUB_TOKEN.strip() or None,
+            )
     except Exception as exc:                       # noqa: BLE001
         tb = traceback.format_exc()
         log.exception("system-update orchestrator raised: %s", exc)

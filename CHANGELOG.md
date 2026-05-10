@@ -7,6 +7,199 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0] - 2026-05-10
+
+Major release driven by a top-to-bottom security + reliability audit.
+Most changes are server-side hardening invisible to operators on the
+happy path; a few break compatibility for credential-handling endpoints
+and the install scripts (see **Breaking** below).
+
+### Security
+
+- **Marketplace cross-tenant read closed.**  `GET /market/me/wallet`,
+  `/me/items` and `/me/transactions` accepted a `?for_eos=` override
+  with no admin check, so any Discord-linked player could read another
+  player's wallet balance, item inventory and transaction history just
+  by guessing the EOS id.  The override now requires an admin panel
+  JWT in the Authorization header; player sessions are restricted to
+  their own EOS.
+- **`PUBLIC_API_KEY` and `CRON_SECRET` no longer ship with hardcoded
+  defaults.**  The repo previously committed real-looking values; any
+  deployment that forgot to override them in `.env` was effectively
+  unauthenticated for the public API and the cron sync hook.  Empty
+  defaults plus auto-generation in `ensure_secrets()` (mirroring the
+  existing `JWT_SECRET` / `FIELD_ENCRYPTION_KEY` flow) close the
+  hole.  Existing deployments are auto-migrated on first boot of 4.0.
+- **RCON command injection fixed.**  `/servers/{id}/rcon` previously
+  escaped only single quotes inside the user-controlled RCON string
+  before dropping it into a double-quoted bash invocation.  The new
+  implementation pipes the payload through stdin so no shell
+  metacharacter is re-evaluated, and rejects embedded newlines.
+- **Path traversal hardening on remote-file helpers.**  The container
+  browse endpoint and every `read_remote_file` / `write_remote_file` /
+  `backup_remote_file` call now go through `shlex.quote`, plus an
+  explicit reject-list for shell metacharacters in `sub_path`.  This
+  also closes a latent attack-against-the-panel vector where a
+  malicious filename on a managed game host could break out of the
+  scanner's quoting.
+- **`/settings/database/test` is no longer unauthenticated after
+  setup.**  It was usable as an unauthenticated internal port-scanner
+  with timing-distinguishable error messages; it now requires an
+  admin JWT once at least one panel user exists, and returns a
+  generic "Connection failed" instead of echoing the raw exception
+  text (the operator still sees the real reason in the backend log).
+- **JWT audience claim enforced.**  Panel-issued tokens carry
+  `aud=arkmaniagest-panel` and `decode_token` validates it.  This
+  prevents a stolen Discord OAuth-state cookie / session cookie
+  (signed with the same `JWT_SECRET` but different `aud`) from being
+  replayed as a panel Bearer token.
+- **Self-update install lock + concurrency guard.**  Two parallel
+  admin POSTs against `/system-update/install` previously raced on
+  the tarball path and forked two `server-update.sh` processes.  An
+  `asyncio.Lock` plus a status-state check now reject the second
+  caller with HTTP 409 instead.
+- **Last-admin guard extended to `PUT /users/{id}`.**  An admin can
+  no longer demote / deactivate themselves nor reduce the panel to
+  zero active admins via the update endpoint (the delete endpoint
+  already had this guard; the update endpoint did not).
+- **Constant-time comparison for `PUBLIC_API_KEY` / `CRON_SECRET`.**
+  Both checks now use `hmac.compare_digest`.  Previously: short-circuit
+  `!=`, mountable as a timing oracle.
+- **Rate-limit auth-path detection switched to an explicit allowlist.**
+  The substring match was too narrow (missed `/auth/me/password`,
+  Discord OAuth callback) and could be fooled by future paths that
+  happen to contain `/auth/login` as a substring.
+- **`TRUSTED_PROXY_IPS` now configurable from `.env`.**  Behind a
+  remote reverse proxy the panel previously saw every request as
+  127.0.0.1 (because only loopback was trusted), making the rate
+  limiter and `ALLOWED_IPS` whitelist effectively no-ops.  Operators
+  with an off-host nginx / load-balancer must now list its IPs in
+  `TRUSTED_PROXY_IPS=10.0.0.1,10.0.0.2`.
+
+### Fixed
+
+- **Global exception handler no longer swallows `HTTPException`.**
+  Well-formed 401/403/404/409 from route code reached the catch-all
+  handler in some edge cases (background tasks, dependency unwind)
+  and became opaque 500s.  The handler now re-raises any
+  `StarletteHTTPException` so the default handler picks it up.
+- **Production no longer leaks the exception class name and message
+  to the client.**  SQLAlchemy / paramiko / OS errors echoed table
+  names, hostnames, key paths and absolute filesystem paths in the
+  body.  In production we now return `{"detail": "Internal server
+  error.", "error_id": "<uuid12>"}` and log the traceback server-side
+  keyed by the same `error_id`; the verbose form is preserved when
+  `DEBUG=True` in `.env`.
+- **`/auth/me` 401 race during boot.**  When the stored panel JWT
+  was expired, the global axios interceptor and the App.tsx
+  `checkStatus` probe both raced to set `authState`, sometimes
+  flashing the login overlay before the Discord-session probe had
+  a chance to resolve.  `/auth/me` is now in the 401-exempt list so
+  App.tsx is the single source of truth during boot.
+- **`authState === "player"` had no `<Routes>` block.**  Discord-only
+  players landing on any URL other than `/` saw the dashboard but
+  with a misleading address bar, and could not navigate to
+  `/market`.  Player branch now mounts a `<Routes>` with
+  `/market` + a `*` fallback to the dashboard.
+- **Self-updater sudoers regex was a literal substring match.**
+  ``"user .* is not allowed" in stderr`` could never match any real
+  sudo error.  Replaced with `re.search(r"user \S+ is not allowed",
+  …)`.
+- **Lifespan no longer crashes the boot when the panel DB is
+  unreachable.**  `create_app_tables()` is now wrapped in a try/except
+  so the operator can still hit `/health`, see the warning in the
+  log and reach the database-test endpoint instead of staring at a
+  dead service.
+- **Migration 002 (`os_type` / `wsl_distro` on
+  `arkmaniagest_machines`) auto-applied at boot.**  Previously the
+  ALTER lived only in `deploy/migrations/002_*.sql`; operators
+  upgrading via `update-panel.{sh,ps1}` who forgot to run it manually
+  saw `Unknown column` errors on the first SSH-machine query.
+- **CSS popover regression: `.as-dialog` and `.bp-search-dropdown`
+  switched from `--bg-card` to `--bg-popover`.**  Two floating
+  surfaces missed in the 3.5.5 sweep -- the ArkShop edit dialog
+  and the blueprint search dropdown -- were still painting against
+  the translucent card background.
+- **`ServerForgePage`: post-action `setTimeout` is now cleared on
+  unmount.**  Previously the 3-second delayed `loadAll(true)` could
+  fire after the user navigated away, calling state setters on a
+  dead component.
+
+### Changed
+
+- **Polling pages pause while the tab is hidden.**  `DashboardPage`,
+  `OnlinePlayersPage` and `ServerForgePage` now check
+  `document.hidden` before each tick and refresh once on
+  `visibilitychange`.  Long-lived admin tabs no longer burn ~120
+  background XHRs an hour each.
+- **Password minimum length raised from 6 to 12 chars** for new
+  account creation, password change and admin user updates.  Login
+  for existing accounts is unaffected.
+- **`backup.sh` actually backs up the data now.**  Previously it
+  archived `.env` + nginx config + an SSL domain list and called
+  it a backup.  The script now `mysqldump`s the panel DB and (when
+  configured separately) the plugin DB, includes `backend/data/`,
+  uses a `defaults-extra-file` so the password never reaches `ps`,
+  takes a `flock` to serialise concurrent invocations, and writes
+  the resulting tarball with mode 0600.
+- **`full-deploy.sh` no longer wipes the operator's UFW rules on
+  every redeploy.**  The unconditional `ufw --force reset` was
+  destroying any operator-added rules (custom monitoring ports,
+  extra ARK ports, IP allowlists) on every rerun.  We now skip the
+  reset when UFW is already active and just ensure the required
+  rules exist.
+- **`setup-cron.sh` writes a fenced `/etc/cron.d/arkmaniagest`
+  block** instead of editing the root user's crontab with a fragile
+  `grep -v arkmaniagest` filter.  The new layout is atomic, rerun
+  safe, and removes the duplication with `full-deploy.sh` (which
+  was installing the same entries in parallel, doubling the backup
+  schedule and the health watchdog).  Legacy entries in the user
+  crontab are stripped automatically on first run.
+- **`migrate-env.sh` uses a fenced "appended keys" block.**
+  Previously each upgrade appended a new `# --- Added by … ---`
+  banner; live `.env` files now collect every migrated key inside
+  the same fence.
+- **`cron-sync-names.sh` URL-encodes `CRON_SECRET`** before putting
+  it in the query string -- a base64 secret containing `+` / `&` /
+  `#` previously truncated or got re-decoded server-side.
+
+### Breaking
+
+- **`PUBLIC_API_KEY` / `CRON_SECRET` empty defaults.**  Existing
+  deployments running `4.0.0` for the first time will have these
+  auto-generated on boot if missing.  Any external website / cron
+  job that hardcoded the previous defaults
+  (`ark_pub_7f3a9c2e1b5d4f8a6e0c3b7d9a1f5e2c` /
+  `ark_cron_x9k4m2v7j8f1q3n6w5p0r`) MUST be updated to read the new
+  values from the post-upgrade `.env`.
+- **`TRUSTED_PROXY_IPS=` required when behind an off-host reverse
+  proxy.**  Deployments where panel and nginx live on different
+  hosts must list the proxy IPs in `.env`, otherwise the rate
+  limiter and `ALLOWED_IPS` see every request as 127.0.0.1.
+- **Admin password minimum length is now 12 characters** for new
+  accounts and password changes.  Existing logins are unaffected,
+  but next time an admin rotates their password they will need a
+  longer one.
+- **Generic 500 body in production.**  External monitors that
+  parsed `{"detail": "<ClassName>: <message>"}` must switch to
+  parsing `{"detail": "Internal server error.", "error_id": "..."}`
+  and rely on the backend log for diagnostics.
+
+### Known limitations (deliberately not addressed in 4.0)
+
+- **SSH `AutoAddPolicy`**: every connection still trusts the
+  remote host key on first sight (paramiko default).  A proper fix
+  needs UI for fingerprint approval per machine.  Tracked separately.
+- **Sync DB calls inside async handlers** (`get_machine_sync` &
+  friends in `players.py`, `containers.py`, `servers.py`): each
+  one blocks the FastAPI worker for the duration.  Refactor planned
+  but skipped here to keep 4.0 surgical.
+- **Discord access-token refresh**: `dc_client.refresh_token` exists
+  but has no callers.  No flow currently needs a long-lived Discord
+  bearer; if one lands, this gap must be filled.
+
+---
+
 ## [3.5.5] - 2026-04-27
 
 UI fix: floating dropdowns and modal panels were unreadable because

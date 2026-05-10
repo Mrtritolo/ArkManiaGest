@@ -23,13 +23,23 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 # IP addresses that are allowed to set X-Forwarded-For / X-Real-IP.
-# Only loopback and private ranges are trusted by default; extend this set
-# to include your nginx or load-balancer IP when running behind a reverse proxy.
-_TRUSTED_PROXY_IPS: frozenset[str] = frozenset({
-    "127.0.0.1",
-    "::1",
-    # Example: add "10.0.0.1" or your specific proxy IP here
-})
+#
+# In the canonical deploy (panel + nginx on the same Linux host), only
+# loopback shows up as the direct peer.  Production deployments behind a
+# remote reverse proxy / load balancer must list the proxy IPs in
+# .env via TRUSTED_PROXY_IPS=10.0.0.1,10.0.0.2 -- otherwise the rate
+# limiter and ALLOWED_IPS guard see every request as 127.0.0.1.
+def _load_trusted_proxies() -> frozenset[str]:
+    from app.core.config import server_settings
+    extras = {
+        ip.strip()
+        for ip in (server_settings.TRUSTED_PROXY_IPS or "").split(",")
+        if ip.strip()
+    }
+    return frozenset({"127.0.0.1", "::1"} | extras)
+
+
+_TRUSTED_PROXY_IPS: frozenset[str] = _load_trusted_proxies()
 
 
 # =============================================
@@ -164,8 +174,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in self.POLLING_EXEMPT_PATHS):
             return await call_next(request)
 
-        # Apply a stricter limit to authentication endpoints
-        is_auth = any(x in path for x in ["/auth/login", "/settings/setup"])
+        # Apply a stricter limit to authentication endpoints.  The list
+        # is explicit (substring match would catch /auth/me and similar
+        # read-only probes that are NOT credential-handling endpoints).
+        _AUTH_PATHS = (
+            "/api/v1/auth/login",
+            "/api/v1/auth/me/password",
+            "/api/v1/auth/discord/start",
+            "/api/v1/auth/discord/callback",
+            "/api/v1/settings/setup",
+        )
+        is_auth = any(path.startswith(p) for p in _AUTH_PATHS)
         limit   = self.auth_limit if is_auth else self.general_limit
 
         count = _rate_store.record_request(ip, self.window)

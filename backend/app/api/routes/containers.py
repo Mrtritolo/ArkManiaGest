@@ -9,6 +9,7 @@ so subsequent requests do not require a live SSH connection.
 
 import json
 import posixpath
+import shlex
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -416,6 +417,14 @@ async def browse_container(
     base_path = container["path"].rstrip("/")
 
     if sub_path:
+        # Reject shell metacharacters BEFORE normalisation so a payload
+        # like `subdir";id;echo "` cannot survive past the prefix check
+        # below (posixpath.normpath does not strip them).
+        if any(ch in sub_path for ch in '"\'\\$`;|&\n\r<>'):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid sub_path: contains forbidden characters.",
+            )
         # Normalise with posixpath to collapse any .. and redundant slashes,
         # then verify the result stays strictly inside the container root.
         raw_combined = posixpath.normpath(f"{base_path}/{sub_path}")
@@ -433,8 +442,9 @@ async def browse_container(
 
     try:
         with _ssh_for_machine(machine) as ssh:
+            quoted = shlex.quote(target_path)
             stdout, _, exit_code = ssh.execute(
-                f'ls -la --time-style=long-iso "{target_path}" 2>/dev/null'
+                f"ls -la --time-style=long-iso {quoted} 2>/dev/null"
             )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc

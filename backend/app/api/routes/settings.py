@@ -27,7 +27,9 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.core.auth import require_admin, get_current_user, hash_password
+from app.core.auth import (
+    require_admin, get_current_user, get_current_user_optional, hash_password,
+)
 from app.core.store import (
     get_setting_async,
     set_setting_async,
@@ -188,13 +190,29 @@ async def get_database_config(_admin: dict = Depends(require_admin)):
 
 
 @router.post("/database/test")
-async def test_database_connection(req: DatabaseTestRequest):
+async def test_database_connection(
+    req: DatabaseTestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
     """
     Test connectivity to a MariaDB/MySQL database with the supplied credentials.
 
-    This endpoint requires no authentication so it can be called during the
-    setup wizard before any users exist.
+    Unauthenticated callers can hit this endpoint ONLY during the
+    first-run setup wizard (no users exist yet).  After at least one
+    panel user has been provisioned, the endpoint requires an admin JWT
+    so it cannot be abused as an internal port-scanner / credential
+    probe by unauthenticated outsiders.
     """
+    users = await get_all_users(db)
+    if users:
+        # Post-setup: must be authenticated AND admin.
+        if not current_user or current_user.get("role") != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="DB connectivity test requires admin after setup.",
+            )
+
     try:
         conn = await aiomysql.connect(
             host=req.host,
@@ -210,7 +228,14 @@ async def test_database_connection(req: DatabaseTestRequest):
             "message": f"Connected to {req.host}:{req.port}/{req.name}.",
         }
     except Exception as exc:
-        return {"success": False, "message": f"Connection failed: {exc}"}
+        # Exception text from aiomysql leaks timing / port-state oracles
+        # (e.g. "Can't connect" vs "Access denied").  Return a generic
+        # message; the operator sees the real reason in the backend log.
+        logging.getLogger("arkmaniagest").info(
+            "Database test failed for %s:%s/%s: %s",
+            req.host, req.port, req.name, exc,
+        )
+        return {"success": False, "message": "Connection failed."}
 
 
 async def _test_current(host: str, port: int, user: str, password: str, name: str) -> dict:
