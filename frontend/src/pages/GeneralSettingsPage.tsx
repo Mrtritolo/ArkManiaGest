@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle, DownloadCloud, AlertTriangle } from 'lucide-react'
-import { settingsApi, systemUpdateApi } from '../services/api'
+import { settingsApi, systemApi, systemUpdateApi } from '../services/api'
 import type { SystemUpdatePreflight, SystemUpdateStatus } from '../services/api'
 import type { AppSettings, VersionCheckResult } from '../types'
 
@@ -144,8 +144,8 @@ export default function GeneralSettingsPage() {
 
   async function loadHealth(): Promise<void> {
     try {
-      const res = await fetch('/health')
-      if (res.ok) setHealth(await res.json())
+      const { data } = await systemApi.health()
+      setHealth(data)
     } catch { /* keep null */ }
   }
 

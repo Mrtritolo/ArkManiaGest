@@ -6,8 +6,10 @@
  * Each object groups endpoints by domain, mirroring the backend router structure.
  *
  * Authentication:
- *   The JWT token is stored in the module-level {@link _authToken} variable
- *   (NOT in localStorage) to prevent XSS-based token theft.  Use
+ *   The JWT token is persisted in `sessionStorage` (key
+ *   `arkmaniagest.authToken`) and mirrored in the module-level
+ *   {@link _authToken} variable -- NEVER in `localStorage`, to keep the
+ *   XSS-exposure window scoped to the lifetime of an open tab.  Use
  *   {@link setAuthToken} / {@link getAuthToken} to manage the token lifecycle.
  *
  * Error handling:
@@ -66,6 +68,14 @@ const api = axios.create({
   baseURL: API_BASE,
   timeout: 30_000,
   headers: { "Content-Type": "application/json" },
+});
+
+// Same origin/host as `api` but rooted ABOVE /api/v1, for endpoints that
+// the backend exposes outside the versioned prefix (currently /health).
+const API_ROOT = API_BASE.replace(/\/api\/v1\/?$/, "");
+const rootApi = axios.create({
+  baseURL: API_ROOT || "/",
+  timeout: 10_000,
 });
 
 // ---------------------------------------------------------------------------
@@ -248,6 +258,33 @@ export const authApi = {
   /** Change the current user's own password. */
   changePassword: (old_password: string, new_password: string) =>
     api.put("/auth/me/password", { old_password, new_password }),
+
+  /**
+   * Begin the Discord OAuth flow.  Returns the upstream authorize URL the
+   * browser should be redirected to.  `withCredentials` is required so the
+   * backend can set the short-lived state cookie that protects the callback.
+   */
+  discordStart: (nextPath: string) =>
+    api.get<{ authorize_url: string }>(
+      `/auth/discord/start?next_path=${encodeURIComponent(nextPath)}`,
+      { withCredentials: true },
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// System / liveness
+// ---------------------------------------------------------------------------
+
+/** Endpoints exposed by the backend at the bare origin (outside /api/v1). */
+export const systemApi = {
+  /** Liveness probe -- returns { version, db_ready, plugin_db_ready, pid }. */
+  health: () =>
+    rootApi.get<{
+      version: string;
+      db_ready: boolean;
+      plugin_db_ready: boolean;
+      pid?: number;
+    }>("/health"),
 };
 
 // ---------------------------------------------------------------------------

@@ -72,6 +72,16 @@ id_ed25519*
 # Per-developer / per-tool state — never share via git.
 .claude/
 
+# --- Local AI tooling artifacts (claude-flow / ruflo) ---
+# These directories and files are produced by local agent orchestration
+# tools and contain swarm state, vector databases, and per-developer MCP
+# configuration.  Nothing in here is shareable across machines.
+.claude-flow/
+.swarm/
+.mcp.json
+ruvector.db
+ruvector.db-*
+
 # --- File / cartelle deprecate (dev-only) ---
 _deprecated/
 config/

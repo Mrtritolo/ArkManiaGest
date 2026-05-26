@@ -18,6 +18,13 @@ from app.core.config import server_settings
 IS_PRODUCTION = not server_settings.DEBUG
 log = logging.getLogger("arkmaniagest")
 
+# Surfaced via /health so operators can spot a botched schema migration
+# without grepping journalctl.  The lifespan handler intentionally swallows
+# create_app_tables / create_marketplace_tables failures (so /health keeps
+# answering and the UI is reachable), which used to make the failure mode
+# invisible until the first request hit a missing column.
+_SCHEMA_INIT_ERRORS: list[str] = []
+
 
 # =============================================
 #  Lifespan (startup / shutdown)
@@ -71,6 +78,7 @@ async def lifespan(app: FastAPI):
                 "Panel DB schema init failed (continuing in limited mode): %s",
                 exc,
             )
+            _SCHEMA_INIT_ERRORS.append(f"panel: {type(exc).__name__}: {exc}")
 
         # 5. Initialise the plugin DB engine (falls back to panel DSN when
         #    no PLUGIN_DB_* variables are configured in .env)
@@ -96,6 +104,7 @@ async def lifespan(app: FastAPI):
             log.info("ARKM_market_* marketplace tables verified / created")
         except Exception as exc:  # noqa: BLE001
             log.warning("Marketplace table init failed (non-fatal): %s", exc)
+            _SCHEMA_INIT_ERRORS.append(f"marketplace: {type(exc).__name__}: {exc}")
     else:
         log.warning(
             "DB_PASSWORD not set in .env — backend running in limited mode"
@@ -178,6 +187,7 @@ async def health_check():
         "version": "4.0.0",
         "db_ready": db_session._async_session is not None,
         "plugin_db_ready": db_session._plugin_async_session is not None,
+        "schema_init_errors": list(_SCHEMA_INIT_ERRORS),
         "pid": os.getpid(),
     }
 

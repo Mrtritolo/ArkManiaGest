@@ -53,16 +53,8 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
       // Hit the backend to get the authorize URL + the state cookie it
       // sets in the response.  Then jump the browser to Discord's
       // consent screen.
-      const r = await fetch(
-        '/api/v1/auth/discord/start?next_path=' + encodeURIComponent('/'),
-        { credentials: 'include' },
-      )
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}))
-        throw new Error(body.detail || `HTTP ${r.status}`)
-      }
-      const { authorize_url } = await r.json()
-      window.location.assign(authorize_url)
+      const { data } = await authApi.discordStart('/')
+      window.location.assign(data.authorize_url)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('auth.login.errorNetwork')
       setError(t('auth.login.discordStartFailed', { message: msg }))

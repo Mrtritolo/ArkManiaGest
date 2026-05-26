@@ -65,12 +65,14 @@ done
 
 CONF_FILE="$PROJECT/deploy/deploy.conf"
 DEFAULT_SERVER=""; DEFAULT_USER="root"; DEFAULT_PORT=22
+CONF_SSH_KEY=""
 if [[ -f "$CONF_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$CONF_FILE" || true
     DEFAULT_SERVER="${DEPLOY_SERVER:-$DEFAULT_SERVER}"
     DEFAULT_USER="${SSH_USER_CONF:-${SSH_USER:-$DEFAULT_USER}}"
     DEFAULT_PORT="${SSH_PORT_CONF:-${SSH_PORT:-$DEFAULT_PORT}}"
+    CONF_SSH_KEY="${SSH_KEY_PATH:-}"
 fi
 
 section "ArkManiaGest -- Dev update"
@@ -102,6 +104,21 @@ fi
 
 SSH_TARGET="${SSH_USER}@${SERVER}"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -p "$SSH_PORT")
+SCP_OPTS=(-o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+
+# When a dedicated key is configured, pass `-i $key` everywhere AND
+# `IdentitiesOnly=yes` so OpenSSH doesn't try every ~/.ssh/id_* in addition
+# (some hosts ban after MaxAuthTries before our key is even attempted).
+# `BatchMode=yes` turns a key failure into a fast non-zero rc instead of a
+# silent password prompt that hangs the script.
+if [[ -n "$CONF_SSH_KEY" ]]; then
+    if [[ ! -f "$CONF_SSH_KEY" ]]; then
+        fail "SSH_KEY_PATH='$CONF_SSH_KEY' (from deploy.conf) does not exist."
+    fi
+    info "Using SSH key: $CONF_SSH_KEY"
+    SSH_OPTS+=(-o BatchMode=yes -o IdentitiesOnly=yes -i "$CONF_SSH_KEY")
+    SCP_OPTS+=(-o BatchMode=yes -o IdentitiesOnly=yes -i "$CONF_SSH_KEY")
+fi
 
 run_ssh()       { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
 run_ssh_quiet() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@" >/dev/null 2>&1; }
@@ -165,13 +182,13 @@ ok "Archive: $ARCHIVE (${SIZE_MB} MB)"
 
 section "Uploading to target"
 
-scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$ARCHIVE" \
+scp "${SCP_OPTS[@]}" "$ARCHIVE" \
     "${SSH_TARGET}:/tmp/arkmaniagest-update.tar.gz"
 ok "Tarball uploaded"
 
 LOCAL_SCRIPT="$PROJECT/deploy/server-update.sh"
 if [[ -f "$LOCAL_SCRIPT" ]]; then
-    scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$LOCAL_SCRIPT" \
+    scp "${SCP_OPTS[@]}" "$LOCAL_SCRIPT" \
         "${SSH_TARGET}:/tmp/server-update.sh"
     ok "Update script uploaded"
 fi

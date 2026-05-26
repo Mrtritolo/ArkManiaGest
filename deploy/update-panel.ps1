@@ -120,6 +120,13 @@ if (-not $Port -or $Port -le 0) {
     if (-not $ans) { $Port = $default } else { $Port = [int]$ans }
 }
 
+# When the operator has a dedicated key for this host, pass `-i $key`
+# everywhere PLUS `IdentitiesOnly=yes` so OpenSSH does NOT try every
+# ~/.ssh/id_* in addition (which on hosts with a tight MaxAuthTries causes
+# spurious lockouts before our key is even attempted).  `BatchMode=yes`
+# turns a failed key into a hard fail with a clear rc instead of a hidden
+# password prompt that hangs the script.
+$SshKeyPath = if ($conf["SSH_KEY_PATH"]) { $conf["SSH_KEY_PATH"].Trim() } else { "" }
 $sshTarget = "${SshUser}@${Server}"
 $sshCommonArgs = @(
     "-o", "StrictHostKeyChecking=accept-new",
@@ -127,15 +134,46 @@ $sshCommonArgs = @(
     "-o", "ServerAliveInterval=30",
     "-p", "$Port"
 )
+$scpCommonArgs = @(
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-P", "$Port"
+)
+if ($SshKeyPath) {
+    if (-not (Test-Path $SshKeyPath)) {
+        Fail "SSH_KEY_PATH='$SshKeyPath' (from deploy.conf) does not exist on this machine."
+    }
+    Info "Using SSH key: $SshKeyPath"
+    $sshCommonArgs += @(
+        "-o", "BatchMode=yes",
+        "-o", "IdentitiesOnly=yes",
+        "-i", $SshKeyPath
+    )
+    $scpCommonArgs += @(
+        "-o", "BatchMode=yes",
+        "-o", "IdentitiesOnly=yes",
+        "-i", $SshKeyPath
+    )
+}
 
 # ---------------------------------------------------------------------------
 # 2. SSH probe
 # ---------------------------------------------------------------------------
 
 Section "Probing SSH (default keys / agent)"
-$probeRc = Invoke-SSH-Quiet ($sshCommonArgs + @($sshTarget, "echo ArkManiaGest-DevUpdate-OK"))
+# Capture stderr so the operator sees the actual reason (host key mismatch,
+# permission denied, network unreachable, banner exchange) on rc!=0.
+# `2>&1` here merges stderr into the success stream so we can surface it.
+$probeOut = & ssh.exe @sshCommonArgs $sshTarget "echo ArkManiaGest-DevUpdate-OK" 2>&1
+$probeRc  = $LASTEXITCODE
 if ($probeRc -ne 0) {
-    Fail "SSH to $sshTarget failed (rc=$probeRc).  Fix keys / agent first, then rerun."
+    Write-Host "  ssh output:" -ForegroundColor DarkGray
+    $probeOut | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    Write-Host ""
+    Write-Host "  Hints:" -ForegroundColor Yellow
+    Write-Host "    - rerun verbose: ssh -vv $sshTarget 'echo OK'" -ForegroundColor Yellow
+    Write-Host "    - check the host accepts your key: ssh-add -l   (then -V on the server's authorized_keys)" -ForegroundColor Yellow
+    Write-Host "    - if you use a non-default key, set SSH_KEY_PATH in deploy/deploy.conf" -ForegroundColor Yellow
+    Fail "SSH to $sshTarget failed (rc=$probeRc)."
 }
 OK "SSH OK"
 
@@ -197,9 +235,7 @@ OK "Archive: $ARCHIVE ($sizeMB MB)"
 
 Section "Uploading to target"
 
-$scpArgs = @(
-    "-o", "StrictHostKeyChecking=accept-new",
-    "-P", "$Port",
+$scpArgs = $scpCommonArgs + @(
     "$ARCHIVE",
     "${sshTarget}:/tmp/arkmaniagest-update.tar.gz"
 )
@@ -222,9 +258,7 @@ if (Test-Path $updateScript) {
         $content,
         [System.Text.UTF8Encoding]::new($false)
     )
-    $scpScript = @(
-        "-o", "StrictHostKeyChecking=accept-new",
-        "-P", "$Port",
+    $scpScript = $scpCommonArgs + @(
         "$scriptUnix",
         "${sshTarget}:/tmp/server-update.sh"
     )

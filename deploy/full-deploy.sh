@@ -3,6 +3,13 @@
 # ArkManiaGest -- Full Deploy (background-safe)
 # All parameters are read from deploy.conf
 # ============================================
+# `-u` catches typo'd / unset variables; `-o pipefail` propagates failures
+# inside pipelines.  We deliberately do NOT use `-e`: this script orchestrates
+# many soft-failure steps (apt single-package failures, certbot DNS races,
+# fail2ban filter probes) that are handled explicitly via `|| true` / SSL_OK
+# / GEOIP_OK guards, and a hard exit on the first one would regress the
+# "best-effort" deploy contract.
+set -uo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 # Source shared configuration
@@ -258,7 +265,14 @@ rm -f /etc/nginx/sites-enabled/default
 # Remove any stale symlinks in sites-enabled (e.g. typos like 'akmaniagest')
 # before creating the canonical one.  A broken symlink here will prevent
 # Nginx from starting after a server reboot.
-find /etc/nginx/sites-enabled/ -maxdepth 1 -name '*arkmania*' -o -name '*akmania*' | xargs rm -f 2>/dev/null
+#
+# Group the `-name` predicates with `\( ... \)` -- without the parentheses
+# the implicit `-print` only applies to the second `-name`, and the first
+# branch matches *every* file (precedence bug).  Use `-print0` / `-0` to
+# stay safe across whitespace.
+find /etc/nginx/sites-enabled/ -maxdepth 1 \
+    \( -name '*arkmania*' -o -name '*akmania*' \) \
+    -print0 2>/dev/null | xargs -0 -r rm -f
 
 # Initial HTTP config (replace placeholders)
 sed -e "s|__DOMAIN__|${DOMAIN}|g" deploy/nginx-initial.conf > /etc/nginx/sites-available/arkmaniagest
@@ -328,9 +342,13 @@ if [ "$GEOIP_OK" = "0" ]; then
     echo "  GeoIP DB not downloaded -- geo-blocking disabled"
 fi
 
-# Controlla se il modulo geoip2 e' disponibile
+# Controlla se il modulo geoip2 e' disponibile.
+# `[ -f /etc/nginx/modules-enabled/*geoip2* ]` is broken: when the glob
+# expands to >1 file, `[` sees extra arguments and errors out; when it
+# expands to zero matches, it tests the literal pattern.  Use `compgen -G`
+# which returns success iff at least one path matches the glob.
 HAS_GEOIP_MOD=0
-if nginx -V 2>&1 | grep -q "geoip2" || [ -f /etc/nginx/modules-enabled/*geoip2* ] 2>/dev/null; then
+if nginx -V 2>&1 | grep -q "geoip2" || compgen -G "/etc/nginx/modules-enabled/*geoip2*" >/dev/null; then
     HAS_GEOIP_MOD=1
 fi
 

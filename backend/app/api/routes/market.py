@@ -23,12 +23,15 @@ Auth model:
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+
+log = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin, decode_token
@@ -290,7 +293,14 @@ async def _audit(plugin_db: AsyncSession, *,
         )
         await plugin_db.commit()
     except Exception:
-        # Audit is best-effort; never fail a real op because of it.
+        # Audit is best-effort; never fail a real op because of it.  Surface
+        # the cause in the log so dropped audits are at least observable --
+        # otherwise an FK violation or schema drift silently shreds the
+        # audit trail with no warning.
+        log.exception(
+            "market audit failed: action=%s actor=%s item=%s amount=%s",
+            action, actor_eos, item_id, amount,
+        )
         try: await plugin_db.rollback()
         except Exception: pass
 

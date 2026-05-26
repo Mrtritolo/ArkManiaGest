@@ -1949,7 +1949,7 @@ export default function PlayersPage() {
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              background: 'var(--surface, var(--bg-card, #fff))',
+              background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)',
               padding: '1rem 1.1rem',
               borderRadius: 8,
@@ -2115,7 +2115,7 @@ export default function PlayersPage() {
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              background: 'var(--surface, var(--bg-card, #fff))',
+              background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)', padding: '1rem 1.1rem',
               borderRadius: 8, minWidth: 420, maxWidth: 520,
               boxShadow: '0 10px 40px rgba(0,0,0,0.35)',
@@ -2229,7 +2229,7 @@ export default function PlayersPage() {
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              background: 'var(--surface, var(--bg-card, #fff))',
+              background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)', padding: '1rem 1.1rem',
               borderRadius: 8, minWidth: 'min(640px, 95vw)',
               maxWidth: 'min(720px, 95vw)', maxHeight: '85vh',
@@ -2365,7 +2365,7 @@ export default function PlayersPage() {
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              background: 'var(--surface, var(--bg-card, #fff))',
+              background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)', padding: '1rem 1.1rem',
               borderRadius: 8, minWidth: 'min(560px, 95vw)',
               maxWidth: 'min(680px, 95vw)', maxHeight: '85vh',

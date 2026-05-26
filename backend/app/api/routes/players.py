@@ -11,9 +11,10 @@ Route ordering note:
     /{player_id} route to prevent interception.
 """
 
+import asyncio
+import base64
 import json
 import os
-import base64
 from typing import List, Optional
 from datetime import datetime
 
@@ -261,7 +262,10 @@ async def debug_arkprofile(
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found.")
 
-    try:
+    # Paramiko is synchronous: run the entire SSH session on a worker thread
+    # so the FastAPI event loop is not stalled while we wait for the remote
+    # host to reply (each `ssh.execute` is a full round-trip).
+    def _run() -> dict:
         with SSHManager(
             host=machine["hostname"],
             username=machine["ssh_user"],
@@ -269,27 +273,36 @@ async def debug_arkprofile(
             key_path=machine.get("ssh_key_path"),
             port=machine.get("ssh_port", 22),
         ) as ssh:
-            stdout_ascii, _, _ = ssh.execute(
+            ascii_out, _, _ = ssh.execute(
                 f'strings -n 3 "{profile_path}" 2>/dev/null | head -200'
             )
-            stdout_utf16, _, _ = ssh.execute(
+            utf16_out, _, _ = ssh.execute(
                 f'strings -e l -n 3 "{profile_path}" 2>/dev/null | head -200'
             )
-            stdout_size, _, _ = ssh.execute(f'stat -c %s "{profile_path}" 2>/dev/null')
-            stdout_hex, _, _ = ssh.execute(f'xxd -l 256 "{profile_path}" 2>/dev/null')
-            # Use the structured parser for the name extraction result
-            player_data = extract_player_data(ssh, profile_path)
+            size_out, _, _ = ssh.execute(f'stat -c %s "{profile_path}" 2>/dev/null')
+            hex_out, _, _  = ssh.execute(f'xxd -l 256 "{profile_path}" 2>/dev/null')
+            extracted = extract_player_data(ssh, profile_path)
+        return {
+            "ascii":     ascii_out,
+            "utf16":     utf16_out,
+            "size":      size_out,
+            "hex":       hex_out,
+            "extracted": extracted,
+        }
+
+    try:
+        r = await asyncio.to_thread(_run)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc
 
     return {
-        "path": profile_path,
-        "file_size": stdout_size.strip() or None,
-        "extracted_name": player_data.get("name"),
-        "extracted_eos_id": player_data.get("eos_id"),
-        "strings_ascii": stdout_ascii.strip().splitlines() if stdout_ascii else [],
-        "strings_utf16": stdout_utf16.strip().splitlines() if stdout_utf16 else [],
-        "hex_header": stdout_hex.strip() or None,
+        "path":            profile_path,
+        "file_size":       r["size"].strip() or None,
+        "extracted_name":  r["extracted"].get("name"),
+        "extracted_eos_id": r["extracted"].get("eos_id"),
+        "strings_ascii":   r["ascii"].strip().splitlines() if r["ascii"] else [],
+        "strings_utf16":   r["utf16"].strip().splitlines() if r["utf16"] else [],
+        "hex_header":      r["hex"].strip() or None,
     }
 
 
@@ -324,7 +337,10 @@ async def test_profile_extraction(
             detail="SavedArks path not found for this container. Run a scan first.",
         )
 
-    try:
+    # Paramiko is synchronous; offload the whole SSH session to a worker
+    # thread so we don't block the event loop for the duration of the
+    # find + N parses + cleanup.
+    def _run() -> dict:
         with SSHManager(
             host=machine["hostname"],
             username=machine["ssh_user"],
@@ -338,7 +354,7 @@ async def test_profile_extraction(
                 f'2>/dev/null | head -{limit}'
             )
             if not stdout.strip():
-                return {"error": "No .arkprofile files found.", "path": saved_arks}
+                return {"empty": True}
 
             # Upload the parser script once
             script_path = os.path.abspath(
@@ -362,13 +378,19 @@ async def test_profile_extraction(
                 results.append({"file": filename, "file_id": file_id, **parsed})
 
             ssh.execute("rm -f /tmp/_ark_parse.py")
-            return {
-                "saved_arks": saved_arks,
-                "profiles_tested": len(results),
-                "results": results,
-            }
+            return {"empty": False, "results": results}
+
+    try:
+        r = await asyncio.to_thread(_run)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc
+    if r["empty"]:
+        return {"error": "No .arkprofile files found.", "path": saved_arks}
+    return {
+        "saved_arks":      saved_arks,
+        "profiles_tested": len(r["results"]),
+        "results":         r["results"],
+    }
 
 
 @router.get("/sync-containers")
@@ -1396,8 +1418,14 @@ async def import_players_from_profiles(
         except Exception as exc:
             errors.append(f"{eos}: {exc}")
 
+    # Flush instead of commit: get_plugin_db owns the transaction boundary
+    # and will commit on success / rollback on exception (see db/session.py).
+    # Manually committing here AND letting the dependency commit afterwards
+    # produced a double-commit; the previous `try/rollback/return success=False`
+    # additionally masked real failures by returning HTTP 200 while leaving
+    # the dependency to commit a session it had already rolled back.
     try:
-        await db.commit()
+        await db.flush()
     except Exception as exc:
         await db.rollback()
         return {
@@ -1405,7 +1433,7 @@ async def import_players_from_profiles(
             "requested":        requested,
             "inserted":         0,
             "skipped_existing": skipped,
-            "errors":           [f"commit failed: {exc}"],
+            "errors":           [f"flush failed: {exc}"],
         }
 
     return {

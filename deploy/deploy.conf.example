@@ -15,6 +15,26 @@
 # --- Target server (used by the PowerShell scripts on the dev PC) ---
 DEPLOY_SERVER="root@YOUR_SERVER_IP"
 
+# --- SSH authentication (optional, used by update-panel.{sh,ps1} +
+#     update-remote.ps1) ---
+#
+# When you log in to the panel host with a dedicated key rather than the
+# default ~/.ssh/id_* one, set SSH_KEY_PATH to its absolute path.  The
+# scripts will pass `-i $SSH_KEY_PATH -o IdentitiesOnly=yes` to every ssh /
+# scp invocation, and `-o BatchMode=yes` so a misconfigured key fails fast
+# instead of dropping you into a password prompt mid-update.
+#
+# Leave empty to let OpenSSH search ~/.ssh/ + ssh-agent as usual.
+#
+# On Windows use forward slashes or quoted backslashes, e.g.:
+#     SSH_KEY_PATH="C:/Users/Alessio/.ssh/id_arkmaniagest"
+SSH_KEY_PATH=""
+
+# Override the SSH user / port when DEPLOY_SERVER doesn't already encode
+# them as `user@host` / when the host listens on a non-default port.
+SSH_USER=""
+SSH_PORT=22
+
 # --- Domain & SSL ---
 DOMAIN="your-domain.example.com"
 SSL_EMAIL="admin@example.com"

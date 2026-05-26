@@ -46,6 +46,36 @@ $DEPLOYIGNORE = "$PROJECT\deploy\.deployignore"
 # Force Windows tar (bsdtar) -- Git's GNU tar in PATH cannot handle Windows paths.
 $TAR = if (Test-Path "C:\Windows\System32\tar.exe") { "C:\Windows\System32\tar.exe" } else { "tar" }
 
+# ---- SSH options (key-based auth aware) ----
+# When deploy.conf sets SSH_KEY_PATH, pass `-i <key>` + IdentitiesOnly=yes
+# on every ssh / scp call (otherwise OpenSSH may try ~/.ssh/id_* in addition
+# and trigger MaxAuthTries before reaching the configured key).  BatchMode
+# turns a key failure into a hard exit instead of a silent password prompt
+# that would hang the script.  StrictHostKeyChecking=accept-new is applied
+# on every call (not just the first probe) so an out-of-band reinstall of
+# the host doesn't pop an interactive yes/no question mid-update.
+$SSH_KEY  = if ($confVars["SSH_KEY_PATH"]) { $confVars["SSH_KEY_PATH"].Trim() } else { "" }
+$SSH_PORT = if ($confVars["SSH_PORT"])     { $confVars["SSH_PORT"] }            else { "22" }
+$sshCommonArgs = @(
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "ConnectTimeout=10",
+    "-o", "ServerAliveInterval=30",
+    "-p", "$SSH_PORT"
+)
+$scpCommonArgs = @(
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-P", "$SSH_PORT"
+)
+if ($SSH_KEY) {
+    if (-not (Test-Path $SSH_KEY)) {
+        Write-Host "  ERRORE: SSH_KEY_PATH='$SSH_KEY' (from deploy.conf) non esiste." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  Using SSH key: $SSH_KEY" -ForegroundColor DarkGray
+    $sshCommonArgs += @("-o","BatchMode=yes","-o","IdentitiesOnly=yes","-i",$SSH_KEY)
+    $scpCommonArgs += @("-o","BatchMode=yes","-o","IdentitiesOnly=yes","-i",$SSH_KEY)
+}
+
 
 
 $startTime = Get-Date
@@ -62,11 +92,15 @@ if ($WithDeps)     { Write-Host "  Dependencies: FORCED" -ForegroundColor Magent
 Write-Host "================================================" -ForegroundColor Cyan
 
 # ---- STEP 1: Test SSH ----
+# Use $LASTEXITCODE rather than scraping stdout: MOTD / SSH banner output
+# from a fresh login can include the literal word "OK" and falsely pass the
+# previous string-match test, and a remote `echo OK` printed AFTER ssh has
+# already failed (e.g. AuthenticationFailed) would never reach us anyway.
 Write-Host "`n[1/6] Test SSH..." -ForegroundColor Yellow
-$testSSH = ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new $SERVER "echo OK" 2>&1
-if (($testSSH -join "`n").Trim() -notmatch "OK") {
-    Write-Host "  ERRORE: SSH non raggiungibile" -ForegroundColor Red
-    Write-Host "  Output: $testSSH" -ForegroundColor DarkGray
+& ssh.exe @sshCommonArgs $SERVER "echo ArkManiaGest-RemoteUpdate-OK" 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ERRORE: SSH non raggiungibile (rc=$LASTEXITCODE)" -ForegroundColor Red
+    Write-Host "  Verifica chiave / agente / sudoers, poi rilancia." -ForegroundColor DarkGray
     exit 1
 }
 Write-Host "  SSH OK" -ForegroundColor Green
@@ -74,8 +108,8 @@ Write-Host "  SSH OK" -ForegroundColor Green
 # ---- STEP 2: Verify .env on server ----
 Write-Host "`n[2/6] Verifica .env sul server..." -ForegroundColor Yellow
 if (-not $DryRun) {
-    $envCheck = ssh $SERVER '[ -f /opt/arkmaniagest/backend/.env ] && echo ENV_OK || echo NO_ENV'
-    if (($envCheck -join "`n").Trim() -match "NO_ENV") {
+    & ssh.exe @sshCommonArgs $SERVER "test -f /opt/arkmaniagest/backend/.env" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
         Write-Host "  ATTENZIONE: .env non trovato sul server!" -ForegroundColor Red
         Write-Host "  Copia il .env prima del deploy:" -ForegroundColor Yellow
         Write-Host "  scp backend\.env ${SERVER}:/opt/arkmaniagest/backend/.env" -ForegroundColor White
@@ -121,7 +155,11 @@ if ($DryRun) {
 
 # ---- STEP 4: Upload ----
 Write-Host "`n[4/6] Upload..." -ForegroundColor Yellow
-scp -q $ARCHIVE "${SERVER}:/tmp/arkmaniagest-update.tar.gz"
+& scp.exe @scpCommonArgs -q $ARCHIVE "${SERVER}:/tmp/arkmaniagest-update.tar.gz"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ERRORE: scp fallito (rc=$LASTEXITCODE)" -ForegroundColor Red
+    exit 1
+}
 Write-Host "  Upload OK" -ForegroundColor Green
 
 # ---- STEP 5: Execute remote update ----
@@ -143,15 +181,30 @@ if ($WithDeps){ $depsFlag = "FORCE" }
 $scriptUnix = "$env:TEMP\server-update-unix.sh"
 $content    = (Get-Content "$PROJECT\deploy\server-update.sh" -Raw) -replace "`r`n", "`n"
 [System.IO.File]::WriteAllText($scriptUnix, $content, [System.Text.UTF8Encoding]::new($false))
-scp -q $scriptUnix "${SERVER}:/tmp/server-update.sh"
+& scp.exe @scpCommonArgs -q $scriptUnix "${SERVER}:/tmp/server-update.sh"
 Remove-Item -Force $scriptUnix -ErrorAction SilentlyContinue
-ssh $SERVER "chmod +x /tmp/server-update.sh && bash /tmp/server-update.sh $modeFlag $depsFlag && rm -f /tmp/server-update.sh"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ERRORE: scp server-update.sh fallito (rc=$LASTEXITCODE)" -ForegroundColor Red
+    exit 1
+}
+
+# $modeFlag / $depsFlag are constrained by this script to the literal set
+# {FULL,BACKEND,FRONTEND} / {AUTO,FORCE,SKIP}, so the interpolation here is
+# bounded.  We still wrap them in shell single-quotes server-side as a
+# belt-and-suspenders guard in case this script is ever extended to accept
+# operator-supplied values.
+$remoteCmd = "chmod +x /tmp/server-update.sh && bash /tmp/server-update.sh '$modeFlag' '$depsFlag' && rm -f /tmp/server-update.sh"
+& ssh.exe @sshCommonArgs $SERVER $remoteCmd
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ERRORE: update remoto fallito (rc=$LASTEXITCODE)" -ForegroundColor Red
+    exit 1
+}
 
 # ---- STEP 6: Verify ----
 Write-Host "`n[6/6] Verifica finale..." -ForegroundColor Yellow
 
-$health = ssh $SERVER "curl -sf http://127.0.0.1:8000/health 2>/dev/null"
-if ($health) {
+$health = & ssh.exe @sshCommonArgs $SERVER "curl -sf http://127.0.0.1:8000/health 2>/dev/null"
+if ($LASTEXITCODE -eq 0 -and $health) {
     Write-Host "  Health: OK" -ForegroundColor Green
     try {
         $h = $health | ConvertFrom-Json

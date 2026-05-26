@@ -80,7 +80,7 @@ and [CONTRIBUTING.md](CONTRIBUTING.md) before larger changes.
 | Database | MariaDB 10.6+, **two distinct connections** (panel + plugin) | [backend/app/db/session.py](backend/app/db/session.py) |
 | Deploy | Bash + PowerShell scripts, Nginx, systemd, Let's Encrypt | [deploy/](deploy/) |
 
-Current version: **3.5.5** (see [backend/app/main.py:106](backend/app/main.py:106) and
+Current version: **4.0.0** (see [backend/app/main.py:115](backend/app/main.py:115) and
 [frontend/package.json:4](frontend/package.json:4) — keep them in sync).
 
 ## Repository layout (essentials)

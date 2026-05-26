@@ -21,6 +21,7 @@ from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer
 from sqlalchemy import text as sa_text
 from app.core.config import server_settings
+from app.core.security import _extract_client_ip
 from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles
@@ -88,7 +89,11 @@ def _validate_request(request: Request, api_key: Optional[str] = None) -> None:
 
     origin    = request.headers.get("origin", "")
     referer   = request.headers.get("referer", "")
-    client_ip = request.client.host if request.client else ""
+    # Honour the trusted-proxy logic used by the global middleware: behind
+    # nginx every request appears as 127.0.0.1, so without this all public
+    # callers share a single rate-limit bucket and one client can DoS the
+    # rest.  See app.core.security._extract_client_ip.
+    client_ip = _extract_client_ip(request)
 
     origin_ok  = any(origin.startswith(o)  for o in _ALLOWED_ORIGINS) if origin  else False
     referer_ok = any(referer.startswith(o) for o in _ALLOWED_ORIGINS) if referer else False

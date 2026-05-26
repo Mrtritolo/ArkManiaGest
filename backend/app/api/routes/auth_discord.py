@@ -49,6 +49,27 @@ from app.discord import store as dc_store
 from app.discord.config import get_discord_config
 
 
+def _safe_spa_path(next_path: Optional[str]) -> str:
+    """
+    Return a redirect target inside the SPA, or ``"/"`` if the input is
+    untrusted.  Rejects:
+
+    * ``None`` / empty strings.
+    * Anything that does not start with ``/`` (would escape the SPA).
+    * Protocol-relative URLs (``//evil.com/foo``) -- many browsers treat
+      these as cross-origin, so they would let an attacker craft a phishing
+      redirect by feeding ``next_path=//evil.example`` to the OAuth start
+      endpoint.
+    * Backslash variants (``/\\evil``) -- some browsers normalise ``\\``
+      to ``/`` before resolving the URL.
+    """
+    if not next_path or not next_path.startswith("/"):
+        return "/"
+    if next_path.startswith("//") or next_path.startswith("/\\"):
+        return "/"
+    return next_path
+
+
 router = APIRouter()
 log = logging.getLogger("arkmaniagest.discord.auth")
 
@@ -129,9 +150,12 @@ def start_discord_oauth(
 
     # Random nonce -> embedded in BOTH the cookie and the URL `state` param.
     # On callback the two must match (CSRF protection).
+    # We normalise `next_path` BEFORE signing it into the state JWT, so
+    # callers can't smuggle e.g. `//evil.example` through the OAuth round
+    # trip and have it dropped straight into a Location header.
     nonce = secrets.token_urlsafe(24)
     state_token = _sign_jwt(
-        {"nonce": nonce, "next": next_path},
+        {"nonce": nonce, "next": _safe_spa_path(next_path)},
         audience=_AUD_STATE,
         ttl_seconds=_STATE_COOKIE_TTL_S,
     )
@@ -193,8 +217,9 @@ async def discord_oauth_callback(
         panel_jwt: Optional[str] = None,
     ) -> RedirectResponse:
         # Strip any leading scheme/host the user might have injected --
-        # only relative paths inside the SPA are allowed as next.
-        safe_next = next_path if next_path.startswith("/") else "/"
+        # only relative paths inside the SPA are allowed as next.  See
+        # `_safe_spa_path` for the full list of rejected patterns.
+        safe_next = _safe_spa_path(next_path)
         params = {"discord_login": "ok" if ok else "err"}
         if reason:
             params["reason"] = reason[:200]
