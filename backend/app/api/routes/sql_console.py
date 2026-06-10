@@ -23,10 +23,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import aiomysql
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import audit_event
 from app.core.auth import require_admin
 from app.core.config import server_settings
+from app.db.session import get_db
 from app.schemas.sql_console import (
     DatabaseTarget,
     SqlExecuteRequest,
@@ -150,7 +153,9 @@ def _serialise_row(row: tuple) -> list[Any]:
 @router.post("/execute", response_model=SqlExecuteResult)
 async def execute_query(
     req: SqlExecuteRequest,
+    request: Request,
     _admin: dict = Depends(require_admin),
+    panel_db: AsyncSession = Depends(get_db),
 ):
     """
     Execute an arbitrary SQL query against the configured MariaDB database.
@@ -216,6 +221,14 @@ async def execute_query(
             elapsed_ms,
             message,
         )
+        # Audit trail: record WHO ran a statement against WHICH database
+        # and the statement verb -- never the query body (it may embed
+        # personal data or credentials).
+        verb = query_text.split(None, 1)[0].upper()[:16] if query_text else "?"
+        await audit_event(panel_db, action="sql.execute",
+                          username=_admin.get("sub"),
+                          detail=f"db={req.database} verb={verb} ({message})",
+                          request=request)
 
         return SqlExecuteResult(
             success=True,

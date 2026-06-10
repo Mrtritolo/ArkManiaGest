@@ -24,6 +24,7 @@ import {
   User, Users, ShoppingBag, Timer, Shield, Crown,
   Clock, AlertTriangle, CheckCircle2, Activity as ActivityIcon,
   Trophy, Skull, Server, Wifi, WifiOff,
+  Download, Trash2, FileText,
 } from "lucide-react";
 import {
   meApi, discordAuthApi,
@@ -109,6 +110,73 @@ function extractError(err: unknown, fallback: string): string {
     ?? (err as { message?: string })?.message
     ?? fallback;
   return typeof msg === "string" ? msg : fallback;
+}
+
+// ── Privacy footer (GDPR self-service) ──────────────────────────────────────
+
+function PrivacyFooter({ onDeleted }: { onDeleted: () => void }) {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  async function handleExport(): Promise<void> {
+    setBusy(true);
+    setFeedback("");
+    try {
+      const res = await meApi.privacyExport();
+      const blob = new Blob([JSON.stringify(res.data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "arkmaniagest-my-data.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setFeedback(extractError(err, t("privacy.exportError")));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(): Promise<void> {
+    if (!window.confirm(t("privacy.deleteConfirm"))) return;
+    setBusy(true);
+    setFeedback("");
+    try {
+      await meApi.privacyDeleteAccount();
+      onDeleted();
+    } catch (err: unknown) {
+      setFeedback(extractError(err, t("privacy.deleteError")));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{
+      marginTop: "1.5rem",
+      paddingTop: "0.75rem",
+      borderTop: "1px solid var(--border, rgba(128,128,128,0.25))",
+      display: "flex",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: "0.75rem",
+      fontSize: "0.78rem",
+      opacity: 0.85,
+    }}>
+      <a href="/privacy" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+        <FileText size={12} /> {t("privacy.policyLink")}
+      </a>
+      <button onClick={handleExport} disabled={busy} className="btn btn-secondary btn-sm">
+        <Download size={12} /> {t("privacy.exportButton")}
+      </button>
+      <button onClick={handleDelete} disabled={busy} className="btn btn-danger btn-sm">
+        <Trash2 size={12} /> {t("privacy.deleteButton")}
+      </button>
+      {feedback && <span className="form-message form-message-error">{feedback}</span>}
+    </div>
+  );
 }
 
 // ── Top-level page ──────────────────────────────────────────────────────────
@@ -217,6 +285,14 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
         ) : data ? (
           <DashboardGrid data={data} embedded={embedded} />
         ) : null}
+
+        {/* GDPR self-service: policy link, data export, account erasure.
+            Shown in the standalone (Discord-only) view, where the data
+            subject is the logged-in player.  The embedded admin view
+            omits it -- the admin manages links from Settings instead. */}
+        {!embedded && !loading && (
+          <PrivacyFooter onDeleted={handleLogout} />
+        )}
       </>
     </Wrapper>
   );

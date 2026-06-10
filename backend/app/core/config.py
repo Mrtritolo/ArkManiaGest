@@ -86,6 +86,11 @@ class ServerSettings(BaseSettings):
     # --- Optional ---
     ALLOWED_IPS: str = ""
     SSH_TIMEOUT: int = 30
+    # GDPR/NIS2 data-retention horizon (days) for panel-owned history
+    # tables (arkmaniagest_audit_log, ARKM_instance_actions).  Rows older
+    # than this are purged daily by app/services/retention.py.  Set to 0
+    # to disable automatic purging.
+    DATA_RETENTION_DAYS: int = 365
     # Comma-separated IPs trusted to set X-Forwarded-For / X-Real-IP
     # (e.g. your reverse-proxy / load-balancer addresses).  When the
     # panel is bound directly to the public interface, leave this empty;

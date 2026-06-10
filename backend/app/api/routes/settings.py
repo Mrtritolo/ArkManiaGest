@@ -23,9 +23,10 @@ from typing import Optional
 import aiomysql
 import httpx
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import audit_event
 from app.db.session import get_db
 from app.core.auth import (
     require_admin, get_current_user, get_current_user_optional, hash_password,
@@ -74,7 +75,7 @@ async def app_status(db: AsyncSession = Depends(get_db)):
 # ── First-run setup (public) ──────────────────────────────────────────────────
 
 @router.post("/setup")
-async def initial_setup(req: SetupRequest, db: AsyncSession = Depends(get_db)):
+async def initial_setup(req: SetupRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Perform first-run setup: create the initial admin user and base settings.
 
@@ -102,11 +103,16 @@ async def initial_setup(req: SetupRequest, db: AsyncSession = Depends(get_db)):
         db, "app_name", req.app_name or "ArkManiaGest",
         description="Application name",
     )
-    await set_setting_async(db, "app_version", "3.5.5", description="Application version")
+    await set_setting_async(db, "app_version", "4.1.0", description="Application version")
     await set_setting_async(
         db, "log_level", req.log_level or "INFO",
         description="Log level",
     )
+
+    await audit_event(db, action="settings.setup",
+                      username=req.admin_username.lower().strip(),
+                      detail="first-run setup: initial admin created",
+                      request=request)
 
     return {
         "success":        True,

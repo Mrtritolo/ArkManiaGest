@@ -15,9 +15,10 @@ Admin-only endpoints:
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import audit_event
 from app.db.session import get_db
 from app.core.auth import (
     hash_password,
@@ -74,7 +75,7 @@ def _user_to_read(user: dict) -> UserRead:
 # ── Authentication ────────────────────────────────────────────────────────────
 
 @router.post("/auth/login", response_model=LoginResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Authenticate a user and return a signed JWT.
 
@@ -84,16 +85,28 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_username(db, req.username)
 
     if not user:
+        # Attempted username is NOT recorded (it may be a typo'd password
+        # or a third-party identifier) -- only the source IP is kept.
+        await audit_event(db, action="auth.login_failed",
+                          detail="unknown username", request=request)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
     if not user.get("active", True):
+        await audit_event(db, action="auth.login_failed",
+                          username=user["username"],
+                          detail="account disabled", request=request)
         raise HTTPException(status_code=401, detail="Account is disabled.")
 
     if not verify_password(req.password, user.get("password_hash", "")):
+        await audit_event(db, action="auth.login_failed",
+                          username=user["username"],
+                          detail="wrong password", request=request)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
     now = datetime.now(timezone.utc)
     await update_user(db, user["id"], {"last_login": now})
+    await audit_event(db, action="auth.login",
+                      username=user["username"], request=request)
 
     token = create_token(user["username"], user["role"])
 
@@ -126,6 +139,7 @@ async def get_me(
 @router.put("/auth/me/password")
 async def change_own_password(
     req: ChangeOwnPasswordRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -138,6 +152,8 @@ async def change_own_password(
         raise HTTPException(status_code=401, detail="Current password is incorrect.")
 
     await update_user(db, user["id"], {"password_hash": hash_password(req.new_password)})
+    await audit_event(db, action="auth.password_change",
+                      username=user["username"], request=request)
     return {"success": True, "message": "Password updated."}
 
 
@@ -156,6 +172,7 @@ async def list_users(
 @router.post("/users", response_model=UserRead, status_code=201)
 async def create_user_route(
     req: UserCreate,
+    request: Request,
     _admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -182,6 +199,9 @@ async def create_user_route(
         "created_at":    datetime.now(timezone.utc),
     }
     created = await create_user(db, user_data)
+    await audit_event(db, action="users.create", username=_admin["sub"],
+                      detail=f"created '{normalised_username}' role={req.role}",
+                      request=request)
     return _user_to_read(created)
 
 
@@ -189,6 +209,7 @@ async def create_user_route(
 async def update_user_route(
     user_id: int,
     req: UserUpdate,
+    request: Request,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -252,12 +273,19 @@ async def update_user_route(
     updated = await update_user(db, user_id, updates)
     if not updated:
         raise HTTPException(status_code=404, detail="User not found.")
+    changed = ", ".join(k for k in updates if k != "password_hash")
+    if "password_hash" in updates:
+        changed = (changed + ", password") if changed else "password"
+    await audit_event(db, action="users.update", username=admin["sub"],
+                      detail=f"updated '{target['username']}': {changed}",
+                      request=request)
     return _user_to_read(updated)
 
 
 @router.delete("/users/{user_id}")
 async def delete_user_route(
     user_id: int,
+    request: Request,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -285,4 +313,6 @@ async def delete_user_route(
         )
 
     await delete_user(db, user_id)
+    await audit_event(db, action="users.delete", username=admin["sub"],
+                      detail=f"deleted '{user['username']}'", request=request)
     return {"success": True, "message": f"User '{user['username']}' deleted."}

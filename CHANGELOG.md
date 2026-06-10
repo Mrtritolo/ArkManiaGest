@@ -7,6 +7,68 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.0] - 2026-06-10
+
+GDPR + NIS2 compliance release: data-subject self-service, security
+audit trail, retention policy, and a published privacy notice.
+
+### Added
+
+- **Privacy policy page** at `/privacy` (IT + EN), reachable **before**
+  login (GDPR Art. 13 notice) and linked from the login screen and the
+  player dashboard.  Documents the data inventory, lawful bases,
+  retention horizons, data-subject rights and the strictly-necessary
+  cookie position.
+- **GDPR self-service endpoints** under the Discord session (work for
+  unlinked identities too):
+  - `GET /api/v1/me/privacy/export` — JSON export of everything the
+    panel stores about the caller (Art. 15/20).  Token ciphertexts are
+    excluded by design; their existence/expiry is reported instead.
+  - `DELETE /api/v1/me/privacy/account` — erases the Discord account
+    row (profile, encrypted OAuth tokens, player link) plus the
+    auto-provisioned `discord:<id>` stub user, and clears the session
+    cookie (Art. 17).
+  - Matching "Export my data" / "Delete my account" controls in the
+    player dashboard footer.
+- **Security audit trail** (NIS2): new panel table
+  `arkmaniagest_audit_log` recording login success/failure (with
+  source IP via the trusted-proxy-aware extractor), user
+  create/update/delete, own-password changes, SQL-console executions
+  (statement verb only — never the query body), first-run setup and
+  GDPR requests.  Admin-only `GET /api/v1/audit` with action/username
+  filters + pagination.  Migration: `deploy/migrations/003_audit_log.sql`.
+- **Data-retention job**: `DATA_RETENTION_DAYS` (.env, default 365,
+  0 = off) — a daily background task purges `arkmaniagest_audit_log`
+  and `ARKM_instance_actions` rows older than the horizon.  Plugin-DB
+  tables are never auto-purged (two-databases rule).
+- **docs/COMPLIANCE.md**: GDPR + NIS2 mapping, data inventory,
+  retention table, incident-response procedure (24 h / 72 h NIS2 and
+  72 h GDPR notification clocks) and an operator checklist.
+
+### Changed
+
+- **Password policy hardened** (NIS2): every password-setting path now
+  requires 12+ characters with at least one letter and one digit —
+  including first-run setup, which previously accepted 6 characters.
+  Existing passwords keep working; the rule applies on the next
+  password change.  Setup wizard mirrors the rule client-side, and the
+  IT/EN hints were updated.
+
+### Fixed
+
+- `tsconfig.node.json` was missing `composite: true`, which made
+  `tsc --noEmit` fail on the project reference and silently masked
+  every type error in the repo.  With the reference fixed, ~128
+  pre-existing type errors surfaced and were resolved (proper
+  interfaces for untyped JSON/API data in ArkShopPage, PlayersPage,
+  BlueprintsPage, ArkManiaConfigPage, RareDinosPage; `LucideIcon`
+  union for the sidebar's `NavIcon`; `src/vite-env.d.ts` for
+  `import.meta.env` typing).  `npx tsc --noEmit` now passes clean.
+- Stale `3.5.5` version literals in `schemas/settings.py` and the
+  setup route now follow the release version.
+
+---
+
 ## [4.0.0] - 2026-05-10
 
 Major release driven by a top-to-bottom security + reliability audit.

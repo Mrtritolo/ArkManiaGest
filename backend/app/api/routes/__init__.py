@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import require_viewer
 from app.api.routes import (
+    audit_log,
     auth,
     auth_discord,
     me,
@@ -149,4 +150,9 @@ router.include_router(
 router.include_router(
     sql_console.router,
     prefix="/sql", tags=["SQL Console"], dependencies=_viewer,
+)
+router.include_router(
+    audit_log.router,
+    prefix="/audit", tags=["Audit Log"],
+    dependencies=_viewer,   # endpoint-level admin check inside the module
 )

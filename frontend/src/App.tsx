@@ -43,6 +43,9 @@ import Sidebar from "./components/Sidebar";
 import SetupWizard from "./pages/SetupWizard";
 import LoginPage from "./pages/LoginPage";
 
+// Public privacy policy (GDPR notice) -- reachable pre-login.
+import PrivacyPage from "./pages/PrivacyPage";
+
 // Player dashboard (Phase 6) -- shown when the user has a Discord
 // session cookie but no panel JWT.
 import PlayerDashboardPage from "./pages/PlayerDashboardPage";
@@ -257,6 +260,12 @@ function App() {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  // The privacy policy must be readable BEFORE any login (GDPR Art. 13
+  // notice), so it bypasses the auth state machine entirely.
+  if (window.location.pathname === "/privacy") {
+    return <PrivacyPage />;
+  }
 
   return (
     <BrowserRouter>

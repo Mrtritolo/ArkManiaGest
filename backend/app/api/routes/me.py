@@ -12,8 +12,10 @@ flow).  An unlinked Discord caller gets 403 + a hint to ask an
 admin for the binding.
 
 Endpoints:
-  GET /me/dashboard  -- combined character + shop + decay snapshot
-                        for the current player.
+  GET /me/dashboard        -- combined character + shop + decay snapshot
+                              for the current player.
+  GET    /me/privacy/export   -- GDPR data-portability export (Art. 20).
+  DELETE /me/privacy/account  -- GDPR erasure of the Discord link (Art. 17).
 
 Subsequent commits add `GET /me/inventory` etc. as the dashboard
 grows.
@@ -24,7 +26,8 @@ from __future__ import annotations
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Cookie, Depends, HTTPException
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.routes.auth_discord import (
     _SESSION_COOKIE, _AUD_SESSION, _verify_jwt,
 )
+from app.core.audit import audit_event
 from app.db.session import get_db, get_plugin_db
 from app.discord import store as dc_store
 
@@ -92,6 +96,31 @@ async def get_current_player(
         discord_global_name = row.get("discord_global_name"),
         discord_avatar      = row.get("discord_avatar"),
     )
+
+
+async def get_current_discord_account(
+    disc_session: Optional[str] = Cookie(default=None, alias=_SESSION_COOKIE),
+    db:           AsyncSession  = Depends(get_db),
+) -> dict:
+    """
+    Resolve the Discord-session cookie into the full discord_accounts
+    row.  Unlike :func:`get_current_player` this does NOT require a
+    linked EOS player — GDPR rights (export / erasure) must be
+    exercisable by any authenticated Discord identity, linked or not.
+    """
+    if not disc_session:
+        raise HTTPException(status_code=401, detail="No Discord session.")
+    try:
+        payload = _verify_jwt(disc_session, audience=_AUD_SESSION)
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        raise HTTPException(status_code=401, detail="Discord session expired.") from None
+    discord_user_id = payload.get("discord_user_id")
+    if not discord_user_id:
+        raise HTTPException(status_code=401, detail="Malformed Discord session.")
+    row = await dc_store.get_by_discord_id(db, discord_user_id)
+    if not row:
+        raise HTTPException(status_code=401, detail="Discord session orphaned.")
+    return row
 
 
 # ── Response shapes ──────────────────────────────────────────────────────────
@@ -681,3 +710,110 @@ async def get_dashboard(
         rare_dinos  = rare_card,
         activity    = activity_card,
     )
+
+
+# ── GDPR endpoints (Art. 17 / 20) ────────────────────────────────────────────
+
+@router.get("/privacy/export")
+async def export_my_data(
+    request:   Request,
+    account:   dict          = Depends(get_current_discord_account),
+    db:        AsyncSession  = Depends(get_db),
+    plugin_db: AsyncSession  = Depends(get_plugin_db),
+):
+    """
+    GDPR Art. 20 (data portability): return every piece of personal data
+    the panel stores about the authenticated Discord identity, as JSON.
+
+    OAuth token ciphertexts are excluded (they are credentials, not
+    personal data, and exporting them would be a security hole) — their
+    existence and expiry are reported instead.
+    """
+    export: dict = {
+        "discord_account": {
+            "discord_user_id":     account.get("discord_user_id"),
+            "discord_username":    account.get("discord_username"),
+            "discord_global_name": account.get("discord_global_name"),
+            "discord_avatar":      account.get("discord_avatar"),
+            "oauth_scope":         account.get("scope"),
+            "oauth_tokens_stored": bool(account.get("token_expires_at")),
+            "token_expires_at":    account.get("token_expires_at"),
+            "linked_eos_id":       account.get("eos_id"),
+            "linked_at":           account.get("linked_at"),
+            "last_sync_at":        account.get("last_sync_at"),
+            "created_at":          account.get("created_at"),
+            "updated_at":          account.get("updated_at"),
+        },
+        "ark_player": None,
+    }
+
+    eos = account.get("eos_id")
+    if eos:
+        p_row = (await plugin_db.execute(
+            text(
+                "SELECT EOS_Id, Giocatore, PermissionGroups, TimedPermissionGroups "
+                "FROM Players WHERE EOS_Id = :e LIMIT 1"
+            ),
+            {"e": eos},
+        )).mappings().fetchone()
+        if p_row:
+            export["ark_player"] = {
+                "eos_id":                  p_row["EOS_Id"],
+                "character_name":          p_row.get("Giocatore"),
+                "permission_groups":       p_row.get("PermissionGroups"),
+                "timed_permission_groups": p_row.get("TimedPermissionGroups"),
+            }
+
+    await audit_event(
+        db, action="gdpr.export",
+        username=f"discord:{account.get('discord_user_id')}",
+        request=request,
+    )
+    return export
+
+
+@router.delete("/privacy/account")
+async def delete_my_account(
+    request: Request,
+    account: dict         = Depends(get_current_discord_account),
+    db:      AsyncSession = Depends(get_db),
+):
+    """
+    GDPR Art. 17 (right to erasure): delete the Discord identity the
+    panel stores for the authenticated session — profile fields, the
+    encrypted OAuth tokens and the player link — then clear the session
+    cookie.
+
+    The auto-provisioned ``discord:<id>`` AppUser stub (created by the
+    whitelist login flow) is removed too, because its username embeds
+    the Discord ID.  Manually-created panel accounts are NOT touched:
+    they are the operator's data, unlinked rather than erased.
+    In-game data (Players, shop, leaderboard rows keyed by EOS ID) is
+    game data owned by the server plugins and is out of scope here.
+    """
+    discord_user_id = str(account.get("discord_user_id"))
+
+    # Drop the auto-provisioned stub AppUser, if any.  The stub is
+    # recognisable by its reserved "discord:<id>" username (':' is not
+    # allowed in human-created usernames).
+    await db.execute(
+        text("DELETE FROM arkmaniagest_users WHERE username = :u"),
+        {"u": f"discord:{discord_user_id}"},
+    )
+    await db.execute(
+        text("DELETE FROM arkmaniagest_discord_accounts WHERE discord_user_id = :d"),
+        {"d": discord_user_id},
+    )
+    await db.commit()
+
+    # The audit row keeps only the numeric Discord ID (needed to prove
+    # the erasure happened) and is itself purged by the retention job.
+    await audit_event(
+        db, action="gdpr.account_delete",
+        username=f"discord:{discord_user_id}",
+        request=request,
+    )
+
+    resp = JSONResponse({"ok": True, "message": "Your Discord data has been deleted."})
+    resp.delete_cookie(_SESSION_COOKIE, path="/")
+    return resp

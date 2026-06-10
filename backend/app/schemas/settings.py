@@ -3,7 +3,9 @@ schemas/settings.py — Pydantic schemas for setup and application configuration
 """
 
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.auth import validate_password_strength
 
 
 # ── Application status ────────────────────────────────────────────────────────
@@ -26,8 +28,12 @@ class SetupRequest(BaseModel):
     """
 
     admin_username: str = Field(default="admin", min_length=2, max_length=50)
-    admin_password: str = Field(..., min_length=6)
+    # Same policy as every other password-setting path (NIS2 hardening):
+    # 12+ chars, letters + digits.
+    admin_password: str = Field(..., min_length=12)
     admin_display_name: str = Field(default="Administrator", max_length=100)
+
+    _password_strength = field_validator("admin_password")(validate_password_strength)
     app_name: str = "ArkManiaGest"
     log_level: str = "INFO"
 
@@ -38,7 +44,7 @@ class AppSettingsRead(BaseModel):
     """Application settings as returned by the read endpoint."""
 
     app_name: str = "ArkManiaGest"
-    version: str = "3.5.5"
+    version: str = "4.1.0"
     log_level: str = "INFO"
     auto_backup: bool = True
     backup_interval_hours: int = 6

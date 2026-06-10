@@ -1681,6 +1681,20 @@ export const meApi = {
    * live plugin DB.
    */
   dashboard: () => api.get<DashboardResponse>("/me/dashboard"),
+
+  /**
+   * GDPR Art. 20 -- export every piece of personal data the panel stores
+   * for the current Discord session, as JSON.  Works for unlinked
+   * identities too (no EOS link required).
+   */
+  privacyExport: () => api.get<Record<string, unknown>>("/me/privacy/export"),
+
+  /**
+   * GDPR Art. 17 -- erase the Discord identity stored by the panel
+   * (profile, encrypted OAuth tokens, player link) and clear the
+   * session cookie.  The caller should reload to the login page after.
+   */
+  privacyDeleteAccount: () => api.delete<{ ok: boolean }>("/me/privacy/account"),
 };
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,35 @@ class AppUser(Base):
     last_login    = Column(DateTime, nullable=True)
 
 
+class AppAuditLog(Base):
+    """
+    Security audit trail of panel-level administrative events (NIS2).
+
+    Complements ``ARKM_instance_actions`` (which covers server-instance
+    lifecycle): this table records authentication and account/configuration
+    events — login success/failure, user management, SQL console usage,
+    GDPR data-subject requests.  Rows are purged after
+    ``DATA_RETENTION_DAYS`` by the retention job (see
+    app/services/retention.py), so the trail never grows unbounded.
+    """
+    __tablename__ = "arkmaniagest_audit_log"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    # Who: panel username or "discord:<id>"; NULL for anonymous events
+    # (e.g. failed logins with unknown usernames are logged without the
+    # attempted name to avoid storing third-party identifiers).
+    username   = Column(String(64), nullable=True, index=True)
+    # What: dotted event key, e.g. "auth.login", "auth.login_failed",
+    # "users.create", "sql.execute", "gdpr.account_delete".
+    action     = Column(String(64), nullable=False, index=True)
+    # Free-text context (target username, table name, …).  Never contains
+    # passwords, tokens or query bodies.
+    detail     = Column(String(512), nullable=True)
+    # Source IP as resolved by the trusted-proxy-aware extractor.
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
 class SSHMachine(Base):
     """
     SSH machine credentials for connecting to ARK server hosts.

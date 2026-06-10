@@ -72,7 +72,7 @@
     "stepDesc": "This account will be used to access the management portal. The database connection is already configured in the server .env file.",
     "username": "Username",
     "displayName": "Display name",
-    "password": "Password (min. 6 characters)",
+    "password": "Password (min. 12 characters, letters and digits)",
     "passwordConfirm": "Confirm password",
     "passwordMismatch": "Passwords do not match",
     "appName": "Application name",
@@ -85,6 +85,44 @@
       "displayName": "e.g. Alessio",
       "password": "Access password…",
       "passwordConfirm": "Repeat password…"
+    }
+  },
+  "privacy": {
+    "policyLink": "Privacy policy",
+    "exportButton": "Export my data",
+    "exportError": "Could not export your data. Please try again.",
+    "deleteButton": "Delete my account",
+    "deleteConfirm": "This permanently deletes the Discord account data stored by this panel (profile, login tokens and the link to your ARK character) and logs you out. Your in-game progress is NOT affected. Continue?",
+    "deleteError": "Could not delete your account. Please try again.",
+    "page": {
+      "back": "Back to the panel",
+      "title": "Privacy Policy",
+      "updated": "Last updated: June 2026",
+      "intro": "This panel (\"ArkManiaGest\") is the management and player portal for an ARK: Survival Ascended game cluster. This notice explains, as required by Regulation (EU) 2016/679 (GDPR), which personal data the panel processes, why, for how long, and which rights you can exercise.",
+      "controller": {
+        "title": "1. Data controller",
+        "body": "The data controller is the operator of the game cluster this panel belongs to. You can reach the operator through the community's Discord server or the contact channel published on the community website."
+      },
+      "data": {
+        "title": "2. What data we process",
+        "body": "Panel accounts (admins/operators): username, display name, a bcrypt hash of the password (never the password itself), role and last-login time.\n\nDiscord sign-in: your Discord user ID, username, display name and avatar hash, plus the OAuth access/refresh tokens Discord issues — stored encrypted (AES-256-GCM) and used only to read your basic profile (\"identify\" scope; we never request your e-mail).\n\nGame link: the EOS player ID of your ARK character and the in-game data already recorded by the game servers (character name, tribe, permission groups, shop points, leaderboard scores, session login times).\n\nTechnical data: the source IP address of requests, used in-memory for rate limiting and recorded in the security audit log for login attempts and administrative actions. Game servers also record the IP you connect from while you are online."
+      },
+      "purposes": {
+        "title": "3. Purposes and legal bases",
+        "body": "Operating the panel and the player dashboard you request (performance of the service — Art. 6(1)(b)).\n\nSecurity: rate limiting, brute-force protection, and an audit trail of logins and administrative actions (legitimate interest in protecting the service — Art. 6(1)(f), and compliance with security obligations such as the NIS2 directive).\n\nDiscord sign-in happens only when you choose it and approve Discord's consent screen (Art. 6(1)(a)). No data is used for advertising, profiling or analytics, and nothing is shared with third parties other than Discord itself during the sign-in flow."
+      },
+      "retention": {
+        "title": "4. Retention",
+        "body": "Discord session: 24 hours (cookie lifetime).\n\nDiscord profile and OAuth tokens: until you delete your account from the dashboard (or an admin unlinks it).\n\nSecurity audit log and server action history: deleted automatically after 365 days (configurable by the operator).\n\nRate-limiting IP tracking: held in memory only, for minutes.\n\nGame data (characters, tribes, scores) follows the game servers' own lifecycle (e.g. wipes) and is not retained by the panel itself."
+      },
+      "rights": {
+        "title": "5. Your rights",
+        "body": "You can access and export the data the panel stores about you at any time from your player dashboard (\"Export my data\" — Art. 15/20) and erase your Discord account data with \"Delete my account\" (Art. 17).\n\nFor rectification, restriction, objection, or anything the self-service tools don't cover, contact the operator (Section 1). You also have the right to lodge a complaint with your supervisory authority (in Italy, the Garante per la protezione dei dati personali)."
+      },
+      "cookies": {
+        "title": "6. Cookies and local storage",
+        "body": "The panel uses only strictly necessary cookies: \"disc_oauth_state\" (10 minutes, protects the Discord sign-in against CSRF) and \"disc_session\" (24 hours, keeps you signed in). Both are HttpOnly, Secure and SameSite=Lax.\n\nThe browser additionally stores your interface preferences (theme, language) in localStorage and the admin session token in sessionStorage (cleared when the tab closes). No tracking, advertising or analytics cookies are used, so no cookie consent banner is required under the ePrivacy rules."
+      }
     }
   },
   "dashboard": {
@@ -251,7 +289,7 @@
     "placeholder": {
       "username": "e.g. marco",
       "displayName": "e.g. Marco Rossi",
-      "passwordNew": "Minimum 6 characters",
+      "passwordNew": "Min. 12 characters, letters and digits",
       "passwordEdit": "Leave blank to keep unchanged"
     },
     "role": {

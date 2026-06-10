@@ -110,9 +110,15 @@ async def lifespan(app: FastAPI):
             "DB_PASSWORD not set in .env — backend running in limited mode"
         )
 
+    # 6. GDPR retention job: purge expired audit/action rows daily.
+    import asyncio as _asyncio
+    from app.services.retention import retention_loop
+    retention_task = _asyncio.create_task(retention_loop())
+
     yield
 
     # --- Shutdown ---
+    retention_task.cancel()
     from app.db.session import close_engine, close_plugin_engine
     await close_plugin_engine()
     await close_engine()
@@ -121,7 +127,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ArkManiaGest",
-    version="4.0.0",
+    version="4.1.0",
     description="Comprehensive manager for ARK: Survival Ascended servers",
     # Docs endpoints are disabled in production
     docs_url=None if IS_PRODUCTION else "/docs",
@@ -184,7 +190,7 @@ async def health_check():
     return {
         "status": "ok",
         "app": "ArkManiaGest",
-        "version": "4.0.0",
+        "version": "4.1.0",
         "db_ready": db_session._async_session is not None,
         "plugin_db_ready": db_session._plugin_async_session is not None,
         "schema_init_errors": list(_SCHEMA_INIT_ERRORS),

@@ -72,7 +72,7 @@
     "stepDesc": "Questo account servirà ad accedere al portale di gestione. La connessione al database è già configurata nel file .env del server.",
     "username": "Nome utente",
     "displayName": "Nome visualizzato",
-    "password": "Password (almeno 6 caratteri)",
+    "password": "Password (almeno 12 caratteri, lettere e numeri)",
     "passwordConfirm": "Conferma password",
     "passwordMismatch": "Le password non coincidono",
     "appName": "Nome applicazione",
@@ -85,6 +85,44 @@
       "displayName": "es. Alessio",
       "password": "Password di accesso…",
       "passwordConfirm": "Ripeti la password…"
+    }
+  },
+  "privacy": {
+    "policyLink": "Informativa privacy",
+    "exportButton": "Esporta i miei dati",
+    "exportError": "Impossibile esportare i dati. Riprova.",
+    "deleteButton": "Elimina il mio account",
+    "deleteConfirm": "Questa operazione elimina definitivamente i dati Discord conservati dal pannello (profilo, token di accesso e collegamento al tuo personaggio ARK) e ti disconnette. I progressi di gioco NON vengono toccati. Continuare?",
+    "deleteError": "Impossibile eliminare l'account. Riprova.",
+    "page": {
+      "back": "Torna al pannello",
+      "title": "Informativa sulla privacy",
+      "updated": "Ultimo aggiornamento: giugno 2026",
+      "intro": "Questo pannello (\"ArkManiaGest\") è il portale di gestione e la dashboard giocatori di un cluster ARK: Survival Ascended. Questa informativa spiega, come richiesto dal Regolamento (UE) 2016/679 (GDPR), quali dati personali tratta il pannello, perché, per quanto tempo e quali diritti puoi esercitare.",
+      "controller": {
+        "title": "1. Titolare del trattamento",
+        "body": "Il titolare del trattamento è il gestore del cluster di gioco a cui appartiene questo pannello. Puoi contattarlo tramite il server Discord della community o il canale di contatto pubblicato sul sito della community."
+      },
+      "data": {
+        "title": "2. Quali dati trattiamo",
+        "body": "Account del pannello (admin/operatori): nome utente, nome visualizzato, hash bcrypt della password (mai la password in chiaro), ruolo e data dell'ultimo accesso.\n\nAccesso con Discord: il tuo ID utente Discord, nome utente, nome visualizzato e hash dell'avatar, oltre ai token OAuth di accesso/aggiornamento rilasciati da Discord — conservati cifrati (AES-256-GCM) e usati solo per leggere il profilo di base (scope \"identify\"; non richiediamo mai la tua e-mail).\n\nCollegamento di gioco: l'ID giocatore EOS del tuo personaggio ARK e i dati di gioco già registrati dai server (nome del personaggio, tribù, gruppi permessi, punti shop, punteggi classifica, orari di accesso alle sessioni).\n\nDati tecnici: l'indirizzo IP sorgente delle richieste, usato in memoria per il rate limiting e registrato nel log di audit di sicurezza per i tentativi di accesso e le azioni amministrative. I server di gioco registrano inoltre l'IP da cui ti connetti mentre sei online."
+      },
+      "purposes": {
+        "title": "3. Finalità e basi giuridiche",
+        "body": "Erogazione del pannello e della dashboard giocatore che richiedi (esecuzione del servizio — art. 6(1)(b)).\n\nSicurezza: rate limiting, protezione da attacchi brute-force e tracciamento di accessi e azioni amministrative (legittimo interesse alla protezione del servizio — art. 6(1)(f), e adempimento di obblighi di sicurezza come la direttiva NIS2).\n\nL'accesso con Discord avviene solo se lo scegli tu e approvi la schermata di consenso di Discord (art. 6(1)(a)). Nessun dato è usato per pubblicità, profilazione o analytics e nulla è condiviso con terze parti diverse da Discord durante il flusso di accesso."
+      },
+      "retention": {
+        "title": "4. Conservazione",
+        "body": "Sessione Discord: 24 ore (durata del cookie).\n\nProfilo Discord e token OAuth: finché non elimini l'account dalla dashboard (o un admin rimuove il collegamento).\n\nLog di audit di sicurezza e storico azioni server: eliminati automaticamente dopo 365 giorni (configurabile dal gestore).\n\nTracciamento IP per il rate limiting: solo in memoria, per pochi minuti.\n\nI dati di gioco (personaggi, tribù, punteggi) seguono il ciclo di vita dei server di gioco (es. wipe) e non sono conservati dal pannello."
+      },
+      "rights": {
+        "title": "5. I tuoi diritti",
+        "body": "Puoi accedere ai dati che il pannello conserva su di te ed esportarli in qualsiasi momento dalla tua dashboard giocatore (\"Esporta i miei dati\" — artt. 15/20) e cancellare i dati del tuo account Discord con \"Elimina il mio account\" (art. 17).\n\nPer rettifica, limitazione, opposizione o qualsiasi richiesta non coperta dagli strumenti self-service, contatta il gestore (sezione 1). Hai inoltre il diritto di proporre reclamo alla tua autorità di controllo (in Italia, il Garante per la protezione dei dati personali)."
+      },
+      "cookies": {
+        "title": "6. Cookie e archiviazione locale",
+        "body": "Il pannello usa solo cookie strettamente necessari: \"disc_oauth_state\" (10 minuti, protegge l'accesso Discord da attacchi CSRF) e \"disc_session\" (24 ore, mantiene la sessione). Entrambi sono HttpOnly, Secure e SameSite=Lax.\n\nIl browser memorizza inoltre le preferenze d'interfaccia (tema, lingua) in localStorage e il token di sessione admin in sessionStorage (cancellato alla chiusura della scheda). Non sono usati cookie di tracciamento, pubblicità o analytics, quindi non è richiesto alcun banner di consenso ai sensi della normativa ePrivacy."
+      }
     }
   },
   "dashboard": {
@@ -251,7 +289,7 @@
     "placeholder": {
       "username": "es. marco",
       "displayName": "es. Marco Rossi",
-      "passwordNew": "Minimo 6 caratteri",
+      "passwordNew": "Min. 12 caratteri, lettere e numeri",
       "passwordEdit": "Vuoto per lasciare invariata"
     },
     "role": {

@@ -37,6 +37,7 @@ import {
   Moon,
   User,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import type { ComponentType } from "react";
 import type { AuthUser } from "../types";
@@ -52,8 +53,8 @@ import DiscordIcon from "./DiscordIcon";
 
 // Sidebar icons can be either a Lucide icon (defaults sized via the size
 // prop) OR our inline DiscordIcon, which exposes the same {size, className}
-// surface.  We keep the type loose to accept both without a runtime check.
-type NavIcon = ComponentType<{ size?: number; className?: string }>;
+// surface.  The union keeps both assignable without a runtime check.
+type NavIcon = LucideIcon | ComponentType<{ size?: number; className?: string }>;
 
 // ---------------------------------------------------------------------------
 // Types

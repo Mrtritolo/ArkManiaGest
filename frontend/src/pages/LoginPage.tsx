@@ -184,6 +184,14 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
               ? t('auth.login.discordRedirecting')
               : t('auth.login.discordButton')}
           </button>
+
+          {/* GDPR Art. 13: the privacy notice must be reachable BEFORE
+              the user authenticates (especially via Discord OAuth). */}
+          <div style={{ textAlign: 'center', marginTop: '0.85rem' }}>
+            <a href="/privacy" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {t('privacy.policyLink')}
+            </a>
+          </div>
         </form>
       </div>
     </div>
