@@ -403,9 +403,16 @@ if [ "$SSL_OK" = "1" ]; then
 
         # Single-line substitutions on the main server config stay on sed
         # (no newlines in the replacement values, so no escaping issues).
+        # PUBLIC_SITE_ORIGIN may list several origins (space- or
+        # comma-separated, e.g. apex + www); each becomes one map entry on
+        # a single line so the sed replacement below stays newline-free.
+        PUBLIC_CORS_MAP=""
+        for _origin in $(echo "${PUBLIC_SITE_ORIGIN:-}" | tr ',' ' '); do
+            PUBLIC_CORS_MAP="${PUBLIC_CORS_MAP}\"${_origin}\" \"${_origin}\"; "
+        done
         sed -e "s|__DOMAIN__|${DOMAIN}|g" \
             -e "s|__APP_DIR__|${APP_DIR}|g" \
-            -e "s|__PUBLIC_ORIGIN__|${PUBLIC_SITE_ORIGIN:-https://example.com}|g" \
+            -e "s|__PUBLIC_ORIGIN_MAP__|${PUBLIC_CORS_MAP}|g" \
             deploy/nginx-production.conf > /etc/nginx/sites-available/arkmaniagest
         echo "  Config: SSL + GeoIP + IP whitelist"
     else

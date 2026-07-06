@@ -55,9 +55,13 @@ GEOIP_ALLOWED_COUNTRIES="IT CH"
 # Add your admin / office / monitoring IPs here (in the local deploy.conf).
 GEOIP_WHITELIST_IPS=""
 
-# --- Public API: CORS origin for the public-facing website ---
-# The /api/v1/public/ endpoints serve data to this origin.
-# Leave empty if no public website integration is needed.
+# --- Public API: CORS origins for the public-facing website ---
+# The /api/v1/public/ endpoints serve data to these origins.  Space- or
+# comma-separated; list every origin browsers may use (apex AND www).
+# Example: PUBLIC_SITE_ORIGIN="https://example.com https://www.example.com"
+# Leave empty if no public website integration is needed (the panel will
+# emit no CORS headers and browsers will block cross-origin calls).
+# Keep it in sync with PUBLIC_ALLOWED_ORIGINS in backend/.env.
 PUBLIC_SITE_ORIGIN=""
 
 # --- Cron sync secret (must match CRON_SECRET in backend .env) ---

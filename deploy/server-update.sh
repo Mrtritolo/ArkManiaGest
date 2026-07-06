@@ -94,6 +94,7 @@ rsync -a --delete \
     --exclude='data/' \
     --exclude='*.vault' \
     --exclude='.env' \
+    --exclude='deploy/deploy.conf' \
     --exclude='frontend/dist' \
     --exclude='_deprecated/' \
     --exclude='config/' \
