@@ -54,8 +54,11 @@ while IFS= read -r line; do
             # Insert BEFORE the closing marker so all migrated keys live
             # inside the same fence-block.
             tmp=$(mktemp)
-            awk -v open="$FENCE_OPEN" -v close="$FENCE_CLOSE" -v line="$line" '
-                $0 == close && !done { print line; done = 1 }
+            # NB: the awk variable must NOT be named "close" -- that is a
+            # reserved awk builtin and using it as a variable is a fatal
+            # error, which (under set -e) would abort the whole migration.
+            awk -v closer="$FENCE_CLOSE" -v line="$line" '
+                $0 == closer && !done { print line; done = 1 }
                 { print }
             ' "$LIVE_ENV" > "$tmp"
             mv "$tmp" "$LIVE_ENV"
@@ -72,8 +75,8 @@ while IFS= read -r line; do
     else
         # Fence already opened in this run -- insert before the close.
         tmp=$(mktemp)
-        awk -v close="$FENCE_CLOSE" -v line="$line" '
-            $0 == close && !done { print line; done = 1 }
+        awk -v closer="$FENCE_CLOSE" -v line="$line" '
+            $0 == closer && !done { print line; done = 1 }
             { print }
         ' "$LIVE_ENV" > "$tmp"
         mv "$tmp" "$LIVE_ENV"

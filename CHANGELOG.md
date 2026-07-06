@@ -7,6 +7,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.1] - 2026-07-06
+
+Hotfix release: repairs three regressions introduced by the 4.0.0/4.1.0
+hardening pass that could make the panel unusable.
+
+### Fixed
+
+- **Rate limiter no longer blocks legitimate users.** The strict auth
+  limit (10/min) was compared against the shared per-IP counter that
+  counts *all* traffic, so an active session (>10 API calls/min) that
+  touched `/auth/me/password` or the Discord OAuth endpoints tripped a
+  5-minute full-IP block. Auth endpoints now use a dedicated counter;
+  brute-force protection on login is unchanged.
+- **Failed audit-log INSERTs no longer break the business operation.**
+  `audit_event` now runs inside a SAVEPOINT: if `arkmaniagest_audit_log`
+  is missing (e.g. migration 003 not applied), login / user management /
+  GDPR endpoints no longer return 500 via `PendingRollbackError`, and
+  the caller's own uncommitted work is preserved.
+- **`deploy/migrate-env.sh` works again.** The fence-insert used `close`
+  as an awk variable name — a reserved awk builtin, fatal error — so new
+  `.env` keys were never migrated past the first one on upgrade.
+- **`deploy/update-panel.ps1` remote command no longer ships CRLF.** The
+  here-string executed over ssh embedded `\r\n` (the `.ps1` is CRLF on
+  disk), so remote bash failed with `set: invalid option` /
+  `chmod: cannot access '/tmp/server-update.sh\r'`.
+
+### Upgrade notes (from any pre-4.1.0 install)
+
+- `PUBLIC_API_KEY` / `CRON_SECRET` no longer have publicly-known
+  defaults: on first boot a fresh random value is generated into `.env`.
+  External consumers of `/api/v1/public/*` (e.g. the public website)
+  must be reconfigured with the new key, and server-to-server callers
+  must have their IP listed in `PUBLIC_SERVER_IPS`.
+- The new JWT `aud` claim forces a one-time re-login of every panel
+  session after the upgrade.
+
 ## [4.1.0] - 2026-06-10
 
 GDPR + NIS2 compliance release: data-subject self-service, security

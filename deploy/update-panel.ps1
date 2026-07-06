@@ -291,6 +291,12 @@ fi
 rm -f /tmp/server-update.sh
 "@
 
+# The .ps1 file is CRLF on disk, so the here-string embeds \r\n.  Remote
+# bash treats the \r as part of each token ("set -e<CR>" -> invalid
+# option; "/tmp/server-update.sh<CR>" -> no such file).  Normalize to LF
+# before sending, exactly like the scp'd script above.
+$remoteCmd = $remoteCmd -replace "`r`n", "`n"
+
 $rc = Invoke-SSH ($sshCommonArgs + @($sshTarget, $remoteCmd))
 if ($rc -ne 0) { Fail "Remote update failed (rc=$rc)" }
 OK "Remote update finished"

@@ -185,25 +185,39 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/api/v1/settings/setup",
         )
         is_auth = any(path.startswith(p) for p in _AUTH_PATHS)
-        limit   = self.auth_limit if is_auth else self.general_limit
 
+        # The general counter tracks ALL non-exempt traffic for this IP.
+        # Auth endpoints get their own dedicated bucket: comparing the
+        # shared counter against the strict auth limit would let normal
+        # SPA activity (>10 calls/min) trip a 5-minute full-IP block the
+        # moment the user changes a password or starts a Discord login.
         count = _rate_store.record_request(ip, self.window)
 
-        if count > limit:
-            if is_auth:
-                # Block the IP after too many failed auth attempts
-                _rate_store.block(ip, self.block_duration)
+        if count > self.general_limit:
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded."},
                 headers={"Retry-After": str(self.window)},
             )
 
+        if is_auth:
+            auth_count = _rate_store.record_request(f"auth|{ip}", self.window)
+            if auth_count > self.auth_limit:
+                # Block the IP after too many auth attempts
+                _rate_store.block(ip, self.block_duration)
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded."},
+                    headers={"Retry-After": str(self.window)},
+                )
+
         response = await call_next(request)
 
         # Expose rate-limit info through response headers
+        limit = self.auth_limit if is_auth else self.general_limit
+        used  = auth_count if is_auth else count
         response.headers["X-RateLimit-Limit"]     = str(limit)
-        response.headers["X-RateLimit-Remaining"] = str(max(0, limit - count))
+        response.headers["X-RateLimit-Remaining"] = str(max(0, limit - used))
 
         return response
 
