@@ -224,7 +224,8 @@ export default function ServerInstancesPage({ currentUser }: Props) {
 
   const statusBadgeClass = (status: InstanceStatus): string => {
     if (status === "running") return "badge badge-md badge-online";
-    if (status === "error")   return "badge badge-md badge-error";
+    if (status === "error" || status === "missing")
+      return "badge badge-md badge-error";
     if (status === "stopped" || status === "created" || status === "stopping")
       return "badge badge-md badge-offline";
     if (status === "starting" || status === "updating")

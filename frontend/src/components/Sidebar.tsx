@@ -114,6 +114,7 @@ const NAV_SETTINGS: NavItem[] = [
   { to: "/settings/db",         i18nKey: "nav.database",   icon: Database,    adminOnly: true },
   { to: "/settings/sql",        i18nKey: "nav.sqlConsole", icon: Terminal,    adminOnly: true },
   { to: "/settings/discord",    i18nKey: "nav.discord",    icon: DiscordIcon, adminOnly: true },
+  { to: "/settings/audit",      i18nKey: "nav.auditLog",   icon: Shield,      adminOnly: true },
   { to: "/settings/machines",   i18nKey: "nav.machines",   icon: Monitor },
   { to: "/settings/blueprints", i18nKey: "nav.blueprints", icon: BookOpen },
   { to: "/settings/general",    i18nKey: "nav.settings",   icon: Settings,    adminOnly: true },

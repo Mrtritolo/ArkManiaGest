@@ -106,7 +106,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
       setListed(res.data.items);
       setListedTotal(res.data.total);
     } catch (err) {
-      setError(extractError(err, t("market.errors.loadListed", { defaultValue: "Caricamento mercato fallito." })));
+      setError(extractError(err, t("market.errors.loadListed")));
     } finally {
       setListedLoading(false);
     }
@@ -128,7 +128,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
       const res = await marketApi.myItems();
       setMyItems(res.data);
     } catch (err) {
-      setError(extractError(err, t("market.errors.loadMine", { defaultValue: "Caricamento miei item fallito." })));
+      setError(extractError(err, t("market.errors.loadMine")));
     } finally {
       setMyLoading(false);
     }
@@ -140,7 +140,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
       const res = await marketApi.myTransactions();
       setHistory(res.data.transactions);
     } catch (err) {
-      setError(extractError(err, t("market.errors.loadHistory", { defaultValue: "Caricamento storico fallito." })));
+      setError(extractError(err, t("market.errors.loadHistory")));
     } finally {
       setHistLoading(false);
     }
@@ -161,20 +161,18 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
 
   async function handleBuy(item: MarketListedItem) {
     if (!confirm(t("market.confirmBuy", {
-      defaultValue: "Acquisti '{{n}}' per {{p}} coins?",
       n: arkItemDisplayName(item.blueprint), p: item.price,
     }))) return;
     try {
       const res = await marketApi.buy(item.id);
       setSuccess(t("market.bought", {
-        defaultValue: "Acquistato! Nuovo saldo: {{b}}. Usa /market claim in-game per ritirarlo.",
         b: res.data.new_balance,
       }));
       setListed(prev => prev.filter(i => i.id !== item.id));
       setListedTotal(t => t - 1);
       loadWallet();
     } catch (err) {
-      setError(extractError(err, t("market.errors.buy", { defaultValue: "Acquisto fallito." })));
+      setError(extractError(err, t("market.errors.buy")));
     }
   }
 
@@ -182,33 +180,29 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
     const raw = priceInput[itemId];
     const price = parseInt(raw || "", 10);
     if (!price || price <= 0) {
-      setError(t("market.errors.priceRequired", { defaultValue: "Inserisci un prezzo valido." }));
+      setError(t("market.errors.priceRequired"));
       return;
     }
     try {
       await marketApi.listForSale(itemId, price);
-      setSuccess(t("market.listed", { defaultValue: "Item pubblicato sul mercato." }));
+      setSuccess(t("market.listed"));
       setPriceInput(p => ({ ...p, [itemId]: "" }));
       loadMyItems();
       loadListed();
     } catch (err) {
-      setError(extractError(err, t("market.errors.list", { defaultValue: "Pubblicazione fallita." })));
+      setError(extractError(err, t("market.errors.list")));
     }
   }
 
   async function handleCancel(itemId: number) {
-    if (!confirm(t("market.confirmCancel", {
-      defaultValue: "Annullare il listing?  L'item tornerà a te via /market claim in-game.",
-    }))) return;
+    if (!confirm(t("market.confirmCancel"))) return;
     try {
       await marketApi.cancel(itemId);
-      setSuccess(t("market.cancelled", {
-        defaultValue: "Annullato. Usa /market claim in-game per recuperarlo.",
-      }));
+      setSuccess(t("market.cancelled"));
       loadMyItems();
       loadListed();
     } catch (err) {
-      setError(extractError(err, t("market.errors.cancel", { defaultValue: "Cancellazione fallita." })));
+      setError(extractError(err, t("market.errors.cancel")));
     }
   }
 
@@ -228,10 +222,10 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
             <div>
               <h1 className="pl-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <ShoppingBag size={20} />{" "}
-                {t("market.title", { defaultValue: "Mercato giocatori" })}
+                {t("market.title")}
               </h1>
               <p className="pl-subtitle">
-                {t("market.subtitle", { defaultValue: "Compra, vendi e gestisci i tuoi item ARK." })}
+                {t("market.subtitle")}
               </p>
             </div>
             {wallet && (
@@ -262,10 +256,10 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                 <ShoppingBag size={28} />
                 <div>
                   <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>
-                    {t("market.title", { defaultValue: "Mercato giocatori" })}
+                    {t("market.title")}
                   </div>
                   <div style={{ fontSize: "0.78rem", opacity: 0.9 }}>
-                    {t("market.subtitle", { defaultValue: "Compra, vendi e gestisci i tuoi item ARK." })}
+                    {t("market.subtitle")}
                   </div>
                 </div>
               </div>
@@ -296,13 +290,13 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
         }}>
           <TabBtn active={tab === "browse"}  onClick={() => setTab("browse")}
                   icon={<Search size={14} />}
-                  label={t("market.tab.browse", { defaultValue: "Sfoglia" })} />
+                  label={t("market.tab.browse")} />
           <TabBtn active={tab === "mine"}    onClick={() => setTab("mine")}
                   icon={<Package size={14} />}
-                  label={t("market.tab.mine", { defaultValue: "I miei item" })} />
+                  label={t("market.tab.mine")} />
           <TabBtn active={tab === "history"} onClick={() => setTab("history")}
                   icon={<History size={14} />}
-                  label={t("market.tab.history", { defaultValue: "Storico" })} />
+                  label={t("market.tab.history")} />
         </div>
 
         {error && (
@@ -328,7 +322,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
             }}>
               <input
                 className="form-input"
-                placeholder={t("market.searchPh", { defaultValue: "Cerca per blueprint…" })}
+                placeholder={t("market.searchPh")}
                 value={searchBp}
                 onChange={e => setSearchBp(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && loadListed()}
@@ -340,25 +334,25 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                 onChange={e => { setSort(e.target.value as "newest" | "price_asc" | "price_desc"); }}
                 style={{ flex: "0 0 auto" }}
               >
-                <option value="newest">{t("market.sort.newest", { defaultValue: "Più recenti" })}</option>
-                <option value="price_asc">{t("market.sort.priceAsc", { defaultValue: "Prezzo crescente" })}</option>
-                <option value="price_desc">{t("market.sort.priceDesc", { defaultValue: "Prezzo decrescente" })}</option>
+                <option value="newest">{t("market.sort.newest")}</option>
+                <option value="price_asc">{t("market.sort.priceAsc")}</option>
+                <option value="price_desc">{t("market.sort.priceDesc")}</option>
               </select>
               <button onClick={loadListed} className="btn btn-secondary btn-sm">
-                <RefreshCw size={12} /> {t("common.refresh", { defaultValue: "Aggiorna" })}
+                <RefreshCw size={12} /> {t("common.refresh")}
               </button>
             </div>
 
             {listedLoading ? (
-              <div className="pl-loading"><Loader2 size={16} className="pl-spin" /> {t("market.loading", { defaultValue: "Caricamento…" })}</div>
+              <div className="pl-loading"><Loader2 size={16} className="pl-spin" /> {t("market.loading")}</div>
             ) : listed.length === 0 ? (
               <div className="pl-loading" style={{ textAlign: "left" }}>
-                {t("market.empty", { defaultValue: "Nessun item in vendita." })}
+                {t("market.empty")}
               </div>
             ) : (
               <>
                 <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "0.4rem" }}>
-                  {t("market.totalCount", { defaultValue: "{{n}} item disponibili", n: listedTotal })}
+                  {t("market.totalCount", { n: listedTotal })}
                 </div>
                 <div style={{
                   display: "grid",
@@ -393,16 +387,16 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
               <div className="pl-loading"><Loader2 size={16} className="pl-spin" /></div>
             ) : myItems.length === 0 ? (
               <div className="pl-loading" style={{ textAlign: "left" }}>
-                {t("market.noMine", { defaultValue: "Non hai item nel mercato.  Usa /market upload in-game per inserirne uno." })}
+                {t("market.noMine")}
               </div>
             ) : (
               <table className="pl-table">
                 <thead>
                   <tr>
-                    <th>{t("market.col.item", { defaultValue: "Item" })}</th>
-                    <th>{t("market.col.role", { defaultValue: "Ruolo" })}</th>
-                    <th>{t("market.col.status", { defaultValue: "Stato" })}</th>
-                    <th style={{ textAlign: "right" }}>{t("market.col.price", { defaultValue: "Prezzo" })}</th>
+                    <th>{t("market.col.item")}</th>
+                    <th>{t("market.col.role")}</th>
+                    <th>{t("market.col.status")}</th>
+                    <th style={{ textAlign: "right" }}>{t("market.col.price")}</th>
                     <th style={{ width: 280 }}></th>
                   </tr>
                 </thead>
@@ -450,20 +444,20 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                               style={{ width: 100, padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
                             />
                             <button onClick={() => handleList(it.id)} className="btn btn-primary btn-sm">
-                              <Tag size={11} /> {t("market.publish", { defaultValue: "Pubblica" })}
+                              <Tag size={11} /> {t("market.publish")}
                             </button>
                           </div>
                         )}
                         {it.role === "owner" && it.status === "listed" && (
                           <div style={{ display: "flex", gap: "0.3rem", justifyContent: "flex-end" }}>
                             <button onClick={() => handleCancel(it.id)} className="btn btn-secondary btn-sm" style={{ color: "#dc2626" }}>
-                              <Ban size={11} /> {t("market.cancel", { defaultValue: "Annulla" })}
+                              <Ban size={11} /> {t("market.cancel")}
                             </button>
                           </div>
                         )}
                         {it.status === "sold" && it.role === "buyer" && (
                           <span style={{ fontSize: "0.78rem", color: "#d97706" }}>
-                            {t("market.useClaim", { defaultValue: "Usa /market claim in-game" })}
+                            {t("market.useClaim")}
                           </span>
                         )}
                       </td>
@@ -482,17 +476,17 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
               <div className="pl-loading"><Loader2 size={16} className="pl-spin" /></div>
             ) : history.length === 0 ? (
               <div className="pl-loading" style={{ textAlign: "left" }}>
-                {t("market.noHistory", { defaultValue: "Nessuna transazione." })}
+                {t("market.noHistory")}
               </div>
             ) : (
               <table className="pl-table">
                 <thead>
                   <tr>
-                    <th>{t("market.col.when", { defaultValue: "Quando" })}</th>
-                    <th>{t("market.col.role", { defaultValue: "Ruolo" })}</th>
-                    <th>{t("market.col.item", { defaultValue: "Item" })}</th>
-                    <th>{t("market.col.counter", { defaultValue: "Controparte" })}</th>
-                    <th style={{ textAlign: "right" }}>{t("market.col.price", { defaultValue: "Prezzo" })}</th>
+                    <th>{t("market.col.when")}</th>
+                    <th>{t("market.col.role")}</th>
+                    <th>{t("market.col.item")}</th>
+                    <th>{t("market.col.counter")}</th>
+                    <th style={{ textAlign: "right" }}>{t("market.col.price")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -505,7 +499,7 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
                           color:      tx.role === "buyer" ? "#dc2626"   : "#16a34a",
                           borderColor:tx.role === "buyer" ? "#dc262640" : "#16a34a40",
                         }}>
-                          {tx.role === "buyer" ? t("market.bought2", { defaultValue: "comprato" }) : t("market.sold", { defaultValue: "venduto" })}
+                          {tx.role === "buyer" ? t("market.bought2") : t("market.sold")}
                         </span>
                       </td>
                       <td>{tx.blueprint ? arkItemDisplayName(tx.blueprint) : "?"}</td>
@@ -726,7 +720,7 @@ function ItemCard({
           marginTop: "0.4rem",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>
-          {t("market.byShort", { defaultValue: "Da" })}{" "}
+          {t("market.byShort")}{" "}
           <strong style={{ color: "var(--text)" }}>
             {it.owner_name || it.owner_eos_id.slice(0, 8) + "…"}
           </strong>
@@ -761,7 +755,7 @@ function ItemCard({
             }
             style={{ padding: "0.35rem 0.65rem" }}
           >
-            <ShoppingBag size={12} /> {t("market.buy", { defaultValue: "Acquista" })}
+            <ShoppingBag size={12} /> {t("market.buy")}
           </button>
         </div>
       </div>

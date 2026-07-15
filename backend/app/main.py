@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ArkManiaGest",
-    version="4.1.1",
+    version="4.1.2",
     description="Comprehensive manager for ARK: Survival Ascended servers",
     # Docs endpoints are disabled in production
     docs_url=None if IS_PRODUCTION else "/docs",
@@ -190,7 +190,7 @@ async def health_check():
     return {
         "status": "ok",
         "app": "ArkManiaGest",
-        "version": "4.1.1",
+        "version": "4.1.2",
         "db_ready": db_session._async_session is not None,
         "plugin_db_ready": db_session._plugin_async_session is not None,
         "schema_init_errors": list(_SCHEMA_INIT_ERRORS),

@@ -449,7 +449,7 @@ export default function BlueprintsPage() {
     if (!importPreview) return null
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-        <div className="card" style={{ width: 440, maxWidth: '90vw', padding: '1.5rem' }}>
+        <div className="card" style={{ width: 440, maxWidth: '90vw', padding: '1.5rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}>
           <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}><Upload size={18} /> {t('blueprints.importDialog.title')}</h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}
              dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.fileLine', { name: importPreview.filename, count: importPreview.data.length }) }} />

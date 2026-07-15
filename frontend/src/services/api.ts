@@ -1888,4 +1888,32 @@ export const sqlConsoleApi = {
     api.get(`/sql/tables/${tableName}/schema`, { params: { database } }),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Audit log (NIS2 security trail, admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AuditEntry {
+  id: number;
+  username: string | null;
+  action: string;
+  detail: string | null;
+  ip_address: string | null;
+  created_at: string | null;
+}
+
+export interface AuditPage {
+  items: AuditEntry[];
+  total: number;
+}
+
+export const auditApi = {
+  /** Paginated audit entries, newest first, with optional filters. */
+  list: (params: {
+    action?: string;
+    username?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) => api.get<AuditPage>("/audit", { params }),
+};
+
 export default api;

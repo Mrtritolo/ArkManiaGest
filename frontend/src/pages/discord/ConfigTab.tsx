@@ -79,15 +79,12 @@ export default function ConfigTab() {
         } catch (err: unknown) {
           setGuildErr(extractError(
             err,
-            t(
-              "discord.config.errors.guildProbe",
-              "Bot credentials are set but Discord rejected the guild lookup.",
-            ),
+            t("discord.config.errors.guildProbe"),
           ));
         }
       }
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.config.errors.load", "Failed to load Discord configuration.")));
+      setError(extractError(err, t("discord.config.errors.load")));
     } finally {
       setLoading(false);
     }
@@ -97,7 +94,7 @@ export default function ConfigTab() {
     return (
       <div className="pl-loading">
         <Loader2 size={20} className="pl-spin" />{" "}
-        {t("discord.config.loading", "Loading Discord configuration…")}
+        {t("discord.config.loading")}
       </div>
     );
   }
@@ -113,42 +110,41 @@ export default function ConfigTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button onClick={loadAll} className="btn btn-secondary btn-sm">
-          <RefreshCw size={12} /> {t("common.refresh", "Refresh")}
+          <RefreshCw size={12} /> {t("common.refresh")}
         </button>
       </div>
 
       {/* OAuth readiness */}
       <Section
-        title={t("discord.config.section.oauth", "OAuth (Sign in with Discord)")}
+        title={t("discord.config.section.oauth")}
         ready={config.oauth_ready}
-        readyLabel={t("discord.config.ready.oauth", "Ready")}
-        notReadyLabel={t("discord.config.notReady.oauth", "Not configured")}
+        readyLabel={t("discord.config.ready.oauth")}
+        notReadyLabel={t("discord.config.notReady.oauth")}
         icon={<KeyRound size={14} />}
       >
-        <KV label={t("discord.config.field.clientId", "Client ID")}
+        <KV label={t("discord.config.field.clientId")}
             value={config.client_id || "—"}
             onCopy={config.client_id ? () => { copy(config.client_id); setCopied("client_id"); } : undefined}
             copied={copied === "client_id"}
         />
-        <KV label={t("discord.config.field.publicKey", "Public key")}
+        <KV label={t("discord.config.field.publicKey")}
             value={config.public_key ? config.public_key.slice(0, 16) + "…" : "—"}
         />
-        <KV label={t("discord.config.field.redirectUri", "Redirect URI")}
+        <KV label={t("discord.config.field.redirectUri")}
             value={config.redirect_uri || "—"}
             hint={!config.redirect_uri
-              ? t("discord.config.hint.redirectMissing", "Set DISCORD_REDIRECT_URI in .env and restart the service.")
-              : t("discord.config.hint.redirectRegister",
-                  "This URI must be registered EXACTLY in Discord Developer Portal -> OAuth2 -> Redirects.")
+              ? t("discord.config.hint.redirectMissing")
+              : t("discord.config.hint.redirectRegister")
             }
             onCopy={config.redirect_uri
               ? () => { copy(config.redirect_uri); setCopied("redirect_uri"); }
               : undefined}
             copied={copied === "redirect_uri"}
         />
-        <KV label={t("discord.config.field.clientSecret", "Client secret")}
+        <KV label={t("discord.config.field.clientSecret")}
             value={config.has_client_secret
-              ? t("discord.config.placeholder.set", "(set)")
-              : t("discord.config.placeholder.notSet", "(not set)")}
+              ? t("discord.config.placeholder.set")
+              : t("discord.config.placeholder.notSet")}
         />
         {config.missing_for_oauth.length > 0 && (
           <MissingHint keys={config.missing_for_oauth} />
@@ -157,21 +153,21 @@ export default function ConfigTab() {
 
       {/* Bot readiness */}
       <Section
-        title={t("discord.config.section.bot", "Discord bot")}
+        title={t("discord.config.section.bot")}
         ready={config.bot_ready}
-        readyLabel={t("discord.config.ready.bot", "Ready")}
-        notReadyLabel={t("discord.config.notReady.bot", "Not configured")}
+        readyLabel={t("discord.config.ready.bot")}
+        notReadyLabel={t("discord.config.notReady.bot")}
         icon={<Bot size={14} />}
       >
-        <KV label={t("discord.config.field.guildId", "Guild ID")}
+        <KV label={t("discord.config.field.guildId")}
             value={config.guild_id || "—"}
             onCopy={config.guild_id ? () => { copy(config.guild_id); setCopied("guild_id"); } : undefined}
             copied={copied === "guild_id"}
         />
-        <KV label={t("discord.config.field.botToken", "Bot token")}
+        <KV label={t("discord.config.field.botToken")}
             value={config.has_bot_token
-              ? t("discord.config.placeholder.set", "(set)")
-              : t("discord.config.placeholder.notSet", "(not set)")}
+              ? t("discord.config.placeholder.set")
+              : t("discord.config.placeholder.notSet")}
         />
         {config.missing_for_bot.length > 0 && (
           <MissingHint keys={config.missing_for_bot} />
@@ -204,7 +200,6 @@ export default function ConfigTab() {
                   <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
                     {t(
                       "discord.config.guildProbe",
-                      "Bot connected · {{m}} members · {{p}} online",
                       {
                         m: guild.approximate_member_count ?? "?",
                         p: guild.approximate_presence_count ?? "?",
@@ -223,48 +218,42 @@ export default function ConfigTab() {
 
       {/* Auto-promotion whitelists */}
       <Section
-        title={t("discord.config.section.whitelists", "Auto-promotion whitelists")}
+        title={t("discord.config.section.whitelists")}
         ready={
           config.admin_user_ids.length
           + config.operator_user_ids.length
           + config.viewer_user_ids.length > 0
         }
-        readyLabel={t("discord.config.ready.whitelists", "Configured")}
-        notReadyLabel={t("discord.config.notReady.whitelists", "Empty")}
+        readyLabel={t("discord.config.ready.whitelists")}
+        notReadyLabel={t("discord.config.notReady.whitelists")}
         icon={<UsersIcon size={14} />}
       >
         <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
-          {t(
-            "discord.config.whitelistsExplain",
-            "Discord IDs listed here are auto-promoted to the matching role at first Sign-in with Discord (a 'discord:<id>' AppUser is created automatically).  The explicit Accounts -> Link AppUser flow always wins over a whitelist.",
-          )}
+          {t("discord.config.whitelistsExplain")}
         </p>
         <WhitelistRow
-          label={t("discord.config.whitelist.admin", "Admin")}
+          label={t("discord.config.whitelist.admin")}
           ids={config.admin_user_ids}
           envKey="DISCORD_ADMIN_USER_IDS"
         />
         <WhitelistRow
-          label={t("discord.config.whitelist.operator", "Operator")}
+          label={t("discord.config.whitelist.operator")}
           ids={config.operator_user_ids}
           envKey="DISCORD_OPERATOR_USER_IDS"
         />
         <WhitelistRow
-          label={t("discord.config.whitelist.viewer", "Viewer")}
+          label={t("discord.config.whitelist.viewer")}
           ids={config.viewer_user_ids}
           envKey="DISCORD_VIEWER_USER_IDS"
         />
         <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.45rem" }}>
-          {t(
-            "discord.config.whitelistsEditHint",
-            "To change a whitelist: edit /opt/arkmaniagest/backend/.env and run 'systemctl restart arkmaniagest'.",
-          )}
+          {t("discord.config.whitelistsEditHint")}
         </div>
       </Section>
 
       {copied && (
         <div className="alert alert-success" style={{ marginTop: 0 }}>
-          <CheckCircle size={14} /> {t("discord.config.toast.copied", "Copied to clipboard.")}
+          <CheckCircle size={14} /> {t("discord.config.toast.copied")}
         </div>
       )}
     </div>
@@ -287,10 +276,7 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
       const res = await discordApi.syncVip();
       setReport(res.data);
     } catch (err: unknown) {
-      setError(extractError(err, t(
-        "discord.config.vipSync.errors.run",
-        { defaultValue: "VIP sync failed." },
-      )));
+      setError(extractError(err, t("discord.config.vipSync.errors.run")));
     } finally {
       setRunning(false);
     }
@@ -298,29 +284,20 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
 
   return (
     <Section
-      title={t("discord.config.section.vipSync", { defaultValue: "VIP sync (panel -> Discord)" })}
+      title={t("discord.config.section.vipSync")}
       ready={config.vip_sync_ready}
-      readyLabel={t("discord.config.ready.vipSync", { defaultValue: "Ready" })}
-      notReadyLabel={t("discord.config.notReady.vipSync", { defaultValue: "Not configured" })}
+      readyLabel={t("discord.config.ready.vipSync")}
+      notReadyLabel={t("discord.config.notReady.vipSync")}
       icon={<Star size={14} />}
     >
       <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
-        {t(
-          "discord.config.vipSync.explain",
-          {
-            defaultValue:
-              "Manual reconciliation.  Reads the VIP permission group (permanent OR active timed) from the plugin DB for every linked player and mirrors it onto the configured Discord role.  Players outside the link mapping are reported but never touched.",
-          },
-        )}
+        {t("discord.config.vipSync.explain")}
       </p>
       <KV
-        label={t("discord.config.field.vipRoleId", { defaultValue: "VIP role ID" })}
+        label={t("discord.config.field.vipRoleId")}
         value={config.vip_role_id || "—"}
         hint={!config.vip_role_id
-          ? t(
-              "discord.config.hint.vipRoleMissing",
-              { defaultValue: "Set DISCORD_VIP_ROLE_ID in .env and restart the service." },
-            )
+          ? t("discord.config.hint.vipRoleMissing")
           : undefined}
       />
 
@@ -341,15 +318,14 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
             : <ArrowDownUp size={12} />}
           {" "}
           {running
-            ? t("discord.config.vipSync.running", { defaultValue: "Syncing…" })
-            : t("discord.config.vipSync.run",     { defaultValue: "Sync VIP now" })}
+            ? t("discord.config.vipSync.running")
+            : t("discord.config.vipSync.run")}
         </button>
         {report && (
           <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
             {t(
               "discord.config.vipSync.lastRun",
               {
-                defaultValue: "last run {{d}} -- {{s}}s, {{n}} checked",
                 d: new Date(report.finished_at_iso).toLocaleString(),
                 s: report.duration_seconds.toFixed(1),
                 n: report.linked_total,
@@ -382,7 +358,6 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
                 {t(
                   "discord.config.vipSync.strangerVips",
                   {
-                    defaultValue: "Discord members with VIP role but no EOS link ({{n}})",
                     n: report.unmapped_with_vip.length,
                   },
                 )}
@@ -408,7 +383,6 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
                 {t(
                   "discord.config.vipSync.perRow",
                   {
-                    defaultValue: "Per-row actions ({{n}})",
                     n: report.actions.length,
                   },
                 )}
@@ -417,10 +391,10 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
                 <table className="pl-table" style={{ fontSize: "0.72rem" }}>
                   <thead>
                     <tr>
-                      <th>{t("discord.config.vipSync.col.player", { defaultValue: "Player" })}</th>
-                      <th>{t("discord.config.vipSync.col.discord", { defaultValue: "Discord" })}</th>
-                      <th>{t("discord.config.vipSync.col.action", { defaultValue: "Action" })}</th>
-                      <th>{t("discord.config.vipSync.col.detail", { defaultValue: "Detail" })}</th>
+                      <th>{t("discord.config.vipSync.col.player")}</th>
+                      <th>{t("discord.config.vipSync.col.discord")}</th>
+                      <th>{t("discord.config.vipSync.col.action")}</th>
+                      <th>{t("discord.config.vipSync.col.detail")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -450,7 +424,7 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
                 {!showAll && report.actions.length > 50 && (
                   <div style={{ textAlign: "center", marginTop: "0.3rem" }}>
                     <button onClick={() => setShowAll(true)} className="btn btn-secondary btn-sm">
-                      {t("common.showAll", { defaultValue: "Show all" })}
+                      {t("common.showAll")}
                       {" "}({report.actions.length})
                     </button>
                   </div>

@@ -84,7 +84,7 @@ export default function AccountsTab() {
       const res = await discordApi.accounts();
       setAccounts(res.data);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.accounts.errors.load", "Failed to load Discord accounts.")));
+      setError(extractError(err, t("discord.accounts.errors.load")));
     } finally {
       setLoading(false);
     }
@@ -93,30 +93,28 @@ export default function AccountsTab() {
   async function handleUnlinkAppUser(acc: DiscordAccount): Promise<void> {
     if (!confirm(
       t("discord.accounts.confirmUnlinkAppUser",
-        "Unlink AppUser '{{u}}' from Discord '{{d}}'?",
         { u: acc.app_user_username ?? "?", d: acc.discord_username ?? acc.discord_user_id }),
     )) return;
     try {
       await discordApi.unlinkAppUser(acc.discord_user_id);
-      setSuccess(t("discord.accounts.toast.appUserUnlinked", "AppUser link removed."));
+      setSuccess(t("discord.accounts.toast.appUserUnlinked"));
       loadAccounts();
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.accounts.errors.unlinkAppUser", "Failed to unlink AppUser.")));
+      setError(extractError(err, t("discord.accounts.errors.unlinkAppUser")));
     }
   }
 
   async function handleUnlinkEos(acc: DiscordAccount): Promise<void> {
     if (!confirm(
       t("discord.accounts.confirmUnlinkEos",
-        "Unlink EOS player '{{e}}' from Discord '{{d}}'?",
         { e: acc.eos_id ?? "?", d: acc.discord_username ?? acc.discord_user_id }),
     )) return;
     try {
       await discordApi.unlinkEos(acc.discord_user_id);
-      setSuccess(t("discord.accounts.toast.eosUnlinked", "Player link removed."));
+      setSuccess(t("discord.accounts.toast.eosUnlinked"));
       loadAccounts();
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.accounts.errors.unlinkEos", "Failed to unlink player.")));
+      setError(extractError(err, t("discord.accounts.errors.unlinkEos")));
     }
   }
 
@@ -138,23 +136,20 @@ export default function AccountsTab() {
       {loading ? (
         <div className="pl-loading">
           <Loader2 size={20} className="pl-spin" />{" "}
-          {t("discord.accounts.loading", "Loading Discord accounts…")}
+          {t("discord.accounts.loading")}
         </div>
       ) : accounts.length === 0 ? (
         <div className="pl-loading" style={{ textAlign: "left" }}>
-          {t(
-            "discord.accounts.empty",
-            "No Discord accounts yet — ask an operator to Sign in with Discord at least once.",
-          )}
+          {t("discord.accounts.empty")}
         </div>
       ) : (
         <table className="pl-table">
           <thead>
             <tr>
-              <th>{t("discord.accounts.col.discord", "Discord")}</th>
-              <th>{t("discord.accounts.col.appUser", "Panel AppUser")}</th>
-              <th>{t("discord.accounts.col.player", "ARK player")}</th>
-              <th>{t("discord.accounts.col.linkedAt", "Linked at")}</th>
+              <th>{t("discord.accounts.col.discord")}</th>
+              <th>{t("discord.accounts.col.appUser")}</th>
+              <th>{t("discord.accounts.col.player")}</th>
+              <th>{t("discord.accounts.col.linkedAt")}</th>
               <th style={{ width: 60 }}></th>
             </tr>
           </thead>
@@ -211,7 +206,7 @@ export default function AccountsTab() {
                         <button
                           className="btn btn-secondary btn-sm"
                           style={{ padding: "0.15rem 0.35rem" }}
-                          title={t("discord.accounts.action.unlinkAppUser", "Unlink AppUser")}
+                          title={t("discord.accounts.action.unlinkAppUser")}
                           onClick={() => handleUnlinkAppUser(acc)}
                         >
                           <Link2Off size={12} />
@@ -222,7 +217,7 @@ export default function AccountsTab() {
                         className="btn btn-secondary btn-sm"
                         onClick={() => setLinkAppUserFor(acc)}
                       >
-                        <Link2 size={12} /> {t("discord.accounts.action.linkAppUser", "Link AppUser")}
+                        <Link2 size={12} /> {t("discord.accounts.action.linkAppUser")}
                       </button>
                     )}
                   </td>
@@ -241,7 +236,7 @@ export default function AccountsTab() {
                         <button
                           className="btn btn-secondary btn-sm"
                           style={{ padding: "0.15rem 0.35rem" }}
-                          title={t("discord.accounts.action.unlinkEos", "Unlink player")}
+                          title={t("discord.accounts.action.unlinkEos")}
                           onClick={() => handleUnlinkEos(acc)}
                         >
                           <Link2Off size={12} />
@@ -252,7 +247,7 @@ export default function AccountsTab() {
                         className="btn btn-secondary btn-sm"
                         onClick={() => setLinkEosFor(acc)}
                       >
-                        <Link2 size={12} /> {t("discord.accounts.action.linkEos", "Link player")}
+                        <Link2 size={12} /> {t("discord.accounts.action.linkEos")}
                       </button>
                     )}
                   </td>
@@ -276,7 +271,7 @@ export default function AccountsTab() {
           onClose={() => setLinkAppUserFor(null)}
           onLinked={() => {
             setLinkAppUserFor(null);
-            setSuccess(t("discord.accounts.toast.appUserLinked", "AppUser linked."));
+            setSuccess(t("discord.accounts.toast.appUserLinked"));
             loadAccounts();
           }}
           onError={msg => setError(msg)}
@@ -290,7 +285,7 @@ export default function AccountsTab() {
           onClose={() => setLinkEosFor(null)}
           onLinked={() => {
             setLinkEosFor(null);
-            setSuccess(t("discord.accounts.toast.eosLinked", "Player linked."));
+            setSuccess(t("discord.accounts.toast.eosLinked"));
             loadAccounts();
           }}
           onError={msg => setError(msg)}
@@ -322,7 +317,7 @@ function LinkAppUserModal({
         const res = await usersApi.list();
         setUsers(res.data);
       } catch (err: unknown) {
-        onError(extractError(err, t("discord.accounts.errors.loadUsers", "Failed to load users.")));
+        onError(extractError(err, t("discord.accounts.errors.loadUsers")));
       }
     })();
     // We intentionally re-run only on mount; onError is captured by closure.
@@ -346,7 +341,7 @@ function LinkAppUserModal({
       await discordApi.linkAppUser(account.discord_user_id, { app_user_id: chosenId });
       onLinked();
     } catch (err: unknown) {
-      onError(extractError(err, t("discord.accounts.errors.linkAppUser", "Failed to link AppUser.")));
+      onError(extractError(err, t("discord.accounts.errors.linkAppUser")));
     } finally {
       setSaving(false);
     }
@@ -355,19 +350,18 @@ function LinkAppUserModal({
   return (
     <ModalShell onClose={onClose} title={
       t("discord.accounts.modal.linkAppUserTitle",
-        "Link AppUser to {{d}}",
         { d: account.discord_global_name || account.discord_username || account.discord_user_id })
     }>
       <div className="form-group">
         <label className="form-label">
-          <Search size={11} /> {t("discord.accounts.modal.filter", "Filter users")}
+          <Search size={11} /> {t("discord.accounts.modal.filter")}
         </label>
         <input
           autoFocus
           className="form-input"
           value={filter}
           onChange={e => setFilter(e.target.value)}
-          placeholder={t("discord.accounts.modal.filterPh", "name, username or role…")}
+          placeholder={t("discord.accounts.modal.filterPh")}
         />
       </div>
       <div
@@ -378,7 +372,7 @@ function LinkAppUserModal({
       >
         {visible.length === 0 && (
           <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-            {t("discord.accounts.modal.noUsers", "No users match the filter.")}
+            {t("discord.accounts.modal.noUsers")}
           </div>
         )}
         {visible.map(u => {
@@ -413,14 +407,14 @@ function LinkAppUserModal({
         })}
       </div>
       <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel", "Cancel")}</button>
+        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel")}</button>
         <button
           onClick={save}
           disabled={saving || chosenId == null}
           className="btn btn-primary btn-sm"
         >
           {saving ? <Loader2 size={14} className="pl-spin" /> : <Save size={14} />}
-          {" "}{t("discord.accounts.modal.linkBtn", "Link")}
+          {" "}{t("discord.accounts.modal.linkBtn")}
         </button>
       </div>
     </ModalShell>
@@ -461,7 +455,7 @@ function LinkEosModal({
         if (lastQueryRef.current === q) setHits(res.data);
       } catch (err: unknown) {
         if (lastQueryRef.current === q) {
-          onError(extractError(err, t("discord.accounts.errors.search", "Player search failed.")));
+          onError(extractError(err, t("discord.accounts.errors.search")));
         }
       } finally {
         if (lastQueryRef.current === q) setSearching(false);
@@ -478,7 +472,7 @@ function LinkEosModal({
       await discordApi.linkEos(account.discord_user_id, chosen.eos_id);
       onLinked();
     } catch (err: unknown) {
-      onError(extractError(err, t("discord.accounts.errors.linkEos", "Failed to link player.")));
+      onError(extractError(err, t("discord.accounts.errors.linkEos")));
     } finally {
       setSaving(false);
     }
@@ -487,19 +481,18 @@ function LinkEosModal({
   return (
     <ModalShell onClose={onClose} title={
       t("discord.accounts.modal.linkEosTitle",
-        "Link ARK player to {{d}}",
         { d: account.discord_global_name || account.discord_username || account.discord_user_id })
     }>
       <div className="form-group">
         <label className="form-label">
-          <Search size={11} /> {t("discord.accounts.modal.search", "Search by name, EOS or tribe")}
+          <Search size={11} /> {t("discord.accounts.modal.search")}
         </label>
         <input
           autoFocus
           className="form-input"
           value={query}
           onChange={e => { setChosen(null); setQuery(e.target.value); }}
-          placeholder={t("discord.accounts.modal.searchPh", "min. 2 chars…")}
+          placeholder={t("discord.accounts.modal.searchPh")}
         />
       </div>
       <div
@@ -512,12 +505,12 @@ function LinkEosModal({
         {searching && (
           <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
             <Loader2 size={11} className="pl-spin" />{" "}
-            {t("discord.accounts.modal.searching", "Searching…")}
+            {t("discord.accounts.modal.searching")}
           </div>
         )}
         {!searching && query.trim().length >= 2 && hits.length === 0 && (
           <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-            {t("discord.accounts.modal.noHits", "No players match.")}
+            {t("discord.accounts.modal.noHits")}
           </div>
         )}
         {hits.map(h => {
@@ -546,14 +539,14 @@ function LinkEosModal({
         })}
       </div>
       <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel", "Cancel")}</button>
+        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel")}</button>
         <button
           onClick={save}
           disabled={saving || !chosen}
           className="btn btn-primary btn-sm"
         >
           {saving ? <Loader2 size={14} className="pl-spin" /> : <Save size={14} />}
-          {" "}{t("discord.accounts.modal.linkBtn", "Link")}
+          {" "}{t("discord.accounts.modal.linkBtn")}
         </button>
       </div>
     </ModalShell>

@@ -321,7 +321,9 @@ async def exec_status_probe(
 
     The returned stdout is ``running`` | ``exited`` | ``paused`` | ``not-found``
     (the container state as reported by the Docker daemon).  The ARK server
-    instance row is updated to ``running`` / ``stopped`` / ``error`` to match.
+    instance row is updated to ``running`` / ``stopped`` / ``missing`` to match;
+    ``missing`` means the container no longer exists on the host at all, which
+    is distinct from a merely stopped container.
     """
     adapter = PlatformAdapter.from_machine(machine)
     cmd = adapter.wrap_shell(_docker_ps_status_command(instance["container_name"]))
@@ -339,8 +341,10 @@ async def exec_status_probe(
     new_status: Optional[str]
     if docker_state == "running":
         new_status = "running"
-    elif docker_state in ("exited", "created", "not-found"):
+    elif docker_state in ("exited", "created"):
         new_status = "stopped"
+    elif docker_state == "not-found":
+        new_status = "missing"
     elif docker_state == "paused":
         new_status = "stopped"
     else:

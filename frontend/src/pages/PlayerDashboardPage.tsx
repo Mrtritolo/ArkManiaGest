@@ -203,7 +203,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status ?? null;
       setErrorStatus(status);
-      setError(extractError(err, t("dashboard.errors.load", { defaultValue: "Failed to load dashboard." })));
+      setError(extractError(err, t("dashboard.errors.load")));
     } finally {
       setLoading(false);
     }
@@ -224,16 +224,14 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
             <div>
               <h1 className="pl-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <User size={20} />{" "}
-                {t("dashboard.embeddedTitle", { defaultValue: "La mia dashboard" })}
+                {t("dashboard.embeddedTitle")}
               </h1>
               <p className="pl-subtitle">
-                {t("dashboard.embeddedSubtitle", {
-                  defaultValue: "Anteprima della view che il tuo personaggio vede via Discord.",
-                })}
+                {t("dashboard.embeddedSubtitle")}
               </p>
             </div>
             <button onClick={() => load()} className="btn btn-secondary btn-sm">
-              <RefreshCw size={12} />{" "}{t("common.refresh", { defaultValue: "Refresh" })}
+              <RefreshCw size={12} />{" "}{t("common.refresh")}
             </button>
           </div>
           {children}
@@ -269,9 +267,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
             <AlertCircle size={14} /> {error}
             {errorStatus === 403 && (
               <div style={{ marginTop: "0.4rem", fontSize: "0.8rem", opacity: 0.85 }}>
-                {t("dashboard.hint.notLinked", {
-                  defaultValue: "An admin must link your Discord account to an ARK player from Settings -> Discord -> Accounts.",
-                })}
+                {t("dashboard.hint.notLinked")}
               </div>
             )}
           </div>
@@ -280,7 +276,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
         {loading ? (
           <div className="pl-loading" style={{ background: "transparent" }}>
             <Loader2 size={20} className="pl-spin" />{" "}
-            {t("dashboard.loading", { defaultValue: "Loading dashboard…" })}
+            {t("dashboard.loading")}
           </div>
         ) : data ? (
           <DashboardGrid data={data} embedded={embedded} />
@@ -315,7 +311,7 @@ function PageHeader({
   const name = characterName
     || discord?.discord_global_name
     || discord?.discord_username
-    || t("dashboard.player", { defaultValue: "Player" });
+    || t("dashboard.player");
 
   return (
     <div style={{
@@ -357,7 +353,7 @@ function PageHeader({
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}>
-            {t("dashboard.greeting", { defaultValue: "Ciao {{n}}", n: name })}
+            {t("dashboard.greeting", { n: name })}
           </div>
           <div style={{ fontSize: "0.75rem", opacity: 0.9, display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: 2 }}>
             <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
@@ -368,21 +364,19 @@ function PageHeader({
               <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                 <Wifi size={11} color="#16fc77" />
                 {t("dashboard.header.onlineOn", {
-                  defaultValue: "Online su {{s}} ({{m}})",
                   s: presence.server_name || presence.server_key || "?",
                   m: fmtMinutes(presence.duration_minutes),
                 })}
               </span>
             ) : (
               <span style={{ display: "flex", alignItems: "center", gap: "0.25rem", opacity: 0.85 }}>
-                <WifiOff size={11} /> {t("dashboard.header.offline", { defaultValue: "Offline" })}
+                <WifiOff size={11} /> {t("dashboard.header.offline")}
               </span>
             )}
             {pulse && (
               <span style={{ display: "flex", alignItems: "center", gap: "0.25rem", opacity: 0.85 }}>
                 <Server size={11} />
                 {t("dashboard.header.pulse", {
-                  defaultValue: "{{p}} giocatori su {{s}}/{{t}} server online",
                   p: pulse.players_online_total,
                   s: pulse.servers_online,
                   t: pulse.servers_total,
@@ -398,7 +392,7 @@ function PageHeader({
             background: "#ffffff22", color: "#fff", border: "1px solid #ffffff44",
             padding: "0.45rem 0.6rem", borderRadius: 6, cursor: "pointer",
           }}
-          title={t("common.refresh", { defaultValue: "Refresh" })}
+          title={t("common.refresh")}
         >
           <RefreshCw size={14} />
         </button>
@@ -407,7 +401,7 @@ function PageHeader({
             background: "#ffffff22", color: "#fff", border: "1px solid #ffffff44",
             padding: "0.45rem 0.6rem", borderRadius: 6, cursor: "pointer",
           }}
-          title={t("nav.logout", { defaultValue: "Log out" })}
+          title={t("nav.logout")}
         >
           <LogOut size={14} />
         </button>
@@ -485,7 +479,7 @@ function CharacterHero({
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
             <span style={{ fontSize: "1.3rem", fontWeight: 700 }}>
-              {character.name || t("dashboard.unknownPlayer", { defaultValue: "?" })}
+              {character.name || t("dashboard.unknownPlayer")}
             </span>
             {isVip && (
               <span className="pl-chip" style={{
@@ -505,7 +499,7 @@ function CharacterHero({
               <span className="pl-chip" style={{
                 background: "#16a34a15", color: "#16a34a", borderColor: "#16a34a40",
               }}>
-                <Wifi size={9} /> {t("dashboard.online", { defaultValue: "Online" })}
+                <Wifi size={9} /> {t("dashboard.online")}
               </span>
             )}
           </div>
@@ -516,17 +510,15 @@ function CharacterHero({
                 {character.tribe_id ? ` (#${character.tribe_id})` : ""}
               </>
             ) : (
-              t("dashboard.character.noTribe", { defaultValue: "Senza tribù" })
+              t("dashboard.character.noTribe")
             )}
             <span style={{ marginLeft: "0.6rem" }}>
               <Clock size={11} style={{ verticalAlign: "middle" }} />{" "}
               {presence.online_now
                 ? t("dashboard.header.connectedFor", {
-                    defaultValue: "connesso da {{m}}",
                     m: fmtMinutes(presence.duration_minutes),
                   })
                 : t("dashboard.character.lastSeen", {
-                    defaultValue: "ultimo accesso {{r}}",
                     r: fmtRelative(character.last_login),
                   })}
             </span>
@@ -558,7 +550,7 @@ function CharacterHero({
           display: "flex", flexWrap: "wrap", gap: "0.3rem", alignItems: "center",
         }}>
           <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.4 }}>
-            {t("dashboard.character.timedShort", { defaultValue: "Permessi a tempo" })}
+            {t("dashboard.character.timedShort")}
           </span>
           {activeTimed.map((g, i) => (
             <span key={`${g.group}-${i}`} className="pl-chip" style={{
@@ -578,15 +570,15 @@ function CharacterHero({
 function ShopCard({ data }: { data: DashboardShop }) {
   const { t } = useTranslation();
   return (
-    <Card icon={<ShoppingBag size={14} />} title={t("dashboard.shop.title", { defaultValue: "ArkShop" })}>
+    <Card icon={<ShoppingBag size={14} />} title={t("dashboard.shop.title")}>
       <div style={{ display: "flex", justifyContent: "space-around", gap: "0.5rem" }}>
-        <BigStat value={data.points.toLocaleString()} label={t("dashboard.shop.points", { defaultValue: "Punti" })} color="#16a34a" />
-        <BigStat value={data.total_spent.toLocaleString()} label={t("dashboard.shop.totalSpent", { defaultValue: "Spesi" })} color="#6b7280" />
+        <BigStat value={data.points.toLocaleString()} label={t("dashboard.shop.points")} color="#16a34a" />
+        <BigStat value={data.total_spent.toLocaleString()} label={t("dashboard.shop.totalSpent")} color="#6b7280" />
       </div>
       {data.kits_raw && (
         <details style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
           <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
-            {t("dashboard.shop.kitsRawToggle", { defaultValue: "Mostra kit (raw)" })}
+            {t("dashboard.shop.kitsRawToggle")}
           </summary>
           <pre style={{
             background: "var(--bg-card-muted, #f5f5f7)",
@@ -608,15 +600,15 @@ function LeaderboardCard({ data }: { data: DashboardLeaderboard }) {
   const { t } = useTranslation();
   if (!data.has_scores) {
     return (
-      <Card icon={<Trophy size={14} />} title={t("dashboard.leaderboard.title", { defaultValue: "Classifica" })}>
+      <Card icon={<Trophy size={14} />} title={t("dashboard.leaderboard.title")}>
         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.leaderboard.empty", { defaultValue: "Nessun punto in classifica ancora." })}
+          {t("dashboard.leaderboard.empty")}
         </div>
       </Card>
     );
   }
   return (
-    <Card icon={<Trophy size={14} />} title={t("dashboard.leaderboard.title", { defaultValue: "Classifica" })}>
+    <Card icon={<Trophy size={14} />} title={t("dashboard.leaderboard.title")}>
       {data.scores.map((s, i) => <LeaderboardScoreBlock key={i} score={s} />)}
     </Card>
   );
@@ -656,13 +648,13 @@ function LeaderboardScoreBlock({ score }: { score: DashboardLeaderboardScoreRow 
         gap: "0.2rem 0.6rem",
         fontSize: "0.75rem",
       }}>
-        <Stat icon="⚔" label={t("dashboard.lb.killWild", { defaultValue: "Kill wild" })} value={score.kills_wild} />
-        <Stat icon="🦖" label={t("dashboard.lb.tames", { defaultValue: "Tame" })} value={score.tames} />
-        <Stat icon="🏹" label={t("dashboard.lb.killPlayer", { defaultValue: "Kill PvP" })} value={score.kills_player} />
-        <Stat icon="🔨" label={t("dashboard.lb.crafts", { defaultValue: "Craft" })} value={score.crafts} />
-        <Stat icon="🐉" label={t("dashboard.lb.killDino", { defaultValue: "Kill dino enemy" })} value={score.kills_enemy_dino} />
-        <Stat icon="🏚" label={t("dashboard.lb.structs", { defaultValue: "Strutture distrutte" })} value={score.structs_destroyed} />
-        <Stat icon="💀" label={t("dashboard.lb.deaths", { defaultValue: "Morti" })} value={score.deaths} />
+        <Stat icon="⚔" label={t("dashboard.lb.killWild")} value={score.kills_wild} />
+        <Stat icon="🦖" label={t("dashboard.lb.tames")} value={score.tames} />
+        <Stat icon="🏹" label={t("dashboard.lb.killPlayer")} value={score.kills_player} />
+        <Stat icon="🔨" label={t("dashboard.lb.crafts")} value={score.crafts} />
+        <Stat icon="🐉" label={t("dashboard.lb.killDino")} value={score.kills_enemy_dino} />
+        <Stat icon="🏚" label={t("dashboard.lb.structs")} value={score.structs_destroyed} />
+        <Stat icon="💀" label={t("dashboard.lb.deaths")} value={score.deaths} />
       </div>
     </div>
   );
@@ -683,9 +675,9 @@ function DecayCard({ data }: { data: DashboardDecay }) {
   const { t } = useTranslation();
   if (!data.has_tribe) {
     return (
-      <Card icon={<Timer size={14} />} title={t("dashboard.decay.title", { defaultValue: "Decadimento" })}>
+      <Card icon={<Timer size={14} />} title={t("dashboard.decay.title")}>
         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.decay.noTribe", { defaultValue: "Non sei in nessuna tribù registrata." })}
+          {t("dashboard.decay.noTribe")}
         </div>
       </Card>
     );
@@ -697,7 +689,7 @@ function DecayCard({ data }: { data: DashboardDecay }) {
     data.status === "expired"  ? AlertTriangle :
     data.status === "expiring" ? AlertCircle   : CheckCircle2;
   return (
-    <Card icon={<Timer size={14} />} title={t("dashboard.decay.title", { defaultValue: "Decadimento" })}>
+    <Card icon={<Timer size={14} />} title={t("dashboard.decay.title")}>
       <div style={{
         padding: "0.5rem 0.65rem", borderRadius: 6,
         background: `${statusColor}15`, border: `1px solid ${statusColor}40`,
@@ -707,14 +699,14 @@ function DecayCard({ data }: { data: DashboardDecay }) {
         <StatusIcon size={16} color={statusColor} />
         <div>
           <div style={{ fontWeight: 600, color: statusColor }}>
-            {data.status === "expired" && t("dashboard.decay.statusExpired", { defaultValue: "Scaduto" })}
-            {data.status === "expiring" && t("dashboard.decay.statusExpiring", { defaultValue: "In scadenza" })}
-            {data.status === "safe" && t("dashboard.decay.statusSafe", { defaultValue: "OK" })}
+            {data.status === "expired" && t("dashboard.decay.statusExpired")}
+            {data.status === "expiring" && t("dashboard.decay.statusExpiring")}
+            {data.status === "safe" && t("dashboard.decay.statusSafe")}
           </div>
           <div style={{ fontSize: "0.78rem" }}>{fmtCountdown(data.hours_left)}</div>
         </div>
       </div>
-      <KV label={t("dashboard.decay.lastRefreshAt", { defaultValue: "Ultimo refresh" })}
+      <KV label={t("dashboard.decay.lastRefreshAt")}
           value={data.last_refresh_at
             ? `${fmtRelative(data.last_refresh_at)}${data.last_refresh_name ? ` (${data.last_refresh_name})` : ""}`
             : "—"} />
@@ -725,7 +717,7 @@ function DecayCard({ data }: { data: DashboardDecay }) {
           borderRadius: 6, fontSize: "0.78rem", color: "#dc2626",
         }}>
           <AlertTriangle size={11} style={{ verticalAlign: "middle" }} />{" "}
-          {t("dashboard.decay.scheduledPurge", { defaultValue: "Tribù programmata per purge." })}
+          {t("dashboard.decay.scheduledPurge")}
         </div>
       )}
     </Card>
@@ -738,9 +730,9 @@ function TribeCard({ data }: { data: DashboardTribe }) {
   const { t } = useTranslation();
   if (!data.has_tribe) {
     return (
-      <Card icon={<Users size={14} />} title={t("dashboard.tribe.title", { defaultValue: "Tribù" })}>
+      <Card icon={<Users size={14} />} title={t("dashboard.tribe.title")}>
         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.tribe.empty", { defaultValue: "Nessuna tribù registrata." })}
+          {t("dashboard.tribe.empty")}
         </div>
       </Card>
     );
@@ -750,7 +742,6 @@ function TribeCard({ data }: { data: DashboardTribe }) {
     <Card
       icon={<Users size={14} />}
       title={t("dashboard.tribe.titleWithCount", {
-        defaultValue: "Tribù: {{n}} ({{m}} membri · {{o}} online)",
         n: data.tribe_name || `#${data.tribe_id ?? "?"}`,
         m: data.members.length,
         o: onlineCount,
@@ -775,7 +766,7 @@ function TribeCard({ data }: { data: DashboardTribe }) {
             </span>
             <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
               {m.online_now
-                ? t("dashboard.tribe.onlineNow", { defaultValue: "ora" })
+                ? t("dashboard.tribe.onlineNow")
                 : fmtRelative(m.last_login_iso)}
             </span>
           </div>
@@ -790,14 +781,14 @@ function TribeCard({ data }: { data: DashboardTribe }) {
 function RareDinosCard({ data }: { data: DashboardRareDinos }) {
   const { t } = useTranslation();
   return (
-    <Card icon={<Skull size={14} />} title={t("dashboard.rare.title", { defaultValue: "Rare dino (30g)" })}>
+    <Card icon={<Skull size={14} />} title={t("dashboard.rare.title")}>
       <div style={{ display: "flex", justifyContent: "space-around", marginBottom: "0.5rem" }}>
-        <BigStat value={String(data.kills_30d)} label={t("dashboard.rare.kills", { defaultValue: "Kill" })} color="#dc2626" />
-        <BigStat value={String(data.tames_30d)} label={t("dashboard.rare.tames", { defaultValue: "Tame" })} color="#16a34a" />
+        <BigStat value={String(data.kills_30d)} label={t("dashboard.rare.kills")} color="#dc2626" />
+        <BigStat value={String(data.tames_30d)} label={t("dashboard.rare.tames")} color="#16a34a" />
       </div>
       {data.recent.length === 0 ? (
         <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.rare.empty", { defaultValue: "Nessun rare dino interagito di recente." })}
+          {t("dashboard.rare.empty")}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxHeight: "clamp(160px, 35vh, 220px)", overflowY: "auto" }}>
@@ -835,15 +826,15 @@ function ActivityCard({ data }: { data: DashboardActivity }) {
   const { t } = useTranslation();
   if (data.items.length === 0) {
     return (
-      <Card icon={<ActivityIcon size={14} />} title={t("dashboard.activity.title", { defaultValue: "Attività recente" })}>
+      <Card icon={<ActivityIcon size={14} />} title={t("dashboard.activity.title")}>
         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.activity.empty", { defaultValue: "Nessuna attività recente." })}
+          {t("dashboard.activity.empty")}
         </div>
       </Card>
     );
   }
   return (
-    <Card icon={<ActivityIcon size={14} />} title={t("dashboard.activity.title", { defaultValue: "Attività recente" })}>
+    <Card icon={<ActivityIcon size={14} />} title={t("dashboard.activity.title")}>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", maxHeight: "clamp(200px, 45vh, 280px)", overflowY: "auto" }}>
         {data.items.map((e, i) => (
           <div key={i} style={{

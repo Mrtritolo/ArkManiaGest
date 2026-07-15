@@ -76,6 +76,7 @@ import SqlConsolePage from "./pages/SqlConsolePage";
 import ServersPage from "./pages/ServersPage";
 import ServerInstancesPage from "./pages/ServerInstancesPage";
 import EventLogPage from "./pages/EventLogPage";
+import AuditLogPage from "./pages/AuditLogPage";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -367,6 +368,9 @@ function App() {
               )}
               {currentUser?.role === "admin" && (
                 <Route path="/settings/discord" element={<DiscordSettingsPage />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/audit" element={<AuditLogPage />} />
               )}
 
               {/* Catch-all: redirect unknown paths to the dashboard */}

@@ -7,6 +7,50 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.2] - 2026-07-15
+
+Maintenance release from a full project/DB audit: i18n debt cleared, audit
+log finally viewable, container lifecycle fixes.
+
+### Added
+
+- **Audit Log viewer page** (`/settings/audit`, admin only). The NIS2
+  audit trail written since 4.1.0 was queryable only via API; it now has
+  a paginated, filterable UI (action/username filters) and a sidebar
+  entry.
+- **`missing` instance status.** The status probe used to map a Docker
+  container that no longer exists (`not-found`) to `stopped`, making a
+  deleted container indistinguishable from a stopped one. It now maps to
+  the new `missing` status with its own badge and translations.
+
+### Fixed
+
+- **299 UI strings were untranslatable.** Whole namespaces (`discord.*`,
+  `market.*`, player dashboard, PlayersPage bulk modals) existed only as
+  inline `defaultValue` fallbacks — some hardcoded in Italian, shown to
+  English users too. All keys are now materialized in both `en.json` and
+  `it.json` and the inline defaults removed.
+- **99 dead translation keys removed** from both locales (including the
+  whole `containersPage` namespace left over from a removed page).
+- **StatusBadge now uses i18n** (`machines.status.*`) instead of
+  hardcoded English labels.
+- **Three modals unreadable in dark mode** (Blueprints import dialog,
+  PlayersPage bulk-permission and bulk-align modals) used the translucent
+  `--bg-card` background; switched to the opaque popover surface.
+- **Machine deletion hardening**: deleting a machine that still has
+  server instances now returns a clear 409 instead of an unhandled
+  IntegrityError (500), and the machine's entry is removed from the
+  persisted `containers_map` so stale scan data no longer lingers.
+
+### Notes
+
+- Production DB cleanup performed alongside this release (stale panel
+  tables removed from the plugin DB, orphan rows on dead server_keys
+  purged, container map rescanned). Backups in
+  `/root/db-cleanup-20260715/` on the panel host.
+
+---
+
 ## [4.1.1] - 2026-07-06
 
 Hotfix release: repairs three regressions introduced by the 4.0.0/4.1.0

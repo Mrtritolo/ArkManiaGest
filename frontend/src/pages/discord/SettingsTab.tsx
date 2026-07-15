@@ -136,10 +136,7 @@ export default function SettingsTab() {
       setInitial(init);
       setForm(init);
     } catch (err: unknown) {
-      setError(extractError(err, t(
-        "discord.settings.errors.load",
-        { defaultValue: "Failed to load Discord configuration." },
-      )));
+      setError(extractError(err, t("discord.settings.errors.load")));
     } finally {
       setLoading(false);
     }
@@ -149,10 +146,7 @@ export default function SettingsTab() {
     if (!form || !initial) return;
     const body = buildUpdateBody(form, initial);
     if (Object.keys(body).length === 0) {
-      setError(t(
-        "discord.settings.noChanges",
-        { defaultValue: "No changes to save." },
-      ));
+      setError(t("discord.settings.noChanges"));
       return;
     }
     setSaving(true);
@@ -182,10 +176,7 @@ export default function SettingsTab() {
       setForm(newInitial);
       setInitial(newInitial);
     } catch (err: unknown) {
-      setError(extractError(err, t(
-        "discord.settings.errors.save",
-        { defaultValue: "Failed to save Discord configuration." },
-      )));
+      setError(extractError(err, t("discord.settings.errors.save")));
     } finally {
       setSaving(false);
     }
@@ -206,7 +197,7 @@ export default function SettingsTab() {
     return (
       <div className="pl-loading">
         <Loader2 size={20} className="pl-spin" />{" "}
-        {t("discord.settings.loading", { defaultValue: "Loading Discord configuration…" })}
+        {t("discord.settings.loading")}
       </div>
     );
   }
@@ -225,7 +216,6 @@ export default function SettingsTab() {
             {t(
               "discord.settings.savedKeys",
               {
-                defaultValue: "{{n}} keys updated: {{keys}}",
                 n: success.updatedKeys.length,
                 keys: success.updatedKeys.join(", "),
               },
@@ -236,10 +226,7 @@ export default function SettingsTab() {
             display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap",
           }}>
             <span>
-              {t(
-                "discord.settings.restartHint",
-                { defaultValue: "Pydantic loads .env at boot -- restart the service to activate the changes:" },
-              )}
+              {t("discord.settings.restartHint")}
             </span>
             <code style={{
               background: "var(--bg-card-muted, #f5f5f7)",
@@ -252,7 +239,7 @@ export default function SettingsTab() {
               onClick={() => copyText(success.hint)}
               className="btn btn-secondary btn-sm"
               style={{ padding: "0.15rem 0.35rem" }}
-              title={t("discord.config.toast.copied", { defaultValue: "Copy" })}
+              title={t("discord.config.toast.copied")}
             >
               <Copy size={11} />
             </button>
@@ -262,17 +249,17 @@ export default function SettingsTab() {
 
       {/* OAuth credentials */}
       <Section
-        title={t("discord.settings.section.oauth", { defaultValue: "OAuth credentials" })}
+        title={t("discord.settings.section.oauth")}
         icon={<KeyRound size={14} />}
       >
         <Field
-          label={t("discord.settings.field.clientId", { defaultValue: "Client ID" })}
+          label={t("discord.settings.field.clientId")}
           value={form.client_id}
           onChange={v => setForm({ ...form, client_id: v })}
           monospace
         />
         <SecretField
-          label={t("discord.settings.field.clientSecret", { defaultValue: "Client secret" })}
+          label={t("discord.settings.field.clientSecret")}
           present={config.has_client_secret}
           mode={form.client_secret_mode}
           value={form.client_secret}
@@ -282,30 +269,27 @@ export default function SettingsTab() {
           onChange={v => setForm({ ...form, client_secret: v, client_secret_mode: "set" })}
         />
         <Field
-          label={t("discord.settings.field.publicKey", { defaultValue: "Public key" })}
+          label={t("discord.settings.field.publicKey")}
           value={form.public_key}
           onChange={v => setForm({ ...form, public_key: v })}
           monospace
         />
         <Field
-          label={t("discord.settings.field.redirectUri", { defaultValue: "Redirect URI" })}
+          label={t("discord.settings.field.redirectUri")}
           value={form.redirect_uri}
           onChange={v => setForm({ ...form, redirect_uri: v })}
           monospace
-          hint={t(
-            "discord.settings.hint.redirectUri",
-            { defaultValue: "Must match EXACTLY the URI registered on the Discord Developer Portal -> OAuth2 -> Redirects." },
-          )}
+          hint={t("discord.settings.hint.redirectUri")}
         />
       </Section>
 
       {/* Bot credentials */}
       <Section
-        title={t("discord.settings.section.bot", { defaultValue: "Discord bot" })}
+        title={t("discord.settings.section.bot")}
         icon={<Bot size={14} />}
       >
         <SecretField
-          label={t("discord.settings.field.botToken", { defaultValue: "Bot token" })}
+          label={t("discord.settings.field.botToken")}
           present={config.has_bot_token}
           mode={form.bot_token_mode}
           value={form.bot_token}
@@ -315,31 +299,25 @@ export default function SettingsTab() {
           onChange={v => setForm({ ...form, bot_token: v, bot_token_mode: "set" })}
         />
         <Field
-          label={t("discord.settings.field.guildId", { defaultValue: "Guild ID" })}
+          label={t("discord.settings.field.guildId")}
           value={form.guild_id}
           onChange={v => setForm({ ...form, guild_id: v })}
           monospace
-          hint={t(
-            "discord.settings.hint.guildId",
-            { defaultValue: "Right-click the server name on Discord (with Developer Mode enabled) -> Copy Server ID." },
-          )}
+          hint={t("discord.settings.hint.guildId")}
         />
       </Section>
 
       {/* VIP sync */}
       <Section
-        title={t("discord.settings.section.vipSync", { defaultValue: "VIP sync" })}
+        title={t("discord.settings.section.vipSync")}
         icon={<Star size={14} />}
       >
         <Field
-          label={t("discord.settings.field.vipRoleId", { defaultValue: "VIP role ID" })}
+          label={t("discord.settings.field.vipRoleId")}
           value={form.vip_role_id}
           onChange={v => setForm({ ...form, vip_role_id: v })}
           monospace
-          hint={t(
-            "discord.settings.hint.vipRoleId",
-            { defaultValue: "Discord snowflake of the role mirrored from the ARK plugin DB.  Right-click the role -> Copy Role ID (Developer Mode required)." },
-          )}
+          hint={t("discord.settings.hint.vipRoleId")}
         />
       </Section>
 
@@ -354,7 +332,7 @@ export default function SettingsTab() {
       }}>
         <button onClick={() => load()} className="btn btn-secondary btn-sm">
           <RefreshCw size={12} />{" "}
-          {t("common.refresh", { defaultValue: "Refresh" })}
+          {t("common.refresh")}
         </button>
         <div style={{ display: "flex", gap: "0.4rem" }}>
           <button
@@ -363,22 +341,21 @@ export default function SettingsTab() {
             className="btn btn-secondary btn-sm"
           >
             <RotateCcw size={12} />{" "}
-            {t("discord.settings.reset", { defaultValue: "Reset" })}
+            {t("discord.settings.reset")}
           </button>
           <button
             onClick={save}
             disabled={!hasChanges || saving}
             className="btn btn-primary btn-sm"
             title={!hasChanges
-              ? t("discord.settings.saveDisabledNoChanges",
-                  { defaultValue: "No pending changes to save" })
-              : t("discord.settings.save", { defaultValue: "Save changes" })}
+              ? t("discord.settings.saveDisabledNoChanges")
+              : t("discord.settings.save")}
           >
             {saving ? <Loader2 size={12} className="pl-spin" /> : <Save size={12} />}
             {" "}
             {hasChanges
-              ? t("discord.settings.save", { defaultValue: "Save changes" })
-              : t("discord.settings.saveNothing", { defaultValue: "No changes" })}
+              ? t("discord.settings.save")
+              : t("discord.settings.saveNothing")}
           </button>
         </div>
       </div>
@@ -466,9 +443,7 @@ function RoleMappingSection() {
       setMappings(m.data);
       setRoles(r.data);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.roleMap.errors.load", {
-        defaultValue: "Failed to load role mappings.",
-      })));
+      setError(extractError(err, t("discord.roleMap.errors.load")));
     } finally {
       setLoading(false);
     }
@@ -478,9 +453,7 @@ function RoleMappingSection() {
     const role = draftRole.trim();
     const grp  = draftGroup.trim();
     if (!role || !grp) {
-      setError(t("discord.roleMap.errors.required", {
-        defaultValue: "Select a Discord role AND type the ARK group name.",
-      }));
+      setError(t("discord.roleMap.errors.required"));
       return;
     }
     setCreating(true);
@@ -497,9 +470,7 @@ function RoleMappingSection() {
       setDraftGroup("");
       await load();
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.roleMap.errors.create", {
-        defaultValue: "Failed to create mapping.",
-      })));
+      setError(extractError(err, t("discord.roleMap.errors.create")));
     } finally {
       setCreating(false);
     }
@@ -511,25 +482,19 @@ function RoleMappingSection() {
       await discordApi.updateRoleMapping(id, body);
       setMappings(prev => prev?.map(m => m.id === id ? { ...m, ...body } : m) ?? null);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.roleMap.errors.update", {
-        defaultValue: "Failed to update mapping.",
-      })));
+      setError(extractError(err, t("discord.roleMap.errors.update")));
     } finally {
       const after = new Set(savingIds); after.delete(id); setSavingIds(after);
     }
   }
 
   async function del(id: number): Promise<void> {
-    if (!confirm(t("discord.roleMap.confirmDelete", {
-      defaultValue: "Delete this mapping?",
-    }))) return;
+    if (!confirm(t("discord.roleMap.confirmDelete"))) return;
     try {
       await discordApi.deleteRoleMapping(id);
       setMappings(prev => prev?.filter(m => m.id !== id) ?? null);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.roleMap.errors.delete", {
-        defaultValue: "Failed to delete mapping.",
-      })));
+      setError(extractError(err, t("discord.roleMap.errors.delete")));
     }
   }
 
@@ -541,9 +506,7 @@ function RoleMappingSection() {
       const res = await discordApi.syncRoles();
       setSyncReport(res.data);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.roleMap.errors.sync", {
-        defaultValue: "Sync failed.",
-      })));
+      setError(extractError(err, t("discord.roleMap.errors.sync")));
     } finally {
       setSyncing(false);
     }
@@ -551,13 +514,11 @@ function RoleMappingSection() {
 
   return (
     <Section
-      title={t("discord.roleMap.title", { defaultValue: "Sincronizzazione ruoli (Discord -> ARK)" })}
+      title={t("discord.roleMap.title")}
       icon={<LinkIcon size={14} />}
     >
       <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
-        {t("discord.roleMap.explain", {
-          defaultValue: "Ogni regola dice: chi ha il ruolo Discord X riceve il gruppo permessi Y nel DB plugin (Players.PermissionGroups).  Il motore di sync NON tocca gruppi non gestiti da regole attive: la VIP-sync (env DISCORD_VIP_ROLE_ID) e i gruppi admin/custom passano intatti.",
-        })}
+        {t("discord.roleMap.explain")}
       </p>
 
       {error && (
@@ -615,13 +576,13 @@ function RoleMappingSection() {
                     disabled={saving}
                     onChange={e => patch(m.id, { is_active: e.target.checked })}
                   />
-                  {t("discord.roleMap.enabled", { defaultValue: "Attiva" })}
+                  {t("discord.roleMap.enabled")}
                 </label>
                 <button
                   onClick={() => del(m.id)}
                   className="btn btn-secondary btn-sm"
                   style={{ padding: "0.2rem 0.4rem", color: "#dc2626" }}
-                  title={t("discord.roleMap.delete", { defaultValue: "Elimina" })}
+                  title={t("discord.roleMap.delete")}
                 >
                   <Trash2 size={12} />
                 </button>
@@ -631,9 +592,7 @@ function RoleMappingSection() {
         </div>
       ) : (
         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", padding: "0.4rem 0" }}>
-          {t("discord.roleMap.empty", {
-            defaultValue: "Nessuna regola configurata.  Aggiungine una qui sotto.",
-          })}
+          {t("discord.roleMap.empty")}
         </div>
       )}
 
@@ -654,8 +613,8 @@ function RoleMappingSection() {
         >
           <option value="">
             {roles.length === 0
-              ? t("discord.roleMap.noRolesLoaded", { defaultValue: "(Bot non configurato -- nessun ruolo)" })
-              : t("discord.roleMap.pickRole", { defaultValue: "Scegli un ruolo Discord…" })}
+              ? t("discord.roleMap.noRolesLoaded")
+              : t("discord.roleMap.pickRole")}
           </option>
           {roles.filter(r => r.name !== "@everyone" && !r.managed).map(r => (
             <option key={r.id} value={r.id}>{r.name}</option>
@@ -664,7 +623,7 @@ function RoleMappingSection() {
         <span style={{ textAlign: "center", color: "var(--text-secondary)" }}>→</span>
         <input
           className="form-input"
-          placeholder={t("discord.roleMap.groupPlaceholder", { defaultValue: "Nome gruppo ARK (es. VIP)" })}
+          placeholder={t("discord.roleMap.groupPlaceholder")}
           value={draftGroup}
           onChange={e => setDraftGroup(e.target.value)}
           style={{ fontFamily: "monospace", fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
@@ -675,7 +634,7 @@ function RoleMappingSection() {
           className="btn btn-primary btn-sm"
         >
           {creating ? <Loader2 size={12} className="pl-spin" /> : <Plus size={12} />}
-          {" "}{t("discord.roleMap.add", { defaultValue: "Aggiungi" })}
+          {" "}{t("discord.roleMap.add")}
         </button>
       </div>
 
@@ -689,13 +648,12 @@ function RoleMappingSection() {
           {syncing ? <Loader2 size={12} className="pl-spin" /> : <ArrowDownUp size={12} />}
           {" "}
           {syncing
-            ? t("discord.roleMap.syncing", { defaultValue: "Sync in corso…" })
-            : t("discord.roleMap.sync",    { defaultValue: "Sync ruoli ora" })}
+            ? t("discord.roleMap.syncing")
+            : t("discord.roleMap.sync")}
         </button>
         {syncReport && (
           <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
             {t("discord.roleMap.lastRun", {
-              defaultValue: "{{s}}s · {{n}} linked, {{c}} cambiati, {{e}} errori",
               s: syncReport.duration_seconds.toFixed(1),
               n: syncReport.linked_total,
               c: syncReport.players_changed,
@@ -709,7 +667,6 @@ function RoleMappingSection() {
         <details style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
           <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
             {t("discord.roleMap.details", {
-              defaultValue: "Dettaglio cambi ({{n}})",
               n: syncReport.actions.length,
             })}
           </summary>
@@ -766,10 +723,10 @@ function SecretField({
         <span>{label}</span>
         <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
           {isCleared
-            ? t("discord.settings.secret.willClear", { defaultValue: "(will be cleared on save)" })
+            ? t("discord.settings.secret.willClear")
             : present
-              ? t("discord.settings.secret.set", { defaultValue: "(currently set)" })
-              : t("discord.settings.secret.notSet", { defaultValue: "(not set)" })}
+              ? t("discord.settings.secret.set")
+              : t("discord.settings.secret.notSet")}
         </span>
       </label>
       <div style={{ display: "flex", gap: "0.3rem", alignItems: "stretch" }}>
@@ -781,7 +738,7 @@ function SecretField({
           onChange={e => onChange(e.target.value)}
           placeholder={
             present && !isCleared
-              ? t("discord.settings.secret.placeholder", { defaultValue: "Leave empty to keep current value" })
+              ? t("discord.settings.secret.placeholder")
               : ""
           }
           style={{ flex: 1, fontFamily: "monospace" }}
@@ -803,7 +760,7 @@ function SecretField({
               className="btn btn-secondary btn-sm"
               type="button"
             >
-              {t("discord.settings.secret.undoClear", { defaultValue: "Undo clear" })}
+              {t("discord.settings.secret.undoClear")}
             </button>
           ) : (
             <button
@@ -811,9 +768,9 @@ function SecretField({
               className="btn btn-secondary btn-sm"
               type="button"
               style={{ color: "#dc2626" }}
-              title={t("discord.settings.secret.clearTitle", { defaultValue: "Clear this secret on save" })}
+              title={t("discord.settings.secret.clearTitle")}
             >
-              {t("discord.settings.secret.clear", { defaultValue: "Clear" })}
+              {t("discord.settings.secret.clear")}
             </button>
           )
         )}

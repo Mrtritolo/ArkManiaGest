@@ -104,7 +104,7 @@ export default function MembersTab() {
       setMembers(m.data);
       setHasMore(m.data.length >= PAGE_SIZE);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.members.errors.load", "Failed to load guild data.")));
+      setError(extractError(err, t("discord.members.errors.load")));
     } finally {
       setLoading(false);
     }
@@ -120,7 +120,7 @@ export default function MembersTab() {
       setMembers(prev => [...prev, ...res.data]);
       setHasMore(res.data.length >= PAGE_SIZE);
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.members.errors.loadMore", "Failed to load more members.")));
+      setError(extractError(err, t("discord.members.errors.loadMore")));
     } finally {
       setLoadingMore(false);
     }
@@ -129,7 +129,7 @@ export default function MembersTab() {
   async function handleAssignRole(userId: string, roleId: string): Promise<void> {
     try {
       await discordApi.assignRole(userId, roleId);
-      setSuccess(t("discord.members.toast.roleAssigned", "Role assigned."));
+      setSuccess(t("discord.members.toast.roleAssigned"));
       // Update the local row in-place so the chip appears immediately
       // without a full reload.
       setMembers(prev => prev.map(m =>
@@ -138,7 +138,7 @@ export default function MembersTab() {
           : m,
       ));
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.members.errors.assignRole", "Failed to assign role.")));
+      setError(extractError(err, t("discord.members.errors.assignRole")));
     } finally {
       setRolePopoverFor(null);
     }
@@ -147,29 +147,28 @@ export default function MembersTab() {
   async function handleRemoveRole(userId: string, roleId: string): Promise<void> {
     try {
       await discordApi.removeRole(userId, roleId);
-      setSuccess(t("discord.members.toast.roleRemoved", "Role removed."));
+      setSuccess(t("discord.members.toast.roleRemoved"));
       setMembers(prev => prev.map(m =>
         m.user_id === userId
           ? { ...m, roles: m.roles.filter(r => r !== roleId) }
           : m,
       ));
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.members.errors.removeRole", "Failed to remove role.")));
+      setError(extractError(err, t("discord.members.errors.removeRole")));
     }
   }
 
   async function handleKick(m: DiscordGuildMember): Promise<void> {
     if (!confirm(
       t("discord.members.confirmKick",
-        "Kick {{u}} from the guild?",
         { u: m.global_name || m.username || m.user_id }),
     )) return;
     try {
       await discordApi.kickMember(m.user_id);
-      setSuccess(t("discord.members.toast.kicked", "Member kicked."));
+      setSuccess(t("discord.members.toast.kicked"));
       setMembers(prev => prev.filter(x => x.user_id !== m.user_id));
     } catch (err: unknown) {
-      setError(extractError(err, t("discord.members.errors.kick", "Failed to kick member.")));
+      setError(extractError(err, t("discord.members.errors.kick")));
     }
   }
 
@@ -207,13 +206,12 @@ export default function MembersTab() {
           )}
           <div>
             <div style={{ fontWeight: 600 }}>
-              {guild?.name ?? t("discord.members.banner.loading", "Loading guild…")}
+              {guild?.name ?? t("discord.members.banner.loading")}
             </div>
             <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
               {guild
                 ? t(
                     "discord.members.banner.counts",
-                    "{{m}} members · {{p}} online",
                     {
                       m: guild.approximate_member_count ?? "?",
                       p: guild.approximate_presence_count ?? "?",
@@ -224,30 +222,27 @@ export default function MembersTab() {
           </div>
         </div>
         <button onClick={loadAll} className="btn btn-secondary btn-sm">
-          <RefreshCw size={12} /> {t("common.refresh", "Refresh")}
+          <RefreshCw size={12} /> {t("common.refresh")}
         </button>
       </div>
 
       {loading ? (
         <div className="pl-loading">
           <Loader2 size={20} className="pl-spin" />{" "}
-          {t("discord.members.loading", "Loading guild members…")}
+          {t("discord.members.loading")}
         </div>
       ) : members.length === 0 ? (
         <div className="pl-loading" style={{ textAlign: "left" }}>
-          {t(
-            "discord.members.empty",
-            "No members visible.  Make sure the bot has the GUILD_MEMBERS privileged intent enabled in the Discord Developer Portal.",
-          )}
+          {t("discord.members.empty")}
         </div>
       ) : (
         <>
           <table className="pl-table">
             <thead>
               <tr>
-                <th>{t("discord.members.col.user", "User")}</th>
-                <th>{t("discord.members.col.roles", "Roles")}</th>
-                <th style={{ width: 110 }}>{t("discord.members.col.joined", "Joined")}</th>
+                <th>{t("discord.members.col.user")}</th>
+                <th>{t("discord.members.col.roles")}</th>
+                <th style={{ width: 110 }}>{t("discord.members.col.joined")}</th>
                 <th style={{ width: 200 }}></th>
               </tr>
             </thead>
@@ -280,7 +275,7 @@ export default function MembersTab() {
                   ? <Loader2 size={12} className="pl-spin" />
                   : <Plus size={12} />}
                 {" "}
-                {t("discord.members.loadMore", "Load more")}
+                {t("discord.members.loadMore")}
               </button>
             </div>
           )}
@@ -291,7 +286,7 @@ export default function MembersTab() {
         <DmModal
           member={dmFor}
           onClose={() => setDmFor(null)}
-          onSent={() => { setDmFor(null); setSuccess(t("discord.members.toast.dmSent", "DM sent.")); }}
+          onSent={() => { setDmFor(null); setSuccess(t("discord.members.toast.dmSent")); }}
           onError={msg => { setDmFor(null); setError(msg); }}
         />
       )}
@@ -301,7 +296,7 @@ export default function MembersTab() {
           onClose={() => setBanFor(null)}
           onBanned={() => {
             setBanFor(null);
-            setSuccess(t("discord.members.toast.banned", "Member banned."));
+            setSuccess(t("discord.members.toast.banned"));
             setMembers(prev => prev.filter(x => x.user_id !== banFor.user_id));
           }}
           onError={msg => { setBanFor(null); setError(msg); }}
@@ -383,7 +378,7 @@ function MemberRow({
                   cursor: "pointer",
                 }}
                 onClick={() => onRemoveRole(r.id)}
-                title={t("discord.members.action.removeRole", "Click to remove")}
+                title={t("discord.members.action.removeRole")}
               >
                 <Shield size={9} /> {r.name}
                 <X size={9} style={{ marginLeft: 3, opacity: 0.7 }} />
@@ -395,7 +390,7 @@ function MemberRow({
               className="btn btn-secondary btn-sm"
               style={{ padding: "0.15rem 0.35rem" }}
               onClick={onTogglePopover}
-              title={t("discord.members.action.assignRole", "Assign role")}
+              title={t("discord.members.action.assignRole")}
             >
               <Plus size={11} />
             </button>
@@ -418,7 +413,7 @@ function MemberRow({
               >
                 {assignable.length === 0 ? (
                   <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-                    {t("discord.members.popover.noRoles", "No roles available.")}
+                    {t("discord.members.popover.noRoles")}
                   </div>
                 ) : assignable.map(r => {
                   const c = roleColorHex(r.color);
@@ -458,7 +453,7 @@ function MemberRow({
           <button
             className="btn btn-secondary btn-sm"
             style={{ padding: "0.2rem 0.4rem" }}
-            title={t("discord.members.action.dm", "Send DM")}
+            title={t("discord.members.action.dm")}
             onClick={onDm}
           >
             <MessageSquare size={12} />
@@ -466,7 +461,7 @@ function MemberRow({
           <button
             className="btn btn-secondary btn-sm"
             style={{ padding: "0.2rem 0.4rem", color: "#d97706" }}
-            title={t("discord.members.action.kick", "Kick")}
+            title={t("discord.members.action.kick")}
             onClick={onKick}
           >
             <UserMinus size={12} />
@@ -474,7 +469,7 @@ function MemberRow({
           <button
             className="btn btn-secondary btn-sm"
             style={{ padding: "0.2rem 0.4rem", color: "#dc2626" }}
-            title={t("discord.members.action.ban", "Ban")}
+            title={t("discord.members.action.ban")}
             onClick={onBan}
           >
             <BanIcon size={12} />
@@ -508,7 +503,7 @@ function DmModal({
       await discordApi.dmUser(member.user_id, c);
       onSent();
     } catch (err: unknown) {
-      onError(extractError(err, t("discord.members.errors.dm", "Failed to send DM.")));
+      onError(extractError(err, t("discord.members.errors.dm")));
     } finally {
       setSaving(false);
     }
@@ -517,17 +512,17 @@ function DmModal({
   const display = member.global_name || member.username || member.user_id;
   return (
     <ModalShell onClose={onClose} title={
-      t("discord.members.modal.dmTitle", "Send DM to {{u}}", { u: display })
+      t("discord.members.modal.dmTitle", { u: display })
     }>
       <div className="form-group">
-        <label className="form-label">{t("discord.members.modal.message", "Message")}</label>
+        <label className="form-label">{t("discord.members.modal.message")}</label>
         <textarea
           autoFocus
           className="form-input"
           value={content}
           onChange={e => setContent(e.target.value.slice(0, 2000))}
           rows={6}
-          placeholder={t("discord.members.modal.dmPh", "Plain text only.  Markdown is supported.")}
+          placeholder={t("discord.members.modal.dmPh")}
           style={{ resize: "vertical", minHeight: 120 }}
         />
         <div style={{
@@ -538,14 +533,14 @@ function DmModal({
         </div>
       </div>
       <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel", "Cancel")}</button>
+        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel")}</button>
         <button
           onClick={send}
           disabled={saving || !content.trim()}
           className="btn btn-primary btn-sm"
         >
           {saving ? <Loader2 size={14} className="pl-spin" /> : <Send size={14} />}
-          {" "}{t("discord.members.modal.dmSend", "Send")}
+          {" "}{t("discord.members.modal.dmSend")}
         </button>
       </div>
     </ModalShell>
@@ -576,7 +571,7 @@ function BanModal({
       });
       onBanned();
     } catch (err: unknown) {
-      onError(extractError(err, t("discord.members.errors.ban", "Failed to ban member.")));
+      onError(extractError(err, t("discord.members.errors.ban")));
     } finally {
       setSaving(false);
     }
@@ -585,37 +580,37 @@ function BanModal({
   const display = member.global_name || member.username || member.user_id;
   return (
     <ModalShell onClose={onClose} title={
-      t("discord.members.modal.banTitle", "Ban {{u}}", { u: display })
+      t("discord.members.modal.banTitle", { u: display })
     }>
       <div className="form-group">
         <label className="form-label">
-          {t("discord.members.modal.reason", "Audit-log reason (optional)")}
+          {t("discord.members.modal.reason")}
         </label>
         <input
           className="form-input"
           value={reason}
           maxLength={512}
           onChange={e => setReason(e.target.value)}
-          placeholder={t("discord.members.modal.reasonPh", "e.g. spam, raid, violation of server rules")}
+          placeholder={t("discord.members.modal.reasonPh")}
         />
       </div>
       <div className="form-group">
         <label className="form-label">
-          {t("discord.members.modal.purge", "Delete recent messages")}
+          {t("discord.members.modal.purge")}
         </label>
         <select
           className="form-input"
           value={purgeDays}
           onChange={e => setPurgeDays(Number(e.target.value))}
         >
-          <option value={0}>{t("discord.members.modal.purgeNone", "Don't delete")}</option>
-          <option value={1}>{t("discord.members.modal.purge1d", "Last 24 hours")}</option>
-          <option value={3}>{t("discord.members.modal.purge3d", "Last 3 days")}</option>
-          <option value={7}>{t("discord.members.modal.purge7d", "Last 7 days")}</option>
+          <option value={0}>{t("discord.members.modal.purgeNone")}</option>
+          <option value={1}>{t("discord.members.modal.purge1d")}</option>
+          <option value={3}>{t("discord.members.modal.purge3d")}</option>
+          <option value={7}>{t("discord.members.modal.purge7d")}</option>
         </select>
       </div>
       <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel", "Cancel")}</button>
+        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel")}</button>
         <button
           onClick={ban}
           disabled={saving}
@@ -623,7 +618,7 @@ function BanModal({
           style={{ background: "#dc2626", borderColor: "#dc2626" }}
         >
           {saving ? <Loader2 size={14} className="pl-spin" /> : <BanIcon size={14} />}
-          {" "}{t("discord.members.modal.banConfirm", "Ban")}
+          {" "}{t("discord.members.modal.banConfirm")}
         </button>
       </div>
     </ModalShell>

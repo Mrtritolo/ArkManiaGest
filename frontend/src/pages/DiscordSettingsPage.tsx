@@ -38,13 +38,10 @@ export default function DiscordSettingsPage() {
             style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
           >
             <DiscordIcon size={22} color="#5865F2" />
-            {t("discord.title", "Discord")}
+            {t("discord.title")}
           </h1>
           <p className="pl-subtitle">
-            {t(
-              "discord.subtitle",
-              "Manage Discord accounts, ARK player links and bot interactions.",
-            )}
+            {t("discord.subtitle")}
           </p>
         </div>
       </div>
@@ -63,25 +60,25 @@ export default function DiscordSettingsPage() {
           active={tab === "accounts"}
           onClick={() => setTab("accounts")}
           icon={<UsersIcon size={14} />}
-          label={t("discord.tab.accounts", "Accounts")}
+          label={t("discord.tab.accounts")}
         />
         <TabButton
           active={tab === "members"}
           onClick={() => setTab("members")}
           icon={<DiscordIcon size={14} />}
-          label={t("discord.tab.members", "Guild members")}
+          label={t("discord.tab.members")}
         />
         <TabButton
           active={tab === "config"}
           onClick={() => setTab("config")}
           icon={<Sliders size={14} />}
-          label={t("discord.tab.config", "Configuration")}
+          label={t("discord.tab.config")}
         />
         <TabButton
           active={tab === "settings"}
           onClick={() => setTab("settings")}
           icon={<Cog size={14} />}
-          label={t("discord.tab.settings", { defaultValue: "Modifica" })}
+          label={t("discord.tab.settings")}
         />
       </div>
 

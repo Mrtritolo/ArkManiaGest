@@ -698,14 +698,13 @@ export default function PlayersPage() {
     try {
       const res = await playersApi.resolveAmbiguousNames(resolutions)
       setSuccess(t('players.ambiguous.applied', {
-        defaultValue: '{{n}} nomi applicati.',
         n: res.data.applied,
       }))
       setAmbiguousList(null); setChosenNames({})
       if (res.data.applied > 0) { loadPlayers(); loadStats() }
     } catch (err: any) {
       setError(err.response?.data?.detail
-        || t('players.ambiguous.errors.apply', { defaultValue: 'Failed to apply choices.' }))
+        || t('players.ambiguous.errors.apply'))
     } finally {
       setApplyingAmbig(false)
     }
@@ -723,7 +722,6 @@ export default function PlayersPage() {
         selected.map(o => ({ eos_id: o.eos_id, player_name: o.player_name || null })),
       )
       setSuccess(t('players.importMissing.done', {
-        defaultValue: 'Importati {{n}} giocatori ({{s}} già presenti).',
         n: res.data.inserted,
         s: res.data.skipped_existing,
       }))
@@ -735,7 +733,7 @@ export default function PlayersPage() {
       loadPlayers(); loadStats()
     } catch (err: any) {
       setError(err.response?.data?.detail
-        || t('players.importMissing.errors.apply', { defaultValue: 'Import failed.' }))
+        || t('players.importMissing.errors.apply'))
     } finally {
       setImporting(false)
     }
@@ -751,7 +749,7 @@ export default function PlayersPage() {
       setWipePreview(res.data)
     } catch (err: any) {
       setError(err.response?.data?.detail
-        || t('players.wipe.errors.preview', { defaultValue: 'Failed to scan files.' }))
+        || t('players.wipe.errors.preview'))
       setWipeOpen(false)
     } finally {
       setWipeLoading(false)
@@ -764,7 +762,6 @@ export default function PlayersPage() {
     try {
       const res = await playersApi.deleteCharacterFiles(selectedPlayer.eos_id)
       setSuccess(t('players.wipe.done', {
-        defaultValue: 'Eliminati {{n}} file personaggio sul cluster.',
         n: res.data.total_deleted,
       }))
       if (res.data.errors?.length > 0) {
@@ -774,7 +771,7 @@ export default function PlayersPage() {
       setWipePreview(null)
     } catch (err: any) {
       setError(err.response?.data?.detail
-        || t('players.wipe.errors.delete', { defaultValue: 'Wipe failed.' }))
+        || t('players.wipe.errors.delete'))
     } finally {
       setWiping(false)
     }
@@ -1091,7 +1088,6 @@ export default function PlayersPage() {
           <AlertCircle size={14} />
           <span style={{ flex: 1 }}>
             {t('players.importMissing.banner', {
-              defaultValue: 'Trovati {{n}} profili .arkprofile senza riga in Players. Vuoi importarli?',
               n: notMatchedList.length,
             })}
           </span>
@@ -1101,7 +1097,6 @@ export default function PlayersPage() {
           >
             <Download size={12} />{' '}
             {t('players.importMissing.openModal', {
-              defaultValue: 'Importa giocatori mancanti ({{n}})',
               n: notMatchedList.length,
             })}
           </button>
@@ -1337,13 +1332,13 @@ export default function PlayersPage() {
                               cursor: 'pointer', padding: '0.1rem 0.4rem',
                               marginLeft: '0.4rem',
                             }}
-                            title={t('players.discord.chipTitle', { defaultValue: 'Discord linked — click to DM' })}
+                            title={t('players.discord.chipTitle')}
                           >
                             <DiscordIcon size={9} />
                             <span style={{ fontSize: '0.7rem' }}>
                               {discordByEos.get(p.eos_id)?.discord_global_name
                                 ?? discordByEos.get(p.eos_id)?.discord_username
-                                ?? t('players.discord.linked', { defaultValue: 'linked' })}
+                                ?? t('players.discord.linked')}
                             </span>
                           </button>
                         )}
@@ -1400,9 +1395,7 @@ export default function PlayersPage() {
               <button
                 onClick={openWipeModal}
                 className="pl-btn-icon"
-                title={t('players.detail.wipeTooltip', {
-                  defaultValue: 'Elimina personaggio cluster-wide (.arkprofile)',
-                })}
+                title={t('players.detail.wipeTooltip')}
                 style={{ color: 'var(--danger)' }}
               >
                 <Skull size={16} />
@@ -1696,7 +1689,7 @@ export default function PlayersPage() {
           <div
             onClick={e => e.stopPropagation()}
             className="card"
-            style={{ width: 480, maxWidth: '92vw', padding: '1.25rem' }}
+            style={{ width: 480, maxWidth: '92vw', padding: '1.25rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}
           >
             <h3 style={{ marginTop: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Clock size={16} /> {t('players.bulkPerm.modalTitle', { count: selectedIds.size })}
@@ -1817,7 +1810,7 @@ export default function PlayersPage() {
           <div
             onClick={e => e.stopPropagation()}
             className="card"
-            style={{ width: 520, maxWidth: '92vw', padding: '1.25rem' }}
+            style={{ width: 520, maxWidth: '92vw', padding: '1.25rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}
           >
             <h3 style={{ marginTop: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <ArrowUpDown size={16} /> {t('players.bulkAlign.modalTitle', { count: selectedIds.size })}
@@ -1969,7 +1962,6 @@ export default function PlayersPage() {
               <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <AlertCircle size={16} color="#d97706" />
                 {t('players.ambiguous.title', {
-                  defaultValue: 'Più personaggi trovati per {{n}} giocatori',
                   n: ambiguousList.length,
                 })}
               </span>
@@ -1984,10 +1976,7 @@ export default function PlayersPage() {
             </div>
 
             <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
-              {t('players.ambiguous.intro', {
-                defaultValue:
-                  'Per ognuno di questi giocatori ho trovato più di un nome distinto sul cluster (un personaggio diverso per server, oppure un rename non propagato). Scegli il nome corretto per ciascuno e premi Applica.',
-              })}
+              {t('players.ambiguous.intro')}
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '0.5rem 0' }}>
@@ -2005,9 +1994,7 @@ export default function PlayersPage() {
                       {row.eos_id}
                     </span>
                     <span style={{ marginLeft: '0.6rem', color: 'var(--text-secondary)' }}>
-                      {t('players.ambiguous.currentName', {
-                        defaultValue: 'attuale nel DB: ',
-                      })}
+                      {t('players.ambiguous.currentName')}
                       <strong style={{ color: 'var(--text)' }}>{row.current_name || '—'}</strong>
                     </span>
                   </div>
@@ -2066,9 +2053,7 @@ export default function PlayersPage() {
                         checked={(chosenNames[row.player_id] || '') === ''}
                         onChange={() => setChosenNames(prev => ({ ...prev, [row.player_id]: '' }))}
                       />
-                      {t('players.ambiguous.skipThis', {
-                        defaultValue: 'Non aggiornare ora (lascia il nome attuale nel DB)',
-                      })}
+                      {t('players.ambiguous.skipThis')}
                     </label>
                   </div>
                 </div>
@@ -2081,7 +2066,7 @@ export default function PlayersPage() {
                 disabled={applyingAmbig}
                 className="btn btn-ghost btn-sm"
               >
-                {t('common.cancel', { defaultValue: 'Annulla' })}
+                {t('common.cancel')}
               </button>
               <button
                 onClick={applyAmbiguousResolutions}
@@ -2089,9 +2074,8 @@ export default function PlayersPage() {
                 className="btn btn-primary btn-sm"
               >
                 {applyingAmbig
-                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.ambiguous.applying', { defaultValue: 'Applico…' })}</>
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.ambiguous.applying')}</>
                   : <><Save size={12} /> {t('players.ambiguous.apply', {
-                      defaultValue: 'Applica scelte ({{n}})',
                       n: Object.values(chosenNames).filter(v => v && v.trim()).length,
                     })}</>}
               </button>
@@ -2145,7 +2129,6 @@ export default function PlayersPage() {
               {t(
                 'players.discord.linkedTo',
                 {
-                  defaultValue: 'Linked to ARK player {{p}}',
                   p: discordChipFor.player.name || discordChipFor.player.eos_id,
                 },
               )}
@@ -2153,7 +2136,7 @@ export default function PlayersPage() {
 
             <div className="form-group">
               <label className="form-label">
-                {t('players.discord.dmLabel', { defaultValue: 'Send a Discord DM' })}
+                {t('players.discord.dmLabel')}
               </label>
               <textarea
                 autoFocus
@@ -2161,7 +2144,7 @@ export default function PlayersPage() {
                 value={dmContent}
                 onChange={e => setDmContent(e.target.value.slice(0, 2000))}
                 rows={5}
-                placeholder={t('players.discord.dmPh', { defaultValue: 'Plain text — sent through your bot.' })}
+                placeholder={t('players.discord.dmPh')}
                 style={{ resize: 'vertical', minHeight: 100 }}
               />
               <div style={{
@@ -2179,11 +2162,11 @@ export default function PlayersPage() {
                 className="btn btn-secondary btn-sm"
                 style={{ textDecoration: 'none' }}
               >
-                {t('players.discord.openSettings', { defaultValue: 'Open Discord settings' })}
+                {t('players.discord.openSettings')}
               </a>
               <div style={{ display: 'flex', gap: '0.4rem' }}>
                 <button onClick={() => setDiscordChipFor(null)} className="btn btn-ghost btn-sm">
-                  {t('common.cancel', { defaultValue: 'Cancel' })}
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={async () => {
@@ -2192,12 +2175,12 @@ export default function PlayersPage() {
                     setDmSending(true)
                     try {
                       await discordApi.dmUser(discordChipFor.account.discord_user_id, c)
-                      setSuccess(t('players.discord.dmSent', { defaultValue: 'DM sent.' }))
+                      setSuccess(t('players.discord.dmSent'))
                       setDiscordChipFor(null)
                     } catch (err: unknown) {
                       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
                       setError(typeof detail === 'string' ? detail
-                        : t('players.discord.dmFailed', { defaultValue: 'Failed to send DM.' }))
+                        : t('players.discord.dmFailed'))
                     } finally {
                       setDmSending(false)
                     }
@@ -2207,7 +2190,7 @@ export default function PlayersPage() {
                 >
                   {dmSending ? <Loader2 size={12} className="pl-spin" /> : <DiscordIcon size={12} />}
                   {' '}
-                  {t('players.discord.dmSend', { defaultValue: 'Send DM' })}
+                  {t('players.discord.dmSend')}
                 </button>
               </div>
             </div>
@@ -2245,7 +2228,6 @@ export default function PlayersPage() {
               <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Download size={16} />
                 {t('players.importMissing.title', {
-                  defaultValue: 'Importa {{n}} giocatori mancanti',
                   n: notMatchedList.length,
                 })}
               </span>
@@ -2260,9 +2242,7 @@ export default function PlayersPage() {
             </div>
 
             <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
-              {t('players.importMissing.intro', {
-                defaultValue: 'Verranno inserite righe in `Players` con `PermissionGroups=Default,`.  Le entry già presenti vengono saltate automaticamente.',
-              })}
+              {t('players.importMissing.intro')}
             </div>
 
             <div style={{
@@ -2274,14 +2254,14 @@ export default function PlayersPage() {
                 disabled={importing}
                 className="btn btn-secondary btn-sm"
               >
-                {t('players.importMissing.checkAll', { defaultValue: 'Seleziona tutti' })}
+                {t('players.importMissing.checkAll')}
               </button>
               <button
                 onClick={() => setImportChecked({})}
                 disabled={importing}
                 className="btn btn-secondary btn-sm"
               >
-                {t('players.importMissing.uncheckAll', { defaultValue: 'Deseleziona tutti' })}
+                {t('players.importMissing.uncheckAll')}
               </button>
               <span style={{ marginLeft: 'auto', color: 'var(--text-secondary)' }}>
                 {Object.values(importChecked).filter(Boolean).length} / {notMatchedList.length}
@@ -2331,7 +2311,7 @@ export default function PlayersPage() {
                 disabled={importing}
                 className="btn btn-ghost btn-sm"
               >
-                {t('common.cancel', { defaultValue: 'Annulla' })}
+                {t('common.cancel')}
               </button>
               <button
                 onClick={applyImportMissing}
@@ -2339,9 +2319,8 @@ export default function PlayersPage() {
                 className="btn btn-primary btn-sm"
               >
                 {importing
-                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.importMissing.importing', { defaultValue: 'Importo…' })}</>
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.importMissing.importing')}</>
                   : <><Download size={12} /> {t('players.importMissing.confirm', {
-                      defaultValue: 'Importa ({{n}})',
                       n: Object.values(importChecked).filter(Boolean).length,
                     })}</>}
               </button>
@@ -2380,9 +2359,7 @@ export default function PlayersPage() {
             }}>
               <span style={{ fontWeight: 600, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Skull size={16} />
-                {t('players.wipe.title', {
-                  defaultValue: 'Elimina personaggio cluster-wide',
-                })}
+                {t('players.wipe.title')}
               </span>
               <button
                 onClick={() => { setWipeOpen(false); setWipePreview(null) }}
@@ -2395,13 +2372,11 @@ export default function PlayersPage() {
             </div>
 
             <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              {t('players.wipe.intro', {
-                defaultValue: 'Verranno cancellati tutti i file `.arkprofile` di questo EOS dai SavedArks di ogni container.  Il giocatore al prossimo login spawn-erà come personaggio nuovo.  La riga in `Players` (permessi) NON viene toccata.',
-              })}
+              {t('players.wipe.intro')}
             </div>
 
             <div style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-              <strong>{t('players.wipe.player', { defaultValue: 'Giocatore:' })}</strong>{' '}
+              <strong>{t('players.wipe.player')}</strong>{' '}
               {selectedPlayer?.name || '(no name)'}
               <br />
               <strong>EOS:</strong>{' '}
@@ -2420,17 +2395,16 @@ export default function PlayersPage() {
               {wipeLoading || !wipePreview ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)' }}>
                   <Loader2 size={12} className="pl-spin" />{' '}
-                  {t('players.wipe.scanning', { defaultValue: 'Scansiono i container…' })}
+                  {t('players.wipe.scanning')}
                 </div>
               ) : wipePreview.total_files === 0 ? (
                 <div style={{ color: 'var(--text-secondary)' }}>
-                  {t('players.wipe.noFiles', { defaultValue: 'Nessun file .arkprofile trovato per questo EOS.  Il personaggio è già pulito.' })}
+                  {t('players.wipe.noFiles')}
                 </div>
               ) : (
                 <>
                   <div style={{ marginBottom: '0.4rem', fontWeight: 600 }}>
                     {t('players.wipe.found', {
-                      defaultValue: '{{n}} file da eliminare:',
                       n: wipePreview.total_files,
                     })}
                   </div>
@@ -2458,7 +2432,7 @@ export default function PlayersPage() {
                 disabled={wiping}
                 className="btn btn-ghost btn-sm"
               >
-                {t('common.cancel', { defaultValue: 'Annulla' })}
+                {t('common.cancel')}
               </button>
               <button
                 onClick={confirmWipe}
@@ -2467,9 +2441,8 @@ export default function PlayersPage() {
                 style={{ background: '#dc2626', borderColor: '#dc2626' }}
               >
                 {wiping
-                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.wipe.deleting', { defaultValue: 'Elimino…' })}</>
+                  ? <><Loader2 size={12} className="pl-spin" /> {t('players.wipe.deleting')}</>
                   : <><Skull size={12} /> {t('players.wipe.confirm', {
-                      defaultValue: 'Elimina {{n}} file',
                       n: wipePreview?.total_files ?? 0,
                     })}</>}
               </button>

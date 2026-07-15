@@ -5,6 +5,8 @@
  * Unknown status values fall back to the "unknown" appearance.
  */
 
+import { useTranslation } from "react-i18next";
+
 interface StatusBadgeProps {
   /** One of: "online" | "offline" | "error" | "unknown" | "testing" */
   status: string;
@@ -12,28 +14,24 @@ interface StatusBadgeProps {
   size?: "sm" | "md";
 }
 
-interface BadgeAppearance {
-  label: string;
-  className: string;
-}
-
-const STATUS_MAP: Record<string, BadgeAppearance> = {
-  online:  { label: "Online",   className: "badge-online" },
-  offline: { label: "Offline",  className: "badge-offline" },
-  error:   { label: "Error",    className: "badge-error" },
-  unknown: { label: "N/A",      className: "badge-unknown" },
-  testing: { label: "Testing…", className: "badge-testing" },
+const STATUS_CLASS: Record<string, string> = {
+  online: "badge-online",
+  offline: "badge-offline",
+  error: "badge-error",
+  unknown: "badge-unknown",
+  testing: "badge-testing",
 };
 
 export default function StatusBadge({ status, size = "sm" }: StatusBadgeProps) {
-  const appearance = STATUS_MAP[status] ?? STATUS_MAP.unknown;
+  const { t } = useTranslation();
+  const key = STATUS_CLASS[status] ? status : "unknown";
 
   return (
     <span
-      className={`badge ${appearance.className}${size === "md" ? " badge-md" : ""}`}
+      className={`badge ${STATUS_CLASS[key]}${size === "md" ? " badge-md" : ""}`}
     >
       <span className="badge-dot" />
-      {appearance.label}
+      {t(`machines.status.${key}`)}
     </span>
   );
 }

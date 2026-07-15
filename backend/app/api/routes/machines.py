@@ -18,6 +18,8 @@ from app.core.encryption import encrypt_value
 from app.core.store import (
     get_machine_async,
     get_all_machines_async,
+    get_plugin_config_sync,
+    save_plugin_config_sync,
     _row_to_machine_dict,
 )
 from app.schemas.ssh_machine import (
@@ -285,10 +287,34 @@ async def delete_machine(machine_id: int, db: AsyncSession = Depends(get_db)):
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found.")
 
+    # Server instances hold an ON DELETE RESTRICT FK to the machine; fail with
+    # a clear 409 instead of letting the IntegrityError bubble up as a 500.
+    result = await db.execute(
+        text("SELECT COUNT(*) FROM ARKM_server_instances WHERE machine_id = :mid"),
+        {"mid": machine_id},
+    )
+    instance_count = result.scalar() or 0
+    if instance_count:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Machine '{machine['name']}' still has {instance_count} server "
+                f"instance(s). Delete or reassign them first."
+            ),
+        )
+
     await db.execute(
         text("DELETE FROM arkmaniagest_machines WHERE id = :mid"),
         {"mid": machine_id},
     )
+
+    # Drop the machine's entry from the persisted container map so stale scan
+    # data does not linger in settings after the machine is gone.
+    cmap = get_plugin_config_sync("containers_map") or {}
+    if str(machine_id) in cmap.get("machines", {}):
+        del cmap["machines"][str(machine_id)]
+        save_plugin_config_sync("containers_map", cmap)
+
     return {"deleted": True, "id": machine_id, "name": machine["name"]}
 
 

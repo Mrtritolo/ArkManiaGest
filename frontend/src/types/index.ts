@@ -333,7 +333,8 @@ export type InstanceStatus =
   | "stopping"
   | "stopped"
   | "updating"
-  | "error";
+  | "error"
+  | "missing";
 
 export type UpdateCoordinationRole = "MASTER" | "FOLLOWER";
 

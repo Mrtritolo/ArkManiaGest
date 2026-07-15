@@ -1,32 +1,23 @@
 {
   "common": {
-    "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
     "duplicate": "Duplicate",
     "close": "Close",
-    "back": "Back",
-    "next": "Next",
     "loading": "Loading…",
-    "saving": "Saving…",
-    "search": "Search",
-    "yes": "Yes",
-    "no": "No",
     "confirm": "Confirm",
-    "retry": "Retry",
     "refresh": "Refresh",
     "language": "Language",
     "themeLight": "Switch to light theme",
-    "themeDark": "Switch to dark theme"
+    "themeDark": "Switch to dark theme",
+    "showAll": "Show all"
   },
   "nav": {
     "dashboard": "Dashboard",
     "machines": "SSH Machines",
-    "containers": "Containers",
     "servers": "Servers",
     "instances": "ARK Instances",
-    "mariadb": "MariaDB Instances",
     "players": "Players",
     "online": "Online players",
     "bans": "Bans",
@@ -45,18 +36,17 @@
     "settings": "Settings",
     "sqlConsole": "SQL Console",
     "discord": "Discord",
+    "auditLog": "Audit Log",
     "myDashboard": "My dashboard",
-    "market":      "Marketplace",
+    "market": "Marketplace",
     "logout": "Log out"
   },
   "auth": {
     "login": {
-      "title": "Sign in",
       "username": "Username",
       "password": "Password",
       "submit": "Sign in",
       "submitting": "Signing in…",
-      "errorInvalid": "Invalid username or password.",
       "errorNetwork": "Cannot reach the backend. Please try again.",
       "or": "OR",
       "discordButton": "Sign in with Discord",
@@ -79,7 +69,6 @@
     "submit": "Create Account & Start",
     "submitting": "Creating…",
     "errorGeneric": "Setup failed",
-    "errorAlreadyDone": "Setup already completed.",
     "placeholder": {
       "username": "e.g. admin",
       "displayName": "e.g. Alessio",
@@ -126,7 +115,6 @@
     }
   },
   "dashboard": {
-    "title": "Dashboard",
     "subtitle": "Cluster management panel · Ark: Survival Ascended",
     "stat": {
       "onlinePlayers": "Online Players",
@@ -138,16 +126,77 @@
     },
     "card": {
       "onlinePlayers": "Online Players",
-      "serverStatus": "Server Status",
       "viewAll": "View all →",
-      "serverforgeLink": "ServerForge →",
       "noPlayers": "No players connected",
-      "noServers": "No servers found",
-      "serversOnlineCount": "{{count}} online",
-      "serversOfflineCount": "{{count}} offline",
-      "empty": "empty",
-      "offline": "offline",
       "unknown": "Unknown"
+    },
+    "errors": {
+      "load": "Failed to load dashboard."
+    },
+    "embeddedTitle": "My dashboard",
+    "embeddedSubtitle": "Preview of the view your character sees via Discord.",
+    "hint": {
+      "notLinked": "An admin must link your Discord account to an ARK player from Settings -> Discord -> Accounts."
+    },
+    "loading": "Loading dashboard…",
+    "player": "Player",
+    "greeting": "Hi {{n}}",
+    "header": {
+      "onlineOn": "Online on {{s}} ({{m}})",
+      "offline": "Offline",
+      "pulse": "{{p}} players on {{s}}/{{t}} servers online",
+      "connectedFor": "connected for {{m}}"
+    },
+    "unknownPlayer": "?",
+    "online": "Online",
+    "character": {
+      "noTribe": "No tribe",
+      "lastSeen": "last seen {{r}}",
+      "timedShort": "Timed permissions"
+    },
+    "shop": {
+      "title": "ArkShop",
+      "points": "Points",
+      "totalSpent": "Spent",
+      "kitsRawToggle": "Show kits (raw)"
+    },
+    "leaderboard": {
+      "title": "Leaderboard",
+      "empty": "No leaderboard points yet."
+    },
+    "lb": {
+      "killWild": "Wild kills",
+      "tames": "Tames",
+      "killPlayer": "PvP kills",
+      "crafts": "Crafts",
+      "killDino": "Enemy dino kills",
+      "structs": "Structures destroyed",
+      "deaths": "Deaths"
+    },
+    "decay": {
+      "title": "Decay",
+      "noTribe": "You are not in any registered tribe.",
+      "statusExpired": "Expired",
+      "statusExpiring": "Expiring",
+      "statusSafe": "OK",
+      "lastRefreshAt": "Last refresh",
+      "scheduledPurge": "Tribe scheduled for purge."
+    },
+    "tribe": {
+      "title": "Tribe",
+      "empty": "No registered tribe.",
+      "titleWithCount": "Tribe: {{n}} ({{m}} members · {{o}} online)",
+      "onlineNow": "now"
+    },
+    "rare": {
+      "title": "Rare dinos (30d)",
+      "kills": "Kills",
+      "tames": "Tames",
+      "empty": "No rare dino interactions recently."
+    },
+    "activity": {
+      "title": "Recent activity",
+      "empty": "No recent activity."
     }
   },
   "machines": {
@@ -203,10 +252,7 @@
       "testing": "Testing…"
     },
     "action": {
-      "test": "Test connection",
-      "edit": "Edit",
-      "duplicate": "Duplicate",
-      "delete": "Delete"
+      "test": "Test connection"
     },
     "form": {
       "createTitle": "New SSH machine",
@@ -230,8 +276,7 @@
     "errors": {
       "load": "Failed to load machines",
       "save": "Failed to save the machine",
-      "delete": "Failed to delete the machine",
-      "test": "Connection test failed"
+      "delete": "Failed to delete the machine"
     },
     "messages": {
       "created": "Machine \"{{name}}\" created",
@@ -382,9 +427,7 @@
       "updateAvailable": "Update available: {{version}}",
       "viewRelease": "View release on GitHub",
       "publishedAt": "Published: {{when}}",
-      "builtAt": "Built: {{when}}",
       "commit": "Commit",
-      "noReleases": "No releases have been published yet.",
       "error": "Update check failed: {{message}}",
       "cacheHint": "Results are cached for 1 hour. Use \"Check now\" to refresh immediately.",
       "installNow": "Install update",
@@ -396,12 +439,12 @@
       "confirmInstall": "Install ArkManiaGest v{{version}} now?\n\nThe panel will be briefly unavailable while the backend restarts. Your database and .env file are not modified.",
       "duringRestartHint": "The backend will restart when the download is replaced; the page may briefly fail to load.",
       "stateLabel": {
-        "idle":        "Idle",
+        "idle": "Idle",
         "downloading": "Downloading release",
-        "verifying":   "Verifying checksum",
-        "running":     "Applying update",
-        "success":     "Update installed",
-        "failed":      "Update failed"
+        "verifying": "Verifying checksum",
+        "running": "Applying update",
+        "success": "Update installed",
+        "failed": "Update failed"
       }
     }
   },
@@ -455,8 +498,6 @@
     "loading": "Loading…",
     "empty": "No events found",
     "pagination": {
-      "prev": "Previous",
-      "next": "Next",
       "page": "Page <strong>{{page}}</strong> of <strong>{{total}}</strong>",
       "resultsCount": "({{count}} results)"
     }
@@ -596,29 +637,27 @@
         "actions": "Actions"
       }
     },
-    "scheduleButton":  "Schedule",
-    "scheduling":      "…",
-    "scheduleTitle":   "Queue this tribe in ARKM_decay_pending; the next plugin purge sweep destroys it.",
+    "scheduleTitle": "Queue this tribe in ARKM_decay_pending; the next plugin purge sweep destroys it.",
     "confirmSchedule": "Schedule tribe #{{id}} ({{name}}) for destruction on every server?\n\nThe panel only stages the request; the plugin's next periodic sweep destroys all of the tribe's structures and dinos. Use 'Cancel' from the Pending tab to revert before the sweep runs.",
-    "scheduleDone":    "Tribe #{{id}} scheduled on {{rows}}/{{total}} servers.",
-    "scheduleFailed":  "Could not schedule the purge.",
-    "purgeNowButton":  "Now",
-    "purgeNowTitle":   "Schedule this tribe AND immediately fire ARKM.DM.Purge over RCON on every active instance.",
+    "scheduleDone": "Tribe #{{id}} scheduled on {{rows}}/{{total}} servers.",
+    "scheduleFailed": "Could not schedule the purge.",
+    "purgeNowButton": "Now",
+    "purgeNowTitle": "Schedule this tribe AND immediately fire ARKM.DM.Purge over RCON on every active instance.",
     "confirmPurgeNow": "Purge tribe #{{id}} ({{name}}) RIGHT NOW?\n\nThe panel will: 1) insert the tribe into ARKM_decay_pending on every server, then 2) send ARKM.DM.Purge over RCON to every active ARK instance.\nThe plugin destroys all of the tribe's structures and dinos and writes the audit log entries.\n\nThis cannot be undone.",
-    "purgeNowDone":    "Tribe #{{id}} purged: queued on {{rows}} server(s), RCON ok on {{ok}}/{{total}} instances.",
-    "purgeNowFailed":  "Per-tribe purge failed.",
-    "runPurgeButton":  "Run DM.Purge",
-    "runningPurge":    "Running…",
-    "runPurgeTitle":   "Send ARKM.DM.Purge over RCON to every active ARK instance now.",
+    "purgeNowDone": "Tribe #{{id}} purged: queued on {{rows}} server(s), RCON ok on {{ok}}/{{total}} instances.",
+    "purgeNowFailed": "Per-tribe purge failed.",
+    "runPurgeButton": "Run DM.Purge",
+    "runningPurge": "Running…",
+    "runPurgeTitle": "Send ARKM.DM.Purge over RCON to every active ARK instance now.",
     "confirmRunPurge": "Run ARKM.DM.Purge on every active ARK instance NOW?\n\nThis triggers the plugin's purge sweep on each contacted server: every tribe currently listed in ARKM_decay_pending gets its structures + dinos destroyed.\n\nThis cannot be undone.",
-    "runPurgeDone":    "DM.Purge dispatched: {{ok}}/{{total}} instances OK, {{failed}} failed.",
-    "runPurgeFailed":  "DM.Purge dispatch failed.",
-    "cancelButton":    "Cancel",
-    "cancelling":      "…",
-    "cancelTitle":     "Remove this tribe from the pending purge queue (the decay timer keeps ticking)",
-    "confirmCancel":   "Cancel pending purge for tribe #{{id}} ({{name}}) on {{server}}?\n\nThe row in ARKM_decay_pending is removed; the tribe stays in ARKM_tribe_decay and the regular decay timer continues.",
-    "cancelDone":      "Pending entry for tribe #{{id}} removed ({{rows}} row(s)).",
-    "cancelFailed":    "Could not cancel the pending purge.",
+    "runPurgeDone": "DM.Purge dispatched: {{ok}}/{{total}} instances OK, {{failed}} failed.",
+    "runPurgeFailed": "DM.Purge dispatch failed.",
+    "cancelButton": "Cancel",
+    "cancelling": "…",
+    "cancelTitle": "Remove this tribe from the pending purge queue (the decay timer keeps ticking)",
+    "confirmCancel": "Cancel pending purge for tribe #{{id}} ({{name}}) on {{server}}?\n\nThe row in ARKM_decay_pending is removed; the tribe stays in ARKM_tribe_decay and the regular decay timer continues.",
+    "cancelDone": "Pending entry for tribe #{{id}} removed ({{rows}} row(s)).",
+    "cancelFailed": "Could not cancel the pending purge.",
     "pending": {
       "table": {
         "server": "Server",
@@ -790,15 +829,6 @@
       "cancel": "Cancel",
       "save": "Save Changes",
       "add": "Add to Pool"
-    },
-    "stat": {
-      "health": "Health",
-      "stamina": "Stamina",
-      "oxygen": "Oxygen",
-      "food": "Food",
-      "weight": "Weight",
-      "melee": "Melee",
-      "speed": "Speed"
     }
   },
   "transferRules": {
@@ -868,11 +898,11 @@
     "syncing": "Syncing names…",
     "refreshTooltip": "Refresh",
     "tribeSync": {
-      "button":  "Sync Tribes",
-      "title":   "Scan .arktribe binary files and refresh tribe names in ARKM_player_tribes + ARKM_tribe_decay",
+      "button": "Sync Tribes",
+      "title": "Scan .arktribe binary files and refresh tribe names in ARKM_player_tribes + ARKM_tribe_decay",
       "running": "Syncing tribes…",
-      "done":    "Tribe sync done: {{scanned}} files scanned, {{matched}} tribes matched, {{rows}} DB rows updated.",
-      "failed":  "Tribe name sync failed."
+      "done": "Tribe sync done: {{scanned}} files scanned, {{matched}} tribes matched, {{rows}} DB rows updated.",
+      "failed": "Tribe name sync failed."
     },
     "syncPanel": {
       "title": "Sync Names from .arkprofile",
@@ -926,7 +956,8 @@
     },
     "detail": {
       "spentLabel": "Spent:",
-      "banTooltip": "Ban player"
+      "banTooltip": "Ban player",
+      "wipeTooltip": "Delete character cluster-wide (.arkprofile)"
     },
     "ban": {
       "sectionTitle": "Ban Player",
@@ -961,61 +992,58 @@
       "expiresLabel": "Expires"
     },
     "bulkAlign": {
-      "headerButton":           "Align ({{count}})",
-      "headerTitleEnabled":     "Open the align-timed-perms modal for the {{count}} selected player(s)",
-      "headerTitleDisabled":    "Tick at least one row in the table to enable align",
-      "modalTitle":             "Align timed-permission expiries ({{count}} players)",
-      "modalHint":              "Pick a family of related groups (e.g. VIP, Dead, Decadimento). For each player, every ACTIVE entry in the family gets bumped to the latest active expiry in that family.",
-      "familyLabel":            "Family of related groups",
-      "addPlaceholder":         "Add a custom group name…",
-      "addHint":                "Press Enter",
-      "semanticsHint":          "Per-player rules:\n  • Find the latest expiry among active family entries.\n  • Bump every other active family entry to that date.\n  • Expired entries are NEVER touched.\n  • Players with 0 or 1 active family members are skipped.",
-      "cancel":                 "Cancel",
-      "apply":                  "Align {{count}} player(s)",
-      "applying":               "Aligning…",
-      "confirm":                "Align timed-perm expiries for {{count}} player(s) within the family [{{groups}}]?\n\nFor each player we set every active family entry to the latest active timestamp present.  Expired entries are NOT touched.",
-      "done":                   "Alignment done: {{aligned}} player(s) updated ({{entries}} entries), {{skipped}} skipped, {{missing}} not found.",
-      "failed":                 "Alignment failed.",
-      "errorNoneSelected":      "No players selected.",
-      "errorTooFewGroups":      "Pick at least 2 group names to align together."
+      "headerButton": "Align ({{count}})",
+      "headerTitleEnabled": "Open the align-timed-perms modal for the {{count}} selected player(s)",
+      "headerTitleDisabled": "Tick at least one row in the table to enable align",
+      "modalTitle": "Align timed-permission expiries ({{count}} players)",
+      "modalHint": "Pick a family of related groups (e.g. VIP, Dead, Decadimento). For each player, every ACTIVE entry in the family gets bumped to the latest active expiry in that family.",
+      "familyLabel": "Family of related groups",
+      "addPlaceholder": "Add a custom group name…",
+      "addHint": "Press Enter",
+      "semanticsHint": "Per-player rules:\n  • Find the latest expiry among active family entries.\n  • Bump every other active family entry to that date.\n  • Expired entries are NEVER touched.\n  • Players with 0 or 1 active family members are skipped.",
+      "cancel": "Cancel",
+      "apply": "Align {{count}} player(s)",
+      "applying": "Aligning…",
+      "confirm": "Align timed-perm expiries for {{count}} player(s) within the family [{{groups}}]?\n\nFor each player we set every active family entry to the latest active timestamp present.  Expired entries are NOT touched.",
+      "done": "Alignment done: {{aligned}} player(s) updated ({{entries}} entries), {{skipped}} skipped, {{missing}} not found.",
+      "failed": "Alignment failed.",
+      "errorNoneSelected": "No players selected.",
+      "errorTooFewGroups": "Pick at least 2 group names to align together."
     },
     "filterPopup": {
-      "tabActive":            "Active",
-      "tabExpired":           "Expired",
-      "noValueTribe":         "(no tribe)",
-      "noValueGroups":        "(no permission)",
-      "noValueTimedActive":   "(no active timed perm)",
-      "noValueTimedExpired":  "(no expired timed perm)"
+      "tabActive": "Active",
+      "tabExpired": "Expired",
+      "noValueTribe": "(no tribe)",
+      "noValueGroups": "(no permission)",
+      "noValueTimedActive": "(no active timed perm)",
+      "noValueTimedExpired": "(no expired timed perm)"
     },
     "bulkPerm": {
-      "selectedCount":     "{{count}} selected",
-      "openModal":         "Configure bulk grant…",
-      "headerButton":      "Bulk grant ({{count}})",
-      "headerTitleEnabled":"Open the bulk timed-permission modal for the {{count}} selected player(s)",
-      "headerTitleDisabled":"Tick at least one row in the table to enable bulk grant",
-      "modalTitle":        "Bulk grant temporary permission ({{count}} players)",
-      "modalHint":         "Pick a group and a duration; we'll EXTEND existing entries by that delta and ADD new ones for players that don't yet have the group.",
-      "groupLabel":        "Group",
-      "groupPlaceholder":  "— select group —",
-      "durationLabel":     "Extend by",
-      "customDaysLabel":   "Custom:",
-      "customDaysSuffix":  "days",
-      "semanticsHint":     "Existing permission → expiry := max(current, now) + chosen duration. Missing permission → entry created with now + chosen duration.",
-      "cancel":            "Cancel",
-      "apply":             "Apply to {{count}}",
-      "applying":          "Applying…",
-      "clear":             "Clear",
-      "selectAllAria":     "Select / deselect all visible players",
-      "selectRowAria":     "Select {{name}}",
-      "confirm":           "Grant timed permission '{{group}}' to {{count}} player(s) for an extra {{duration}}?\n\nPlayers who already have this group get their expiry extended by the chosen amount; players without the group get a fresh entry of the same duration. Other timed permissions are NOT touched.",
-      "done":              "Bulk grant applied: {{updated}} player(s) updated ({{extended}} extended, {{added}} added), {{missing}} not found.",
-      "failed":            "Bulk grant failed.",
+      "headerButton": "Bulk grant ({{count}})",
+      "headerTitleEnabled": "Open the bulk timed-permission modal for the {{count}} selected player(s)",
+      "headerTitleDisabled": "Tick at least one row in the table to enable bulk grant",
+      "modalTitle": "Bulk grant temporary permission ({{count}} players)",
+      "modalHint": "Pick a group and a duration; we'll EXTEND existing entries by that delta and ADD new ones for players that don't yet have the group.",
+      "groupLabel": "Group",
+      "groupPlaceholder": "— select group —",
+      "durationLabel": "Extend by",
+      "customDaysLabel": "Custom:",
+      "customDaysSuffix": "days",
+      "semanticsHint": "Existing permission → expiry := max(current, now) + chosen duration. Missing permission → entry created with now + chosen duration.",
+      "cancel": "Cancel",
+      "apply": "Apply to {{count}}",
+      "applying": "Applying…",
+      "selectAllAria": "Select / deselect all visible players",
+      "selectRowAria": "Select {{name}}",
+      "confirm": "Grant timed permission '{{group}}' to {{count}} player(s) for an extra {{duration}}?\n\nPlayers who already have this group get their expiry extended by the chosen amount; players without the group get a fresh entry of the same duration. Other timed permissions are NOT touched.",
+      "done": "Bulk grant applied: {{updated}} player(s) updated ({{extended}} extended, {{added}} added), {{missing}} not found.",
+      "failed": "Bulk grant failed.",
       "errorNoneSelected": "No players selected.",
-      "errorNoGroup":      "Pick a group first.",
-      "errorBadDuration":  "Pick a valid duration (at least 1 minute).",
-      "fmtDays":           "{{n}} day(s)",
-      "fmtMonths":         "{{n}} month(s)",
-      "fmtYears":          "{{n}} year(s)"
+      "errorNoGroup": "Pick a group first.",
+      "errorBadDuration": "Pick a valid duration (at least 1 minute).",
+      "fmtDays": "{{n}} day(s)",
+      "fmtMonths": "{{n}} month(s)",
+      "fmtYears": "{{n}} year(s)"
     },
     "kits": {
       "sectionTitle": "Kits"
@@ -1064,7 +1092,58 @@
       "banFailed": "Ban failed",
       "syncNames": "Name sync error"
     },
-    "syncFallback": "—"
+    "ambiguous": {
+      "applied": "{{n}} names applied.",
+      "errors": {
+        "apply": "Failed to apply choices."
+      },
+      "title": "Multiple characters found for {{n}} players",
+      "intro": "For each of these players more than one distinct name was found on the cluster (a different character per server, or a rename that did not propagate). Pick the correct name for each one and press Apply.",
+      "currentName": "current in DB: ",
+      "skipThis": "Don't update now (keep the current name in the DB)",
+      "applying": "Applying…",
+      "apply": "Apply choices ({{n}})"
+    },
+    "importMissing": {
+      "done": "Imported {{n}} players ({{s}} already present).",
+      "errors": {
+        "apply": "Import failed."
+      },
+      "banner": "Found {{n}} .arkprofile profiles with no row in Players. Import them?",
+      "openModal": "Import missing players ({{n}})",
+      "title": "Import {{n}} missing players",
+      "intro": "Rows will be inserted into `Players` with `PermissionGroups=Default,`.  Entries already present are skipped automatically.",
+      "checkAll": "Select all",
+      "uncheckAll": "Deselect all",
+      "importing": "Importing…",
+      "confirm": "Import ({{n}})"
+    },
+    "wipe": {
+      "errors": {
+        "preview": "Failed to scan files.",
+        "delete": "Wipe failed."
+      },
+      "done": "Deleted {{n}} character files on the cluster.",
+      "title": "Delete character cluster-wide",
+      "intro": "All `.arkprofile` files for this EOS will be deleted from the SavedArks of every container.  On next login the player will spawn as a fresh character.  The `Players` row (permissions) is NOT touched.",
+      "player": "Player:",
+      "scanning": "Scanning containers…",
+      "noFiles": "No .arkprofile files found for this EOS.  The character is already clean.",
+      "found": "{{n}} files to delete:",
+      "deleting": "Deleting…",
+      "confirm": "Delete {{n}} files"
+    },
+    "discord": {
+      "chipTitle": "Discord linked — click to DM",
+      "linked": "linked",
+      "linkedTo": "Linked to ARK player {{p}}",
+      "dmLabel": "Send a Discord DM",
+      "dmPh": "Plain text — sent through your bot.",
+      "openSettings": "Open Discord settings",
+      "dmSent": "DM sent.",
+      "dmFailed": "Failed to send DM.",
+      "dmSend": "Send DM"
+    }
   },
   "arkmaniaConfig": {
     "heading": "Plugin Config",
@@ -1098,9 +1177,6 @@
       "noResults": "No results",
       "noSettings": "No settings"
     },
-    "errors": {
-      "load": "Load error"
-    },
     "editors": {
       "selectPlaceholder": "Select...",
       "selectGroupPlaceholder": "Select group...",
@@ -1109,7 +1185,6 @@
       "daysLabel": "Days:",
       "searchDb": "Search DB",
       "pasteBp": "Paste BP",
-      "cancelBp": "Cancel",
       "noBlueprints": "No blueprints configured",
       "bpSearchPlaceholder": "Search by name, blueprint, GFI...",
       "searching": "Searching...",
@@ -1320,7 +1395,6 @@
       "title": "Title",
       "description": "Description",
       "price": "Price",
-      "priceShort": "Price",
       "type": "Type",
       "permissions": "Permissions",
       "permissionsPlaceholder": "WL, VIP",
@@ -1476,65 +1550,6 @@
       "importSuccess": "Import complete: {{added}} added, {{updated}} updated ({{total}} total)",
       "importError": "Import failed: {{reason}}",
       "unknownError": "Unknown error"
-    }
-  },
-  "containersPage": {
-    "heading": "Game Containers",
-    "subtitleDiscovered": "{{count}} containers discovered",
-    "subtitleLastScan": "Last scan: {{date}}",
-    "neverScanned": "Never",
-    "scanAll": "Scan All",
-    "scanning": "Scanning…",
-    "scanButton": "Scan",
-    "basePathLabel": "Container Base Path:",
-    "noActiveMachines": "No active SSH machine. Configure machines in the settings.",
-    "loading": "Loading…",
-    "empty": "No containers discovered. Start a scan.",
-    "pluginCount": "{{count}} plugins",
-    "pathsCount": "{{count}} paths",
-    "profileCount": "{{count}} profiles",
-    "detail": {
-      "pathLabel": "Path:",
-      "serverRootLabel": "Server Root:",
-      "serverNameLabel": "Server Name:",
-      "mapLabel": "Map:",
-      "processLabel": "Process:",
-      "processRunning": "🟢 Running",
-      "processStopped": "🔴 Stopped",
-      "installedPlugins": "Installed plugins",
-      "serverStructure": "Server Structure",
-      "pluginConfigs": "Plugin Configurations",
-      "saveFiles": "Save files"
-    },
-    "tooltip": {
-      "view": "View"
-    },
-    "action": {
-      "browse": "Browse Files",
-      "rescan": "Rescan"
-    },
-    "fileBrowser": {
-      "upButton": "← Up"
-    },
-    "messages": {
-      "scanComplete": "Scan complete: {{count}} containers found on \"{{machine}}\"",
-      "rescanned": "{{name}} rescanned",
-      "errorScan": "SSH scan error",
-      "errorBrowse": "Navigation error",
-      "errorPrefix": "Error: {{detail}}"
-    },
-    "pathLabels": {
-      "shooter_game": "ShooterGame",
-      "api_root": "API Root",
-      "arkapi_plugins": "Plugins",
-      "game_ini": "Game.ini",
-      "gameusersettings_ini": "GameUserSettings.ini",
-      "saved_arks": "SavedArks",
-      "logs": "Logs",
-      "arkshop_config": "ArkShop Config",
-      "permissions_config": "Permissions Config",
-      "lethaldecay_config": "LethalDecay Config",
-      "lethallogin_config": "LethalLogin Config"
     }
   },
   "gameConfig": {
@@ -1847,15 +1862,6 @@
     "importHint": "Discovered on {{machine}}. Set the admin password (required) and any overrides; the rest is inferred from the scan.",
     "importConfirm": "Import",
     "importDone": "Imported '{{name}}' as a managed instance.",
-    "columns": {
-      "name": "Name",
-      "machine": "Machine",
-      "map": "Map",
-      "status": "Status",
-      "ports": "Ports",
-      "cluster": "Cluster",
-      "actions": "Actions"
-    },
     "status": {
       "created": "Created",
       "starting": "Starting",
@@ -1863,7 +1869,8 @@
       "stopping": "Stopping",
       "stopped": "Stopped",
       "updating": "Updating",
-      "error": "Error"
+      "error": "Error",
+      "missing": "Missing"
     },
     "actions": {
       "start": "Start",
@@ -1874,7 +1881,6 @@
       "probe": "Refresh status",
       "edit": "Edit",
       "delete": "Delete",
-      "viewLog": "Action log",
       "running": "Running…"
     },
     "form": {
@@ -1926,8 +1932,326 @@
     "log": {
       "title": "Recent actions for {{name}}",
       "empty": "No actions recorded for this instance yet.",
-      "noStdout": "(no output)",
-      "exitCode": "Exit code"
+      "noStdout": "(no output)"
+    }
+  },
+  "discord": {
+    "title": "Discord",
+    "subtitle": "Manage Discord accounts, ARK player links and bot interactions.",
+    "tab": {
+      "accounts": "Accounts",
+      "members": "Guild members",
+      "config": "Configuration",
+      "settings": "Edit"
+    },
+    "settings": {
+      "errors": {
+        "load": "Failed to load Discord configuration.",
+        "save": "Failed to save Discord configuration."
+      },
+      "noChanges": "No changes to save.",
+      "loading": "Loading Discord configuration…",
+      "savedKeys": "{{n}} keys updated: {{keys}}",
+      "restartHint": "Pydantic loads .env at boot -- restart the service to activate the changes:",
+      "section": {
+        "oauth": "OAuth credentials",
+        "bot": "Discord bot",
+        "vipSync": "VIP sync"
+      },
+      "field": {
+        "clientId": "Client ID",
+        "clientSecret": "Client secret",
+        "publicKey": "Public key",
+        "redirectUri": "Redirect URI",
+        "botToken": "Bot token",
+        "guildId": "Guild ID",
+        "vipRoleId": "VIP role ID"
+      },
+      "hint": {
+        "redirectUri": "Must match EXACTLY the URI registered on the Discord Developer Portal -> OAuth2 -> Redirects.",
+        "guildId": "Right-click the server name on Discord (with Developer Mode enabled) -> Copy Server ID.",
+        "vipRoleId": "Discord snowflake of the role mirrored from the ARK plugin DB.  Right-click the role -> Copy Role ID (Developer Mode required)."
+      },
+      "reset": "Reset",
+      "saveDisabledNoChanges": "No pending changes to save",
+      "save": "Save changes",
+      "saveNothing": "No changes",
+      "secret": {
+        "willClear": "(will be cleared on save)",
+        "set": "(currently set)",
+        "notSet": "(not set)",
+        "placeholder": "Leave empty to keep current value",
+        "undoClear": "Undo clear",
+        "clearTitle": "Clear this secret on save",
+        "clear": "Clear"
+      }
+    },
+    "config": {
+      "toast": {
+        "copied": "Copy"
+      },
+      "errors": {
+        "guildProbe": "Bot credentials are set but Discord rejected the guild lookup.",
+        "load": "Failed to load Discord configuration."
+      },
+      "loading": "Loading Discord configuration…",
+      "section": {
+        "oauth": "OAuth (Sign in with Discord)",
+        "bot": "Discord bot",
+        "whitelists": "Auto-promotion whitelists",
+        "vipSync": "VIP sync (panel -> Discord)"
+      },
+      "ready": {
+        "oauth": "Ready",
+        "bot": "Ready",
+        "whitelists": "Configured",
+        "vipSync": "Ready"
+      },
+      "notReady": {
+        "oauth": "Not configured",
+        "bot": "Not configured",
+        "whitelists": "Empty",
+        "vipSync": "Not configured"
+      },
+      "field": {
+        "clientId": "Client ID",
+        "publicKey": "Public key",
+        "redirectUri": "Redirect URI",
+        "clientSecret": "Client secret",
+        "guildId": "Guild ID",
+        "botToken": "Bot token",
+        "vipRoleId": "VIP role ID"
+      },
+      "hint": {
+        "redirectMissing": "Set DISCORD_REDIRECT_URI in .env and restart the service.",
+        "redirectRegister": "This URI must be registered EXACTLY in Discord Developer Portal -> OAuth2 -> Redirects.",
+        "vipRoleMissing": "Set DISCORD_VIP_ROLE_ID in .env and restart the service."
+      },
+      "placeholder": {
+        "set": "(set)",
+        "notSet": "(not set)"
+      },
+      "guildProbe": "Bot connected · {{m}} members · {{p}} online",
+      "whitelistsExplain": "Discord IDs listed here are auto-promoted to the matching role at first Sign-in with Discord (a 'discord:<id>' AppUser is created automatically).  The explicit Accounts -> Link AppUser flow always wins over a whitelist.",
+      "whitelist": {
+        "admin": "Admin",
+        "operator": "Operator",
+        "viewer": "Viewer"
+      },
+      "whitelistsEditHint": "To change a whitelist: edit /opt/arkmaniagest/backend/.env and run 'systemctl restart arkmaniagest'.",
+      "vipSync": {
+        "errors": {
+          "run": "VIP sync failed."
+        },
+        "explain": "Manual reconciliation.  Reads the VIP permission group (permanent OR active timed) from the plugin DB for every linked player and mirrors it onto the configured Discord role.  Players outside the link mapping are reported but never touched.",
+        "running": "Syncing…",
+        "run": "Sync VIP now",
+        "lastRun": "last run {{d}} -- {{s}}s, {{n}} checked",
+        "strangerVips": "Discord members with VIP role but no EOS link ({{n}})",
+        "perRow": "Per-row actions ({{n}})",
+        "col": {
+          "player": "Player",
+          "discord": "Discord",
+          "action": "Action",
+          "detail": "Detail"
+        }
+      }
+    },
+    "roleMap": {
+      "errors": {
+        "load": "Failed to load role mappings.",
+        "required": "Select a Discord role AND type the ARK group name.",
+        "create": "Failed to create mapping.",
+        "update": "Failed to update mapping.",
+        "delete": "Failed to delete mapping.",
+        "sync": "Sync failed."
+      },
+      "confirmDelete": "Delete this mapping?",
+      "title": "Role sync (Discord -> ARK)",
+      "explain": "Each rule says: whoever has Discord role X receives permission group Y in the plugin DB (Players.PermissionGroups).  The sync engine does NOT touch groups not managed by active rules: the VIP sync (env DISCORD_VIP_ROLE_ID) and admin/custom groups pass through untouched.",
+      "enabled": "Enabled",
+      "delete": "Delete",
+      "empty": "No rules configured.  Add one below.",
+      "noRolesLoaded": "(Bot not configured -- no roles)",
+      "pickRole": "Pick a Discord role…",
+      "groupPlaceholder": "ARK group name (e.g. VIP)",
+      "add": "Add",
+      "syncing": "Syncing…",
+      "sync": "Sync roles now",
+      "lastRun": "{{s}}s · {{n}} linked, {{c}} changed, {{e}} errors",
+      "details": "Change details ({{n}})"
+    },
+    "members": {
+      "errors": {
+        "load": "Failed to load guild data.",
+        "loadMore": "Failed to load more members.",
+        "assignRole": "Failed to assign role.",
+        "removeRole": "Failed to remove role.",
+        "kick": "Failed to kick member.",
+        "dm": "Failed to send DM.",
+        "ban": "Failed to ban member."
+      },
+      "toast": {
+        "roleAssigned": "Role assigned.",
+        "roleRemoved": "Role removed.",
+        "kicked": "Member kicked.",
+        "dmSent": "DM sent.",
+        "banned": "Member banned."
+      },
+      "confirmKick": "Kick {{u}} from the guild?",
+      "banner": {
+        "loading": "Loading guild…",
+        "counts": "{{m}} members · {{p}} online"
+      },
+      "loading": "Loading guild members…",
+      "empty": "No members visible.  Make sure the bot has the GUILD_MEMBERS privileged intent enabled in the Discord Developer Portal.",
+      "col": {
+        "user": "User",
+        "roles": "Roles",
+        "joined": "Joined"
+      },
+      "loadMore": "Load more",
+      "action": {
+        "removeRole": "Click to remove",
+        "assignRole": "Assign role",
+        "dm": "Send DM",
+        "kick": "Kick",
+        "ban": "Ban"
+      },
+      "popover": {
+        "noRoles": "No roles available."
+      },
+      "modal": {
+        "dmTitle": "Send DM to {{u}}",
+        "message": "Message",
+        "dmPh": "Plain text only.  Markdown is supported.",
+        "dmSend": "Send",
+        "banTitle": "Ban {{u}}",
+        "reason": "Audit-log reason (optional)",
+        "reasonPh": "e.g. spam, raid, violation of server rules",
+        "purge": "Delete recent messages",
+        "purgeNone": "Don't delete",
+        "purge1d": "Last 24 hours",
+        "purge3d": "Last 3 days",
+        "purge7d": "Last 7 days",
+        "banConfirm": "Ban"
+      }
+    },
+    "accounts": {
+      "errors": {
+        "load": "Failed to load Discord accounts.",
+        "unlinkAppUser": "Failed to unlink AppUser.",
+        "unlinkEos": "Failed to unlink player.",
+        "loadUsers": "Failed to load users.",
+        "linkAppUser": "Failed to link AppUser.",
+        "search": "Player search failed.",
+        "linkEos": "Failed to link player."
+      },
+      "confirmUnlinkAppUser": "Unlink AppUser '{{u}}' from Discord '{{d}}'?",
+      "toast": {
+        "appUserUnlinked": "AppUser link removed.",
+        "eosUnlinked": "Player link removed.",
+        "appUserLinked": "AppUser linked.",
+        "eosLinked": "Player linked."
+      },
+      "confirmUnlinkEos": "Unlink EOS player '{{e}}' from Discord '{{d}}'?",
+      "loading": "Loading Discord accounts…",
+      "empty": "No Discord accounts yet — ask an operator to Sign in with Discord at least once.",
+      "col": {
+        "discord": "Discord",
+        "appUser": "Panel AppUser",
+        "player": "ARK player",
+        "linkedAt": "Linked at"
+      },
+      "action": {
+        "unlinkAppUser": "Unlink AppUser",
+        "linkAppUser": "Link AppUser",
+        "unlinkEos": "Unlink player",
+        "linkEos": "Link player"
+      },
+      "modal": {
+        "linkAppUserTitle": "Link AppUser to {{d}}",
+        "filter": "Filter users",
+        "filterPh": "name, username or role…",
+        "noUsers": "No users match the filter.",
+        "linkBtn": "Link",
+        "linkEosTitle": "Link ARK player to {{d}}",
+        "search": "Search by name, EOS or tribe",
+        "searchPh": "min. 2 chars…",
+        "searching": "Searching…",
+        "noHits": "No players match."
+      }
+    }
+  },
+  "market": {
+    "errors": {
+      "loadListed": "Failed to load the market.",
+      "loadMine": "Failed to load your items.",
+      "loadHistory": "Failed to load history.",
+      "buy": "Purchase failed.",
+      "priceRequired": "Enter a valid price.",
+      "list": "Listing failed.",
+      "cancel": "Cancellation failed."
+    },
+    "confirmBuy": "Buy '{{n}}' for {{p}} coins?",
+    "bought": "Purchased! New balance: {{b}}. Use /market claim in-game to collect it.",
+    "listed": "Item listed on the market.",
+    "confirmCancel": "Cancel the listing?  The item will return to you via /market claim in-game.",
+    "cancelled": "Cancelled. Use /market claim in-game to get it back.",
+    "title": "Player market",
+    "subtitle": "Buy, sell and manage your ARK items.",
+    "tab": {
+      "browse": "Browse",
+      "mine": "My items",
+      "history": "History"
+    },
+    "searchPh": "Search by blueprint…",
+    "sort": {
+      "newest": "Newest",
+      "priceAsc": "Price: low to high",
+      "priceDesc": "Price: high to low"
+    },
+    "loading": "Loading…",
+    "empty": "No items for sale.",
+    "totalCount": "{{n}} items available",
+    "noMine": "You have no items on the market.  Use /market upload in-game to add one.",
+    "col": {
+      "item": "Item",
+      "role": "Role",
+      "status": "Status",
+      "price": "Price",
+      "when": "When",
+      "counter": "Counterparty"
+    },
+    "publish": "Publish",
+    "cancel": "Cancel",
+    "useClaim": "Use /market claim in-game",
+    "noHistory": "No transactions.",
+    "bought2": "bought",
+    "sold": "sold",
+    "byShort": "By",
+    "buy": "Buy"
+  },
+  "auditLog": {
+    "title": "Audit Log",
+    "subtitle": "{{total}} entries — page {{page}} of {{totalPages}}",
+    "loading": "Loading audit entries…",
+    "empty": "No audit entries found.",
+    "errors": {
+      "load": "Failed to load the audit log."
+    },
+    "filter": {
+      "action": "Action",
+      "actionPlaceholder": "e.g. login_success",
+      "username": "Username",
+      "usernamePlaceholder": "e.g. admin"
+    },
+    "column": {
+      "datetime": "Date/Time",
+      "username": "User",
+      "action": "Action",
+      "detail": "Detail",
+      "ip": "IP address"
     }
   }
 }
