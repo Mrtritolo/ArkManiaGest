@@ -615,7 +615,7 @@ export default function RareDinosPage() {
                     <option value="Astraeos_WP">Astraeos</option>
                     <option value="LostCity_WP">Lost City</option>
                     <option value="LostColony_WP">Lost Colony</option>
-                    <option value="Svartalfheim_WP">Svartalfheim</option>
+                    <option value="Genesis_WP">Genesis 1</option>
                   </select>
                 </div>
               </div>

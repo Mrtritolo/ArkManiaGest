@@ -16,9 +16,13 @@ operations that wipe / reshape the catalog.
 
 Population paths
 ----------------
-* ``POST /sync``               — Dododex GitHub mirror.  UPSERTS into the
+* ``POST /sync``               — Dododex GitHub mirror + ark.wiki.gg
+                                 ``Creature IDs`` page.  UPSERTS into the
                                  table (no longer wipes), so repeated
                                  syncs accumulate / refresh in place.
+                                 The wiki step runs last so its (more
+                                 current, ASA-aware) rows win on conflict;
+                                 ASE-only entries are skipped.
 * ``POST /import-beacondata``  — Beacon ``.beacondata`` bundle.  Same
                                  UPSERT semantics — the operator can
                                  import multiple bundles and have them
@@ -64,6 +68,7 @@ _META_KEY     = "plugin.blueprints_meta"
 # Upstream data sources
 _DODODEX_BP_URL       = "https://raw.githubusercontent.com/dododex/dododex.github.io/master/bp.json"
 _DODODEX_COMMANDS_URL = "https://raw.githubusercontent.com/dododex/dododex.github.io/master/commands.json"
+_WIKI_CREATURE_IDS_URL = "https://ark.wiki.gg/wiki/Creature_IDs?action=raw"
 
 
 # ── Hash helper ───────────────────────────────────────────────────────────────
@@ -211,6 +216,15 @@ _OFFICIAL_DINO_PATH_FRAGMENTS: tuple[str, ...] = (
     "/game/asa/dinos/",
     "/game/lostisland/dinos/",
     "/game/lostcolony/dinos/",
+    "/game/fjordur/dinos/",
+    # Official paid packs (Pyromane, Tides of Fortune, Frontier, Steampunk,
+    # Wasteland, ...) and the official ASA mod-map trees ship creatures
+    # outside the classic /Game/<map>/Dinos/ layout.
+    "/game/packs/",
+    "/game/mods/ragnarok/",
+    "/game/mods/valguero/",
+    "/game/mods/thecenter/",
+    "/game/mods/astraeos/",
 )
 
 # Path fragments shared by every official blueprint type (creatures,
@@ -226,6 +240,12 @@ _OFFICIAL_PATH_FRAGMENTS: tuple[str, ...] = (
     "/game/asa/",
     "/game/lostisland/",
     "/game/lostcolony/",
+    "/game/fjordur/",
+    "/game/packs/",
+    "/game/mods/ragnarok/",
+    "/game/mods/valguero/",
+    "/game/mods/thecenter/",
+    "/game/mods/astraeos/",
 )
 
 # Path fragments that mark the "S-" variation packs the operator treats
@@ -300,13 +320,20 @@ def _classify_type(bp: str) -> str:
 def _guess_category(bp: str) -> str:
     """Guess the DLC/map category from the blueprint path."""
     bp_lower = bp.lower()
-    if "scorched" in bp_lower:    return "Scorched Earth"
-    if "aberration" in bp_lower:  return "Aberration"
-    if "extinction" in bp_lower:  return "Extinction"
-    if "genesis" in bp_lower:     return "Genesis"
-    if "lostcolony" in bp_lower:  return "Lost Colony"
-    if "asa/" in bp_lower:        return "ASA"
-    if "mods/" in bp_lower:       return "Mods"
+    if "scorched" in bp_lower:        return "Scorched Earth"
+    if "aberration" in bp_lower:      return "Aberration"
+    if "extinction" in bp_lower:      return "Extinction"
+    if "genesis" in bp_lower:         return "Genesis"
+    if "lostcolony" in bp_lower:      return "Lost Colony"
+    if "lostisland" in bp_lower:      return "Lost Island"
+    if "fjordur" in bp_lower:         return "Fjordur"
+    if "packs/" in bp_lower:          return "Packs"
+    if "mods/ragnarok/" in bp_lower:  return "Ragnarok"
+    if "mods/valguero/" in bp_lower:  return "Valguero"
+    if "mods/thecenter/" in bp_lower: return "The Center"
+    if "mods/astraeos/" in bp_lower:  return "Astraeos"
+    if "asa/" in bp_lower:            return "ASA"
+    if "mods/" in bp_lower:           return "Mods"
     return "The Island"
 
 
@@ -514,6 +541,51 @@ async def _bump_meta(db: AsyncSession, *, source_label: str) -> None:
     await _save_meta(db, meta)
 
 
+# ── Wiki (ark.wiki.gg) parser helpers ─────────────────────────────────────────
+
+_WIKI_ID_PREFIX = "{{Id creature|"
+_WIKI_GAMEICON_RE = re.compile(r"\{\{gameicon\|(\w+)\}\}", re.IGNORECASE)
+
+
+def _parse_wiki_creatures(raw_text: str) -> list[dict]:
+    """
+    Parse the ``{{Id creature|Name|Group|Summon|ClassId|Path|...}}`` template
+    rows of the ark.wiki.gg "Creature IDs" page (``?action=raw`` wikitext).
+
+    Entries tagged ``{{gameicon|se}}`` without a matching ``sa`` tag are
+    ASE-only (legacy paths that do not exist in ASA) and are skipped.
+    Untagged entries are valid in both games.
+    """
+    out: list[dict] = []
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line.startswith(_WIKI_ID_PREFIX) or not line.endswith("}}"):
+            continue
+        icons = [m.lower() for m in _WIKI_GAMEICON_RE.findall(line)]
+        if "se" in icons and "sa" not in icons:
+            continue
+        body = _WIKI_GAMEICON_RE.sub("", line[len(_WIKI_ID_PREFIX):-2])
+        parts = [p.strip() for p in body.split("|")]
+        if len(parts) < 5:
+            continue
+        name, group, class_id, path = parts[0], parts[1], parts[3], parts[4]
+        if not name or not path or "Character" not in path:
+            continue
+        bp_path = path if path.startswith("/") else f"/Game/{path}"
+        out.append({
+            "id":          f"wiki_{_make_id(class_id or name)}",
+            "name":        name,
+            "blueprint":   bp_path,
+            "category":    _guess_category(bp_path),
+            "type":        "dino",
+            "gfi":         f"Summon {class_id}" if class_id else None,
+            "source":      "wiki",
+            "class":       class_id or None,
+            "description": group or None,
+        })
+    return out
+
+
 # ── Beacon parser helpers ─────────────────────────────────────────────────────
 
 _BEACON_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -623,6 +695,7 @@ async def test_connection():
         for name, url in [
             ("bp.json", _DODODEX_BP_URL),
             ("commands.json", _DODODEX_COMMANDS_URL),
+            ("wiki Creature IDs", _WIKI_CREATURE_IDS_URL),
         ]:
             try:
                 resp = await client.get(url)
@@ -655,11 +728,16 @@ async def blueprint_status(db: AsyncSession = Depends(get_db)):
 @router.post("/sync", response_model=SyncResult)
 async def sync_blueprints(db: AsyncSession = Depends(get_db)):
     """
-    UPSERT Dododex content (creatures + commands) into ``ARKM_blueprints``.
+    UPSERT Dododex content (creatures + commands) and the ark.wiki.gg
+    "Creature IDs" page into ``ARKM_blueprints``.
+
+    The wiki step provides current ASA blueprint paths (new DLC maps,
+    packs, seasonal variants) that the Dododex GitHub mirror — frozen in
+    the ASE era — lacks; on path conflicts the wiki row wins.
 
     Repeated syncs accumulate / refresh in place — they no longer wipe
-    the table.  Use ``DELETE /blueprints/by-source?source=base``
-    if you want to remove the previous Dododex import before resyncing.
+    the table.  Use ``DELETE /blueprints/by-source?source=base`` (or
+    ``source=wiki``) to remove a previous import before resyncing.
     """
     blueprints:     list[dict] = []
     sources_added:  list[str]  = []
@@ -772,6 +850,20 @@ async def sync_blueprints(db: AsyncSession = Depends(get_db)):
         except Exception as exc:
             errors.append(f"commands.json: {type(exc).__name__}: {exc}")
 
+        # ── 3. ark.wiki.gg Creature IDs (appended last so its rows win the
+        #       in-batch de-dup against the older Dododex mirror data) ────────
+        try:
+            resp = await client.get(_WIKI_CREATURE_IDS_URL)
+            if resp.status_code == 200:
+                wiki_creatures = _parse_wiki_creatures(resp.text)
+                blueprints.extend(wiki_creatures)
+                dinos_count += len(wiki_creatures)
+                sources_added.append(f"wiki Creature IDs ({len(wiki_creatures)} creatures)")
+            else:
+                errors.append(f"wiki: HTTP {resp.status_code}")
+        except Exception as exc:
+            errors.append(f"wiki: {type(exc).__name__}: {exc}")
+
     added, updated = await _upsert_blueprints(db, blueprints, default_source="base")
     if added or updated:
         await _bump_meta(
@@ -796,10 +888,19 @@ async def sync_blueprints(db: AsyncSession = Depends(get_db)):
 @router.post("/import-beacondata", response_model=SyncResult)
 async def import_beacondata(
     file: UploadFile = File(...),
+    dinos_only: bool = Query(
+        False, description="Import only creature records, skipping engrams/items."),
+    official_only: bool = Query(
+        False, description="Import only official-content paths (vanilla/DLC/ASA/packs), "
+                           "skipping third-party mod records."),
     db: AsyncSession = Depends(get_db),
 ):
     """
     UPSERT a Beacon ``.beacondata`` bundle into ``ARKM_blueprints``.
+
+    Beacon bundles carry a lot of content that is useless for this panel
+    (third-party mods, engram spam); ``dinos_only`` and ``official_only``
+    filter it at import time instead of requiring a prune afterwards.
 
     Multiple imports accumulate.  Each entry is tagged with a source
     label of ``beacon:<filename>`` so the operator can later wipe a
@@ -834,12 +935,18 @@ async def import_beacondata(
             if kind == "creature":
                 normalized = _normalize_beacon_creature(record, source_label)
                 if normalized:
+                    if official_only and not is_official_blueprint(normalized):
+                        continue
                     dinos_count += 1
                     pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
                     blueprints.append(normalized)
             else:  # engram
+                if dinos_only:
+                    continue
                 normalized = _normalize_beacon_engram(record, source_label)
                 if normalized:
+                    if official_only and not is_official_blueprint(normalized):
+                        continue
                     items_count += 1
                     pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
                     blueprints.append(normalized)
