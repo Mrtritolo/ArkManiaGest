@@ -199,9 +199,9 @@ introdotte dalla release più recente.
 Alternativa (incrementale, senza reinstallare i pacchetti):
 
 ```powershell
-.\deploy\update-remote.ps1                 # sync completo
-.\deploy\update-remote.ps1 -BackendOnly
-.\deploy\update-remote.ps1 -FrontendOnly
+.\deploy\update-panel.ps1                  # sync completo
+.\deploy\update-panel.ps1 -BackendOnly
+.\deploy\update-panel.ps1 -FrontendOnly
 ```
 
 Dal pannello stesso puoi controllare la versione in esecuzione e se è
@@ -218,7 +218,7 @@ Aggiornamenti → Verifica ora**.
 | `Let's Encrypt failed` | Controlla che il DNS punti davvero al server e che la porta 80 sia raggiungibile dall'esterno. |
 | `MariaDB access denied` | Se hai risposto "no" a "installare MariaDB", assicurati che il DB indicato esista e che l'utente abbia tutti i privilegi sullo schema del pannello. |
 | Pannello 502 Bad Gateway | `sudo systemctl status arkmaniagest` + `journalctl -u arkmaniagest -n 50` per capire l'errore reale. |
-| `update-remote.ps1` chiede password ogni volta | Configura una chiave SSH sul target: `ssh-copy-id utente@host`. |
+| `update-panel.ps1` chiede password ogni volta | Configura una chiave SSH sul target: `ssh-copy-id utente@host`. |
 
 Per problemi di sicurezza, segui [SECURITY.md](../SECURITY.md) — **non**
 aprire una issue pubblica per una vulnerabilità.

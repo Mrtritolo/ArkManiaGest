@@ -20,7 +20,7 @@ APP_USER="arkmania"
 ### First deploy (full setup)
 
 ```powershell
-.\deploy\deploy-remote.ps1
+.\deploy\install-panel.ps1
 ```
 
 Runs: upload archive → `full-deploy.sh` on server (packages, user, venv, npm build, nginx, SSL, GeoIP, UFW, fail2ban, cron).
@@ -29,22 +29,22 @@ Runs: upload archive → `full-deploy.sh` on server (packages, user, venv, npm b
 
 ```powershell
 # Full update
-.\deploy\update-remote.ps1
+.\deploy\update-panel.ps1
+
+# Skip the host prompt
+.\deploy\update-panel.ps1 -Server user@host
 
 # Backend only
-.\deploy\update-remote.ps1 -BackendOnly
+.\deploy\update-panel.ps1 -BackendOnly
 
 # Frontend only
-.\deploy\update-remote.ps1 -FrontendOnly
-
-# Force dependency reinstall
-.\deploy\update-remote.ps1 -WithDeps
+.\deploy\update-panel.ps1 -FrontendOnly
 
 # Skip dependencies (files only)
-.\deploy\update-remote.ps1 -NoDeps
+.\deploy\update-panel.ps1 -NoDeps
 
 # Preview without executing
-.\deploy\update-remote.ps1 -DryRun
+.\deploy\update-panel.ps1 -DryRun
 ```
 
 ---
@@ -94,9 +94,9 @@ crontab -l
 | File | Role |
 |---|---|
 | `deploy.conf` | **Shared config** — single source of truth for all parameters |
-| `update-remote.ps1` | **PC** — Incremental update (tar + scp + server-update.sh) |
-| `deploy-remote.ps1` | **PC** — Full initial deploy (tar + scp + full-deploy.sh) |
-| `server-update.sh` | **Server** — Executed by update-remote.ps1 (sync, deps, build, restart) |
+| `update-panel.ps1` | **PC** — Incremental update (tar + scp + server-update.sh) |
+| `install-panel.ps1` | **PC** — Full initial deploy (tar + scp + full-deploy.sh) |
+| `server-update.sh` | **Server** — Executed by update-panel.ps1 (sync, deps, build, restart) |
 | `full-deploy.sh` | **Server** — Full setup (packages, nginx, SSL, firewall, cron) |
 | `backup.sh` | **Server** — Backup .env + nginx config |
 | `restore.sh` | **Server** — Restore from backup |
