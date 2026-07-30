@@ -15,8 +15,7 @@
 # --- Target server (used by the PowerShell scripts on the dev PC) ---
 DEPLOY_SERVER="root@YOUR_SERVER_IP"
 
-# --- SSH authentication (optional, used by update-panel.{sh,ps1} +
-#     update-remote.ps1) ---
+# --- SSH authentication (optional, used by update-panel.{sh,ps1}) ---
 #
 # When you log in to the panel host with a dedicated key rather than the
 # default ~/.ssh/id_* one, set SSH_KEY_PATH to its absolute path.  The

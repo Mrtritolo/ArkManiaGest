@@ -9,7 +9,7 @@
 #                                         deploy/server-update.sh)
 #
 #   arkmaniagest-v<VER>-windows.zip    -- deploy from a Windows dev PC
-#                                        (use deploy/deploy-remote.ps1)
+#                                        (use deploy/install-panel.ps1)
 #
 # Usage:
 #   .\deploy\maintainer\package-release.ps1                        # auto-detect version
@@ -232,7 +232,7 @@ $defaultNotes = @"
 | Platform | File | Deploy command |
 |----------|------|----------------|
 | Linux server | ``$LINUX_NAME`` | ``tar -xzf $LINUX_NAME && cd arkmaniagest-v$Version && sudo bash deploy/full-deploy.sh`` |
-| Windows dev PC | ``$WIN_NAME`` | Unzip then run ``deploy\deploy-remote.ps1`` |
+| Windows dev PC | ``$WIN_NAME`` | Unzip then run ``deploy\install-panel.ps1`` |
 
 Checksums are published in ``SHA256SUMS.txt``.
 

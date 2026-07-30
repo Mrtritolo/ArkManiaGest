@@ -1,7 +1,7 @@
 # =============================================================================
 # .deployignore - Shared exclusion list for ArkManiaGest deployment archives
 # =============================================================================
-# Used by: deploy-remote.ps1, update-remote.ps1 (tar --exclude-from)
+# Used by: install-panel.ps1, update-panel.ps1 (tar --exclude-from)
 # Also mirrored in: full-deploy.sh, server-update.sh (rsync --exclude-from)
 #
 # NOTE: This file uses tar/rsync exclusion syntax.  Patterns are relative to

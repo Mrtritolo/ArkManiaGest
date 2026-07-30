@@ -162,8 +162,8 @@ ArkManiaGest/
 │       ├── services/api.ts          # Axios API client
 │       └── types/                   # TypeScript types
 ├── deploy/                          # Deploy scripts + server config
-│   ├── deploy-remote.ps1            # First deploy from the dev PC
-│   ├── update-remote.ps1            # Incremental update
+│   ├── install-panel.ps1            # First deploy from the dev PC
+│   ├── update-panel.ps1             # Incremental update
 │   ├── full-deploy.sh               # Full Linux server setup
 │   ├── server-update.sh             # Server-side update
 │   ├── migrate-env.sh               # Idempotent .env key backfill
@@ -274,9 +274,9 @@ Alternatively, use the incremental update path that skips package
 installation:
 
 ```powershell
-.\deploy\update-remote.ps1            # full
-.\deploy\update-remote.ps1 -BackendOnly
-.\deploy\update-remote.ps1 -FrontendOnly
+.\deploy\update-panel.ps1             # full
+.\deploy\update-panel.ps1 -BackendOnly
+.\deploy\update-panel.ps1 -FrontendOnly
 ```
 
 ### Server-side DB check
