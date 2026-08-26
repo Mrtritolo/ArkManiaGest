@@ -7,6 +7,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.4] - 2026-08-26
+
+### Fixed
+
+- **The panel advertised version 3.5.5.** The sidebar rendered a hardcoded
+  `V 3.5.5` string, so the UI kept naming a release from months earlier no
+  matter what shipped, and `GET /settings/app-settings` fell back to the same
+  literal when the `app_version` setting was unset. The version string is now
+  derived, not copied: the frontend injects `package.json` at build time
+  through a Vite `define`, and the backend reads a single `APP_VERSION`
+  constant that `main.py` and the settings route share. The documented
+  "version lives in three places" was in fact five.
+
+### Changed
+
+- `CLAUDE.md` versioning section updated to the two files that now actually
+  carry the number (`backend/app/core/config.py`, `frontend/package.json`)
+  plus the changelog entry.
+
+---
+
 ## [4.1.3] - 2026-08-26
 
 Bugfix release for the character/tribe name sync: the scan silently applied

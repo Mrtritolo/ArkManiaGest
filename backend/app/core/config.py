@@ -10,6 +10,12 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
+# Single source of truth for the backend version string.  It used to be
+# duplicated as a literal in main.py (twice) and as the fallback of the
+# app_version setting, which is how the panel kept advertising 3.5.5 long
+# after 3.5.5 shipped.  Bump this and frontend/package.json together.
+APP_VERSION: str = "4.1.4"
+
 
 class ServerSettings(BaseSettings):
     """

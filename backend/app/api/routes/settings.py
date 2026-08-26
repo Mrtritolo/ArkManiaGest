@@ -37,7 +37,7 @@ from app.core.store import (
     get_all_users,
     create_user,
 )
-from app.core.config import server_settings
+from app.core.config import APP_VERSION, server_settings
 from app.schemas.settings import (
     AppStatus,
     SetupRequest,
@@ -131,7 +131,7 @@ async def get_app_settings(
     """Read general application settings from the database."""
     return AppSettingsRead(
         app_name=await get_setting_async(db, "app_name") or "ArkManiaGest",
-        version=await get_setting_async(db, "app_version") or "3.5.5",
+        version=await get_setting_async(db, "app_version") or APP_VERSION,
         log_level=await get_setting_async(db, "log_level") or "INFO",
         auto_backup=(await get_setting_async(db, "auto_backup") or "true") == "true",
         backup_interval_hours=int(

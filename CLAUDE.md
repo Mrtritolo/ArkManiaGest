@@ -201,11 +201,17 @@ reference/              # POK-manager checkout — gitignored, used as a templat
   keep `deploy/deploy.conf.example` sanitised.
 
 ### Versioning
-- Version string lives in **three** places — keep them in lockstep:
-  - [backend/app/main.py](backend/app/main.py) (`FastAPI(version=...)` and the
-    `/health` payload)
-  - [frontend/package.json](frontend/package.json) (`version`)
+- Version string lives in **two** files — keep them in lockstep, plus the
+  changelog entry:
+  - [backend/app/core/config.py](backend/app/core/config.py) (`APP_VERSION`),
+    read by `main.py` (`FastAPI(version=...)`, `/health`) and by the
+    `app_version` fallback in `settings.py`
+  - [frontend/package.json](frontend/package.json) (`version`), injected into
+    the bundle by `vite.config.ts` as `__APP_VERSION__` and rendered by the
+    sidebar
   - [CHANGELOG.md](CHANGELOG.md) entry
+- Never hardcode the number in a component or a route default: that is how the
+  sidebar kept showing `V 3.5.5` until 4.1.4.
 - Hand-written release notes go in `next-release-notes.md` (gitignored), are
   consumed by the release tooling, then deleted. The canonical record is
   CHANGELOG.md.

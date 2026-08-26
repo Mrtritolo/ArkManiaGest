@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import server_settings
+from app.core.config import APP_VERSION, server_settings
 
 IS_PRODUCTION = not server_settings.DEBUG
 log = logging.getLogger("arkmaniagest")
@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ArkManiaGest",
-    version="4.1.3",
+    version=APP_VERSION,
     description="Comprehensive manager for ARK: Survival Ascended servers",
     # Docs endpoints are disabled in production
     docs_url=None if IS_PRODUCTION else "/docs",
@@ -190,7 +190,7 @@ async def health_check():
     return {
         "status": "ok",
         "app": "ArkManiaGest",
-        "version": "4.1.3",
+        "version": APP_VERSION,
         "db_ready": db_session._async_session is not None,
         "plugin_db_ready": db_session._plugin_async_session is not None,
         "schema_init_errors": list(_SCHEMA_INIT_ERRORS),
