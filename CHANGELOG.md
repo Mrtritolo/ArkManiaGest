@@ -7,6 +7,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.5] - 2026-08-26
+
+### Fixed
+
+- **Two-letter character names were replaced by engine strings.** The name
+  extractor swept the FStrings following the `PlayerCharacterName` marker and
+  the sweep drops anything shorter than `_FSTRING_MIN_LEN` (3), so a character
+  called `gg` was invisible and the *next* property name was returned instead:
+  seven accounts on the live cluster were listed as `RawBoneModifiers` or
+  `DynamicMaterialBytes`. The value is now read structurally from the
+  `StrProperty` layout (`gg`, `Lo`, `Je`, `Cr`, `Ra`, `HP`, `KG` recovered).
+- **Accented names fell back to the account name.** UE stores a non-ASCII
+  FString with a negative length in UTF-16-LE; the first cut of the structural
+  reader treated that as absent and dropped through to `PlayerName`, which
+  would have rewritten `velvé` into `ParmaRick` and `Júlian` into `kekkogame6`.
+  Both encodings are handled. Validated against all 509 `.arkprofile` files of
+  the live cluster: 502 unchanged, 7 corrected, 0 regressions.
+
+### Notes
+
+- `Human` / `Umano` / `Humain` / `Человек` (51 accounts) are **not** parser
+  errors: that is the real value of `PlayerCharacterName`, ARK's per-language
+  default when the player never renamed the character. Whether the panel
+  should prefer the account name for those is an open product decision.
+- Players shown as `Sconosciuto` (7) have an empty name in the DB and **no**
+  `.arkprofile` anywhere on the cluster, so no file-based scan can resolve them.
+
+---
+
 ## [4.1.4] - 2026-08-26
 
 ### Fixed

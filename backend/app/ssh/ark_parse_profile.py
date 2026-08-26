@@ -255,6 +255,64 @@ def _looks_like_eos_id(value: str) -> bool:
 
 # ── Field-specific finders ────────────────────────────────────────────────────
 
+def _read_str_property(data: bytes, marker: bytes) -> Optional[str]:
+    """
+    Read the value of a UE ``StrProperty`` by its property name.
+
+    Layout after the marker (all little-endian)::
+
+        <null>  int32 len("StrProperty\0")  "StrProperty\0"
+        int64 payload_size  byte index  int32 str_len  <str_len bytes>
+
+    Reading the value structurally instead of scanning nearby strings
+    matters for short names: the FString sweep drops anything under
+    ``_FSTRING_MIN_LEN`` characters, so a character called "gg" was skipped
+    and the *next* property name was returned as the player's name
+    (observed live: 4 accounts named "RawBoneModifiers").
+
+    Returns the decoded value, or ``None`` when the property is absent,
+    malformed or holds an empty string.
+    """
+    marker_pos = data.find(marker)
+    if marker_pos < 0:
+        return None
+
+    type_pos = data.find(b"StrProperty", marker_pos + len(marker),
+                         marker_pos + len(marker) + 40)
+    if type_pos < 0:
+        return None
+
+    # null + int64 payload size + index byte, then the FString length.
+    len_at = type_pos + len(b"StrProperty") + 10
+    if len_at + 4 > len(data):
+        return None
+
+    (str_len,) = struct.unpack_from("<i", data, len_at)
+
+    # UE encodes a negative length as UTF-16-LE with |len| code units,
+    # which is how any accented character name is stored ("velve'", "Julian").
+    # Treating those as absent sent the caller to the PlayerName fallback and
+    # replaced the character name with the account name.
+    if str_len < 0:
+        units = -str_len
+        if units <= 1 or units > _FSTRING_MAX_LEN:
+            return None
+        raw = data[len_at + 4:len_at + 4 + (units - 1) * 2]
+        encoding = "utf-16-le"
+    else:
+        # str_len counts the trailing NUL; <= 1 means an empty value.
+        if str_len <= 1 or str_len > _FSTRING_MAX_LEN:
+            return None
+        raw = data[len_at + 4:len_at + 4 + str_len - 1]
+        encoding = "utf-8"
+
+    try:
+        value = raw.decode(encoding)
+    except (UnicodeDecodeError, LookupError):
+        return None
+    return value.strip() or None
+
+
 def find_player_name(
     data: bytes,
     fstrings: list[tuple[int, str]],
@@ -278,6 +336,14 @@ def find_player_name(
     Returns:
         The player character name, or ``None`` if not found.
     """
+    # Preferred path: read the property value structurally.  The FString
+    # sweep below cannot see names shorter than _FSTRING_MIN_LEN and would
+    # return the following property name instead.
+    for marker in _PLAYER_NAME_MARKERS:
+        value = _read_str_property(data, marker)
+        if value and not _is_technical_string(value):
+            return value
+
     for marker in _PLAYER_NAME_MARKERS:
         search_start = 0
         while True:
