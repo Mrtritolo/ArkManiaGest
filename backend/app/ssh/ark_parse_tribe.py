@@ -38,6 +38,18 @@ _TRIBE_NAME_MARKERS: tuple[bytes, ...] = (
 
 # Markers that precede the in-game tribe id (TargetingTeam / TribeID).
 # Used as a sanity check / fallback when the filename id is missing.
+# Real ARK targeting_team ids observed on live clusters span roughly
+# 1.02e9 - 1.92e9.  Anything below the bound is engine metadata that happens
+# to decode as a small positive int (sizes, flags, counts).
+_TRIBE_ID_MIN: int = 1_000_000_000
+
+# Byte offset of the int32 payload from the end of the marker.  UE serialises
+# the property as name FString, type FString, int64 size, int32 index, which
+# puts the value 26 bytes past the marker -- NOT on a 4-byte boundary, which
+# is why an aligned window scan never found it.  Verified against all 359
+# .arktribe files of the live cluster.
+_TRIBE_ID_VALUE_OFFSET: int = 26
+
 _TRIBE_ID_MARKERS: tuple[bytes, ...] = (
     b"TribeID",
     b"TargetingTeam",
@@ -172,31 +184,28 @@ def find_tribe_name(
 
 def find_tribe_id(data: bytes) -> Optional[int]:
     """
-    Best-effort extraction of the in-binary tribe id (TargetingTeam).
+    Extract the in-binary tribe id (TargetingTeam).
 
-    Scans for the int32 immediately following each known marker and
-    returns the first plausible non-zero value.  When the tribe id
-    is unrecoverable from the binary the caller is expected to fall
-    back to the filename, which IS the targeting_team in canonical
-    ARK saves.
+    Reads the int32 at the fixed offset that follows the property marker and
+    accepts it only when it falls in the plausible id range; anything else
+    yields ``None`` and the caller falls back to the filename, which IS the
+    targeting_team in canonical ARK saves.
+
+    Returning ``None`` is deliberately preferred over a guess: the previous
+    window scan returned a plausible-looking constant for every file
+    (1886351952, i.e. b"Trib"), and the caller would have written a tribe
+    name onto that unrelated targeting_team.
     """
     for marker in _TRIBE_ID_MARKERS:
-        search_start = 0
-        while True:
-            marker_pos = data.find(marker, search_start)
-            if marker_pos < 0:
-                break
-            field_end = marker_pos + len(marker)
-            # The int32 value sits a handful of bytes after the marker
-            # (UE4 property tag + 8 bytes of size/index metadata).  Try
-            # every offset in a small window and accept the first
-            # non-trivial value.
-            for delta in range(8, 64, 4):
-                if field_end + delta + 4 <= len(data):
-                    (val,) = struct.unpack_from("<i", data, field_end + delta)
-                    if 1 <= val < 0x7fffffff:
-                        return val
-            search_start = marker_pos + 1
+        marker_pos = data.find(marker)
+        if marker_pos < 0:
+            continue
+        value_at = marker_pos + len(marker) + _TRIBE_ID_VALUE_OFFSET
+        if value_at + 4 > len(data):
+            continue
+        (val,) = struct.unpack_from("<i", data, value_at)
+        if _TRIBE_ID_MIN <= val < 0x7fffffff:
+            return val
     return None
 
 

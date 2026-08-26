@@ -1090,16 +1090,17 @@ async def sync_player_names_from_profiles(
       * 0 candidates                       -> ignored
       * 1 candidate, name == DB            -> noop
       * 1 candidate, name != DB            -> auto-update
-      * N candidates, ONE unique name      -> auto-update (cluster-wide
-                                              replicas of same character)
-      * N candidates, MULTIPLE distinct    -> AMBIGUOUS: kept aside in
-        names                                'ambiguous' for the admin
-                                              to resolve via
-                                              POST /players/sync-names/resolve
+      * N candidates (one character per    -> the profile with the most
+        map, names may all differ)            recent mtime wins; auto-update
+                                              when it differs from the DB
+
+    'ambiguous' is always empty: multiple distinct names are resolved by
+    file mtime rather than by asking the admin.  The field and
+    POST /players/sync-names/resolve are kept for compatibility.
 
     Returns:
       success / total_profiles_scanned / matched / updated /
-      ambiguous (multi-char cases waiting for admin choice) /
+      ambiguous (always empty -- kept for response-shape compatibility) /
       no_name_extracted (parser failed to read a name from the file --
         previously dropped silently, now surfaced) /
       not_matched (parsed name but EOS unknown to DB) /
@@ -1218,56 +1219,37 @@ async def sync_player_names_from_profiles(
                 "profile_eos":  profile_eos_id,
                 "file_id":      prof["file_id"],
                 "machine_id":   mid,
+                "mtime":        prof.get("mtime", 0.0),
                 "_db":          player_data,
             })
 
-    # ── Per-player resolution: auto-update OR mark ambiguous ─────────────
+    # ── Per-player resolution: newest profile wins ──────────────────────
 
     matched   = 0
     updated   = 0
+    # Never populated any more (names are resolved by mtime); the key stays
+    # in the response so the frontend contract is unchanged.
     ambiguous: list[dict] = []
 
     for pid, candidates in by_player.items():
         matched += len(candidates)
-        unique_names = {c["name"] for c in candidates}
         db_data      = candidates[0]["_db"]
         current_name = db_data.get("current_name")
 
-        if len(unique_names) == 1:
-            # Cluster-wide replicas of the same character -- safe to apply.
-            (only_name,) = tuple(unique_names)
-            if current_name != only_name:
-                await db.execute(
-                    update(Player)
-                    .where(Player.Id == pid)
-                    .values(Giocatore=only_name)
-                )
-                updated += 1
-            continue
-
-        # 2+ distinct names for the same DB player: present the choice to
-        # the admin instead of guessing.  De-duplicate candidates by name
-        # so the modal doesn't list the same option N times when a player
-        # has the same name on multiple servers AND a different one on a
-        # third.
-        seen_names: set[str] = set()
-        deduped: list[dict] = []
-        for c in candidates:
-            if c["name"] in seen_names:
-                continue
-            seen_names.add(c["name"])
-            deduped.append({
-                "name":        c["name"],
-                "source_path": c["source_path"],
-                "file_id":     c["file_id"],
-                "machine_id":  c["machine_id"],
-            })
-        ambiguous.append({
-            "player_id":    pid,
-            "eos_id":       db_data["eos_id"],
-            "current_name": current_name,
-            "candidates":   deduped,
-        })
+        # A player legitimately owns one character per map, each with its own
+        # name, so several .arkprofile files for the same EOS with different
+        # names is the normal case -- not an anomaly.  Policy: the most
+        # recently written profile wins, so the panel follows whichever
+        # character the player actually used last.  'ambiguous' stays empty
+        # and is kept only for response-shape compatibility.
+        newest = max(candidates, key=lambda c: c["mtime"])
+        if current_name != newest["name"]:
+            await db.execute(
+                update(Player)
+                .where(Player.Id == pid)
+                .values(Giocatore=newest["name"])
+            )
+            updated += 1
 
     await db.commit()
 
@@ -1690,6 +1672,8 @@ async def sync_tribe_names_from_files(
 
     total_files: int = 0
     matched:     int = 0
+    not_in_db:   int = 0
+    already_current: int = 0
     updates_pt:  int = 0
     updates_decay: int = 0
     not_named: list[dict] = []
@@ -1736,9 +1720,19 @@ async def sync_tribe_names_from_files(
                 })
                 continue
 
+            if tribe_id not in current_names:
+                # SavedArks keeps .arktribe files for tribes the plugin
+                # tables never knew or no longer track (disbanded, wiped,
+                # transferred away).  They used to be counted as 'matched'
+                # and fire two UPDATEs that always hit zero rows, which made
+                # a scan that changed nothing look like it had worked.
+                not_in_db += 1
+                continue
+
             matched += 1
-            if current_names.get(tribe_id) == tribe_name:
+            if current_names[tribe_id] == tribe_name:
                 # Already up to date in both tables.
+                already_current += 1
                 continue
 
             res_pt = await db.execute(
@@ -1765,6 +1759,8 @@ async def sync_tribe_names_from_files(
         "success":            True,
         "total_files_scanned": total_files,
         "matched":            matched,
+        "not_in_db":          not_in_db,
+        "already_current":    already_current,
         "player_tribes_rows_updated": updates_pt,
         "tribe_decay_rows_updated":   updates_decay,
         "not_named":          not_named[:20],

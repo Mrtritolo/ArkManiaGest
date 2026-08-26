@@ -326,7 +326,12 @@ async def cron_sync_names(
     total_profiles = 0
     matched        = 0
     updated_count  = 0
-    seen_eos_ids: set[str] = set()
+    # Best candidate per EOS id: a player owns one character per map, so the
+    # same EOS shows up once per SavedArks directory with a possibly
+    # different name.  Keep the most recently written profile and apply it
+    # after every machine has been walked -- taking the first one seen made
+    # the result depend on container order and could pin a name months old.
+    best_by_eos: dict[str, dict] = {}
     errors: list[str]      = []
 
     for mid, mdata in containers_map["machines"].items():
@@ -379,20 +384,25 @@ async def cron_sync_names(
                             ref_eos = db_eos
                             break
 
-            if not ref_eos or ref_eos in seen_eos_ids:
+            if not ref_eos:
                 continue
-            seen_eos_ids.add(ref_eos)
 
-            player_data = eos_map[ref_eos]
-            matched += 1
+            mtime = prof.get("mtime", 0.0)
+            best  = best_by_eos.get(ref_eos)
+            if best is None or mtime > best["mtime"]:
+                best_by_eos[ref_eos] = {"name": player_name, "mtime": mtime}
 
-            if player_data["current_name"] != player_name:
-                await db.execute(
-                    update(Player)
-                    .where(Player.Id == player_data["id"])
-                    .values(Giocatore=player_name)
-                )
-                updated_count += 1
+    for ref_eos, best in best_by_eos.items():
+        player_data = eos_map[ref_eos]
+        matched += 1
+
+        if player_data["current_name"] != best["name"]:
+            await db.execute(
+                update(Player)
+                .where(Player.Id == player_data["id"])
+                .values(Giocatore=best["name"])
+            )
+            updated_count += 1
 
     await db.commit()
 
@@ -401,7 +411,7 @@ async def cron_sync_names(
         "total_profiles_scanned":total_profiles,
         "matched":               matched,
         "updated":               updated_count,
-        "deduped_eos_ids":       len(seen_eos_ids),
+        "deduped_eos_ids":       len(best_by_eos),
         "errors":                errors,
         "timestamp":             datetime.now(timezone.utc).isoformat(),
     }

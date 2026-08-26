@@ -7,6 +7,57 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.3] - 2026-08-26
+
+Bugfix release for the character/tribe name sync: the scan silently applied
+a stale name, and the tribe parser never recovered a real tribe id.
+
+### Fixed
+
+- **Player name sync picked an arbitrary profile.** `scan_and_match_profiles`
+  de-duplicated profiles by `file_id` ("first occurrence wins") before
+  returning them. Since an `.arkprofile` is named after the EOS id, a player
+  who owns one character per map had every replica but one dropped, so the
+  route saw a single candidate, took the auto-update branch and never
+  surfaced the multi-character case its own docstring described. Which name
+  won depended on container ordering, not on recency — on the live cluster a
+  player was pinned to a name from a profile five weeks old. The scan now
+  returns every profile with its `mtime`, and both the API route and the cron
+  job apply the most recently written one.
+- **Cron sync-names had the same defect, independently.** `/public/cron/sync-names`
+  keeps its own copy of the resolution logic and skipped every profile after
+  the first via `seen_eos_ids`, so the scheduled job kept restoring the stale
+  name even after a manual sync fixed it. It now accumulates the newest
+  profile per EOS across all machines before writing.
+- **Tribe id extraction returned a constant.** `find_tribe_id` scanned for the
+  int32 after the `TribeID` marker stepping 4 bytes at a time, but the value
+  sits 26 bytes past the marker — never on a 4-byte boundary — so the real id
+  was unreachable and the first plausible integer was returned instead: 
+  1886351952, i.e. `b"Trib"` decoded as int32, for every single tribe file.
+  Harmless only because the caller prefers the numeric filename; a single
+  non-numeric filename would have written that tribe's name onto an unrelated
+  `targeting_team`. It now reads the verified offset and returns `None` rather
+  than a guess (validated against all 359 `.arktribe` files of the live
+  cluster: 359 correct, 0 wrong, 0 unresolved).
+- **`sync-tribes` reported work it had not done.** SavedArks keeps `.arktribe`
+  files for tribes the plugin tables no longer track — 537 of 896 on the live
+  cluster. They were counted as `matched` and fired two `UPDATE`s each that
+  always hit zero rows, so a scan that changed nothing looked like it had
+  worked. They are now counted separately as `not_in_db` and skipped, with
+  `already_current` split out from `matched`; 1074 pointless statements per
+  run are gone.
+
+### Notes
+
+- Multiple distinct names for one EOS are no longer reported as `ambiguous`:
+  the field stays in the response and `POST /players/sync-names/resolve` still
+  exists, but the resolution modal in `PlayersPage` no longer opens.
+- Tribes whose name is the in-game default (`Tribe of <player>`) have no
+  `.arktribe` file at all — 159 on the live cluster — and cannot be synced
+  from disk by design. The plugin keeps them current in `ARKM_player_tribes`.
+
+---
+
 ## [4.1.2] - 2026-07-15
 
 Maintenance release from a full project/DB audit: i18n debt cleared, audit

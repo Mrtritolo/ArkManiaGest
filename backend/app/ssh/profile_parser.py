@@ -89,8 +89,14 @@ def scan_and_match_profiles(
     .arkprofile files found.
 
     Uploads the parser once, processes all profiles in all provided directories,
-    then removes the temporary script.  Duplicate file IDs across directories
-    are de-duplicated (first occurrence wins).
+    then removes the temporary script.
+
+    Every profile is returned, including several files sharing the same
+    ``file_id``: a player can own one character per map, so the same EOS id
+    appears once per SavedArks directory with a potentially different name.
+    De-duplicating here would hide those replicas from the caller, which is
+    the one deciding which name wins (see ``sync_player_names_from_profiles``).
+    Only the exact same path seen twice is skipped.
 
     Args:
         ssh:               Connected SSH manager.
@@ -102,28 +108,42 @@ def scan_and_match_profiles(
           - ``player_name`` (str | None): Extracted character name
           - ``eos_id``      (str | None): Extracted EOS ID
           - ``source_path`` (str): Absolute path of the .arkprofile file
+          - ``mtime``       (float): Unix mtime of the file, used by the caller
+            to pick the most recently played character
           - ``error``       (str | None): Error description if extraction failed
     """
     _upload_parser(ssh)
 
     results: List[Dict] = []
-    seen_file_ids: set[str] = set()
+    seen_paths: set[str] = set()
 
     try:
         for saved_path in saved_arks_paths:
             stdout, _, exit_code = ssh.execute(
-                f'find "{saved_path}" -maxdepth 3 -name "*.arkprofile" -type f 2>/dev/null'
+                f'find "{saved_path}" -maxdepth 3 -name "*.arkprofile" -type f '
+                f"-printf '%T@|%p\n' 2>/dev/null"
             )
             if exit_code != 0 or not stdout.strip():
                 continue
 
-            for prof_path in (p.strip() for p in stdout.strip().splitlines() if p.strip()):
+            for line in (ln.strip() for ln in stdout.strip().splitlines() if ln.strip()):
+                mtime_str, _, prof_path = line.partition("|")
+                if not prof_path:
+                    continue
+
+                # Two container entries can point at the same SavedArks path;
+                # skip the identical file, never the same file_id.
+                if prof_path in seen_paths:
+                    continue
+                seen_paths.add(prof_path)
+
                 filename = prof_path.split("/")[-1]
                 file_id = filename.replace(".arkprofile", "")
 
-                if file_id in seen_file_ids:
-                    continue
-                seen_file_ids.add(file_id)
+                try:
+                    mtime = float(mtime_str)
+                except ValueError:
+                    mtime = 0.0
 
                 data = extract_player_data(ssh, prof_path)
                 results.append({
@@ -131,6 +151,7 @@ def scan_and_match_profiles(
                     "player_name": data.get("name"),
                     "eos_id": data.get("eos_id"),
                     "source_path": prof_path,
+                    "mtime": mtime,
                     "error": None if data.get("name") else "Name not found.",
                 })
     finally:
