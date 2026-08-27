@@ -148,40 +148,62 @@ def _docker_ps_status_command(container_name: str) -> str:
 _POK_RCON_INTERFACE = "/home/pok/scripts/rcon_interface.sh"
 
 
-def _rcon_command(container_name: str, rcon_cmd: str) -> str:
+def _rcon_command(
+    container_name: str,
+    rcon_cmd: str,
+    *,
+    rcon_port: int | None = None,
+    rcon_password: str | None = None,
+) -> str:
     """
-    Build the ``docker exec`` invocation that runs an RCON command through
-    POK-manager's ``rcon_interface.sh -custom`` inside the container.
+    Build the ``docker exec`` invocation that runs one RCON command inside
+    the instance's container, adapting to whichever ASA image it runs.
 
-    Verified against POK-manager 2.1.81 (``reference/``): the image installs
-    gorcon as ``rcon-cli`` -- NOT ``rcon`` -- and the supported entry point
-    for an arbitrary command is ``rcon_interface.sh -custom <cmd>``, which
-    reads RCON_HOST/RCON_PORT/RCON_PASSWORD from the container environment.
-    Calling a bare ``rcon`` (the previous implementation) fails on the POK
-    image because that name does not exist, and on other ASA images because
-    gorcon then looks for an ``rcon.yaml`` that is not there:
+    Two images are in the wild and they disagree on everything:
 
-        cli: config: parse file: read file: open rcon.yaml: no such file
+    * **POK-manager** (``acekorneya/asa_server``) installs gorcon as
+      ``rcon-cli`` -- not ``rcon`` -- and exposes
+      ``scripts/rcon_interface.sh -custom <cmd>``, which resolves
+      RCON_HOST/PORT/PASSWORD from the container env and retries on
+      failure. Verified against upstream 2.1.81 in ``reference/``.
+    * **ASA Manager** (``ghcr.io/asamanager/...``) ships plain gorcon as
+      ``rcon`` with no ``rcon.yaml``, so calling it bare dies with
+      ``open rcon.yaml: no such file or directory``. It needs explicit
+      ``-a host:port -p password``.
 
-    The RCON string is still passed through ``docker exec`` stdin
-    (``IFS= read -r CMD``) rather than interpolated into the command line,
-    so no shell metacharacter in the payload is ever word-split or
-    re-evaluated inside the container.
+    We therefore probe for the POK interface at run time and fall back to
+    gorcon with credentials the panel already stores per instance. When no
+    credentials are supplied the fallback still runs, so the error the
+    operator sees names the real problem instead of a shell 'not found'.
+
+    Neither the RCON command nor the password ever reaches a command line:
+    both travel through ``docker exec`` stdin (one line each) so nothing is
+    word-split, re-evaluated, or visible in a process list.
     """
     safe_container = shlex.quote(container_name)
-    # Reject embedded newlines defensively (also enforced upstream) so
-    # the single-line `read -r` below cannot consume a follow-up shell
-    # statement smuggled past the upstream check.
-    if "\n" in rcon_cmd or "\r" in rcon_cmd:
-        raise ValueError("RCON command must be a single line.")
-    payload = shlex.quote(rcon_cmd)
+    # Reject embedded newlines: the payload is read line-wise below, so a
+    # smuggled newline could otherwise inject a second value.
+    for field, value in (("command", rcon_cmd), ("password", rcon_password or "")):
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"RCON {field} must be a single line.")
+
     interface = shlex.quote(_POK_RCON_INTERFACE)
-    # `docker exec` with no `-i` does not allocate stdin, so feed the
-    # RCON payload via the outer shell using here-string semantics.
+    addr = f"127.0.0.1:{int(rcon_port)}" if rcon_port else "127.0.0.1:27020"
+    safe_addr = shlex.quote(addr)
+    # stdin carries password then command, one per line.
+    payload = shlex.quote(f"{rcon_password or ''}\n{rcon_cmd}")
+
+    inner = (
+        "IFS= read -r RPW; IFS= read -r CMD; "
+        f"if [ -x {interface} ]; then {interface} -custom \"$CMD\"; "
+        f"else rcon -a {safe_addr} -p \"$RPW\" \"$CMD\"; fi"
+    )
+    # %s, not %b: the newline separator is already literal inside the
+    # quoted payload, and %b would additionally interpret backslash escapes
+    # in a password or command that legitimately contains one.
     return (
         f"printf '%s' {payload} | "
-        f"docker exec -i {safe_container} "
-        f"bash -lc 'IFS= read -r CMD; {interface} -custom \"$CMD\"'"
+        f"docker exec -i {safe_container} bash -lc {shlex.quote(inner)}"
     )
 
 
@@ -410,9 +432,20 @@ async def exec_rcon(
     user: Optional[dict] = None,
     rcon_cmd: str,
 ) -> ActionResult:
-    """Forward an RCON command to the instance's container and log it."""
+    """
+    Forward an RCON command to the instance's container and log it.
+
+    Port and admin password come from the instance row (the store already
+    decrypts ``admin_password_enc``); they are only used by the non-POK
+    fallback, which needs explicit credentials.
+    """
     adapter = PlatformAdapter.from_machine(machine)
-    cmd = adapter.wrap_shell(_rcon_command(instance["container_name"], rcon_cmd))
+    cmd = adapter.wrap_shell(_rcon_command(
+        instance["container_name"],
+        rcon_cmd,
+        rcon_port=instance.get("rcon_port"),
+        rcon_password=instance.get("admin_password"),
+    ))
     return await run_action(
         db,
         action="rcon",

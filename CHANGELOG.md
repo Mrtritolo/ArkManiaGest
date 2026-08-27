@@ -7,6 +7,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.2.3] - 2026-08-26
+
+### Fixed
+
+- **RCON now works on non-POK containers too.** 4.2.2 pointed every RCON
+  call at POK-manager's `rcon_interface.sh`, which does not exist on the
+  ASA-Manager image the live cluster actually runs — so the player map
+  came up empty and every purge dispatch failed. `_rcon_command` now
+  probes for the POK interface at run time and otherwise falls back to
+  gorcon with explicit `-a host:port -p password`, using the port and
+  decrypted admin password the panel already stores per instance. Both
+  the password and the command travel through `docker exec` stdin, one
+  line each, so neither appears in any process list; `printf '%s'` (not
+  `%b`) keeps a backslash in either value intact. Verified live against
+  `jdbskniuvm`.
+
+---
+
 ## [4.2.2] - 2026-08-26
 
 Realigned the POK-manager integration against upstream 2.1.81
