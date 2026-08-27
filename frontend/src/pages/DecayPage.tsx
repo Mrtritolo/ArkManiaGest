@@ -527,13 +527,13 @@ export default function DecayPage() {
             <div className="pl-empty"><CheckCircle size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyPending')}</p></div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 150px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 215px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                 <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.lastLogin')}</span><span>{t('decay.pending.table.flaggedAt')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
               </div>
               {pending.map(p => { const dKey = `${p.targeting_team}-${p.server_key}`; const dOpen = detailKey === dKey; const gg = daysSince(p.last_member_login); const tgt = targetFor(p.server_key); const tgtName = tgt ? (tgt.display_name || tgt.name) : ''; return (
                 <div key={dKey} style={{ borderBottom: '1px solid var(--border)' }}>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 150px',
+                  display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 215px',
                   padding: '0.45rem 1rem', alignItems: 'center',
                 }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 600 }}>{p.targeting_team}</span>
@@ -561,12 +561,18 @@ export default function DecayPage() {
                         table unreadable. Every button names its target server
                         in the tooltip, so a mis-aimed destructive command is
                         visible before the click, not after. */}
+                    {/* The detail toggle keeps its label: it is the action
+                        operators reach for on nearly every row, and as a bare
+                        icon among five it was simply not findable. The three
+                        plugin commands stay icon-only, each naming its target
+                        server in the tooltip. */}
                     <button
                       onClick={() => toggleDetail(p)}
-                      className={dOpen ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                      className={dOpen ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
                       title={t('decay.detail.title')}
                     >
                       <MapPin size={12} />
+                      {dOpen ? t('decay.detail.hide') : t('decay.detail.show')}
                     </button>
                     <button
                       onClick={() => handleCancelPurge(p)}

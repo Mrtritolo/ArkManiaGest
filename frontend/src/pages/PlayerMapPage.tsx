@@ -294,6 +294,19 @@ export default function PlayerMapPage() {
   const SIZE = 560
   function px(r: ScanRow) { return view ? ((r.pos_x - view.minX) / view.span) * SIZE : 0 }
   function py(r: ScanRow) { return view ? ((r.pos_y - view.minY) / view.span) * SIZE : 0 }
+  /**
+   * Coordinates the way a player reads them in game: GPS lat/lon.
+   *
+   * The raw world units are what the plugin stores and what `cheat
+   * TPCoords` needs, but they mean nothing to anyone looking at the map,
+   * so they only show when the map has no calibration to convert them.
+   */
+  function coordLabel(r: ScanRow): string {
+    const g = gpsLabel(r)
+    if (g) { const [la, lo] = g.split(', '); return `Lat ${la}  Lon ${lo}` }
+    return `${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`
+  }
+
   function gpsLabel(r: ScanRow) {
     if (!calib) return null
     const g = gpsOf(calib, r.pos_x, r.pos_y)
@@ -517,7 +530,7 @@ export default function PlayerMapPage() {
                     strokeWidth={(isSel ? 2 : 1) * k}
                     style={{ cursor: 'pointer' }}
                     onClick={e => { e.stopPropagation(); setSelected(i) }}>
-                    <title>{`${r.custom_name || r.display_name || r.class_name}\n${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}</title>
+                    <title>{`${r.custom_name || r.display_name || r.class_name}\n${coordLabel(r)}`}</title>
                   </circle>
                 )
               })}
@@ -555,8 +568,12 @@ export default function PlayerMapPage() {
                   <div style={{ fontSize: '0.8rem', marginBottom: 8 }}>
                     <b>{sel.custom_name || sel.display_name || sel.class_name}</b>
                     <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginLeft: 8 }}>
-                      {Math.round(sel.pos_x)} {Math.round(sel.pos_y)} {Math.round(sel.pos_z)}
-                      {gpsLabel(sel) && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>GPS {gpsLabel(sel)}</span>}
+                      <span style={{ color: 'var(--accent)' }}>{coordLabel(sel)}</span>
+                      {gpsLabel(sel) && (
+                        <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                          ({Math.round(sel.pos_x)} {Math.round(sel.pos_y)} {Math.round(sel.pos_z)})
+                        </span>
+                      )}
                     </span>
                     <button className="btn btn-ghost btn-sm" onClick={() => copyTp(sel)} title="cheat TPCoords"><Copy size={10} /> TP</button>
                   </div>
@@ -610,7 +627,10 @@ export default function PlayerMapPage() {
                   </span>
                   <span title={r.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.custom_name || r.display_name || r.class_name}</span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>{r.actor_type === 'dino' && r.dino_level > 0 ? r.dino_level : '—'}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}>{Math.round(r.pos_x)} {Math.round(r.pos_y)} {Math.round(r.pos_z)}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}
+                    title={`${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}>
+                    {coordLabel(r)}
+                  </span>
                 </div>
               ))}
             </div>

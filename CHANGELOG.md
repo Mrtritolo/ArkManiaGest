@@ -7,6 +7,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.5.2] - 2026-08-27
+
+### Fixed
+
+- **The detail toggle became unfindable.** Compacting the decay row into
+  five bare icons took the one action operators use on nearly every row
+  with it. The detail button keeps its label; the three plugin commands
+  stay icon-only, each naming its target server in the tooltip.
+
+### Changed
+
+- **In-game coordinates on the player map.** The table, the tooltips and
+  the selection panel now read `Lat / Lon` like the in-game GPS instead of
+  raw world units. The world units are still there — in the tooltip, and
+  in brackets next to the selection — because `cheat TPCoords` needs them,
+  and they remain the only display on maps with no calibration.
+
+---
+
 ## [4.5.1] - 2026-08-27
 
 ### Added
