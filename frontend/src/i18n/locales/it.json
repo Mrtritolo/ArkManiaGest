@@ -691,7 +691,26 @@
       "coords": "Coordinate (X Y Z)",
       "copyTp": "Copia TP",
       "copied": "Copiato!",
-      "truncated": "Lista limitata a 4000 oggetti — quello che vedi NON è tutto ciò che possiede questa tribù. Il purge distruggerebbe più di quanto elencato qui."
+      "truncated": "Lista limitata a 4000 oggetti — quello che vedi NON è tutto ciò che possiede questa tribù. Il purge distruggerebbe più di quanto elencato qui.",
+      "confirmDestroyOne": "Distruggere \"{{what}}\"? Viene eliminato solo questo oggetto."
+    },
+    "cmd": {
+      "pickServer": "Scegli un server...",
+      "scan": "Scansiona",
+      "purgeMap": "Purge di questa mappa",
+      "unclaimed": "Dino non reclamati",
+      "reload": "Ricarica config",
+      "confirmPurge": "Eseguire il purge di tutte le tribu' scadute su questa mappa? Strutture e dino verranno distrutti. Controlla prima la lista pending.",
+      "confirmUnclaimed": "Distruggere i dino non reclamati oltre il periodo di grazia su questa mappa?",
+      "grant": "Proroga",
+      "grantTitle": "Concedi a questa tribu' altri giorni prima del decadimento",
+      "grantPrompt": "Quanti giorni concedere a questa tribu'?",
+      "structs": "Strutture",
+      "structsTitle": "Distruggi tutte le strutture di questa tribu' sulla mappa selezionata",
+      "confirmStructs": "Distruggere TUTTE le strutture della tribu' {{team}} sulla mappa selezionata?",
+      "dinos": "Dino",
+      "dinosTitle": "Distruggi tutti i dino di questa tribu' sulla mappa selezionata",
+      "confirmDinos": "Distruggere TUTTI i dino della tribu' {{team}} sulla mappa selezionata?"
     }
   },
   "leaderboard": {
@@ -2303,6 +2322,13 @@
       "dinos": "Distruggi dini nel raggio",
       "all": "Distruggi TUTTO nel raggio"
     },
-    "mapHintGps": "Mappa calibrata: quadrato fisso = mappa intera, punti alla posizione GPS reale (assi in GPS 0..100). Clicca un punto per selezionarlo."
+    "mapHintGps": "Mappa calibrata: quadrato fisso = mappa intera, punti alla posizione GPS reale (assi in GPS 0..100). Clicca un punto per selezionarlo.",
+    "destroyThis": "Elimina questo oggetto",
+    "confirmDestroyOne": "Eliminare \"{{what}}\"? Singolo oggetto, identificato dal nome attore — i vicini non vengono toccati. I dini conservano il cryo blob e restano ripristinabili.",
+    "scanStructures": "Strutture",
+    "scanDinos": "Dino",
+    "scanPlayers": "Personaggi",
+    "scanLayerHint": "Ri-scansiona solo questo layer: gli altri restano come sono.",
+    "toggleLayer": "Mostra o nascondi questo layer sulla mappa"
   }
 }

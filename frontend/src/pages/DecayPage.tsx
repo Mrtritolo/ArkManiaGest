@@ -4,10 +4,12 @@
  */
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { arkDecayApi } from '../services/api'
+import { arkDecayApi, serverInstancesApi } from '../services/api'
+import type { ServerInstance } from '../types'
 import {
   Timer, Search, AlertCircle, AlertTriangle, CheckCircle, Clock,
-  Trash2, Building, Activity, XCircle, MapPin, Copy, Loader2
+  Trash2, Building, Activity, XCircle, MapPin, Copy, Loader2,
+  RefreshCw, Crosshair, Skull, CalendarPlus, Server, RotateCw
 } from 'lucide-react'
 
 interface DecayTribe {
@@ -28,6 +30,7 @@ interface ScanDetailItem {
   custom_name: string | null; owner_name: string | null
   pos_x: number; pos_y: number; pos_z: number; dino_level: number
   reason: string; server_key: string; map_name: string; scanned_at: string | null
+  actor_name: string | null; targeting_team: number
 }
 interface LogItem {
   id: number; targeting_team: number; server_key: string; map_name: string
@@ -104,6 +107,56 @@ export default function DecayPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailTruncated, setDetailTruncated] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+
+  // Per-map commands need an instance to talk to: every plugin command is
+  // scoped to one server, so the operator picks which map to act on
+  // instead of the old cluster-wide fan-out.
+  const [instances, setInstances] = useState<ServerInstance[]>([])
+  const [cmdInstance, setCmdInstance] = useState<number | ''>('')
+  const [cmdBusy, setCmdBusy] = useState<string | null>(null)
+  const [cmdReply, setCmdReply] = useState<string>('')
+
+  useEffect(() => {
+    serverInstancesApi.list({ active_only: true })
+      .then(r => {
+        setInstances(r.data)
+        if (r.data.length > 0) setCmdInstance(r.data[0].id)
+      })
+      .catch(() => {})
+  }, [])
+
+  /** Run one plugin command against the selected instance. */
+  async function runCmd(key: string, fn: () => Promise<any>, confirmMsg?: string) {
+    if (cmdInstance === '') return
+    if (confirmMsg && !window.confirm(confirmMsg)) return
+    setCmdBusy(key); setCmdReply(''); setError('')
+    try {
+      const res = await fn()
+      setCmdReply(res.data?.reply || res.data?.status || 'ok')
+      await loadData()
+    } catch (e: any) {
+      setError(e.response?.data?.detail || String(e))
+    } finally {
+      setCmdBusy(null)
+    }
+  }
+
+  async function destroyOne(row: ScanDetailItem, idx: number) {
+    if (!row.actor_name || cmdInstance === '') return
+    const label = row.custom_name || row.display_name || row.class_name
+    if (!window.confirm(t('decay.detail.confirmDestroyOne', { what: label }))) return
+    setCmdBusy(`obj-${idx}`); setError('')
+    try {
+      const res = await arkDecayApi.destroyActor(
+        cmdInstance as number, row.targeting_team, row.actor_name)
+      setCmdReply(res.data.reply || '')
+      setDetailRows(rows => rows.filter((_, i) => i !== idx))
+    } catch (e: any) {
+      setError(e.response?.data?.detail || String(e))
+    } finally {
+      setCmdBusy(null)
+    }
+  }
 
   async function toggleDetail(p: PendingItem) {
     const key = `${p.targeting_team}-${p.server_key}`
@@ -251,6 +304,40 @@ export default function DecayPage() {
             {running ? t('decay.runningPurge') : t('decay.runPurgeButton')}
           </button>
         </div>
+      </div>
+
+      {/* Per-map command bar: every plugin command is scoped to one server,
+          so the operator says WHICH map instead of firing at the cluster. */}
+      <div className="card" style={{ padding: '0.7rem 0.9rem', marginBottom: '0.75rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Server size={14} style={{ opacity: 0.6 }} />
+        <select className="input" value={cmdInstance} style={{ minWidth: 210 }}
+          onChange={e => setCmdInstance(e.target.value === '' ? '' : Number(e.target.value))}>
+          <option value="">{t('decay.cmd.pickServer')}</option>
+          {instances.map(i => (
+            <option key={i.id} value={i.id}>{i.display_name || i.name} ({i.map_name})</option>
+          ))}
+        </select>
+        <button className="btn btn-secondary btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+          onClick={() => runCmd('scan', () => arkDecayApi.scanInstance(cmdInstance as number))}>
+          {cmdBusy === 'scan' ? <Loader2 size={12} className="pl-spin" /> : <RefreshCw size={12} />} {t('decay.cmd.scan')}
+        </button>
+        <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+          onClick={() => runCmd('purge', () => arkDecayApi.purgeInstance(cmdInstance as number), t('decay.cmd.confirmPurge'))}>
+          {cmdBusy === 'purge' ? <Loader2 size={12} className="pl-spin" /> : <Trash2 size={12} />} {t('decay.cmd.purgeMap')}
+        </button>
+        <button className="btn btn-secondary btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+          onClick={() => runCmd('unclaimed', () => arkDecayApi.cleanupUnclaimed(cmdInstance as number), t('decay.cmd.confirmUnclaimed'))}>
+          {cmdBusy === 'unclaimed' ? <Loader2 size={12} className="pl-spin" /> : <Skull size={12} />} {t('decay.cmd.unclaimed')}
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+          onClick={() => runCmd('reload', () => arkDecayApi.reloadInstance(cmdInstance as number))}>
+          {cmdBusy === 'reload' ? <Loader2 size={12} className="pl-spin" /> : <RotateCw size={12} />} {t('decay.cmd.reload')}
+        </button>
+        {cmdReply && (
+          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', flexBasis: '100%', fontFamily: 'var(--font-mono)' }}>
+            {cmdReply}
+          </span>
+        )}
       </div>
 
       {error && (
@@ -445,6 +532,31 @@ export default function DecayPage() {
                       <MapPin size={11} />
                       {dOpen ? t('decay.detail.hide') : t('decay.detail.show')}
                     </button>
+                    <button className="btn btn-ghost btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+                      title={t('decay.cmd.grantTitle')}
+                      onClick={() => {
+                        const raw = window.prompt(t('decay.cmd.grantPrompt'), '30')
+                        const days = Number(raw)
+                        if (!raw || !Number.isFinite(days) || days < 0 || days > 3650) return
+                        runCmd(`exp-${p.targeting_team}`, () => arkDecayApi.setExpiry(
+                          cmdInstance as number, p.targeting_team, days))
+                      }}>
+                      <CalendarPlus size={11} /> {t('decay.cmd.grant')}
+                    </button>
+                    <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+                      title={t('decay.cmd.structsTitle')}
+                      onClick={() => runCmd(`str-${p.targeting_team}`,
+                        () => arkDecayApi.removeStructures(cmdInstance as number, p.targeting_team),
+                        t('decay.cmd.confirmStructs', { team: p.targeting_team }))}>
+                      <Building size={11} /> {t('decay.cmd.structs')}
+                    </button>
+                    <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+                      title={t('decay.cmd.dinosTitle')}
+                      onClick={() => runCmd(`din-${p.targeting_team}`,
+                        () => arkDecayApi.removeDinos(cmdInstance as number, p.targeting_team),
+                        t('decay.cmd.confirmDinos', { team: p.targeting_team }))}>
+                      <Skull size={11} /> {t('decay.cmd.dinos')}
+                    </button>
                   </div>
                 </div>
                 {dOpen && (
@@ -463,19 +575,29 @@ export default function DecayPage() {
                         </div>
                       )}
                       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 220px 90px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
                           <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.owner')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span><span></span>
                         </div>
                         {detailRows.map((row, idx) => (
-                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 220px 90px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
                             <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? '#8b5cf6' : 'var(--text-secondary)' }}>{row.actor_type}</span>
                             <span title={row.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.custom_name || row.display_name || row.class_name}</span>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{row.owner_name || '—'}</span>
                             <span style={{ fontFamily: 'var(--font-mono)' }}>{row.actor_type === 'dino' && row.dino_level > 0 ? row.dino_level : '—'}</span>
                             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{Math.round(row.pos_x)} {Math.round(row.pos_y)} {Math.round(row.pos_z)}</span>
-                            <button onClick={() => copyTp(row, idx)} className="btn btn-ghost btn-sm" title={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`}>
-                              <Copy size={10} /> {copiedIdx === idx ? t('decay.detail.copied') : t('decay.detail.copyTp')}
-                            </button>
+                            <span style={{ display: 'flex', gap: 4 }}>
+                              <button onClick={() => copyTp(row, idx)} className="btn btn-ghost btn-sm" title={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`}>
+                                <Copy size={10} /> {copiedIdx === idx ? t('decay.detail.copied') : t('decay.detail.copyTp')}
+                              </button>
+                              {row.actor_name && (
+                                <button className="btn btn-danger btn-sm"
+                                  disabled={cmdInstance === '' || cmdBusy !== null}
+                                  title={row.actor_name}
+                                  onClick={() => destroyOne(row, idx)}>
+                                  <Crosshair size={10} />
+                                </button>
+                              )}
+                            </span>
                           </div>
                         ))}
                       </div>

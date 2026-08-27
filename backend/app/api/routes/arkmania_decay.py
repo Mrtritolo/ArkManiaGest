@@ -313,7 +313,7 @@ async def pending_scan_detail(
         text(
             "SELECT actor_type, class_name, display_name, custom_name, "
             "owner_name, pos_x, pos_y, pos_z, dino_level, reason, "
-            "server_key, map_name, scanned_at "
+            "server_key, map_name, scanned_at, actor_name, targeting_team "
             f"FROM ARKM_scan_detail WHERE {' AND '.join(where)} "
             "ORDER BY actor_type, class_name "
             "LIMIT 4000"
@@ -336,6 +336,8 @@ async def pending_scan_detail(
             "server_key":   r[10],
             "map_name":     r[11],
             "scanned_at":   str(r[12]) if r[12] else None,
+            "actor_name":   r[13] or None,
+            "targeting_team": r[14],
         })
     # The plugin caps the snapshot at 4000 objects per scan and logs the
     # overflow server-side; hitting the cap here means the list is almost
@@ -614,9 +616,13 @@ async def _rcon_to_instance(
     }
 
 
+SCAN_KINDS = ("all", "structures", "dinos", "players")
+
+
 class PlayerScanRequest(BaseModel):
     eos_id: str
     instance_id: int
+    kind: str = "all"
 
 
 @router.post("/player-scan", dependencies=[Depends(require_admin)])
@@ -630,15 +636,26 @@ async def player_scan_run(
     (``ARKM.DM.PlayerScan``): structures, dinos and characters with world
     coordinates, written to ``ARKM_player_scan``. Read the rows back with
     ``GET /player-scan/{eos_id}``.
+
+    ``kind`` narrows the sweep to one layer (plugin 5.6.0+). The plugin then
+    wipes only that layer's rows, so refreshing dinos leaves the structure
+    snapshot intact — worth it on a big base, where the structure sweep is
+    the slow part.
     """
+    if data.kind not in SCAN_KINDS:
+        raise HTTPException(
+            status_code=422, detail=f"kind must be one of {', '.join(SCAN_KINDS)}.")
     return await _rcon_to_instance(
-        panel_db, data.instance_id, f"ARKM.DM.PlayerScan {data.eos_id}", user)
+        panel_db, data.instance_id,
+        f"ARKM.DM.PlayerScan {data.eos_id} {data.kind}", user)
 
 
 @router.get("/player-scan/{eos_id}")
 async def player_scan_rows(
     eos_id: str,
     server_key: Optional[str] = Query(None),
+    actor_type: Optional[str] = Query(
+        None, description="structure | dino | player — one layer only"),
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """Rows of the player's latest scans (all maps unless server_key given)."""
@@ -647,11 +664,16 @@ async def player_scan_rows(
     if server_key:
         where.append("server_key = :sk")
         params["sk"] = server_key
+    if actor_type:
+        if actor_type not in ("structure", "dino", "player"):
+            raise HTTPException(status_code=422, detail="Invalid actor_type.")
+        where.append("actor_type = :at")
+        params["at"] = actor_type
     result = await db.execute(
         text(
             "SELECT targeting_team, server_key, map_name, actor_type, "
             "class_name, display_name, custom_name, owner_name, "
-            "pos_x, pos_y, pos_z, dino_level, is_online, scanned_at "
+            "pos_x, pos_y, pos_z, dino_level, is_online, scanned_at, actor_name "
             f"FROM ARKM_player_scan WHERE {' AND '.join(where)} "
             "ORDER BY scanned_at DESC, actor_type LIMIT 4000"
         ),
@@ -674,6 +696,7 @@ async def player_scan_rows(
             "dino_level":     r[11],
             "is_online":      bool(r[12]),
             "scanned_at":     str(r[13]) if r[13] else None,
+            "actor_name":     r[14] or None,
         })
     return {"rows": items, "count": len(items), "truncated": len(items) >= 4000}
 
@@ -725,4 +748,191 @@ async def kill_player(
     """
     return await _rcon_to_instance(
         panel_db, data.instance_id, f"ARKM.DM.KillPlayer {data.eos_id}", user)
+
+# ── Targeted plugin commands (plugin 5.5.0+) ────────────────────────────────
+#
+# Everything below drives ONE instance with ONE plugin command, instead of
+# fanning out across the cluster the way /run-purge does. Same RCON bridge,
+# same admin gate; the plugin keeps enforcing its own guards (team > 10000,
+# radius clamp, membership checks), so the panel never has to.
+
+
+class DestroyActorRequest(BaseModel):
+    instance_id: int
+    targeting_team: int
+    actor_name: str
+
+
+@router.post("/destroy-actor", dependencies=[Depends(require_admin)])
+async def destroy_actor(
+    data: DestroyActorRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Destroy ONE object by its actor instance name (``ARKM.DM.DestroyActor``).
+
+    The name comes from a scan snapshot (``actor_name``). A radius of 1 m
+    would still catch neighbours — foundations sit ~3 m apart and penned
+    dinos far closer — so this is the only truly single-object action.
+    Dinos are captured with their cryo blob first, so they stay restorable.
+    """
+    if not data.actor_name.strip():
+        raise HTTPException(status_code=422, detail="actor_name is required.")
+    cmd = f"ARKM.DM.DestroyActor {data.targeting_team} {data.actor_name.strip()}"
+    return await _rcon_to_instance(panel_db, data.instance_id, cmd, user)
+
+
+class InstanceOnlyRequest(BaseModel):
+    instance_id: int
+
+
+@router.post("/scan", dependencies=[Depends(require_admin)])
+async def run_scan(
+    data: InstanceOnlyRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Run the decay scan on ONE map (``ARKM.DM.Scan``): flags expired and
+    orphaned tribes into ``ARKM_decay_pending`` and refreshes the
+    ``ARKM_scan_detail`` snapshot. Destroys nothing.
+    """
+    return await _rcon_to_instance(panel_db, data.instance_id, "ARKM.DM.Scan", user)
+
+
+@router.post("/purge-instance", dependencies=[Depends(require_admin)])
+async def purge_one_instance(
+    data: InstanceOnlyRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Purge the pending tribes of ONE map only (``ARKM.DM.Purge``), instead of
+    the cluster-wide fan-out of ``/run-purge``. Destructive: review the
+    pending list, with its last-login column, before calling this.
+    """
+    return await _rcon_to_instance(panel_db, data.instance_id, "ARKM.DM.Purge", user)
+
+
+@router.post("/reload", dependencies=[Depends(require_admin)])
+async def reload_config(
+    data: InstanceOnlyRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """Re-read the DecayManager config from the DB (``ARKM.DM.Reload``)."""
+    return await _rcon_to_instance(panel_db, data.instance_id, "ARKM.DM.Reload", user)
+
+
+@router.post("/cleanup-unclaimed", dependencies=[Depends(require_admin)])
+async def cleanup_unclaimed(
+    data: InstanceOnlyRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Destroy unclaimed dinos past the grace period on one map
+    (``ARKM.DM.CleanUnclaimed``). These are usually unclaimed newborns.
+    """
+    return await _rcon_to_instance(
+        panel_db, data.instance_id, "ARKM.DM.CleanUnclaimed", user)
+
+
+class TribeActionRequest(BaseModel):
+    instance_id: int
+    targeting_team: int
+
+
+@router.post("/remove-structures", dependencies=[Depends(require_admin)])
+async def remove_tribe_structures(
+    data: TribeActionRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """Destroy every structure of one tribe on one map (``ARKM.DM.RemoveStruct``)."""
+    return await _rcon_to_instance(
+        panel_db, data.instance_id,
+        f"ARKM.DM.RemoveStruct {data.targeting_team}", user)
+
+
+@router.post("/remove-dinos", dependencies=[Depends(require_admin)])
+async def remove_tribe_dinos(
+    data: TribeActionRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """Destroy every dino of one tribe on one map (``ARKM.DM.RemoveDinos``)."""
+    return await _rcon_to_instance(
+        panel_db, data.instance_id,
+        f"ARKM.DM.RemoveDinos {data.targeting_team}", user)
+
+
+@router.get("/tribe-info/{targeting_team}")
+async def tribe_info(
+    targeting_team: int,
+    instance_id: int = Query(...),
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """Live decay state of one tribe as the plugin sees it (``ARKM.DM.TribeInfo``)."""
+    return await _rcon_to_instance(
+        panel_db, instance_id, f"ARKM.DM.TribeInfo {targeting_team}", user)
+
+
+class SetExpiryRequest(BaseModel):
+    instance_id: int
+    targeting_team: int
+    days: int
+
+
+@router.post("/set-expiry", dependencies=[Depends(require_admin)])
+async def set_expiry(
+    data: SetExpiryRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Grant a tribe N more days before it decays (``ARKM.DM.SetExpiry``).
+
+    Note the plugin recomputes expiry from the tribe's most entitled member
+    at each member login, so this is an override that a later login can
+    move — use it to buy time, not as a permanent exemption.
+    """
+    if not (0 <= data.days <= 3650):
+        raise HTTPException(status_code=422, detail="days must be between 0 and 3650.")
+    cmd = f"ARKM.DM.SetExpiry {data.targeting_team} {data.days}"
+    return await _rcon_to_instance(panel_db, data.instance_id, cmd, user)
+
+# ── Map background images ────────────────────────────────────────────────────
+
+@router.get("/map-image/{map_name}")
+async def map_image(map_name: str):
+    """
+    Serve the topographic image for a map, cached locally on first request.
+
+    Fetched once from ark.wiki.gg and kept on disk: the wiki rate-limits per
+    IP and some maps are several MB, so hotlinking it on every page load
+    would be both fragile and impolite. Unknown or unavailable maps return
+    404 and the player map simply renders without a background.
+    """
+    from fastapi.responses import FileResponse
+    from app.services.map_images import get_map_image, is_supported
+
+    if not is_supported(map_name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No known wiki image for map '{map_name}'.")
+    path = await get_map_image(map_name)
+    if path is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Map image for '{map_name}' is not available right now.")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        # Immutable content: the wiki image for a released map does not
+        # change, so let the browser keep it for a day.
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 

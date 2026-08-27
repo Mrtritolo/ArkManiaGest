@@ -691,7 +691,26 @@
       "coords": "Coordinates (X Y Z)",
       "copyTp": "Copy TP",
       "copied": "Copied!",
-      "truncated": "List capped at 4000 objects — what you see is NOT everything this tribe owns. The purge would destroy more than what is listed here."
+      "truncated": "List capped at 4000 objects — what you see is NOT everything this tribe owns. The purge would destroy more than what is listed here.",
+      "confirmDestroyOne": "Destroy \"{{what}}\"? Only this object is affected."
+    },
+    "cmd": {
+      "pickServer": "Pick a server...",
+      "scan": "Scan",
+      "purgeMap": "Purge this map",
+      "unclaimed": "Unclaimed dinos",
+      "reload": "Reload config",
+      "confirmPurge": "Purge every expired tribe on this map? Structures and dinos will be destroyed. Check the pending list first.",
+      "confirmUnclaimed": "Destroy the unclaimed dinos past the grace period on this map?",
+      "grant": "Extend",
+      "grantTitle": "Give this tribe more days before it decays",
+      "grantPrompt": "How many days to grant this tribe?",
+      "structs": "Structures",
+      "structsTitle": "Destroy every structure of this tribe on the selected map",
+      "confirmStructs": "Destroy ALL structures of tribe {{team}} on the selected map?",
+      "dinos": "Dinos",
+      "dinosTitle": "Destroy every dino of this tribe on the selected map",
+      "confirmDinos": "Destroy ALL dinos of tribe {{team}} on the selected map?"
     }
   },
   "leaderboard": {
@@ -2303,6 +2322,13 @@
       "dinos": "Destroy dinos in radius",
       "all": "Destroy EVERYTHING in radius"
     },
-    "mapHintGps": "Calibrated map: fixed square = the whole map, dots at true GPS position (axes in GPS 0..100). Click a dot to select it."
+    "mapHintGps": "Calibrated map: fixed square = the whole map, dots at true GPS position (axes in GPS 0..100). Click a dot to select it.",
+    "destroyThis": "Destroy this object",
+    "confirmDestroyOne": "Destroy \"{{what}}\"? Single object, identified by its actor name — neighbours are not touched. Dinos keep a cryo blob and stay restorable.",
+    "scanStructures": "Structures",
+    "scanDinos": "Dinos",
+    "scanPlayers": "Characters",
+    "scanLayerHint": "Re-scan only this layer: the other layers stay as they were.",
+    "toggleLayer": "Show or hide this layer on the map"
   }
 }

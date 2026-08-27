@@ -7,6 +7,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.3.0] - 2026-08-27
+
+### Added
+
+- **Decay manager: per-map command bar.** Every DecayManager command now
+  runs against ONE server you pick from a dropdown, instead of the
+  cluster-wide fan-out that `/run-purge` does: scan, purge, unclaimed-dino
+  cleanup and config reload. Each tribe row also gets its own actions —
+  extend the expiry by N days, wipe just the structures, wipe just the
+  dinos — and the RCON reply is shown verbatim under the bar.
+- **Single-object destruction.** Rows in the pending detail and on the
+  player map can be destroyed one at a time, by actor instance name, with
+  no radius involved: a 1 m radius would still catch neighbouring
+  foundations and penned dinos. Requires plugin 5.5.0+, which records
+  `actor_name` in its snapshots.
+- **Real map backgrounds.** The player map draws its dots over the
+  topographic image from ark.wiki.gg, fetched once and cached on disk
+  (`$ARKM_DATA_DIR/map_images/`). Only shown for calibrated maps: over
+  auto-fit bounds the image would put dots in convincingly wrong places.
+  Mod maps have no image and render as before.
+- **Player map: layer filter and per-layer scan.** Structures, dinos and
+  characters can be shown or hidden independently — a base with a couple
+  of thousand foundations buries the handful of dots that matter — and
+  each layer can be re-scanned on its own. The plugin (5.6.0+) then wipes
+  only that layer's snapshot, so refreshing dinos leaves the structure
+  sweep, the slow part, untouched.
+
+### Notes
+
+- The panel keeps working against an older plugin: rows scanned before
+  5.5.0 have no `actor_name` and simply show no single-destroy button,
+  and a `kind` argument an older plugin ignores just scans everything.
+
+---
+
 ## [4.2.4] - 2026-08-26
 
 ### Fixed

@@ -1036,6 +1036,11 @@ export const arkmaniaApi = {
 // ArkMania — Decay
 // ---------------------------------------------------------------------------
 
+/** One layer of the player-map snapshot, as the plugin labels it. */
+export type ActorLayer = "structure" | "dino" | "player"
+/** Scan scope accepted by ARKM.DM.PlayerScan (plugin 5.6.0+). */
+export type ScanKind = "all" | "structures" | "dinos" | "players"
+
 export const arkDecayApi = {
   overview: () => api.get("/arkmania/decay"),
   tribes: (params?: { status?: string; search?: string; limit?: number }) =>
@@ -1060,13 +1065,17 @@ export const arkDecayApi = {
    * on one map, then surgical destroy/kill actions. Everything goes
    * through the plugin's RCON commands; the panel never touches actors.
    */
-  playerScanRun: (eosId: string, instanceId: number) =>
+  playerScanRun: (eosId: string, instanceId: number, kind: ScanKind = "all") =>
     api.post<{ status: string; reply: string; stderr: string | null }>(
-      "/arkmania/decay/player-scan", { eos_id: eosId, instance_id: instanceId },
+      "/arkmania/decay/player-scan",
+      { eos_id: eosId, instance_id: instanceId, kind },
       { timeout: 120_000 }),
-  playerScanRows: (eosId: string, serverKey?: string) =>
+  playerScanRows: (eosId: string, serverKey?: string, actorType?: ActorLayer) =>
     api.get(`/arkmania/decay/player-scan/${eosId}`, {
-      params: serverKey ? { server_key: serverKey } : undefined,
+      params: {
+        ...(serverKey ? { server_key: serverKey } : {}),
+        ...(actorType ? { actor_type: actorType } : {}),
+      },
     }),
   destroyRadius: (data: {
     instance_id: number; targeting_team: number;
@@ -1075,6 +1084,46 @@ export const arkDecayApi = {
   }) =>
     api.post<{ status: string; reply: string; stderr: string | null }>(
       "/arkmania/decay/destroy-radius", data, { timeout: 120_000 }),
+  /** Single-object destruction by actor instance name (plugin 5.5.0+). */
+  destroyActor: (instanceId: number, targetingTeam: number, actorName: string) =>
+    api.post<{ status: string; reply: string; stderr: string | null }>(
+      "/arkmania/decay/destroy-actor",
+      { instance_id: instanceId, targeting_team: targetingTeam, actor_name: actorName },
+      { timeout: 60_000 }),
+
+  /** Per-map plugin commands: one instance, one command. */
+  scanInstance: (instanceId: number) =>
+    api.post("/arkmania/decay/scan", { instance_id: instanceId }, { timeout: 180_000 }),
+  purgeInstance: (instanceId: number) =>
+    api.post("/arkmania/decay/purge-instance", { instance_id: instanceId }, { timeout: 300_000 }),
+  reloadInstance: (instanceId: number) =>
+    api.post("/arkmania/decay/reload", { instance_id: instanceId }, { timeout: 60_000 }),
+  cleanupUnclaimed: (instanceId: number) =>
+    api.post("/arkmania/decay/cleanup-unclaimed", { instance_id: instanceId }, { timeout: 180_000 }),
+  removeStructures: (instanceId: number, targetingTeam: number) =>
+    api.post("/arkmania/decay/remove-structures",
+      { instance_id: instanceId, targeting_team: targetingTeam }, { timeout: 180_000 }),
+  removeDinos: (instanceId: number, targetingTeam: number) =>
+    api.post("/arkmania/decay/remove-dinos",
+      { instance_id: instanceId, targeting_team: targetingTeam }, { timeout: 180_000 }),
+  tribeInfo: (targetingTeam: number, instanceId: number) =>
+    api.get(`/arkmania/decay/tribe-info/${targetingTeam}`, { params: { instance_id: instanceId } }),
+  setExpiry: (instanceId: number, targetingTeam: number, days: number) =>
+    api.post("/arkmania/decay/set-expiry",
+      { instance_id: instanceId, targeting_team: targetingTeam, days }, { timeout: 60_000 }),
+
+  /**
+   * Cached topographic image for a map, as a blob.
+   *
+   * Fetched through axios rather than pointed at from an <image> tag: the
+   * decay router is JWT-protected, and a bare src attribute carries no
+   * Authorization header. Callers wrap the result in an object URL and
+   * revoke it when done. Rejects with 404 when the map has no image.
+   */
+  mapImage: (mapName: string) =>
+    api.get<Blob>(`/arkmania/decay/map-image/${encodeURIComponent(mapName)}`,
+      { responseType: "blob", timeout: 60_000 }),
+
   killPlayer: (eosId: string, instanceId: number) =>
     api.post<{ status: string; reply: string; stderr: string | null }>(
       "/arkmania/decay/kill-player", { eos_id: eosId, instance_id: instanceId },
