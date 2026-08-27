@@ -7,6 +7,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.3.1] - 2026-08-27
+
+### Fixed
+
+- **Player map: both dropdowns are now sorted.** Players and servers came
+  out in API order — registration order for servers, and for players
+  whatever the list endpoint returned — which on a cluster this size
+  meant hunting through the list. Both are sorted alphabetically by the
+  label actually shown, with `localeCompare` so accented names land where
+  an Italian reader expects them. The player list is sorted BEFORE the
+  60-row cut, so the names shown are the first 60 alphabetically rather
+  than an arbitrary slice that merely looks sorted; nameless accounts
+  sink to the bottom.
+
+---
+
 ## [4.3.0] - 2026-08-27
 
 ### Added

@@ -68,6 +68,14 @@ export default function PlayerMapPage() {
   // (mod maps) or the wiki fetch failed — the map then renders bare.
   const [mapImg, setMapImg] = useState<string | null>(null)
 
+  // Servers in the picker, alphabetical by the label the admin actually
+  // reads -- the API returns them in registration order.
+  const sortedInstances = useMemo(
+    () => [...instances].sort((a, b) =>
+      (a.display_name || a.name).localeCompare(b.display_name || b.name, undefined,
+        { sensitivity: 'base', numeric: true })),
+    [instances])
+
   useEffect(() => {
     // 500 is the API's hard cap: asking for more is a 422, which left the
     // player selector empty with no visible error.
@@ -110,7 +118,18 @@ export default function PlayerMapPage() {
     const base = q
       ? players.filter(p => (p.name || '').toLowerCase().includes(q) || p.eos_id.toLowerCase().includes(q))
       : players
-    return base.slice(0, 60)
+    // Sort BEFORE the cut, so the 60 shown are the first 60 alphabetically
+    // and not an arbitrary slice of the API order that then looks sorted.
+    // localeCompare so accented names land where an Italian reader expects.
+    return [...base]
+      .sort((a, b) => {
+        // Nameless accounts sink to the bottom instead of heading the
+        // list under an empty string.
+        if (!a.name !== !b.name) return a.name ? -1 : 1
+        return (a.name || a.eos_id).localeCompare(b.name || b.eos_id, undefined,
+          { sensitivity: 'base', numeric: true })
+      })
+      .slice(0, 60)
   }, [players, playerFilter])
 
   async function loadRows(eos: string) {
@@ -277,7 +296,7 @@ export default function PlayerMapPage() {
           <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>{t('playerMap.server')}</label>
           <select className="input" value={instanceId} onChange={e => setInstanceId(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '100%', marginTop: 4 }}>
             <option value="">—</option>
-            {instances.map(i => (
+            {sortedInstances.map(i => (
               <option key={i.id} value={i.id}>{i.display_name || i.name} ({i.map_name})</option>
             ))}
           </select>
