@@ -7,6 +7,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.7.2] - 2026-08-27
+
+### Fixed
+
+- **Buying threw a 500.** The order builder read `player.name`, an
+  attribute `_PlayerSession` does not have — it carries the Discord names.
+  No points were lost: the deduction and the insert share one transaction
+  and the session rolls back on any exception, which the live balance
+  confirmed. Nothing was charged and no order was created.
+- **The refund guard did not cover the code that broke.** Points are
+  deducted, then the order rows are built, then inserted — but only the
+  insert was inside the `try`, so a failure in between escaped the branch
+  that logs "charged but not queued" and relied on the session's own
+  rollback to save it. Everything after the deduction is now inside the
+  guard, and `HTTPException` is re-raised rather than rewritten into the
+  generic charge-without-order message.
+
+---
+
 ## [4.7.1] - 2026-08-27
 
 ### Fixed

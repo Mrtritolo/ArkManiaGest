@@ -232,42 +232,49 @@ async def buy(
             detail=f"Punti insufficienti: servono {total}, "
                    f"disponibili {cur[0] if cur else 0}.")
 
-    # 3. Accoda. Un ordine per unita' per dino e gene, uno solo per gli item
-    #    (la quantita' vive dentro l'ordine).
-    # Un ordine per riga consegnabile. Una voce ArkShop puo' essere un
-    # pacchetto (il set di armatura sono cinque pezzi), e il plugin consegna
-    # un blueprint per ordine: e' qui che il pacchetto si apre.
+    # 3. Accoda: un ordine per ogni riga consegnabile. Una voce ArkShop puo'
+    #    essere un pacchetto (il set di armatura sono cinque pezzi) e il
+    #    plugin consegna un blueprint per ordine, quindi e' qui che il
+    #    pacchetto si apre.
+    #
+    #    Da questo punto i punti sono GIA' scalati: tutto cio' che segue sta
+    #    dentro il try, compresa la costruzione dei parametri. Un errore
+    #    lasciato fuori dal try non verrebbe rimborsato dal nostro ramo di
+    #    errore, e la sessione lo salverebbe solo per fortuna.
     rows_to_queue: list[dict] = []
-    base = {
-        "eos": eos, "name": (player.name or "")[:64],
-        "src": order["source"], "key": order["item_key"],
-        "kind": order["kind"], "lvl": order["dino_level"],
-        "trait": order["gene_trait"], "tier": order["gene_tier"],
-    }
-    if data.kind == "item" and lines:
-        for _ in range(data.quantity):
-            for ln in lines:
-                rows_to_queue.append({**base,
-                    "bp": str(ln.get("Blueprint", ""))[:512],
-                    "qty": int(ln.get("Amount", 1) or 1),
-                    "qual": int(ln.get("Quality", 0) or 0),
-                    "isbp": 1 if ln.get("ForceBlueprint", False) else 0})
-    else:
-        n = data.quantity if data.kind in ("dino", "gene") else 1
-        for _ in range(n):
-            rows_to_queue.append({**base,
-                "bp": order["blueprint"], "qty": order["quantity"],
-                "qual": order["quality"], "isbp": order["is_blueprint"]})
-
-    if not rows_to_queue:
-        # Nessuna riga consegnabile: annulla l'addebito, non c'e' niente da
-        # consegnare e tenere i punti sarebbe un furto.
-        await db.rollback()
-        raise HTTPException(status_code=422,
-                            detail="Questa voce non ha nulla da consegnare.")
-
-    n_orders = len(rows_to_queue)
     try:
+        base = {
+            "eos": eos,
+            # _PlayerSession porta i nomi Discord, non un generico "name".
+            "name": (player.discord_global_name
+                     or player.discord_username or "")[:64],
+            "src": order["source"], "key": order["item_key"],
+            "kind": order["kind"], "lvl": order["dino_level"],
+            "trait": order["gene_trait"], "tier": order["gene_tier"],
+        }
+        if data.kind == "item" and lines:
+            for _ in range(data.quantity):
+                for ln in lines:
+                    rows_to_queue.append({**base,
+                        "bp": str(ln.get("Blueprint", ""))[:512],
+                        "qty": int(ln.get("Amount", 1) or 1),
+                        "qual": int(ln.get("Quality", 0) or 0),
+                        "isbp": 1 if ln.get("ForceBlueprint", False) else 0})
+        else:
+            n = data.quantity if data.kind in ("dino", "gene") else 1
+            for _ in range(n):
+                rows_to_queue.append({**base,
+                    "bp": order["blueprint"], "qty": order["quantity"],
+                    "qual": order["quality"], "isbp": order["is_blueprint"]})
+
+        if not rows_to_queue:
+            # Nessuna riga consegnabile: annulla l'addebito, non c'e' niente
+            # da consegnare e tenere i punti sarebbe un furto.
+            await db.rollback()
+            raise HTTPException(status_code=422,
+                                detail="Questa voce non ha nulla da consegnare.")
+
+        n_orders = len(rows_to_queue)
         for r in rows_to_queue:
             await db.execute(text(
                 "INSERT INTO ARKM_shop_orders "
@@ -278,6 +285,10 @@ async def buy(
                 "        :isbp, :lvl, :trait, :tier, :price, 'pending')"),
                 {**r, "price": total // n_orders})
         await db.commit()
+    except HTTPException:
+        # Gia' gestita sopra (rollback incluso): non e' un errore da
+        # trasformare nel messaggio generico di addebito senza ordine.
+        raise
     except Exception as exc:
         await db.rollback()
         # I punti sono gia' stati scalati e la INSERT e' fallita: e' il caso
