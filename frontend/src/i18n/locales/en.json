@@ -664,8 +664,11 @@
         "reason": "Reason",
         "structures": "Structures",
         "dinos": "Dinos",
-        "flaggedAt": "Flagged"
-      }
+        "flaggedAt": "Flagged",
+        "lastLogin": "Last login"
+      },
+      "never": "never",
+      "daysAgo": "{{d}}d ago"
     },
     "log": {
       "table": {
@@ -673,6 +676,20 @@
         "by": "By",
         "date": "Date"
       }
+    },
+    "detail": {
+      "title": "Objects & coordinates from the last scan",
+      "show": "Details",
+      "hide": "Hide",
+      "loading": "Loading snapshot…",
+      "empty": "No snapshot from the last scan — requires plugin 5.3.0+ and a scan after deploy.",
+      "type": "Type",
+      "name": "Name",
+      "owner": "Owner",
+      "level": "Lvl",
+      "coords": "Coordinates (X Y Z)",
+      "copyTp": "Copy TP",
+      "copied": "Copied!"
     }
   },
   "leaderboard": {

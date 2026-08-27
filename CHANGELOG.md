@@ -7,6 +7,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.1.6] - 2026-08-26
+
+Decay management upgrade, paired with ARKM-DecayManager 5.3.0.
+
+### Added
+
+- **Pre-purge object snapshot with coordinates.** The plugin's scan now
+  writes a per-object snapshot of every flagged tribe (class, display name,
+  custom name, owner, world coordinates, dino level) to `ARKM_scan_detail`.
+  The pending tab gains a "Details" expansion per tribe that lists exactly
+  what a purge would destroy and where, with a one-click copy of the
+  matching `cheat TPCoords X Y Z` command for visual, in-game verification
+  BEFORE pulling the trigger. Until now that detail only existed in
+  `purge_detail` — i.e. after the destruction had already happened.
+  New endpoint: `GET /arkmania/decay/pending/{team}/detail`.
+- **"Last login" column in the pending list.** Most recent login of any
+  member, across every map, highlighted when within 30 days. On 2026-08-26
+  four tribes of active players sat in the purge queue with nothing on
+  screen to give them away; this column is the guard-rail against
+  repeating that.
+
+---
+
 ## [4.1.5] - 2026-08-26
 
 ### Fixed

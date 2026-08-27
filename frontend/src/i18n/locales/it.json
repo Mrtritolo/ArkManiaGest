@@ -664,8 +664,11 @@
         "reason": "Motivo",
         "structures": "Strutture",
         "dinos": "Dino",
-        "flaggedAt": "Flaggata"
-      }
+        "flaggedAt": "Flaggata",
+        "lastLogin": "Ultimo login"
+      },
+      "never": "mai",
+      "daysAgo": "{{d}}g fa"
     },
     "log": {
       "table": {
@@ -673,6 +676,20 @@
         "by": "Da",
         "date": "Data"
       }
+    },
+    "detail": {
+      "title": "Oggetti e coordinate dall'ultimo scan",
+      "show": "Dettagli",
+      "hide": "Nascondi",
+      "loading": "Carico lo snapshot…",
+      "empty": "Nessuno snapshot dall'ultimo scan — richiede plugin 5.3.0+ e uno scan dopo il deploy.",
+      "type": "Tipo",
+      "name": "Nome",
+      "owner": "Proprietario",
+      "level": "Lvl",
+      "coords": "Coordinate (X Y Z)",
+      "copyTp": "Copia TP",
+      "copied": "Copiato!"
     }
   },
   "leaderboard": {

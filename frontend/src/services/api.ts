@@ -1041,6 +1041,17 @@ export const arkDecayApi = {
   tribes: (params?: { status?: string; search?: string; limit?: number }) =>
     api.get("/arkmania/decay/tribes", { params }),
   pending: () => api.get("/arkmania/decay/pending"),
+
+  /**
+   * Per-object snapshot of a pending tribe from the plugin's last scan
+   * (ARKM_scan_detail, DecayManager 5.3.0+): names, owners and world
+   * coordinates of everything a purge would destroy. Lets the admin
+   * verify the base visually before pulling the trigger.
+   */
+  pendingDetail: (targetingTeam: number, serverKey?: string) =>
+    api.get(`/arkmania/decay/pending/${targetingTeam}/detail`, {
+      params: serverKey ? { server_key: serverKey } : undefined,
+    }),
   log: (params?: { limit?: number; server_key?: string }) =>
     api.get("/arkmania/decay/log", { params }),
 

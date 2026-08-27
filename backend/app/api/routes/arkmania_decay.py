@@ -255,7 +255,13 @@ async def list_pending(db: AsyncSession = Depends(get_plugin_db)):
             "p.structure_count, p.dino_count, p.flagged_at, "
             "s.display_name, d.tribe_name, d.last_refresh_group, "
             "d.expire_time, "
-            "COALESCE(NULLIF(pl.Giocatore, ''), h.player_name) AS player_name "
+            "COALESCE(NULLIF(pl.Giocatore, ''), h.player_name) AS player_name, "
+            # Most recent login of ANY member, across every map. On
+            # 2026-08-26 four tribes of active players sat in this list
+            # with nothing on screen to give them away -- this column is
+            # the guard-rail against repeating that purge.
+            "(SELECT MAX(pt.last_login) FROM ARKM_player_tribes pt "
+            " WHERE pt.targeting_team = p.targeting_team) AS last_member_login "
             "FROM ARKM_decay_pending p "
             "LEFT JOIN ARKM_servers s ON p.server_key = s.server_key "
             "LEFT JOIN ARKM_tribe_decay d ON p.targeting_team = d.targeting_team "
@@ -279,8 +285,59 @@ async def list_pending(db: AsyncSession = Depends(get_plugin_db)):
             "player_name":        r[10] or None,
             "last_refresh_group": r[8] or None,
             "expire_time":        str(r[9]) if r[9] else None,
+            "last_member_login":  str(r[11]) if r[11] else None,
         })
     return {"pending": items, "count": len(items)}
+
+
+@router.get("/pending/{targeting_team}/detail")
+async def pending_scan_detail(
+    targeting_team: int,
+    server_key: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Per-object snapshot of a pending tribe, captured by the plugin's last
+    scan (``ARKM_scan_detail``, DecayManager 5.3.0+): class, display name,
+    owner and world coordinates of every structure/dino that a purge would
+    destroy.  Lets the operator verify a base visually (or teleport to it
+    with ``cheat TPCoords``) BEFORE running the purge -- ``purge_detail``
+    only exists after the destruction has already happened.
+    """
+    where = ["targeting_team = :t"]
+    params: dict = {"t": targeting_team}
+    if server_key:
+        where.append("server_key = :sk")
+        params["sk"] = server_key
+    result = await db.execute(
+        text(
+            "SELECT actor_type, class_name, display_name, custom_name, "
+            "owner_name, pos_x, pos_y, pos_z, dino_level, reason, "
+            "server_key, map_name, scanned_at "
+            f"FROM ARKM_scan_detail WHERE {' AND '.join(where)} "
+            "ORDER BY actor_type, class_name "
+            "LIMIT 4000"
+        ),
+        params,
+    )
+    items = []
+    for r in result.fetchall():
+        items.append({
+            "actor_type":   r[0],
+            "class_name":   r[1],
+            "display_name": r[2] or None,
+            "custom_name":  r[3] or None,
+            "owner_name":   r[4] or None,
+            "pos_x":        float(r[5]),
+            "pos_y":        float(r[6]),
+            "pos_z":        float(r[7]),
+            "dino_level":   r[8],
+            "reason":       r[9],
+            "server_key":   r[10],
+            "map_name":     r[11],
+            "scanned_at":   str(r[12]) if r[12] else None,
+        })
+    return {"detail": items, "count": len(items)}
 
 
 @router.get("/log")

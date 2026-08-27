@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { arkDecayApi } from '../services/api'
 import {
   Timer, Search, AlertCircle, AlertTriangle, CheckCircle, Clock,
-  Trash2, Building, Activity, XCircle
+  Trash2, Building, Activity, XCircle, MapPin, Copy, Loader2
 } from 'lucide-react'
 
 interface DecayTribe {
@@ -21,6 +21,13 @@ interface PendingItem {
   structure_count: number; dino_count: number; flagged_at: string | null
   server_name: string | null; tribe_name: string | null; player_name: string | null
   last_refresh_group: string | null; expire_time: string | null
+  last_member_login: string | null
+}
+interface ScanDetailItem {
+  actor_type: string; class_name: string; display_name: string | null
+  custom_name: string | null; owner_name: string | null
+  pos_x: number; pos_y: number; pos_z: number; dino_level: number
+  reason: string; server_key: string; map_name: string; scanned_at: string | null
 }
 interface LogItem {
   id: number; targeting_team: number; server_key: string; map_name: string
@@ -36,6 +43,14 @@ function formatDate(iso: string | null) {
   if (!iso) return '—'
   try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) }
   catch { return iso.slice(0, 16) }
+}
+
+/** Whole days elapsed since an ISO datetime; null when absent. */
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  if (isNaN(t)) return null
+  return Math.floor((Date.now() - t) / 86_400_000)
 }
 
 type TabType = 'tribes' | 'pending' | 'log'
@@ -82,6 +97,34 @@ export default function DecayPage() {
   // `acting` is the targeting_team currently being scheduled or
   // cancelled, used to show a per-row spinner / disable double-click.
   const [acting, setActing] = useState<number | null>(null)
+  // Scan-detail expansion: key is `${team}-${server_key}`, rows come from
+  // ARKM_scan_detail (written by DecayManager 5.3.0+ at every scan).
+  const [detailKey, setDetailKey] = useState<string | null>(null)
+  const [detailRows, setDetailRows] = useState<ScanDetailItem[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+
+  async function toggleDetail(p: PendingItem) {
+    const key = `${p.targeting_team}-${p.server_key}`
+    if (detailKey === key) { setDetailKey(null); setDetailRows([]); return }
+    setDetailKey(key); setDetailRows([]); setDetailLoading(true)
+    try {
+      const res = await arkDecayApi.pendingDetail(p.targeting_team, p.server_key)
+      setDetailRows(res.data.detail || [])
+    } catch {
+      setDetailRows([])
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  function copyTp(row: ScanDetailItem, idx: number) {
+    const cmd = `cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`
+    navigator.clipboard?.writeText(cmd).then(() => {
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx(null), 1500)
+    }).catch(() => {})
+  }
 
   async function handleSchedulePurge(tribe: DecayTribe) {
     if (!window.confirm(t('decay.confirmSchedule', {
@@ -352,13 +395,14 @@ export default function DecayPage() {
             <div className="pl-empty"><CheckCircle size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyPending')}</p></div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px 100px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.flaggedAt')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 150px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+                <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.lastLogin')}</span><span>{t('decay.pending.table.flaggedAt')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
               </div>
-              {pending.map(p => (
-                <div key={`${p.targeting_team}-${p.server_key}`} style={{
-                  display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 80px 70px 110px 100px',
-                  padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
+              {pending.map(p => { const dKey = `${p.targeting_team}-${p.server_key}`; const dOpen = detailKey === dKey; const gg = daysSince(p.last_member_login); return (
+                <div key={dKey} style={{ borderBottom: '1px solid var(--border)' }}>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 150px',
+                  padding: '0.45rem 1rem', alignItems: 'center',
                 }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 600 }}>{p.targeting_team}</span>
                   <span style={{ fontSize: '0.82rem', fontWeight: 600, fontStyle: p.tribe_name ? 'normal' : 'italic', color: p.tribe_name ? 'var(--text-primary)' : 'var(--text-muted)' }}>
@@ -372,6 +416,13 @@ export default function DecayPage() {
                   }}>{p.reason === 'orphaned' ? t('decay.reason.orphaned') : p.reason === 'expired' ? t('decay.reason.expired') : p.reason}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: p.structure_count > 500 ? 700 : 400, color: p.structure_count > 500 ? 'var(--danger)' : 'var(--text-secondary)' }}>{p.structure_count.toLocaleString(undefined)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{p.dino_count}</span>
+                  <span style={{ fontSize: '0.78rem' }}>
+                    {gg === null
+                      ? <span style={{ color: 'var(--text-muted)' }}>{t('decay.pending.never')}</span>
+                      : gg <= 30
+                        ? <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{t('decay.pending.daysAgo', { d: gg })} ⚠</span>
+                        : <span style={{ color: 'var(--text-muted)' }}>{t('decay.pending.daysAgo', { d: gg })}</span>}
+                  </span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(p.flagged_at)}</span>
                   <div style={{ textAlign: 'center' }}>
                     <button
@@ -383,9 +434,48 @@ export default function DecayPage() {
                       <XCircle size={11} />
                       {acting === p.targeting_team ? t('decay.cancelling') : t('decay.cancelButton')}
                     </button>
+                    <button
+                      onClick={() => toggleDetail(p)}
+                      className="btn btn-ghost btn-sm"
+                      title={t('decay.detail.title')}
+                      style={dOpen ? { color: 'var(--accent)' } : undefined}
+                    >
+                      <MapPin size={11} />
+                      {dOpen ? t('decay.detail.hide') : t('decay.detail.show')}
+                    </button>
                   </div>
                 </div>
-              ))}
+                {dOpen && (
+                  <div style={{ padding: '0.4rem 1rem 0.75rem 1rem', background: 'var(--bg-card-muted)' }}>
+                    {detailLoading ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>
+                        <Loader2 size={14} className="pl-spin" /> {t('decay.detail.loading')}
+                      </div>
+                    ) : detailRows.length === 0 ? (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>{t('decay.detail.empty')}</div>
+                    ) : (
+                      <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 220px 90px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
+                          <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.owner')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span><span></span>
+                        </div>
+                        {detailRows.map((row, idx) => (
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 220px 90px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
+                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? '#8b5cf6' : 'var(--text-secondary)' }}>{row.actor_type}</span>
+                            <span title={row.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.custom_name || row.display_name || row.class_name}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{row.owner_name || '—'}</span>
+                            <span style={{ fontFamily: 'var(--font-mono)' }}>{row.actor_type === 'dino' && row.dino_level > 0 ? row.dino_level : '—'}</span>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{Math.round(row.pos_x)} {Math.round(row.pos_y)} {Math.round(row.pos_z)}</span>
+                            <button onClick={() => copyTp(row, idx)} className="btn btn-ghost btn-sm" title={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`}>
+                              <Copy size={10} /> {copiedIdx === idx ? t('decay.detail.copied') : t('decay.detail.copyTp')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                </div>
+              ); })}
             </>
           )}
         </div>
