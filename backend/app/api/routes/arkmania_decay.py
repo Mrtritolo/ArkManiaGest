@@ -936,3 +936,33 @@ async def map_image(map_name: str):
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
+@router.get("/map-calibration")
+async def map_calibration(db: AsyncSession = Depends(get_plugin_db)):
+    """
+    Per-map GPS calibration as the game itself reports it (plugin 5.7.0+).
+
+    The plugin reads ``APrimalWorldSettings`` at BeginPlay and publishes
+    origin/scale for its map, so the panel does not have to carry a
+    hand-copied table — and mod maps, which no reference table covers, are
+    calibrated too. Maps that leave the fields at zero publish nothing and
+    fall back to the client-side defaults.
+
+    Field semantics (verified live in ARKM-RareDino::WorldToGPS): origin is
+    the world-unit coordinate of the GPS-zero corner, and ``scale * 10`` is
+    the number of world units per GPS degree.
+    """
+    result = await db.execute(text(
+        "SELECT map_name, server_key, lat_origin, lat_scale, "
+        "lon_origin, lon_scale, updated_at FROM ARKM_map_calibration"))
+    return {"maps": [
+        {
+            "map_name":   r[0],
+            "server_key": r[1],
+            "lat_origin": float(r[2]),
+            "lat_scale":  float(r[3]),
+            "lon_origin": float(r[4]),
+            "lon_scale":  float(r[5]),
+            "updated_at": str(r[6]) if r[6] else None,
+        }
+        for r in result.fetchall()
+    ]}

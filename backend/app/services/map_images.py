@@ -60,6 +60,10 @@ WIKI_FILENAMES: dict[str, str] = {
     "Genesis_WP":       "Genesis_Part_1_Topographic_Map.jpg",
     "LostIsland_WP":    "Lost_Island_Topographic_Map.jpg",
     "Fjordur_WP":       "Fjordur_Topographic_Map.jpg",
+    # Mod map with a wiki page. No *Topographic* variant exists, so this is
+    # the plain map render (1.9 MB). Its GPS calibration comes from the
+    # plugin, which reads it out of the running world.
+    "Astraeos_WP":      "Astraeos_Map.jpg",
 }
 
 

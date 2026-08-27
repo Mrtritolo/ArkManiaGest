@@ -7,6 +7,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.5.0] - 2026-08-27
+
+### Added
+
+- **Zoom and pan on the player map.** Scroll to zoom (up to 8x, anchored
+  on the cursor), drag to pan, with buttons and a "fit whole map" reset.
+  Zoom moves the SVG viewBox rather than scaling coordinates, so dots,
+  labels and hit areas keep their pixel size while the terrain grows.
+- **Calibration straight from the game.** The plugin (5.7.0+) reads
+  `APrimalWorldSettings` at boot and publishes each map's GPS origin and
+  scale to `ARKM_map_calibration`; the panel prefers those numbers over
+  its built-in table. This is what finally calibrates mod maps, which no
+  reference table covers. A hand-written `PlayerMap.MapCalibration`
+  override still wins, for a map whose own settings are wrong.
+- **Astraeos background**, plus an explicit note on maps that have no
+  calibration yet, instead of a silently bare square.
+
+### Changed
+
+- **Fluorescent dots.** Over a photographic map the old muted palette was
+  invisible: structures are now cyan, dinos magenta, characters hot pink
+  (acid yellow when offline), each with a dark halo so they read over both
+  pale coastline and dark interior.
+
+### Fixed
+
+- **Scans starved every layer but structures.** The player scan had a
+  single 4000-object budget filled structures-first, so on a big base the
+  dinos and characters were never collected — they simply did not exist on
+  the map, with nothing saying so. Each layer now has its own budget
+  (4000 / 2000 / 500) and the reply names every layer it truncated.
+- **The background vanished when switching maps.** The object URL was
+  revoked on dependency change, killing the image still on screen while
+  the next one downloaded, and an untagged URL could paint the previous
+  map's terrain under the new map's dots. The URL is now tagged with its
+  map and revoked only when actually replaced.
+
+---
+
 ## [4.4.0] - 2026-08-27
 
 ### Added

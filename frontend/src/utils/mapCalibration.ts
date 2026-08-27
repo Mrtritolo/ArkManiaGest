@@ -38,6 +38,29 @@ export const DEFAULT_CALIBRATION: Record<string, MapCalib> = {
   Fjordur_WP:       { latShift: 50,    latDiv: 13100,  lonShift: 50,   lonDiv: 13100 },
 }
 
+/**
+ * Convert the raw world settings the plugin publishes into a MapCalib.
+ *
+ * Semantics (verified live in ARKM-RareDino::WorldToGPS): origin is the
+ * world-unit coordinate of the GPS-zero corner and `scale * 10` is the
+ * number of world units per GPS degree, so
+ * `lat = (y - latOrigin) / (latScale * 10)`, which is our
+ * `latShift + y / latDiv` with the substitutions below.
+ * Returns null for a map that leaves the scales at zero.
+ */
+export function calibFromWorldSettings(w: {
+  lat_origin: number; lat_scale: number
+  lon_origin: number; lon_scale: number
+}): MapCalib | null {
+  const latDiv = w.lat_scale * 10
+  const lonDiv = w.lon_scale * 10
+  if (!latDiv || !lonDiv) return null
+  return {
+    latShift: -w.lat_origin / latDiv, latDiv,
+    lonShift: -w.lon_origin / lonDiv, lonDiv,
+  }
+}
+
 /** UU → GPS. */
 export function gpsOf(c: MapCalib, x: number, y: number): { lat: number; lon: number } {
   return { lat: c.latShift + y / c.latDiv, lon: c.lonShift + x / c.lonDiv }

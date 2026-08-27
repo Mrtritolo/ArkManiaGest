@@ -18,10 +18,10 @@ import { useTranslation } from 'react-i18next'
 import type { ScanKind } from '../services/api'
 import { arkDecayApi, playersApi, serverInstancesApi, arkmaniaApi } from '../services/api'
 import type { PlayerListItem, ServerInstance } from '../types'
-import { DEFAULT_CALIBRATION, parseCalibOverrides, gpsOf, fullMapBounds, type MapCalib } from '../utils/mapCalibration'
+import { DEFAULT_CALIBRATION, parseCalibOverrides, calibFromWorldSettings, gpsOf, fullMapBounds, type MapCalib } from '../utils/mapCalibration'
 import {
   Crosshair, Loader2, AlertTriangle, RefreshCw, Building, Skull, MapPin, Copy,
-  Eye, EyeOff
+  Eye, EyeOff, ZoomIn, ZoomOut, Maximize2
 } from 'lucide-react'
 
 interface ScanRow {
@@ -33,11 +33,17 @@ interface ScanRow {
   actor_name: string | null
 }
 
+// Neon palette with a dark halo. The dots sit on top of a photographic
+// topographic map, where a muted theme colour simply disappears; the
+// stroke keeps them readable over both the pale coastlines and the dark
+// interior.
 const DOT: Record<string, { r: number; fill: string }> = {
-  structure: { r: 3, fill: 'var(--text-muted)' },
-  dino:      { r: 5, fill: '#8b5cf6' },
-  player:    { r: 7, fill: 'var(--danger)' },
+  structure: { r: 3, fill: '#00e5ff' },   // cyan
+  dino:      { r: 5, fill: '#c026ff' },   // magenta
+  player:    { r: 7, fill: '#ff2d55' },   // hot pink/red
 }
+const DOT_HALO = 'rgba(0, 0, 0, 0.75)'
+const OFFLINE_FILL = '#ffd400'            // acid yellow: offline character
 
 export default function PlayerMapPage() {
   const { t } = useTranslation()
@@ -65,9 +71,18 @@ export default function PlayerMapPage() {
   const [actionMsg, setActionMsg] = useState('')
 
   const [calibOverrides, setCalibOverrides] = useState<Record<string, MapCalib>>({})
-  // Object URL of the cached topographic image; null when the map has none
-  // (mod maps) or the wiki fetch failed — the map then renders bare.
-  const [mapImg, setMapImg] = useState<string | null>(null)
+  // Calibration the plugin read out of the running world. Authoritative:
+  // it is what the game itself uses for GPS, mod maps included.
+  const [calibFromGame, setCalibFromGame] = useState<Record<string, MapCalib>>({})
+  // Zoom/pan over the map square, in SVG units.
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState<{ x: number; y: number } | null>(null)
+  // Cached topographic image as an object URL, tagged with the map it
+  // belongs to. Tagging matters: while a new map's image is in flight the
+  // old URL is still in state, and drawing it would show the previous
+  // map's terrain under the new map's dots.
+  const [mapImg, setMapImg] = useState<{ name: string; url: string } | null>(null)
 
   // Servers in the picker, alphabetical by the label the admin actually
   // reads -- the API returns them in registration order.
@@ -103,29 +118,45 @@ export default function PlayerMapPage() {
     arkmaniaApi.getConfig('PlayerMap.MapCalibration', '*')
       .then(r => setCalibOverrides(parseCalibOverrides(r.data.config_value)))
       .catch(() => setCalibOverrides({}))
+    arkDecayApi.mapCalibration()
+      .then(r => {
+        const out: Record<string, MapCalib> = {}
+        for (const m of r.data.maps) {
+          const c = calibFromWorldSettings(m)
+          if (c) out[m.map_name] = c
+        }
+        setCalibFromGame(out)
+      })
+      .catch(() => setCalibFromGame({}))
   }, [loadAllPlayers])
 
   // Calibration active for the map currently shown, if any.
   const mapName = rows[0]?.map_name || ''
-  const calib: MapCalib | null = calibOverrides[mapName] || DEFAULT_CALIBRATION[mapName] || null
+
+  // A new map starts from the full view.
+  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }) }, [mapName])
+  // A hand-written override still wins: it is how you correct a map whose
+  // own settings are wrong. Then the game's own numbers, then our table.
+  const calib: MapCalib | null =
+    calibOverrides[mapName] || calibFromGame[mapName] || DEFAULT_CALIBRATION[mapName] || null
 
   // Background image follows the displayed map. Revoked on change so the
   // blobs do not pile up as the admin hops between maps.
   useEffect(() => {
-    if (!mapName) { setMapImg(null); return }
-    let url: string | null = null
+    if (!mapName) return
     let cancelled = false
-    arkDecayApi.mapImage(mapName)
-      .then(r => {
-        if (cancelled) return
-        url = URL.createObjectURL(r.data)
-        setMapImg(url)
+    // The previous URL is revoked at the moment it is replaced, not in the
+    // cleanup: revoking on dependency change killed the image that was
+    // still on screen while the next one downloaded.
+    const swap = (next: { name: string; url: string } | null) =>
+      setMapImg(prev => {
+        if (prev && prev.url !== next?.url) URL.revokeObjectURL(prev.url)
+        return next
       })
-      .catch(() => { if (!cancelled) setMapImg(null) })
-    return () => {
-      cancelled = true
-      if (url) URL.revokeObjectURL(url)
-    }
+    arkDecayApi.mapImage(mapName)
+      .then(r => { if (!cancelled) swap({ name: mapName, url: URL.createObjectURL(r.data) }) })
+      .catch(() => { if (!cancelled) swap(null) })
+    return () => { cancelled = true }
   }, [mapName])
 
   const filteredPlayers = useMemo(() => {
@@ -269,6 +300,36 @@ export default function PlayerMapPage() {
     return `${g.lat.toFixed(1)}, ${g.lon.toFixed(1)}`
   }
 
+  // Zoom works on the SVG viewBox rather than by scaling coordinates, so
+  // one dot stays one dot: stroke widths, labels and hit areas keep their
+  // pixel size while the terrain underneath gets bigger.
+  const VIEW = SIZE / zoom
+  const maxPan = Math.max(0, SIZE - VIEW)
+  const clampPan = (v: number) => Math.min(maxPan, Math.max(0, v))
+  const viewBox = `${clampPan(pan.x)} ${clampPan(pan.y)} ${VIEW} ${VIEW}`
+  // Anything drawn in viewBox units shrinks as we zoom in; divide by zoom
+  // to keep it visually constant.
+  const k = 1 / zoom
+
+  function zoomAt(factor: number, cx?: number, cy?: number) {
+    setZoom(prevZoom => {
+      const next = Math.min(8, Math.max(1, prevZoom * factor))
+      if (next === prevZoom) return prevZoom
+      // Keep the point under the cursor fixed while the window shrinks.
+      const px0 = cx ?? SIZE / 2, py0 = cy ?? SIZE / 2
+      setPan(prevPan => {
+        const oldView = SIZE / prevZoom, newView = SIZE / next
+        const wx = clampPan(prevPan.x) + (px0 / SIZE) * oldView
+        const wy = clampPan(prevPan.y) + (py0 / SIZE) * oldView
+        const nx = wx - (px0 / SIZE) * newView
+        const ny = wy - (py0 / SIZE) * newView
+        const lim = Math.max(0, SIZE - newView)
+        return { x: Math.min(lim, Math.max(0, nx)), y: Math.min(lim, Math.max(0, ny)) }
+      })
+      return next
+    })
+  }
+
   const sel = selected !== null ? rows[selected] : null
   const anyOnline = rows.some(r => r.actor_type === 'player' && r.is_online)
   const nStruct = rows.filter(r => r.actor_type === 'structure').length
@@ -388,26 +449,52 @@ export default function PlayerMapPage() {
               </span>
               <span>{rows[0].map_name}</span>
             </div>
-            <svg width={SIZE} height={SIZE} style={{ background: 'var(--bg-card-muted)', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }}>
+            <svg width={SIZE} height={SIZE} viewBox={viewBox}
+              onWheel={e => {
+                e.preventDefault()
+                const b = e.currentTarget.getBoundingClientRect()
+                zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2,
+                  e.clientX - b.left, e.clientY - b.top)
+              }}
+              onPointerDown={e => {
+                // Left button only, and never start a drag from a dot:
+                // the dot's own click must still select it.
+                if (e.button !== 0) return
+                setDragging({ x: e.clientX, y: e.clientY })
+                e.currentTarget.setPointerCapture(e.pointerId)
+              }}
+              onPointerMove={e => {
+                if (!dragging) return
+                const dx = (e.clientX - dragging.x) / zoom
+                const dy = (e.clientY - dragging.y) / zoom
+                setDragging({ x: e.clientX, y: e.clientY })
+                setPan(prev => ({ x: clampPan(prev.x - dx), y: clampPan(prev.y - dy) }))
+              }}
+              onPointerUp={e => {
+                setDragging(null)
+                e.currentTarget.releasePointerCapture(e.pointerId)
+              }}
+              style={{ background: 'var(--bg-card-muted)', borderRadius: 8, border: '1px solid var(--border)', display: 'block', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}>
               {/* Topographic background: only meaningful when calibrated,
                   because only then does the square correspond to the whole
                   map. Uncalibrated maps keep the plain auto-fit view -- an
                   image stretched over arbitrary bounds would put dots in
                   convincingly wrong places. */}
-              {mapImg && view?.calibrated && (
-                <image href={mapImg} x={0} y={0} width={SIZE} height={SIZE}
-                  preserveAspectRatio="none" opacity={0.85} />
+              {mapImg?.name === mapName && view?.calibrated && (
+                <image href={mapImg.url} x={0} y={0} width={SIZE} height={SIZE}
+                  preserveAspectRatio="none" />
               )}
               {/* griglia leggera */}
               {[1, 2, 3].map(i => (
-                <g key={i} stroke="var(--border)" strokeWidth={0.5}>
+                <g key={i} stroke="var(--border)" strokeWidth={0.5 * k} opacity={0.6}>
                   <line x1={(SIZE / 4) * i} y1={0} x2={(SIZE / 4) * i} y2={SIZE} />
                   <line x1={0} y1={(SIZE / 4) * i} x2={SIZE} y2={(SIZE / 4) * i} />
                 </g>
               ))}
               {/* etichette GPS agli angoli quando la mappa e' calibrata */}
               {view?.calibrated && (
-                <g fill="var(--text-muted)" fontSize={9} fontFamily="var(--font-mono)">
+                <g fill="var(--text-muted)" fontSize={9 * k} fontFamily="var(--font-mono)"
+                   style={{ paintOrder: 'stroke' }} stroke="rgba(0,0,0,0.6)" strokeWidth={2 * k}>
                   <text x={3} y={11}>Lon 0 / Lat 0</text>
                   <text x={SIZE - 3} y={11} textAnchor="end">Lon 100</text>
                   <text x={3} y={SIZE - 4}>Lat 100</text>
@@ -416,26 +503,47 @@ export default function PlayerMapPage() {
               {/* raggio anteprima sul punto selezionato */}
               {sel && view && (
                 <circle cx={px(sel)} cy={py(sel)} r={(radius * 100 / view.span) * SIZE}
-                  fill="var(--danger)" opacity={0.10} stroke="var(--danger)" strokeDasharray="4 3" strokeWidth={1} />
+                  fill="var(--danger)" opacity={0.10} stroke="var(--danger)"
+                  strokeDasharray={`${4 * k} ${3 * k}`} strokeWidth={1 * k} />
               )}
               {visible.map(({ r, i }) => {
                 const d = DOT[r.actor_type] || DOT.structure
                 const isSel = i === selected
                 return (
                   <circle key={i} cx={px(r)} cy={py(r)}
-                    r={isSel ? d.r + 3 : d.r}
-                    fill={r.actor_type === 'player' && !r.is_online ? '#f59e0b' : d.fill}
-                    stroke={isSel ? 'var(--accent)' : 'none'} strokeWidth={isSel ? 2 : 0}
+                    r={(isSel ? d.r + 3 : d.r) * k}
+                    fill={r.actor_type === 'player' && !r.is_online ? OFFLINE_FILL : d.fill}
+                    stroke={isSel ? 'var(--accent)' : DOT_HALO}
+                    strokeWidth={(isSel ? 2 : 1) * k}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => setSelected(i)}>
+                    onClick={e => { e.stopPropagation(); setSelected(i) }}>
                     <title>{`${r.custom_name || r.display_name || r.class_name}\n${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}</title>
                   </circle>
                 )
               })}
             </svg>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => zoomAt(1 / 1.4)}
+                disabled={zoom <= 1} title={t('playerMap.zoomOut')}><ZoomOut size={12} /></button>
+              <button className="btn btn-ghost btn-sm" onClick={() => zoomAt(1.4)}
+                disabled={zoom >= 8} title={t('playerMap.zoomIn')}><ZoomIn size={12} /></button>
+              <button className="btn btn-ghost btn-sm"
+                onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}
+                disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+                title={t('playerMap.zoomReset')}><Maximize2 size={12} /></button>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                {zoom.toFixed(1)}x
+              </span>
+            </div>
             <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>
               {view?.calibrated ? t('playerMap.mapHintGps') : t('playerMap.mapHint')}
+              {' '}{t('playerMap.zoomHint')}
             </div>
+            {view && !view.calibrated && (
+              <div style={{ fontSize: '0.68rem', color: '#b45309', marginTop: 4 }}>
+                {t('playerMap.noCalibration', { map: mapName })}
+              </div>
+            )}
           </div>
 
           {/* Pannello azioni + lista */}

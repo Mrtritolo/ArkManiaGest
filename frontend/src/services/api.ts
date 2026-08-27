@@ -1120,6 +1120,15 @@ export const arkDecayApi = {
    * Authorization header. Callers wrap the result in an object URL and
    * revoke it when done. Rejects with 404 when the map has no image.
    */
+  /** Per-map GPS calibration published by the plugin (5.7.0+). */
+  mapCalibration: () =>
+    api.get<{ maps: Array<{
+      map_name: string; server_key: string
+      lat_origin: number; lat_scale: number
+      lon_origin: number; lon_scale: number
+      updated_at: string | null
+    }> }>("/arkmania/decay/map-calibration"),
+
   mapImage: (mapName: string) =>
     api.get<Blob>(`/arkmania/decay/map-image/${encodeURIComponent(mapName)}`,
       { responseType: "blob", timeout: 60_000 }),

@@ -2334,6 +2334,11 @@
     "toggleLayer": "Show or hide this layer on the map",
     "showLabel": "Show",
     "characters": "Characters",
-    "visibleCount": "{{shown}} of {{total}} shown"
+    "visibleCount": "{{shown}} of {{total}} shown",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomReset": "Fit whole map",
+    "zoomHint": "Scroll to zoom, drag to pan.",
+    "noCalibration": "{{map}} has no GPS calibration yet, so positions are relative and no background is drawn. It appears as soon as a server running this map boots with plugin 5.7.0+."
   }
 }

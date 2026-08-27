@@ -2334,6 +2334,11 @@
     "toggleLayer": "Mostra o nascondi questo layer sulla mappa",
     "showLabel": "Mostra",
     "characters": "Personaggi",
-    "visibleCount": "{{shown}} di {{total}} visibili"
+    "visibleCount": "{{shown}} di {{total}} visibili",
+    "zoomIn": "Ingrandisci",
+    "zoomOut": "Riduci",
+    "zoomReset": "Mostra tutta la mappa",
+    "zoomHint": "Rotella per lo zoom, trascina per spostarti.",
+    "noCalibration": "{{map}} non ha ancora una calibrazione GPS: le posizioni sono relative e lo sfondo non viene disegnato. Compare appena un server con questa mappa si avvia con il plugin 5.7.0+."
   }
 }
