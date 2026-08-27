@@ -54,6 +54,7 @@ from app.ssh.pok_executor import (
     exec_pok_lifecycle,
     exec_rcon,
     exec_status_probe,
+    DEFAULT_RESTART_MINUTES,
 )
 from app.ssh.platform import PlatformAdapter
 
@@ -609,14 +610,26 @@ async def stop_instance(
 @router.post("/{instance_id}/restart", dependencies=[Depends(require_operator)])
 async def restart_instance(
     instance_id: int,
+    minutes: int = Query(
+        DEFAULT_RESTART_MINUTES, ge=0, le=60,
+        description="In-game countdown announced to players before the restart.",
+    ),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_operator),
 ):
-    """Stop + start in a single POK call."""
+    """
+    Verified restart via POK-manager: countdown broadcast to players, both
+    save stages verified, then stop + start.
+
+    POK-manager 2.x takes the countdown before the instance name
+    (``-restart <minutes> <instance>``) and refuses the call without it, so
+    the minutes are always sent.
+    """
     inst = await _get_instance_or_404(db, instance_id)
     machine = await _get_machine_or_404(db, inst["machine_id"])
     result = await exec_pok_lifecycle(
         db, action="restart", instance=inst, machine=machine, user=user,
+        restart_minutes=minutes,
     )
     return _action_result_response(inst, result)
 
@@ -634,6 +647,12 @@ async def update_instance_binary(
     returns when the remote bash finishes, which is why the panel polls
     ``/actions`` for progress.  Tune ``SSH_TIMEOUT`` in the backend ``.env``
     for very slow hosts.
+
+    Note: since POK-manager 2.x ``-update`` is a SHARED-installation
+    operation -- it checks the server files and Docker image for the whole
+    install, ignoring the instance name we pass, and refuses to replace
+    files while any API-enabled instance is running. The per-instance
+    button is therefore a cluster-wide update trigger, not a targeted one.
     """
     inst = await _get_instance_or_404(db, instance_id)
     machine = await _get_machine_or_404(db, inst["machine_id"])

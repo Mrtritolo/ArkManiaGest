@@ -73,18 +73,43 @@ class ActionResult:
 
 # ── Command builders ──────────────────────────────────────────────────────────
 
-def _pok_command(action: str, instance_name: str, *, extra: str = "") -> str:
+# Countdown, in whole minutes, handed to `-restart`. POK broadcasts it to
+# the players in game before the verified save + stop, so 0 would yank the
+# server out from under them with no warning.
+DEFAULT_RESTART_MINUTES = 1
+
+
+def _pok_command(
+    action: str,
+    instance_name: str,
+    *,
+    extra: str = "",
+    restart_minutes: int = DEFAULT_RESTART_MINUTES,
+) -> str:
     """
     Build the POK-manager.sh argument string for a lifecycle action.
 
-    POK-manager uses a ``-flag <instance>`` convention (e.g. ``-start MyServer``).
-    ``all`` is a special instance name meaning "every configured instance".
+    Most actions use a ``-flag <instance>`` convention (e.g. ``-start
+    MyServer``); ``all`` is a special instance name meaning "every
+    configured instance".
+
+    ``-restart`` is the exception: since POK-manager 2.x it takes the
+    countdown FIRST -- ``-restart <minutes> <instance>`` -- and 2.1.81
+    hard-rejects the old ordering::
+
+        Error: -restart requires a timer in whole minutes before the
+        instance name.
+
+    so passing just the instance name (as this builder used to) makes
+    every panel restart fail. Verified against ``reference/`` 2.1.81.
 
     Args:
         action: ``start`` | ``stop`` | ``restart`` | ``update`` | ``backup``.
         instance_name: Name of the POK instance (usually equal to the
                         container name).
-        extra: Optional trailing argument (for example ``-clearupdateflag``).
+        extra: Optional trailing argument (for example ``-clearupdateflag``
+               for update, or ``--force`` for stop/restart).
+        restart_minutes: Countdown for ``-restart``; ignored otherwise.
     """
     flag = {
         "start":   "-start",
@@ -94,6 +119,9 @@ def _pok_command(action: str, instance_name: str, *, extra: str = "") -> str:
         "backup":  "-backup",
     }[action]
     tail = f" {extra}" if extra else ""
+    if action == "restart":
+        minutes = max(0, int(restart_minutes))
+        return f"{flag} {minutes} {instance_name}{tail}"
     return f"{flag} {instance_name}{tail}"
 
 
@@ -113,21 +141,32 @@ def _docker_ps_status_command(container_name: str) -> str:
     )
 
 
+# Entry point POK-manager exposes inside the container for arbitrary RCON.
+# It resolves host/port/password from the container env and shells out to
+# rcon-cli itself (scripts/rcon_commands.sh::send_rcon_command, with retries
+# and a timeout), so the panel never has to handle credentials here.
+_POK_RCON_INTERFACE = "/home/pok/scripts/rcon_interface.sh"
+
+
 def _rcon_command(container_name: str, rcon_cmd: str) -> str:
     """
-    Build the ``docker exec`` invocation that pipes an RCON command into
-    POK-manager's built-in ``rcon`` helper inside the container.
+    Build the ``docker exec`` invocation that runs an RCON command through
+    POK-manager's ``rcon_interface.sh -custom`` inside the container.
 
-    The caller is responsible for validating / sanitising the RCON string
-    (the container is trusted, but multi-line input is rejected upstream).
+    Verified against POK-manager 2.1.81 (``reference/``): the image installs
+    gorcon as ``rcon-cli`` -- NOT ``rcon`` -- and the supported entry point
+    for an arbitrary command is ``rcon_interface.sh -custom <cmd>``, which
+    reads RCON_HOST/RCON_PORT/RCON_PASSWORD from the container environment.
+    Calling a bare ``rcon`` (the previous implementation) fails on the POK
+    image because that name does not exist, and on other ASA images because
+    gorcon then looks for an ``rcon.yaml`` that is not there:
 
-    The previous implementation only escaped single quotes inside
-    `rcon_cmd` and then dropped the result into a DOUBLE-quoted bash
-    string, leaving every other shell metacharacter (``"``, ``$``,
-    ```` ` ````, ``\\``) free to break out and execute arbitrary
-    commands inside the container.  We now pass the RCON string via
-    docker exec stdin (``bash -c 'read -r CMD; rcon "$CMD"'``) so the
-    payload is never word-split nor re-evaluated.
+        cli: config: parse file: read file: open rcon.yaml: no such file
+
+    The RCON string is still passed through ``docker exec`` stdin
+    (``IFS= read -r CMD``) rather than interpolated into the command line,
+    so no shell metacharacter in the payload is ever word-split or
+    re-evaluated inside the container.
     """
     safe_container = shlex.quote(container_name)
     # Reject embedded newlines defensively (also enforced upstream) so
@@ -136,12 +175,13 @@ def _rcon_command(container_name: str, rcon_cmd: str) -> str:
     if "\n" in rcon_cmd or "\r" in rcon_cmd:
         raise ValueError("RCON command must be a single line.")
     payload = shlex.quote(rcon_cmd)
+    interface = shlex.quote(_POK_RCON_INTERFACE)
     # `docker exec` with no `-i` does not allocate stdin, so feed the
     # RCON payload via the outer shell using here-string semantics.
     return (
         f"printf '%s' {payload} | "
         f"docker exec -i {safe_container} "
-        f"bash -lc 'IFS= read -r CMD; rcon \"$CMD\"'"
+        f"bash -lc 'IFS= read -r CMD; {interface} -custom \"$CMD\"'"
     )
 
 
@@ -291,13 +331,18 @@ async def exec_pok_lifecycle(
     machine: dict,
     user: Optional[dict] = None,
     extra: str = "",
+    restart_minutes: int = DEFAULT_RESTART_MINUTES,
 ) -> ActionResult:
     """
     Run one of the POK-manager lifecycle actions (start/stop/restart/update/backup)
     using ``instance["pok_base_dir"]`` as the working directory.
+
+    ``restart_minutes`` is the in-game countdown POK announces before a
+    ``restart``; it is ignored by the other actions.
     """
     adapter = PlatformAdapter.from_machine(machine)
-    pok_args = _pok_command(action, instance["name"], extra=extra)
+    pok_args = _pok_command(
+        action, instance["name"], extra=extra, restart_minutes=restart_minutes)
     cmd = adapter.pok(pok_args, base_dir=instance["pok_base_dir"])
     return await run_action(
         db,

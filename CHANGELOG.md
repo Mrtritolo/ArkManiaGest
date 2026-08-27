@@ -7,6 +7,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.2.2] - 2026-08-26
+
+Realigned the POK-manager integration against upstream 2.1.81
+(Acekorneya/Ark-Survival-Ascended-Server), refreshed in `reference/`.
+Both fixes below are for calls that were failing outright, not cosmetics.
+
+### Fixed
+
+- **RCON never worked through the panel.** `_rcon_command` invoked a bare
+  `rcon` binary inside the container. The POK image installs gorcon as
+  **`rcon-cli`**, not `rcon`, and the supported entry point for an
+  arbitrary command is `scripts/rcon_interface.sh -custom <cmd>` (which
+  resolves host/port/password from the container env and retries). On
+  other ASA images a bare `rcon` exists but then fails with
+  `open rcon.yaml: no such file or directory`. Every RCON-driven feature
+  — decay purge, purge-tribe, and the whole player-map suite — was
+  affected. The payload still travels through `docker exec` stdin, so the
+  injection-safety of the previous implementation is preserved.
+- **Restart was rejected by POK-manager.** Since 2.x `-restart` takes the
+  countdown FIRST (`-restart <minutes> <instance>`) and 2.1.81 hard-fails
+  the old ordering with *"requires a timer in whole minutes before the
+  instance name"*. `_pok_command` now emits the countdown, and
+  `POST /servers/{id}/restart` accepts `?minutes=` (default 1, range
+  0-60) so players get the in-game warning POK broadcasts before the
+  verified save and stop.
+
+### Changed
+
+- Documented that `-update` is a shared-installation operation upstream:
+  it ignores the instance name and refuses to replace files while any
+  API-enabled instance runs, so the per-instance button is really a
+  cluster-wide update trigger.
+
+---
+
 ## [4.2.1] - 2026-08-26
 
 ### Added
