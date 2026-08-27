@@ -1048,6 +1048,11 @@ export interface WebShopItem {
   is_blueprint: boolean; dino_level: number; price: number
   /** Quante righe compongono la voce: un set di armatura ne ha cinque. */
   line_count: number
+  /** Le righe stesse, per il dettaglio del pacchetto. */
+  lines: WebShopLine[]
+}
+export interface WebShopLine {
+  blueprint: string; amount: number; quality: number; is_blueprint: boolean
 }
 /** Tratto genetico pubblicato dal plugin GeneShop. */
 export interface WebShopGene {

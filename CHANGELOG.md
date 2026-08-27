@@ -7,6 +7,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.6.3] - 2026-08-27
+
+### Added
+
+- **Shop cards show what is inside.** A pack expands into its lines — icon,
+  name, quantity, quality, BP flag — one pack open at a time, because a
+  31-line taming kit would otherwise bury the grid. Closed by default,
+  one click away, since buying without knowing the contents is not buying.
+- **Images on the shop cards**, through the same cached wiki proxy the
+  marketplace already uses. `[BOSS]` entries take the boss's own picture
+  from its title rather than the first tribute needed to summon it;
+  everything else takes the first line of the pack. Where the wiki has no
+  page — mod items, non-standard names — the card falls back to an icon per
+  type instead of a broken frame, so the grid stays aligned.
+
+---
+
 ## [4.6.2] - 2026-08-27
 
 ### Fixed

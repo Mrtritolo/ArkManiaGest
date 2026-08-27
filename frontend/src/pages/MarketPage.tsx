@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, RefreshCw, ShoppingBag, Coins,
   Package, History, Search, Tag, X, Save, Ban,
-  Store, Dna, Inbox,
+  Store, Dna, Inbox, ChevronDown, ChevronUp,
 } from "lucide-react";
 import {
   marketApi, webShopApi,
@@ -24,6 +24,8 @@ import {
   type MarketTransaction,
   type WebShopItem, type WebShopGene, type WebShopOrder,
 } from "../services/api";
+import { shopEntryThumbUrl } from "../utils/shopImage";
+import { ShopFallbackIcon } from "../utils/shopFallbackIcon";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 import type { AuthUser } from "../types";
 
@@ -88,6 +90,9 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   const [shopBusy, setShopBusy] = useState<string | null>(null);
   const [shopSearch, setShopSearch] = useState("");
   const [geneTier, setGeneTier] = useState<Record<string, number>>({});
+  // Quale pacchetto ha il dettaglio aperto. Uno alla volta: aprirne piu' di
+  // uno trasforma la griglia in un muro di liste.
+  const [openPack, setOpenPack] = useState<string | null>(null);
 
   const loadShop = useCallback(async () => {
     setShopLoading(true);
@@ -453,24 +458,74 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   .filter(i => !shopSearch ||
                     i.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
                     i.category.toLowerCase().includes(shopSearch.toLowerCase()))
-                  .map(i => (
+                  .map(i => {
+                  const isPack = i.line_count > 1;
+                  const open = openPack === i.key;
+                  return (
                   <div key={i.key} className="card" style={{ padding: "0.7rem" }}>
-                    <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
-                    <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: 6 }}>
-                      {i.category || "—"}
-                      {i.kind === "dino"
-                        ? ` · ${t("market.shop.dinoLevel", { lvl: i.dino_level })}`
-                        : i.line_count > 1
-                          ? ` · ${t("market.shop.pieces", { n: i.line_count })}`
-                          : ` · x${i.quantity}`}
-                      {i.is_blueprint ? " · BP" : ""}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <ShopThumb entry={i} size={44} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                          {i.category || "—"}
+                          {i.kind === "dino"
+                            ? ` · ${t("market.shop.dinoLevel", { lvl: i.dino_level })}`
+                            : isPack
+                              ? ` · ${t("market.shop.pieces", { n: i.line_count })}`
+                              : ` · x${i.quantity}`}
+                          {i.is_blueprint ? " · BP" : ""}
+                        </div>
+                      </div>
                     </div>
                     {i.kind === "dino" && (
-                      <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginBottom: 6 }}>
+                      <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", margin: "6px 0" }}>
                         {t("market.shop.dinoInPod")}
                       </div>
                     )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* Il contenuto del pacchetto: sta chiuso perche' un kit
+                        da 31 righe seppellirebbe la griglia, ma e' a un clic
+                        perche' comprare senza sapere cosa c'e' dentro non e'
+                        comprare. */}
+                    {isPack && (
+                      <button className="btn btn-ghost btn-sm"
+                        style={{ marginTop: 6, padding: "1px 4px" }}
+                        onClick={() => setOpenPack(open ? null : i.key)}>
+                        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        {open ? t("market.shop.hideContent") : t("market.shop.showContent")}
+                      </button>
+                    )}
+                    {isPack && open && (
+                      <div style={{
+                        maxHeight: 190, overflowY: "auto", marginTop: 4,
+                        borderTop: "1px solid var(--border)", paddingTop: 4,
+                      }}>
+                        {i.lines.map((ln, idx) => (
+                          <div key={idx} style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            fontSize: "0.72rem", padding: "1px 0",
+                          }}>
+                            <LineThumb blueprint={ln.blueprint} />
+                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden",
+                                           textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {arkItemDisplayName(ln.blueprint)}
+                            </span>
+                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+                              x{ln.amount}
+                            </span>
+                            {ln.is_blueprint && (
+                              <span style={{ fontSize: "0.62rem", color: "var(--accent)" }}>BP</span>
+                            )}
+                            {ln.quality > 0 && (
+                              <span style={{ fontSize: "0.62rem", color: "var(--text-muted)" }}>
+                                Q{ln.quality}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
                         <Coins size={12} /> {i.price}
                       </span>
@@ -483,7 +538,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
@@ -1154,5 +1210,41 @@ function StatusChip({ status }: { status: string }) {
     }}>
       {lbl}
     </span>
+  );
+}
+
+/**
+ * Immagine di una voce di catalogo, con ripiego a icona.
+ *
+ * La wiki non ha una pagina per tutto (oggetti mod, nomi non standard):
+ * quando l'immagine non arriva mostriamo l'icona del tipo invece di un
+ * riquadro rotto, cosi' la griglia resta allineata.
+ */
+function ShopThumb({ entry, size }: { entry: WebShopItem; size: number }) {
+  const [failed, setFailed] = useState(false);
+  const url = shopEntryThumbUrl(entry);
+  const box: React.CSSProperties = {
+    width: size, height: size, flexShrink: 0, borderRadius: 6,
+    background: "var(--bg-card-muted)", display: "flex",
+    alignItems: "center", justifyContent: "center",
+  };
+  if (!url || failed)
+    return <div style={box}><ShopFallbackIcon kind={entry.kind} /></div>;
+  return (
+    <img src={url} alt="" style={{ ...box, objectFit: "contain" }}
+      onError={() => setFailed(true)} />
+  );
+}
+
+/** Icona di una riga dentro il dettaglio del pacchetto. */
+function LineThumb({ blueprint }: { blueprint: string }) {
+  const [failed, setFailed] = useState(false);
+  const url = arkItemThumbUrl(blueprint);
+  if (!url || failed)
+    return <span style={{ width: 18, height: 18, flexShrink: 0 }} />;
+  return (
+    <img src={url} alt="" width={18} height={18}
+      style={{ objectFit: "contain", flexShrink: 0 }}
+      onError={() => setFailed(true)} />
   );
 }

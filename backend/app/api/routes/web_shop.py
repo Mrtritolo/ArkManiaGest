@@ -100,8 +100,18 @@ async def catalog(
                 "key": r[0], "label": r[1], "kind": r[2], "category": r[3],
                 "blueprint": r[4], "quantity": r[5], "quality": r[6],
                 "is_blueprint": bool(r[7]), "dino_level": r[8], "price": r[9],
-                # Quante righe compongono la voce: un set di armatura ne ha
-                # cinque, e la scheda deve poterlo dire prima dell'acquisto.
+                # Le righe che compongono la voce. Vanno nel catalogo e non
+                # dietro una seconda chiamata: sono poche decine di byte
+                # ciascuna e servono per aprire il dettaglio senza attese.
+                "lines": [
+                    {
+                        "blueprint": str(ln.get("Blueprint", "")),
+                        "amount": int(ln.get("Amount", 1) or 1),
+                        "quality": int(ln.get("Quality", 0) or 0),
+                        "is_blueprint": bool(ln.get("ForceBlueprint", False)),
+                    }
+                    for ln in lines if isinstance(ln, dict)
+                ],
                 "line_count": len(lines) if lines else 1,
             })
 
