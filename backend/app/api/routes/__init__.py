@@ -43,6 +43,7 @@ from app.api.routes import (
     public,
     game_config,
     sql_console,
+    web_shop,
 )
 
 router = APIRouter()
@@ -61,6 +62,9 @@ router.include_router(me.router, prefix="/me", tags=["Me (player dashboard)"])
 # Marketplace (Phase 8) -- mixed auth (disc_session + admin JWT)
 # handled inside each handler.  No router-level guard.
 router.include_router(market.router, prefix="/market", tags=["Marketplace"])
+# Shop web: stessa auth mista del marketplace (disc_session per il giocatore,
+# JWT admin per il catalogo), gestita dentro ogni handler.
+router.include_router(web_shop.router, prefix="/shop", tags=["Web Shop"])
 router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 router.include_router(public.router,   prefix="/public",   tags=["Public"])
 

@@ -14,7 +14,7 @@ from typing import List
 # duplicated as a literal in main.py (twice) and as the fallback of the
 # app_version setting, which is how the panel kept advertising 3.5.5 long
 # after 3.5.5 shipped.  Bump this and frontend/package.json together.
-APP_VERSION: str = "4.5.2"
+APP_VERSION: str = "4.6.0"
 
 
 class ServerSettings(BaseSettings):

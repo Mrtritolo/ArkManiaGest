@@ -1041,6 +1041,48 @@ export type ActorLayer = "structure" | "dino" | "player"
 /** Scan scope accepted by ARKM.DM.PlayerScan (plugin 5.6.0+). */
 export type ScanKind = "all" | "structures" | "dinos" | "players"
 
+/** Voce del catalogo web (oggetti e dino importati da ArkShop). */
+export interface WebShopItem {
+  key: string; label: string; kind: "item" | "dino"; category: string
+  blueprint: string; quantity: number; quality: number
+  is_blueprint: boolean; dino_level: number; price: number
+}
+/** Tratto genetico pubblicato dal plugin GeneShop. */
+export interface WebShopGene {
+  key: string; label: string; category: string; description: string
+  prices: Record<string, number>
+}
+export interface WebShopOrder {
+  id: number; source: string; item_key: string; kind: string
+  blueprint: string; quantity: number; gene_trait: string; gene_tier: number
+  price: number; status: string; server_key: string
+  last_error: string | null; created_at: string | null; claimed_at: string | null
+}
+
+/**
+ * Shop web: si compra qui, si ritira in gioco con /ritiro.
+ *
+ * Separato da marketApi perche' e' un negozio, non un mercatino fra
+ * giocatori: qui vende il server, i punti sono quelli di ArkShop e non
+ * esistono venditori.
+ */
+export const webShopApi = {
+  catalog: (kind?: "item" | "dino" | "gene") =>
+    api.get<{ items: WebShopItem[]; genes: WebShopGene[] }>(
+      "/shop/catalog", { params: kind ? { kind } : undefined }),
+  buy: (kind: "item" | "dino" | "gene", key: string,
+        quantity = 1, geneTier = 1) =>
+    api.post<{ status: string; orders: number; spent: number }>(
+      "/shop/buy", { kind, key, quantity, gene_tier: geneTier }),
+  orders: () =>
+    api.get<{ orders: WebShopOrder[]; pending: number }>("/shop/orders"),
+  importArkshop: () =>
+    api.post<{ imported: number; skipped: Record<string, number> }>(
+      "/shop/admin/import-arkshop", {}, { timeout: 120_000 }),
+  updateEntry: (key: string, data: { price?: number; enabled?: boolean; label?: string }) =>
+    api.put(`/shop/admin/catalog/${encodeURIComponent(key)}`, data),
+}
+
 export const arkDecayApi = {
   overview: () => api.get("/arkmania/decay"),
   tribes: (params?: { status?: string; search?: string; limit?: number }) =>

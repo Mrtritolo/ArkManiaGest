@@ -2246,7 +2246,10 @@
     "tab": {
       "browse": "Sfoglia",
       "mine": "I miei item",
-      "history": "Storico"
+      "history": "Storico",
+      "shop": "Negozio",
+      "genes": "GeneShop",
+      "orders": "I miei acquisti"
     },
     "searchPh": "Cerca per blueprint…",
     "sort": {
@@ -2273,7 +2276,33 @@
     "bought2": "comprato",
     "sold": "venduto",
     "byShort": "Da",
-    "buy": "Acquista"
+    "buy": "Acquista",
+    "shop": {
+      "buy": "Compra",
+      "searchPh": "Cerca per nome o categoria...",
+      "confirmBuy": "Comprare \"{{what}}\" per {{price}} punti?",
+      "bought": "Acquistato. {{spent}} punti spesi — ritiralo in gioco con /ritiro.",
+      "emptyItems": "Il negozio e' vuoto. Un admin deve prima importare il catalogo di ArkShop.",
+      "emptyGenes": "Nessun tratto pubblicato: compaiono appena un server si avvia con GeneShop 5.8.0+.",
+      "geneHint": "Il gene arriva come oggetto. Usalo mentre miri o cavalchi la creatura a cui vuoi applicarlo.",
+      "dinoLevel": "livello {{lvl}}",
+      "dinoInPod": "Consegnato dentro un cryopod.",
+      "pendingHint": "Hai {{n}} acquisti in attesa: scrivi /ritiro in gioco per prenderli.",
+      "claimHint": "Gli acquisti si ritirano in gioco con /ritiro.",
+      "noOrders": "Nessun acquisto.",
+      "col": {
+        "what": "Oggetto",
+        "kind": "Tipo",
+        "price": "Punti",
+        "status": "Stato",
+        "when": "Quando"
+      },
+      "status": {
+        "pending": "da ritirare",
+        "claimed": "ritirato",
+        "refunded": "rimborsato"
+      }
+    }
   },
   "auditLog": {
     "title": "Registro Audit",

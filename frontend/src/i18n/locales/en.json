@@ -2246,7 +2246,10 @@
     "tab": {
       "browse": "Browse",
       "mine": "My items",
-      "history": "History"
+      "history": "History",
+      "shop": "Server shop",
+      "genes": "GeneShop",
+      "orders": "My purchases"
     },
     "searchPh": "Search by blueprint…",
     "sort": {
@@ -2273,7 +2276,33 @@
     "bought2": "bought",
     "sold": "sold",
     "byShort": "By",
-    "buy": "Buy"
+    "buy": "Buy",
+    "shop": {
+      "buy": "Buy",
+      "searchPh": "Search by name or category...",
+      "confirmBuy": "Buy \"{{what}}\" for {{price}} points?",
+      "bought": "Purchased. {{spent}} points spent — collect it in game with /ritiro.",
+      "emptyItems": "The shop is empty. An admin has to import the ArkShop catalogue first.",
+      "emptyGenes": "No gene traits published yet: they appear once a server boots with GeneShop 5.8.0+.",
+      "geneHint": "A gene arrives as an item. Use it while aiming at (or riding) the creature you want to apply it to.",
+      "dinoLevel": "level {{lvl}}",
+      "dinoInPod": "Delivered inside a cryopod.",
+      "pendingHint": "You have {{n}} purchase(s) waiting: type /ritiro in game to collect them.",
+      "claimHint": "Purchases are collected in game with /ritiro.",
+      "noOrders": "No purchases yet.",
+      "col": {
+        "what": "Item",
+        "kind": "Type",
+        "price": "Points",
+        "status": "Status",
+        "when": "When"
+      },
+      "status": {
+        "pending": "to collect",
+        "claimed": "collected",
+        "refunded": "refunded"
+      }
+    }
   },
   "auditLog": {
     "title": "Audit Log",

@@ -7,6 +7,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.6.0] - 2026-08-27
+
+### Added
+
+- **Buy from the web with in-game points.** The Market page now holds two
+  distinct shops, separated in the tab bar because they are not the same
+  thing: the player-to-player marketplace, where someone is selling, and
+  the server shop, where ArkShop points buy from the server. The server
+  shop has an items/dinos tab (imported from the ArkShop catalogue), a
+  GeneShop tab, and a purchases tab that says what is still waiting.
+- **Purchases are collected in game with `/ritiro`** (plugin 5.8.0+). The
+  web cannot deliver: an item goes into an inventory, and an inventory
+  only exists while the player is online. Points are deducted at purchase,
+  conditionally (`WHERE Points >= n`), so two simultaneous buys cannot
+  drive a balance negative; the order is queued right after, and the one
+  case that can still go wrong — charged but not queued — is logged loudly
+  because it is the only one where a player pays and gets nothing.
+- **Dinos arrive in a cryopod**, not alive: buying from the web happens
+  while standing still, and materialising a creature needs room, valid
+  ground and some luck.
+- **Genes arrive as an item** carrying the trait, the same way a cryopod
+  carries a dino. Use it while aiming at or riding the creature.
+- **Gene catalogue from the plugin.** The 52 traits live inside the DLL;
+  GeneShop now publishes them to `ARKM_gene_traits` at boot, so the web
+  window is the server's catalogue by construction rather than a copy that
+  drifts on names and prices.
+
+### Notes
+
+- `command`-type ArkShop entries are deliberately not sellable from the
+  web: they run arbitrary console commands defined in config, and behind a
+  web button that means a panel session can run them on the server.
+  Beacons, experience and engram unlocks are out of this first pass too.
+- The items catalogue starts empty: an admin imports it from the ArkShop
+  config (`POST /shop/admin/import-arkshop`), which is explicit on purpose
+  so the web window is chosen rather than dumped.
+
+---
+
 ## [4.5.2] - 2026-08-27
 
 ### Fixed

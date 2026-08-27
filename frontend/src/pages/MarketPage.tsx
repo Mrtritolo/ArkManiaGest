@@ -16,15 +16,17 @@ import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, RefreshCw, ShoppingBag, Coins,
   Package, History, Search, Tag, X, Save, Ban,
+  Store, Dna, Inbox,
 } from "lucide-react";
 import {
-  marketApi,
+  marketApi, webShopApi,
   type MarketListedItem, type MarketMyItem, type MarketWallet,
   type MarketTransaction,
+  type WebShopItem, type WebShopGene, type WebShopOrder,
 } from "../services/api";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 
-type TabKey = "browse" | "mine" | "history";
+type TabKey = "browse" | "mine" | "history" | "shop" | "genes" | "orders";
 
 interface MarketPageProps {
   embedded?: boolean;
@@ -71,6 +73,58 @@ function extractError(err: unknown, fallback: string): string {
 export default function MarketPage({ embedded = false }: MarketPageProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("browse");
+
+  // --- Shop web (ArkShop + GeneShop). Tenuto separato dallo stato del
+  // marketplace: sono due negozi diversi che condividono solo la pagina.
+  const [shopItems, setShopItems] = useState<WebShopItem[]>([]);
+  const [shopGenes, setShopGenes] = useState<WebShopGene[]>([]);
+  const [shopOrders, setShopOrders] = useState<WebShopOrder[]>([]);
+  const [shopPending, setShopPending] = useState(0);
+  const [shopLoading, setShopLoading] = useState(false);
+  const [shopBusy, setShopBusy] = useState<string | null>(null);
+  const [shopSearch, setShopSearch] = useState("");
+  const [geneTier, setGeneTier] = useState<Record<string, number>>({});
+
+  const loadShop = useCallback(async () => {
+    setShopLoading(true);
+    try {
+      const r = await webShopApi.catalog();
+      setShopItems(r.data.items || []);
+      setShopGenes(r.data.genes || []);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || String(e));
+    } finally {
+      setShopLoading(false);
+    }
+  }, []);
+
+  const loadShopOrders = useCallback(async () => {
+    try {
+      const r = await webShopApi.orders();
+      setShopOrders(r.data.orders || []);
+      setShopPending(r.data.pending || 0);
+    } catch { /* il conteggio in coda e' un di piu', non un errore da mostrare */ }
+  }, []);
+
+  /**
+   * Compra e mette in coda. Ricarica il portafoglio subito dopo: i punti
+   * sono la cosa che l'utente controlla per capire se e' andata a buon fine.
+   */
+  async function doBuy(kind: "item" | "dino" | "gene", key: string,
+                       label: string, price: number, tier = 1) {
+    if (!window.confirm(t("market.shop.confirmBuy", { what: label, price })))
+      return;
+    setShopBusy(key); setError(""); setSuccess("");
+    try {
+      const r = await webShopApi.buy(kind, key, 1, tier);
+      setSuccess(t("market.shop.bought", { spent: r.data.spent }));
+      await Promise.all([loadWallet(), loadShopOrders()]);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || String(e));
+    } finally {
+      setShopBusy(null);
+    }
+  }
 
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
@@ -150,7 +204,13 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
   useEffect(() => {
     if (tab === "mine") loadMyItems();
     if (tab === "history") loadHistory();
-  }, [tab, loadMyItems, loadHistory]);
+    if (tab === "shop" || tab === "genes") loadShop();
+    if (tab === "orders") loadShopOrders();
+  }, [tab, loadMyItems, loadHistory, loadShop, loadShopOrders]);
+
+  // Il numero di acquisti da ritirare va saputo appena si apre la pagina:
+  // e' l'unica cosa che richiede un'azione in gioco.
+  useEffect(() => { loadShopOrders(); }, [loadShopOrders]);
 
   // Auto-clear toasts.
   useEffect(() => {
@@ -297,7 +357,29 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
           <TabBtn active={tab === "history"} onClick={() => setTab("history")}
                   icon={<History size={14} />}
                   label={t("market.tab.history")} />
+          {/* Il negozio del server e il mercatino fra giocatori vivono nella
+              stessa pagina ma non sono la stessa cosa: separati da un divisore
+              perche' qui i punti sono quelli di ArkShop e non c'e' un venditore
+              dall'altra parte. */}
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 0.3rem" }} />
+          <TabBtn active={tab === "shop"} onClick={() => setTab("shop")}
+                  icon={<Store size={14} />}
+                  label={t("market.tab.shop")} />
+          <TabBtn active={tab === "genes"} onClick={() => setTab("genes")}
+                  icon={<Dna size={14} />}
+                  label={t("market.tab.genes")} />
+          <TabBtn active={tab === "orders"} onClick={() => setTab("orders")}
+                  icon={<Inbox size={14} />}
+                  label={shopPending > 0
+                    ? `${t("market.tab.orders")} (${shopPending})`
+                    : t("market.tab.orders")} />
         </div>
+
+        {shopPending > 0 && tab !== "orders" && (
+          <div className="alert alert-info" style={{ marginBottom: "0.5rem" }}>
+            <Inbox size={14} /> {t("market.shop.pendingHint", { n: shopPending })}
+          </div>
+        )}
 
         {error && (
           <div className="alert alert-error" style={{ marginBottom: "0.5rem" }}>
@@ -311,6 +393,175 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
           <div className="alert alert-success" style={{ marginBottom: "0.5rem" }}>
             {success}
           </div>
+        )}
+
+        {/* TAB: Shop del server (oggetti e dino importati da ArkShop) */}
+        {tab === "shop" && (
+          <>
+            <input
+              className="form-input"
+              placeholder={t("market.shop.searchPh")}
+              value={shopSearch}
+              onChange={e => setShopSearch(e.target.value)}
+              style={{ marginBottom: "0.7rem", width: "100%" }}
+            />
+            {shopLoading ? (
+              <div style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <Loader2 size={14} className="pl-spin" /> {t("common.loading")}
+              </div>
+            ) : shopItems.length === 0 ? (
+              <div className="alert alert-info">{t("market.shop.emptyItems")}</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "0.6rem" }}>
+                {shopItems
+                  .filter(i => !shopSearch ||
+                    i.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
+                    i.category.toLowerCase().includes(shopSearch.toLowerCase()))
+                  .map(i => (
+                  <div key={i.key} className="card" style={{ padding: "0.7rem" }}>
+                    <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
+                    <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: 6 }}>
+                      {i.category || "—"}
+                      {i.kind === "dino"
+                        ? ` · ${t("market.shop.dinoLevel", { lvl: i.dino_level })}`
+                        : ` · x${i.quantity}`}
+                      {i.is_blueprint ? " · BP" : ""}
+                    </div>
+                    {i.kind === "dino" && (
+                      <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginBottom: 6 }}>
+                        {t("market.shop.dinoInPod")}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
+                        <Coins size={12} /> {i.price}
+                      </span>
+                      <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }}
+                        disabled={shopBusy !== null}
+                        onClick={() => doBuy(i.kind, i.key, i.label, i.price)}>
+                        {shopBusy === i.key
+                          ? <Loader2 size={12} className="pl-spin" />
+                          : <ShoppingBag size={12} />} {t("market.shop.buy")}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TAB: GeneShop */}
+        {tab === "genes" && (
+          <>
+            <input
+              className="form-input"
+              placeholder={t("market.shop.searchPh")}
+              value={shopSearch}
+              onChange={e => setShopSearch(e.target.value)}
+              style={{ marginBottom: "0.7rem", width: "100%" }}
+            />
+            {shopLoading ? (
+              <div style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <Loader2 size={14} className="pl-spin" /> {t("common.loading")}
+              </div>
+            ) : shopGenes.length === 0 ? (
+              <div className="alert alert-info">{t("market.shop.emptyGenes")}</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "0.6rem" }}>
+                {shopGenes
+                  .filter(g => !shopSearch ||
+                    g.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
+                    g.category.toLowerCase().includes(shopSearch.toLowerCase()))
+                  .map(g => {
+                  const tier = geneTier[g.key] || 1;
+                  const price = g.prices[String(tier)] ?? 0;
+                  return (
+                    <div key={g.key} className="card" style={{ padding: "0.7rem" }}>
+                      <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{g.label}</div>
+                      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{g.category}</div>
+                      <div style={{ fontSize: "0.72rem", margin: "6px 0" }}>{g.description}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <select className="form-input" style={{ width: 70, padding: "2px 4px" }}
+                          value={tier}
+                          onChange={e => setGeneTier(s => ({ ...s, [g.key]: Number(e.target.value) }))}>
+                          <option value={1}>T1</option>
+                          <option value={2}>T2</option>
+                          <option value={3}>T3</option>
+                        </select>
+                        <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
+                          <Coins size={12} /> {price}
+                        </span>
+                        <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }}
+                          disabled={shopBusy !== null || price <= 0}
+                          onClick={() => doBuy("gene", g.key, `${g.label} T${tier}`, price, tier)}>
+                          {shopBusy === g.key
+                            ? <Loader2 size={12} className="pl-spin" />
+                            : <ShoppingBag size={12} />} {t("market.shop.buy")}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 8 }}>
+              {t("market.shop.geneHint")}
+            </div>
+          </>
+        )}
+
+        {/* TAB: I miei acquisti dallo shop */}
+        {tab === "orders" && (
+          <>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => loadShopOrders()}>
+                <RefreshCw size={13} /> {t("common.refresh")}
+              </button>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                {t("market.shop.claimHint")}
+              </span>
+            </div>
+            {shopOrders.length === 0 ? (
+              <div className="alert alert-info">{t("market.shop.noOrders")}</div>
+            ) : (
+              <table className="pl-table">
+                <thead>
+                  <tr>
+                    <th>{t("market.shop.col.what")}</th>
+                    <th>{t("market.shop.col.kind")}</th>
+                    <th>{t("market.shop.col.price")}</th>
+                    <th>{t("market.shop.col.status")}</th>
+                    <th>{t("market.shop.col.when")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shopOrders.map(o => (
+                    <tr key={o.id}>
+                      <td>{o.gene_trait
+                        ? `${o.gene_trait} T${o.gene_tier}`
+                        : `${o.item_key}${o.quantity > 1 ? ` x${o.quantity}` : ""}`}</td>
+                      <td>{o.kind}</td>
+                      <td style={{ fontFamily: "var(--font-mono)" }}>{o.price}</td>
+                      <td>
+                        <span style={{ color: o.status === "pending" ? "var(--warning)" : "var(--success)" }}>
+                          {t(`market.shop.status.${o.status}`)}
+                        </span>
+                        {o.last_error && (
+                          <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "var(--danger)" }}>
+                            {o.last_error}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                        {fmtRelative(o.claimed_at || o.created_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
 
         {/* TAB: Browse */}

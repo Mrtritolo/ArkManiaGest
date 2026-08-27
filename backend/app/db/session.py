@@ -583,6 +583,28 @@ async def create_marketplace_tables() -> None:
             ") ENGINE=InnoDB"
         ))
 
+        # Vetrina web dello shop. Vive qui e non nel plugin perche' e' il
+        # pannello a deciderne il contenuto: il plugin legge solo gli ordini
+        # che ne derivano (ARKM_shop_orders, creata da ARKM-Marketplace).
+        await conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ARKM_web_shop_items ("
+            "  item_key     VARCHAR(128) PRIMARY KEY,"
+            "  label        VARCHAR(128) NOT NULL DEFAULT '',"
+            "  kind         ENUM('item','dino') NOT NULL DEFAULT 'item',"
+            "  category     VARCHAR(64)  NOT NULL DEFAULT '',"
+            "  blueprint    VARCHAR(512) NOT NULL DEFAULT '',"
+            "  quantity     INT          NOT NULL DEFAULT 1,"
+            "  quality      INT          NOT NULL DEFAULT 0,"
+            "  is_blueprint TINYINT(1)   NOT NULL DEFAULT 0,"
+            "  dino_level   INT          NOT NULL DEFAULT 1,"
+            "  price        BIGINT       NOT NULL DEFAULT 0,"
+            "  enabled      TINYINT(1)   NOT NULL DEFAULT 1,"
+            "  updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP"
+            "               ON UPDATE CURRENT_TIMESTAMP,"
+            "  INDEX ix_kind (kind, enabled)"
+            ") ENGINE=InnoDB"
+        ))
+
 
 async def close_plugin_engine() -> None:
     """Dispose the plugin engine and reset the module-level singletons."""
