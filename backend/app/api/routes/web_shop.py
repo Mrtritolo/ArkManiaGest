@@ -23,10 +23,11 @@ in modo che due acquisti simultanei non possano portare il saldo sotto zero.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,24 @@ router = APIRouter()
 # farli eseguire sul server. In gioco il rischio e' minore perche' il comando
 # parte comunque da un giocatore presente.
 WEB_KINDS = ("item", "dino", "gene")
+
+
+def _lines_of(items_json: Optional[str]) -> list[dict]:
+    """
+    Righe che compongono una voce di catalogo.
+
+    Una voce ArkShop non e' un oggetto: e' un pacchetto di 1..N righe
+    (``Items``), ed e' normale che ne abbia cinque, come un set di armatura.
+    Ogni riga porta il proprio blueprint, quantita', qualita' e flag
+    blueprint.
+    """
+    if not items_json:
+        return []
+    try:
+        parsed = json.loads(items_json)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
 
 
 # ── Catalogo ──────────────────────────────────────────────────────────────────
@@ -73,13 +92,17 @@ async def catalog(
             params["k"] = kind
         rows = await db.execute(text(
             "SELECT item_key, label, kind, category, blueprint, quantity, "
-            "quality, is_blueprint, dino_level, price "
+            "quality, is_blueprint, dino_level, price, items_json "
             f"FROM ARKM_web_shop_items {where} ORDER BY category, label"), params)
         for r in rows.fetchall():
+            lines = _lines_of(r[10])
             items.append({
                 "key": r[0], "label": r[1], "kind": r[2], "category": r[3],
                 "blueprint": r[4], "quantity": r[5], "quality": r[6],
                 "is_blueprint": bool(r[7]), "dino_level": r[8], "price": r[9],
+                # Quante righe compongono la voce: un set di armatura ne ha
+                # cinque, e la scheda deve poterlo dire prima dell'acquisto.
+                "line_count": len(lines) if lines else 1,
             })
 
     genes: list[dict] = []
@@ -115,7 +138,7 @@ class BuyRequest(BaseModel):
 @router.post("/buy")
 async def buy(
     data: BuyRequest,
-    disc_session: Optional[str] = Cookie(None),
+    player: _PlayerSession = Depends(get_current_player),
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """
@@ -126,13 +149,13 @@ async def buy(
     caso peggiore e' un addebito senza ordine, che resta nel log e si
     rimborsa a mano — molto piu' raro e molto meno costoso.
     """
-    player: _PlayerSession = await get_current_player(disc_session)
     eos = player.eos_id
     if data.kind not in WEB_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {WEB_KINDS}")
 
     # 1. Risolvi la voce di catalogo e il prezzo, dal DB e mai dal client:
     #    il prezzo arrivato dal browser sarebbe il prezzo scelto dal browser.
+    lines: list[dict] = []
     order: dict = {
         "kind": data.kind, "item_key": data.key, "blueprint": "",
         "quantity": data.quantity, "quality": 0, "is_blueprint": 0,
@@ -156,7 +179,8 @@ async def buy(
     else:
         row = (await db.execute(text(
             "SELECT item_key, kind, blueprint, quantity, quality, "
-            "is_blueprint, dino_level, price FROM ARKM_web_shop_items "
+            "is_blueprint, dino_level, price, items_json "
+            "FROM ARKM_web_shop_items "
             "WHERE item_key = :k AND enabled = 1"), {"k": data.key})).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Item not found.")
@@ -167,6 +191,7 @@ async def buy(
         order["is_blueprint"] = 1 if row[5] else 0
         order["dino_level"] = row[6]
         unit = row[7]
+        lines = _lines_of(row[8])
         if data.kind == "dino":
             # Un dino per pod: come i geni, la quantita' e' il numero di ordini.
             order["quantity"] = 1
@@ -197,9 +222,41 @@ async def buy(
 
     # 3. Accoda. Un ordine per unita' per dino e gene, uno solo per gli item
     #    (la quantita' vive dentro l'ordine).
-    n_orders = data.quantity if data.kind in ("dino", "gene") else 1
+    # Un ordine per riga consegnabile. Una voce ArkShop puo' essere un
+    # pacchetto (il set di armatura sono cinque pezzi), e il plugin consegna
+    # un blueprint per ordine: e' qui che il pacchetto si apre.
+    rows_to_queue: list[dict] = []
+    base = {
+        "eos": eos, "name": (player.name or "")[:64],
+        "src": order["source"], "key": order["item_key"],
+        "kind": order["kind"], "lvl": order["dino_level"],
+        "trait": order["gene_trait"], "tier": order["gene_tier"],
+    }
+    if data.kind == "item" and lines:
+        for _ in range(data.quantity):
+            for ln in lines:
+                rows_to_queue.append({**base,
+                    "bp": str(ln.get("Blueprint", ""))[:512],
+                    "qty": int(ln.get("Amount", 1) or 1),
+                    "qual": int(ln.get("Quality", 0) or 0),
+                    "isbp": 1 if ln.get("ForceBlueprint", False) else 0})
+    else:
+        n = data.quantity if data.kind in ("dino", "gene") else 1
+        for _ in range(n):
+            rows_to_queue.append({**base,
+                "bp": order["blueprint"], "qty": order["quantity"],
+                "qual": order["quality"], "isbp": order["is_blueprint"]})
+
+    if not rows_to_queue:
+        # Nessuna riga consegnabile: annulla l'addebito, non c'e' niente da
+        # consegnare e tenere i punti sarebbe un furto.
+        await db.rollback()
+        raise HTTPException(status_code=422,
+                            detail="Questa voce non ha nulla da consegnare.")
+
+    n_orders = len(rows_to_queue)
     try:
-        for _ in range(n_orders):
+        for r in rows_to_queue:
             await db.execute(text(
                 "INSERT INTO ARKM_shop_orders "
                 "(eos_id, player_name, source, item_key, kind, blueprint, "
@@ -207,15 +264,7 @@ async def buy(
                 " gene_tier, price, status) "
                 "VALUES (:eos, :name, :src, :key, :kind, :bp, :qty, :qual, "
                 "        :isbp, :lvl, :trait, :tier, :price, 'pending')"),
-                {
-                    "eos": eos, "name": (player.name or "")[:64],
-                    "src": order["source"], "key": order["item_key"],
-                    "kind": order["kind"], "bp": order["blueprint"],
-                    "qty": order["quantity"], "qual": order["quality"],
-                    "isbp": order["is_blueprint"], "lvl": order["dino_level"],
-                    "trait": order["gene_trait"], "tier": order["gene_tier"],
-                    "price": total // n_orders,
-                })
+                {**r, "price": total // n_orders})
         await db.commit()
     except Exception as exc:
         await db.rollback()
@@ -233,11 +282,10 @@ async def buy(
 
 @router.get("/orders")
 async def my_orders(
-    disc_session: Optional[str] = Cookie(None),
+    player: _PlayerSession = Depends(get_current_player),
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """I miei ordini: cosa aspetta il ritiro e cosa ho gia' ritirato."""
-    player: _PlayerSession = await get_current_player(disc_session)
     rows = await db.execute(text(
         "SELECT id, source, item_key, kind, blueprint, quantity, gene_trait, "
         "gene_tier, price, status, server_key, last_error, created_at, "
@@ -280,34 +328,59 @@ async def import_from_arkshop(db: AsyncSession = Depends(get_plugin_db)):
         if kind not in ("item", "dino"):
             skipped_kinds[kind or "?"] = skipped_kinds.get(kind or "?", 0) + 1
             continue
-        blueprint = val.get("Blueprint", "")
-        if not blueprint and kind == "item":
-            # Le voci ArkShop di tipo item con piu' blueprint (kit) non hanno
-            # un singolo Blueprint: fuori dalla vetrina web finche' non
-            # decidiamo come consegnarle.
-            skipped_kinds["item-multi"] = skipped_kinds.get("item-multi", 0) + 1
-            continue
+
+        # Una voce ArkShop di tipo item porta il suo contenuto in "Items",
+        # una lista di righe con blueprint/quantita'/qualita' — anche quando
+        # la riga e' una sola. La voce dino ha invece Blueprint e Level in
+        # cima. Il primo import leggeva solo la forma dino e finiva per
+        # saltare l'intero catalogo.
+        lines = val.get("Items") or []
+        if kind == "item" and not isinstance(lines, list):
+            lines = []
+
+        if kind == "item":
+            if not lines:
+                skipped_kinds["item-empty"] = skipped_kinds.get("item-empty", 0) + 1
+                continue
+            first = lines[0] if isinstance(lines[0], dict) else {}
+            blueprint = str(first.get("Blueprint", ""))
+            quantity = int(first.get("Amount", 1) or 1)
+            quality = int(first.get("Quality", 0) or 0)
+            is_bp = 1 if first.get("ForceBlueprint", False) else 0
+            dino_level = 1
+            items_json = json.dumps(lines)
+        else:
+            blueprint = str(val.get("Blueprint", ""))
+            if not blueprint:
+                skipped_kinds["dino-noblueprint"] = \
+                    skipped_kinds.get("dino-noblueprint", 0) + 1
+                continue
+            quantity, quality, is_bp = 1, 0, 0
+            dino_level = int(val.get("Level", 1) or 1)
+            items_json = None
+
         await db.execute(text(
             "INSERT INTO ARKM_web_shop_items "
             "(item_key, label, kind, category, blueprint, quantity, quality, "
-            " is_blueprint, dino_level, price, enabled) "
+            " is_blueprint, dino_level, price, enabled, items_json) "
             "VALUES (:k, :lbl, :kind, :cat, :bp, :qty, :qual, :isbp, :lvl, "
-            "        :price, 1) "
+            "        :price, 1, :ij) "
             "ON DUPLICATE KEY UPDATE label=VALUES(label), kind=VALUES(kind), "
             "blueprint=VALUES(blueprint), quantity=VALUES(quantity), "
             "quality=VALUES(quality), is_blueprint=VALUES(is_blueprint), "
-            "dino_level=VALUES(dino_level)"),
+            "dino_level=VALUES(dino_level), items_json=VALUES(items_json)"),
             {
                 "k": key[:128],
                 "lbl": str(val.get("Title", key))[:128],
                 "kind": kind,
-                "cat": str(val.get("Category", ""))[:64],
+                "cat": str(val.get("Permissions", ""))[:64],
                 "bp": blueprint[:512],
-                "qty": int(val.get("Amount", 1) or 1),
-                "qual": int(val.get("Quality", 0) or 0),
-                "isbp": 1 if val.get("ForceBlueprint", False) else 0,
-                "lvl": int(val.get("Level", 1) or 1),
+                "qty": quantity,
+                "qual": quality,
+                "isbp": is_bp,
+                "lvl": dino_level,
                 "price": int(val.get("Price", 0) or 0),
+                "ij": items_json,
             })
         imported += 1
     await db.commit()

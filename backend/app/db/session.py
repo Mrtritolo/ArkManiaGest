@@ -599,11 +599,23 @@ async def create_marketplace_tables() -> None:
             "  dino_level   INT          NOT NULL DEFAULT 1,"
             "  price        BIGINT       NOT NULL DEFAULT 0,"
             "  enabled      TINYINT(1)   NOT NULL DEFAULT 1,"
+            "  items_json   TEXT         NULL,"
+
             "  updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP"
             "               ON UPDATE CURRENT_TIMESTAMP,"
             "  INDEX ix_kind (kind, enabled)"
             ") ENGINE=InnoDB"
         ))
+        # CREATE TABLE IF NOT EXISTS non aggiunge colonne a una tabella che
+        # esiste gia': una installazione che ha visto la versione precedente
+        # resterebbe senza items_json e il catalogo non si importerebbe. La
+        # ALTER e' idempotente per costruzione — fallisce se la colonna c'e'
+        # gia', ed e' esattamente il caso in cui non serve.
+        try:
+            await conn.execute(_t(
+                "ALTER TABLE ARKM_web_shop_items ADD COLUMN items_json TEXT NULL"))
+        except Exception:
+            pass
 
 
 async def close_plugin_engine() -> None:

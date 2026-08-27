@@ -1046,6 +1046,8 @@ export interface WebShopItem {
   key: string; label: string; kind: "item" | "dino"; category: string
   blueprint: string; quantity: number; quality: number
   is_blueprint: boolean; dino_level: number; price: number
+  /** Quante righe compongono la voce: un set di armatura ne ha cinque. */
+  line_count: number
 }
 /** Tratto genetico pubblicato dal plugin GeneShop. */
 export interface WebShopGene {

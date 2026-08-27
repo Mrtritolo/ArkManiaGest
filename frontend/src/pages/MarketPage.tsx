@@ -460,7 +460,9 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                       {i.category || "—"}
                       {i.kind === "dino"
                         ? ` · ${t("market.shop.dinoLevel", { lvl: i.dino_level })}`
-                        : ` · x${i.quantity}`}
+                        : i.line_count > 1
+                          ? ` · ${t("market.shop.pieces", { n: i.line_count })}`
+                          : ` · x${i.quantity}`}
                       {i.is_blueprint ? " · BP" : ""}
                     </div>
                     {i.kind === "dino" && (

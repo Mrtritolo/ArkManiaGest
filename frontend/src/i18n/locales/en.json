@@ -2304,7 +2304,8 @@
       },
       "import": "Import from ArkShop",
       "importHint": "Fill the web window from the ArkShop config. Entries already there keep their price and visibility.",
-      "imported": "Imported {{n}} entries. Skipped: {{skipped}}."
+      "imported": "Imported {{n}} entries. Skipped: {{skipped}}.",
+      "pieces": "{{n}} pieces"
     }
   },
   "auditLog": {

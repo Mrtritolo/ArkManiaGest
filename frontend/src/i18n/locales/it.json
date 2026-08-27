@@ -2304,7 +2304,8 @@
       },
       "import": "Importa da ArkShop",
       "importHint": "Riempie la vetrina dalla config di ArkShop. Le voci gia' presenti mantengono prezzo e visibilita'.",
-      "imported": "Importate {{n}} voci. Saltate: {{skipped}}."
+      "imported": "Importate {{n}} voci. Saltate: {{skipped}}.",
+      "pieces": "{{n}} pezzi"
     }
   },
   "auditLog": {

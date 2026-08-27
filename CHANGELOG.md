@@ -7,6 +7,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.6.2] - 2026-08-27
+
+### Fixed
+
+- **The catalogue import silently imported nothing.** It read an ArkShop
+  entry as if it had one top-level `Blueprint`, which is the shape of a
+  *dino* entry. An *item* entry carries its contents in an `Items` list —
+  even when that list has one line — so all 45 items fell into the
+  "skipped" branch and the import reported success with 0 rows. The import
+  now reads the real shape and keeps the whole list.
+- **Bundles are delivered whole.** An ArkShop entry is a package, not an
+  object: the desert cloth set is five pieces. A purchase now queues one
+  order per line, so all five arrive with `/ritiro`, and the card says how
+  many pieces the entry contains before you buy it.
+- **`GET /shop/orders` returned 500.** It called `get_current_player` by
+  hand, but that is a FastAPI dependency with its own injected session, so
+  the session argument arrived as an unresolved `Depends` object. It is
+  declared as a dependency now, like every other player route.
+
+---
+
 ## [4.6.1] - 2026-08-27
 
 ### Fixed
