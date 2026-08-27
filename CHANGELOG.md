@@ -7,6 +7,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.7.1] - 2026-08-27
+
+### Fixed
+
+- **Two silent failures on the server list.** The player map and the decay
+  page both loaded their instance dropdown with `.catch(() => {})`. When
+  that call failed the dropdown was simply empty and the page looked
+  broken with nothing said — the exact shape of two bugs already hit this
+  week (a 422 on the player limit, a 500 on a server enum). Both now
+  surface the API's own message.
+- **`/shop/catalog` documented itself as authenticated** while being a
+  public route. The route is right — it has to serve both the panel JWT
+  and a Discord-only player session, and it exposes no personal data — so
+  the docstring was corrected rather than the code.
+
+---
+
 ## [4.7.0] - 2026-08-27
 
 ### Changed

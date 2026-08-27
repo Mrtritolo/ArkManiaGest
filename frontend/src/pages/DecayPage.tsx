@@ -125,7 +125,9 @@ export default function DecayPage() {
         setInstances(r.data)
         if (r.data.length > 0) setCmdInstance(r.data[0].id)
       })
-      .catch(() => {})
+      // Niente catch muto: senza istanze i comandi restano tutti grigi e
+      // non c'e' modo di capire che e' stata la lista a fallire.
+      .catch(e => setError(e.response?.data?.detail || String(e)))
   }, [])
 
   /**

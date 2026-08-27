@@ -111,7 +111,12 @@ export default function PlayerMapPage() {
   useEffect(() => {
     loadAllPlayers()
       .catch(e => setError(e.response?.data?.detail?.[0]?.msg || String(e)))
-    serverInstancesApi.list({ active_only: true }).then(r => setInstances(r.data)).catch(() => {})
+    // Niente catch muto: se questa fallisce la tendina dei server resta
+    // vuota e la pagina sembra rotta senza dire perche' - e' successo due
+    // volte, una col 422 sul limite e una col 500 sull'enum.
+    serverInstancesApi.list({ active_only: true })
+      .then(r => setInstances(r.data))
+      .catch(e => setError(e.response?.data?.detail || String(e)))
     // Per-map GPS overrides for mod maps (or corrections to a default),
     // stored in ARKM_config as PlayerMap.MapCalibration. Absent = no
     // override, we fall back to DEFAULT_CALIBRATION then to raw UU.

@@ -77,8 +77,10 @@ async def catalog(
     Catalogo acquistabile dal web: oggetti e dino importati da ArkShop, piu'
     i tratti genetici pubblicati da ARKM-GeneShop.
 
-    Aperta a chiunque sia autenticato: e' una vetrina, non contiene dati di
-    nessun giocatore.
+    Rotta PUBBLICA, senza autenticazione: e' una vetrina e non contiene dati
+    di nessun giocatore. Deve restare raggiungibile sia col JWT del pannello
+    sia con la sola sessione Discord del giocatore, che JWT non ne ha; un
+    gate a livello di router escluderebbe i secondi.
     """
     if kind and kind not in WEB_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {WEB_KINDS}")
