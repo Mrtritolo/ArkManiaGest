@@ -7,6 +7,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.5.1] - 2026-08-27
+
+### Added
+
+- **Scan from the row.** When a pending tribe has no snapshot yet, the
+  detail panel now offers the scan right there and reloads itself when it
+  finishes, instead of sending the operator up to the toolbar to work out
+  which server that row belongs to.
+
+### Changed
+
+- **Row actions target their own map.** `targeting_team` is assigned per
+  map, so the same number is a different tribe on a different server:
+  firing RemoveStruct at whatever the toolbar happened to have selected
+  could hit an unrelated tribe. Each row now resolves the instance serving
+  its own map and every button names that server in its tooltip. Only a
+  unique match auto-resolves — with two servers on one map the prefix
+  cannot tell them apart, so those fall back to the toolbar choice.
+- **Tidier row buttons**: five labelled buttons per row made the table
+  unreadable; they are now an icon group with tooltips, the destructive
+  ones marked in red and separated from the rest.
+
+---
+
 ## [4.5.0] - 2026-08-27
 
 ### Added

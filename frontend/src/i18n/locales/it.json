@@ -694,7 +694,9 @@
       "truncated": "Lista limitata a 4000 oggetti — quello che vedi NON è tutto ciò che possiede questa tribù. Il purge distruggerebbe più di quanto elencato qui.",
       "confirmDestroyOne": "Distruggere \"{{what}}\"? Viene eliminato solo questo oggetto.",
       "showLabel": "Mostra",
-      "visibleCount": "{{shown}} di {{total}} visibili"
+      "visibleCount": "{{shown}} di {{total}} visibili",
+      "scanHere": "Scansiona ora",
+      "scanHereTitle": "Esegue lo scan del decay su {{server}} e ricarica questo dettaglio"
     },
     "cmd": {
       "pickServer": "Scegli un server...",
@@ -709,10 +711,11 @@
       "grantPrompt": "Quanti giorni concedere a questa tribu'?",
       "structs": "Strutture",
       "structsTitle": "Distruggi tutte le strutture di questa tribu' sulla mappa selezionata",
-      "confirmStructs": "Distruggere TUTTE le strutture della tribu' {{team}} sulla mappa selezionata?",
+      "confirmStructs": "Distruggere TUTTE le strutture della tribu' {{team}} su {{server}}?",
       "dinos": "Dino",
       "dinosTitle": "Distruggi tutti i dino di questa tribu' sulla mappa selezionata",
-      "confirmDinos": "Distruggere TUTTI i dino della tribu' {{team}} sulla mappa selezionata?"
+      "confirmDinos": "Distruggere TUTTI i dino della tribu' {{team}} su {{server}}?",
+      "noTarget": "Nessun server risolto per questa mappa: scegline uno nella barra in alto."
     }
   },
   "leaderboard": {

@@ -694,7 +694,9 @@
       "truncated": "List capped at 4000 objects — what you see is NOT everything this tribe owns. The purge would destroy more than what is listed here.",
       "confirmDestroyOne": "Destroy \"{{what}}\"? Only this object is affected.",
       "showLabel": "Show",
-      "visibleCount": "{{shown}} of {{total}} shown"
+      "visibleCount": "{{shown}} of {{total}} shown",
+      "scanHere": "Scan now",
+      "scanHereTitle": "Run the decay scan on {{server}} and reload this detail"
     },
     "cmd": {
       "pickServer": "Pick a server...",
@@ -709,10 +711,11 @@
       "grantPrompt": "How many days to grant this tribe?",
       "structs": "Structures",
       "structsTitle": "Destroy every structure of this tribe on the selected map",
-      "confirmStructs": "Destroy ALL structures of tribe {{team}} on the selected map?",
+      "confirmStructs": "Destroy ALL structures of tribe {{team}} on {{server}}?",
       "dinos": "Dinos",
       "dinosTitle": "Destroy every dino of this tribe on the selected map",
-      "confirmDinos": "Destroy ALL dinos of tribe {{team}} on the selected map?"
+      "confirmDinos": "Destroy ALL dinos of tribe {{team}} on {{server}}?",
+      "noTarget": "No server resolved for this map: pick one in the toolbar above."
     }
   },
   "leaderboard": {

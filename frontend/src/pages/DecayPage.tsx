@@ -128,6 +128,32 @@ export default function DecayPage() {
       .catch(() => {})
   }, [])
 
+  /**
+   * The instance that serves a pending row's own map.
+   *
+   * This matters for correctness, not just convenience: `targeting_team`
+   * is assigned per map, so the same number means a different tribe on a
+   * different server. Firing RemoveStruct at the instance that happens to
+   * be selected in the toolbar would hit an unrelated tribe.
+   *
+   * server_key is `<Map>_<hash>`, so the map prefix is what we match on.
+   * Only a UNIQUE match auto-resolves: with two servers on the same map
+   * the prefix cannot tell them apart, and guessing is exactly the
+   * mistake this function exists to prevent.
+   */
+  function instanceForRow(serverKey: string): ServerInstance | null {
+    const prefix = serverKey.split('_')[0]
+    const hits = instances.filter(i => i.map_name.split('_')[0] === prefix)
+    return hits.length === 1 ? hits[0] : null
+  }
+
+  /** Auto-resolved target, else whatever the toolbar has selected. */
+  function targetFor(serverKey: string): ServerInstance | null {
+    return instanceForRow(serverKey)
+      ?? instances.find(i => i.id === cmdInstance)
+      ?? null
+  }
+
   /** Run one plugin command against the selected instance. */
   async function runCmd(key: string, fn: () => Promise<any>, confirmMsg?: string) {
     if (cmdInstance === '') return
@@ -161,10 +187,10 @@ export default function DecayPage() {
     }
   }
 
-  async function toggleDetail(p: PendingItem) {
-    const key = `${p.targeting_team}-${p.server_key}`
-    if (detailKey === key) { setDetailKey(null); setDetailRows([]); return }
-    setDetailKey(key); setDetailRows([]); setDetailLoading(true)
+  /** Load (or reload) the detail of one row, leaving it open. */
+  async function openDetail(p: PendingItem) {
+    setDetailKey(`${p.targeting_team}-${p.server_key}`)
+    setDetailRows([]); setDetailLoading(true)
     try {
       const res = await arkDecayApi.pendingDetail(p.targeting_team, p.server_key)
       setDetailRows(res.data.detail || [])
@@ -174,6 +200,12 @@ export default function DecayPage() {
     } finally {
       setDetailLoading(false)
     }
+  }
+
+  async function toggleDetail(p: PendingItem) {
+    const key = `${p.targeting_team}-${p.server_key}`
+    if (detailKey === key) { setDetailKey(null); setDetailRows([]); return }
+    await openDetail(p)
   }
 
   // Each visible row keeps its index in detailRows, so destroyOne() still
@@ -498,7 +530,7 @@ export default function DecayPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 150px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                 <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.lastLogin')}</span><span>{t('decay.pending.table.flaggedAt')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
               </div>
-              {pending.map(p => { const dKey = `${p.targeting_team}-${p.server_key}`; const dOpen = detailKey === dKey; const gg = daysSince(p.last_member_login); return (
+              {pending.map(p => { const dKey = `${p.targeting_team}-${p.server_key}`; const dOpen = detailKey === dKey; const gg = daysSince(p.last_member_login); const tgt = targetFor(p.server_key); const tgtName = tgt ? (tgt.display_name || tgt.name) : ''; return (
                 <div key={dKey} style={{ borderBottom: '1px solid var(--border)' }}>
                 <div style={{
                   display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 150px',
@@ -524,49 +556,59 @@ export default function DecayPage() {
                         : <span style={{ color: 'var(--text-muted)' }}>{t('decay.pending.daysAgo', { d: gg })}</span>}
                   </span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(p.flagged_at)}</span>
-                  <div style={{ textAlign: 'center' }}>
+                  <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {/* Icon-only group: five labelled buttons per row made the
+                        table unreadable. Every button names its target server
+                        in the tooltip, so a mis-aimed destructive command is
+                        visible before the click, not after. */}
+                    <button
+                      onClick={() => toggleDetail(p)}
+                      className={dOpen ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                      title={t('decay.detail.title')}
+                    >
+                      <MapPin size={12} />
+                    </button>
                     <button
                       onClick={() => handleCancelPurge(p)}
                       disabled={acting !== null}
                       className="btn btn-ghost btn-sm"
                       title={t('decay.cancelTitle')}
                     >
-                      <XCircle size={11} />
-                      {acting === p.targeting_team ? t('decay.cancelling') : t('decay.cancelButton')}
+                      {acting === p.targeting_team
+                        ? <Loader2 size={12} className="pl-spin" />
+                        : <XCircle size={12} />}
                     </button>
-                    <button
-                      onClick={() => toggleDetail(p)}
-                      className="btn btn-ghost btn-sm"
-                      title={t('decay.detail.title')}
-                      style={dOpen ? { color: 'var(--accent)' } : undefined}
-                    >
-                      <MapPin size={11} />
-                      {dOpen ? t('decay.detail.hide') : t('decay.detail.show')}
-                    </button>
-                    <button className="btn btn-ghost btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-                      title={t('decay.cmd.grantTitle')}
+                    <span style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 3px' }} />
+                    <button className="btn btn-ghost btn-sm"
+                      disabled={!tgt || cmdBusy !== null}
+                      title={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
                       onClick={() => {
+                        if (!tgt) return
                         const raw = window.prompt(t('decay.cmd.grantPrompt'), '30')
                         const days = Number(raw)
                         if (!raw || !Number.isFinite(days) || days < 0 || days > 3650) return
                         runCmd(`exp-${p.targeting_team}`, () => arkDecayApi.setExpiry(
-                          cmdInstance as number, p.targeting_team, days))
+                          tgt.id, p.targeting_team, days))
                       }}>
-                      <CalendarPlus size={11} /> {t('decay.cmd.grant')}
+                      <CalendarPlus size={12} />
                     </button>
-                    <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-                      title={t('decay.cmd.structsTitle')}
-                      onClick={() => runCmd(`str-${p.targeting_team}`,
-                        () => arkDecayApi.removeStructures(cmdInstance as number, p.targeting_team),
-                        t('decay.cmd.confirmStructs', { team: p.targeting_team }))}>
-                      <Building size={11} /> {t('decay.cmd.structs')}
+                    <button className="btn btn-ghost btn-sm"
+                      disabled={!tgt || cmdBusy !== null}
+                      style={{ color: 'var(--danger)' }}
+                      title={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                      onClick={() => tgt && runCmd(`str-${p.targeting_team}`,
+                        () => arkDecayApi.removeStructures(tgt.id, p.targeting_team),
+                        t('decay.cmd.confirmStructs', { team: p.targeting_team, server: tgtName }))}>
+                      <Building size={12} />
                     </button>
-                    <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-                      title={t('decay.cmd.dinosTitle')}
-                      onClick={() => runCmd(`din-${p.targeting_team}`,
-                        () => arkDecayApi.removeDinos(cmdInstance as number, p.targeting_team),
-                        t('decay.cmd.confirmDinos', { team: p.targeting_team }))}>
-                      <Skull size={11} /> {t('decay.cmd.dinos')}
+                    <button className="btn btn-ghost btn-sm"
+                      disabled={!tgt || cmdBusy !== null}
+                      style={{ color: 'var(--danger)' }}
+                      title={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                      onClick={() => tgt && runCmd(`din-${p.targeting_team}`,
+                        () => arkDecayApi.removeDinos(tgt.id, p.targeting_team),
+                        t('decay.cmd.confirmDinos', { team: p.targeting_team, server: tgtName }))}>
+                      <Skull size={12} />
                     </button>
                   </div>
                 </div>
@@ -577,7 +619,25 @@ export default function DecayPage() {
                         <Loader2 size={14} className="pl-spin" /> {t('decay.detail.loading')}
                       </div>
                     ) : detailRows.length === 0 ? (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>{t('decay.detail.empty')}</div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '0.5rem 0' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('decay.detail.empty')}</span>
+                        {/* The snapshot only exists after a scan, so offer the
+                            scan right here instead of sending the operator to
+                            the toolbar to work out which server this row is on. */}
+                        <button className="btn btn-secondary btn-sm"
+                          disabled={!tgt || cmdBusy !== null}
+                          title={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')}
+                          onClick={() => tgt && runCmd(`scan-${p.targeting_team}`,
+                            async () => {
+                              const res = await arkDecayApi.scanInstance(tgt.id)
+                              await openDetail(p)
+                              return res
+                            })}>
+                          {cmdBusy === `scan-${p.targeting_team}`
+                            ? <Loader2 size={12} className="pl-spin" />
+                            : <RefreshCw size={12} />} {t('decay.detail.scanHere')}
+                        </button>
+                      </div>
                     ) : (
                       <>
                       {detailTruncated && (
