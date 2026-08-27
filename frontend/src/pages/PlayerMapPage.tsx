@@ -58,7 +58,10 @@ export default function PlayerMapPage() {
   const [calibOverrides, setCalibOverrides] = useState<Record<string, MapCalib>>({})
 
   useEffect(() => {
-    playersApi.list({ limit: 1000 }).then(r => setPlayers(r.data)).catch(() => {})
+    // 500 is the API's hard cap: asking for more is a 422, which left the
+    // player selector empty with no visible error.
+    playersApi.list({ limit: 500 }).then(r => setPlayers(r.data))
+      .catch(e => setError(e.response?.data?.detail?.[0]?.msg || String(e)))
     serverInstancesApi.list({ active_only: true }).then(r => setInstances(r.data)).catch(() => {})
     // Per-map GPS overrides for mod maps (or corrections to a default),
     // stored in ARKM_config as PlayerMap.MapCalibration. Absent = no

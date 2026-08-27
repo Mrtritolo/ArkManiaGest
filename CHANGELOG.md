@@ -7,6 +7,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.2.4] - 2026-08-26
+
+### Fixed
+
+- **Player map selectors were empty.** The page asked for
+  `GET /players?limit=1000`, but the endpoint caps `limit` at 500, so the
+  request came back 422 and the player dropdown stayed empty — with no
+  visible error, which made the whole page look broken. The page now
+  requests 500 and surfaces the API message instead of swallowing it.
+
+### Notes
+
+- The 12 existing ASA-Manager containers of both game servers are now
+  registered as panel instances, which is what the RCON-driven features
+  dispatch to. `BobsMissions` is registered inactive: it is launched with
+  `-ServerExecutable ArkAscendedServer.exe`, so it loads no AsaApi and no
+  ARKM plugin, and every panel action targeting it would fail.
+- Registration seeded `update_coordination_role` with a value outside the
+  `MASTER`/`FOLLOWER` enum, which made `GET /servers` fail serialization
+  with a 500; the rows were corrected in place.
+
+---
+
 ## [4.2.3] - 2026-08-26
 
 ### Fixed
