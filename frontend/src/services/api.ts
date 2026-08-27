@@ -1056,6 +1056,31 @@ export const arkDecayApi = {
     api.get("/arkmania/decay/log", { params }),
 
   /**
+   * Player-map suite (plugin 5.4.0+): targeted scan of one player's tribe
+   * on one map, then surgical destroy/kill actions. Everything goes
+   * through the plugin's RCON commands; the panel never touches actors.
+   */
+  playerScanRun: (eosId: string, instanceId: number) =>
+    api.post<{ status: string; reply: string; stderr: string | null }>(
+      "/arkmania/decay/player-scan", { eos_id: eosId, instance_id: instanceId },
+      { timeout: 120_000 }),
+  playerScanRows: (eosId: string, serverKey?: string) =>
+    api.get(`/arkmania/decay/player-scan/${eosId}`, {
+      params: serverKey ? { server_key: serverKey } : undefined,
+    }),
+  destroyRadius: (data: {
+    instance_id: number; targeting_team: number;
+    x: number; y: number; z: number; radius_m: number;
+    kind: "structures" | "dinos" | "all";
+  }) =>
+    api.post<{ status: string; reply: string; stderr: string | null }>(
+      "/arkmania/decay/destroy-radius", data, { timeout: 120_000 }),
+  killPlayer: (eosId: string, instanceId: number) =>
+    api.post<{ status: string; reply: string; stderr: string | null }>(
+      "/arkmania/decay/kill-player", { eos_id: eosId, instance_id: instanceId },
+      { timeout: 60_000 }),
+
+  /**
    * Schedule a tribe for destruction on every active server in the cluster.
    * The plugin's next purge sweep destroys the actors and logs them.
    */

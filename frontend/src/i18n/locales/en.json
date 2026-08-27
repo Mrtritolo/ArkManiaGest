@@ -39,7 +39,8 @@
     "auditLog": "Audit Log",
     "myDashboard": "My dashboard",
     "market": "Marketplace",
-    "logout": "Log out"
+    "logout": "Log out",
+    "playerMap": "Player map"
   },
   "auth": {
     "login": {
@@ -689,7 +690,8 @@
       "level": "Lvl",
       "coords": "Coordinates (X Y Z)",
       "copyTp": "Copy TP",
-      "copied": "Copied!"
+      "copied": "Copied!",
+      "truncated": "List capped at 4000 objects — what you see is NOT everything this tribe owns. The purge would destroy more than what is listed here."
     }
   },
   "leaderboard": {
@@ -2269,6 +2271,37 @@
       "action": "Action",
       "detail": "Detail",
       "ip": "IP address"
+    }
+  },
+  "playerMap": {
+    "title": "Player map",
+    "subtitle": "Scan a player on one map: see where they are, their structures and dinos, then act surgically.",
+    "player": "Player",
+    "searchPlayer": "Search by name or EOS…",
+    "noName": "(no name)",
+    "server": "Server",
+    "scan": "Scan",
+    "scanning": "Scanning…",
+    "truncated": "Snapshot truncated at 4000 objects — the map is incomplete. Narrow the target or check the server log for the exact overflow.",
+    "structures": "structures",
+    "dinos": "dinos",
+    "playerDot": "player",
+    "online": "ONLINE",
+    "offline": "offline",
+    "mapHint": "Auto-fit view, north up, UU coordinates. Click a dot to select it.",
+    "actionsTitle": "Actions on selected point",
+    "selectHint": "Click a dot on the map or a row in the list to select a target point.",
+    "radius": "Radius (m)",
+    "killThisDino": "Kill this dino (1m)",
+    "killPlayer": "Kill player (online)",
+    "killOfflineHint": "Player offline: remove the body via destroy-in-radius.",
+    "confirmDestroy": "{{what}} of this tribe within {{r}}m of the selected point. Logged with cryo blobs (dinos restorable). Proceed?",
+    "confirmAll": "EVERYTHING means structures AND dinos. Are you really sure?",
+    "confirmKill": "Kill this player's character now? Normal death: body and item cache drop where they stand.",
+    "actions": {
+      "structures": "Destroy structures in radius",
+      "dinos": "Destroy dinos in radius",
+      "all": "Destroy EVERYTHING in radius"
     }
   }
 }

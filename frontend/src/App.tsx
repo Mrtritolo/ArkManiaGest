@@ -69,6 +69,7 @@ import BansPage from "./pages/BansPage";
 import RareDinosPage from "./pages/RareDinosPage";
 import TransferRulesPage from "./pages/TransferRulesPage";
 import DecayPage from "./pages/DecayPage";
+import PlayerMapPage from "./pages/PlayerMapPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import UsersPage from "./pages/UsersPage";
 import DiscordSettingsPage from "./pages/DiscordSettingsPage";
@@ -339,6 +340,7 @@ function App() {
                 element={<TransferRulesPage />}
               />
               <Route path="/plugins/decay" element={<DecayPage />} />
+              <Route path="/plugins/player-map" element={<PlayerMapPage />} />
               <Route
                 path="/plugins/leaderboard"
                 element={<LeaderboardPage />}

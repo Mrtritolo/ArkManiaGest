@@ -337,7 +337,11 @@ async def pending_scan_detail(
             "map_name":     r[11],
             "scanned_at":   str(r[12]) if r[12] else None,
         })
-    return {"detail": items, "count": len(items)}
+    # The plugin caps the snapshot at 4000 objects per scan and logs the
+    # overflow server-side; hitting the cap here means the list is almost
+    # certainly incomplete. Surface it so the UI can show a banner instead
+    # of letting a truncated list pass for a complete one.
+    return {"detail": items, "count": len(items), "truncated": len(items) >= 4000}
 
 
 @router.get("/log")
@@ -583,3 +587,142 @@ async def purge_single_tribe(
         "instances_failed": summary_failed,
         "results":         rcon_results,
     }
+
+# ── Player map (scan mirato + azioni chirurgiche, plugin 5.4.0+) ─────────────
+
+from pydantic import BaseModel
+
+
+async def _rcon_to_instance(
+    panel_db: AsyncSession, instance_id: int, cmd: str, user: dict
+) -> dict:
+    """Run one RCON command on one registered instance and return the reply."""
+    instances = await get_all_instances_async(panel_db, active_only=True)
+    inst = next((i for i in instances if i["id"] == instance_id), None)
+    if not inst:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id} not found or inactive.")
+    machine = await get_machine_async(panel_db, inst["machine_id"])
+    if not machine:
+        raise HTTPException(status_code=404, detail=f"Machine {inst['machine_id']} not found.")
+    r = await exec_rcon(panel_db, instance=inst, machine=machine, user=user, rcon_cmd=cmd)
+    return {
+        "instance_id":   inst["id"],
+        "instance_name": inst["name"],
+        "status":        r.status,
+        "reply":         (r.stdout or "").strip()[-2000:],
+        "stderr":        (r.stderr or "").strip()[-500:] or None,
+    }
+
+
+class PlayerScanRequest(BaseModel):
+    eos_id: str
+    instance_id: int
+
+
+@router.post("/player-scan", dependencies=[Depends(require_admin)])
+async def player_scan_run(
+    data: PlayerScanRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Ask the plugin on one instance to snapshot a player's tribe on that map
+    (``ARKM.DM.PlayerScan``): structures, dinos and characters with world
+    coordinates, written to ``ARKM_player_scan``. Read the rows back with
+    ``GET /player-scan/{eos_id}``.
+    """
+    return await _rcon_to_instance(
+        panel_db, data.instance_id, f"ARKM.DM.PlayerScan {data.eos_id}", user)
+
+
+@router.get("/player-scan/{eos_id}")
+async def player_scan_rows(
+    eos_id: str,
+    server_key: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """Rows of the player's latest scans (all maps unless server_key given)."""
+    where = ["eos_id = :e"]
+    params: dict = {"e": eos_id}
+    if server_key:
+        where.append("server_key = :sk")
+        params["sk"] = server_key
+    result = await db.execute(
+        text(
+            "SELECT targeting_team, server_key, map_name, actor_type, "
+            "class_name, display_name, custom_name, owner_name, "
+            "pos_x, pos_y, pos_z, dino_level, is_online, scanned_at "
+            f"FROM ARKM_player_scan WHERE {' AND '.join(where)} "
+            "ORDER BY scanned_at DESC, actor_type LIMIT 4000"
+        ),
+        params,
+    )
+    items = []
+    for r in result.fetchall():
+        items.append({
+            "targeting_team": r[0],
+            "server_key":     r[1],
+            "map_name":       r[2],
+            "actor_type":     r[3],
+            "class_name":     r[4],
+            "display_name":   r[5] or None,
+            "custom_name":    r[6] or None,
+            "owner_name":     r[7] or None,
+            "pos_x":          float(r[8]),
+            "pos_y":          float(r[9]),
+            "pos_z":          float(r[10]),
+            "dino_level":     r[11],
+            "is_online":      bool(r[12]),
+            "scanned_at":     str(r[13]) if r[13] else None,
+        })
+    return {"rows": items, "count": len(items), "truncated": len(items) >= 4000}
+
+
+class DestroyRadiusRequest(BaseModel):
+    instance_id: int
+    targeting_team: int
+    x: float
+    y: float
+    z: float
+    radius_m: float
+    kind: str = "all"   # structures | dinos | all
+
+
+@router.post("/destroy-radius", dependencies=[Depends(require_admin)])
+async def destroy_radius(
+    data: DestroyRadiusRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Surgical destruction: every actor of ONE tribe within a radius of a
+    point on that map (``ARKM.DM.DestroyRadius``). The plugin logs to
+    decay_log/purge_detail with cryo blobs, so destroyed dinos remain
+    restorable like purged ones. Radius is clamped server-side to 1..2000 m.
+    """
+    if data.kind not in ("structures", "dinos", "all"):
+        raise HTTPException(status_code=422, detail="kind must be structures|dinos|all")
+    cmd = (f"ARKM.DM.DestroyRadius {data.targeting_team} "
+           f"{data.x:.0f} {data.y:.0f} {data.z:.0f} {data.radius_m:.0f} {data.kind}")
+    return await _rcon_to_instance(panel_db, data.instance_id, cmd, user)
+
+
+class KillPlayerRequest(BaseModel):
+    eos_id: str
+    instance_id: int
+
+
+@router.post("/kill-player", dependencies=[Depends(require_admin)])
+async def kill_player(
+    data: KillPlayerRequest,
+    panel_db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Kill an ONLINE player's character (``ARKM.DM.KillPlayer``: normal death
+    with body and item cache). The plugin refuses offline players with an
+    explicit message -- remove offline bodies with /destroy-radius.
+    """
+    return await _rcon_to_instance(
+        panel_db, data.instance_id, f"ARKM.DM.KillPlayer {data.eos_id}", user)
+

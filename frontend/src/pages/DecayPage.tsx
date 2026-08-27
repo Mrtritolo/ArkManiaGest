@@ -102,6 +102,7 @@ export default function DecayPage() {
   const [detailKey, setDetailKey] = useState<string | null>(null)
   const [detailRows, setDetailRows] = useState<ScanDetailItem[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailTruncated, setDetailTruncated] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
   async function toggleDetail(p: PendingItem) {
@@ -111,6 +112,7 @@ export default function DecayPage() {
     try {
       const res = await arkDecayApi.pendingDetail(p.targeting_team, p.server_key)
       setDetailRows(res.data.detail || [])
+      setDetailTruncated(!!res.data.truncated)
     } catch {
       setDetailRows([])
     } finally {
@@ -454,6 +456,12 @@ export default function DecayPage() {
                     ) : detailRows.length === 0 ? (
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>{t('decay.detail.empty')}</div>
                     ) : (
+                      <>
+                      {detailTruncated && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem', fontWeight: 600, color: '#b45309', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 6, padding: '0.4rem 0.7rem', marginBottom: 6 }}>
+                          <AlertTriangle size={13} /> {t('decay.detail.truncated')}
+                        </div>
+                      )}
                       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 220px 90px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
                           <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.owner')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span><span></span>
@@ -471,6 +479,7 @@ export default function DecayPage() {
                           </div>
                         ))}
                       </div>
+                      </>
                     )}
                   </div>
                 )}

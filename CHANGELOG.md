@@ -7,6 +7,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.2.0] - 2026-08-26
+
+Player map: targeted scan with spatial view and surgical admin actions.
+Pairs with ARKM-DecayManager 5.4.0.
+
+### Added
+
+- **Player map page** (`/plugins/player-map`, admin only). Pick a player and
+  a server instance, trigger the plugin's `ARKM.DM.PlayerScan` over RCON and
+  see the snapshot on an auto-fit SVG minimap (north up, UU coordinates):
+  where the player is (online character red, offline bodies orange), their
+  structures (grey) and dinos (violet), backed by a full list with names,
+  levels and coordinates. Click a point to select it, preview a radius, then:
+  destroy the tribe's structures / dinos / everything within the radius
+  (`ARKM.DM.DestroyRadius`, clamped 1..2000 m server-side, logged to
+  decay_log/purge_detail with cryo blobs so dinos stay restorable), kill a
+  single dino (1 m radius), or kill the player if online
+  (`ARKM.DM.KillPlayer`, normal death with body and item cache). Every
+  action re-scans so the map always shows the post-action truth.
+  New endpoints: `POST /arkmania/decay/player-scan`,
+  `GET /arkmania/decay/player-scan/{eos}`, `POST /arkmania/decay/destroy-radius`,
+  `POST /arkmania/decay/kill-player` (all admin-gated).
+- **Truncation banners.** Both the pending-detail expansion and the player
+  map now surface the plugin's 4000-object snapshot cap with an explicit
+  warning banner instead of letting a truncated list pass for a complete
+  one (`truncated` flag on both read endpoints).
+
+---
+
 ## [4.1.6] - 2026-08-26
 
 Decay management upgrade, paired with ARKM-DecayManager 5.3.0.

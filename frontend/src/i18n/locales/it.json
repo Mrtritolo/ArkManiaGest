@@ -39,7 +39,8 @@
     "auditLog": "Registro Audit",
     "myDashboard": "La mia dashboard",
     "market": "Mercato",
-    "logout": "Esci"
+    "logout": "Esci",
+    "playerMap": "Mappa giocatore"
   },
   "auth": {
     "login": {
@@ -689,7 +690,8 @@
       "level": "Lvl",
       "coords": "Coordinate (X Y Z)",
       "copyTp": "Copia TP",
-      "copied": "Copiato!"
+      "copied": "Copiato!",
+      "truncated": "Lista limitata a 4000 oggetti — quello che vedi NON è tutto ciò che possiede questa tribù. Il purge distruggerebbe più di quanto elencato qui."
     }
   },
   "leaderboard": {
@@ -2269,6 +2271,37 @@
       "action": "Azione",
       "detail": "Dettaglio",
       "ip": "Indirizzo IP"
+    }
+  },
+  "playerMap": {
+    "title": "Mappa giocatore",
+    "subtitle": "Scansiona un giocatore su una mappa: vedi dov'è, le sue strutture e i suoi dini, poi agisci in modo chirurgico.",
+    "player": "Giocatore",
+    "searchPlayer": "Cerca per nome o EOS…",
+    "noName": "(senza nome)",
+    "server": "Server",
+    "scan": "Scansiona",
+    "scanning": "Scansione…",
+    "truncated": "Snapshot troncato a 4000 oggetti — la mappa è incompleta. Restringi il bersaglio o guarda il log del server per l'eccedenza esatta.",
+    "structures": "strutture",
+    "dinos": "dini",
+    "playerDot": "giocatore",
+    "online": "ONLINE",
+    "offline": "offline",
+    "mapHint": "Vista auto-adattata, nord in alto, coordinate UU. Clicca un punto per selezionarlo.",
+    "actionsTitle": "Azioni sul punto selezionato",
+    "selectHint": "Clicca un punto sulla mappa o una riga nella lista per selezionare un bersaglio.",
+    "radius": "Raggio (m)",
+    "killThisDino": "Uccidi questo dino (1m)",
+    "killPlayer": "Uccidi giocatore (online)",
+    "killOfflineHint": "Giocatore offline: il corpo si rimuove con la distruzione nel raggio.",
+    "confirmDestroy": "{{what}} di questa tribù entro {{r}}m dal punto selezionato. Loggato con cryo blob (dini ripristinabili). Procedo?",
+    "confirmAll": "TUTTO significa strutture E dini. Sei davvero sicuro?",
+    "confirmKill": "Uccidere ORA il personaggio di questo giocatore? Morte normale: corpo e sacca cadono dove si trova.",
+    "actions": {
+      "structures": "Distruggi strutture nel raggio",
+      "dinos": "Distruggi dini nel raggio",
+      "all": "Distruggi TUTTO nel raggio"
     }
   }
 }

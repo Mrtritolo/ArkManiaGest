@@ -35,8 +35,7 @@ import {
   Globe,
   Sun,
   Moon,
-  User,
-} from "lucide-react";
+  User, Crosshair } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import type { ComponentType } from "react";
@@ -106,6 +105,7 @@ const NAV_PLUGINS: NavItem[] = [
   { to: "/plugins/rare-dinos",     i18nKey: "nav.rareDinos",       icon: Eye },
   { to: "/plugins/transfer-rules", i18nKey: "nav.transferRules",   icon: ArrowRightLeft },
   { to: "/plugins/decay",          i18nKey: "nav.decay",           icon: Timer },
+  { to: "/plugins/player-map",     i18nKey: "nav.playerMap",       icon: Crosshair },
   { to: "/plugins/leaderboard",    i18nKey: "nav.leaderboard",     icon: Trophy },
 ];
 
