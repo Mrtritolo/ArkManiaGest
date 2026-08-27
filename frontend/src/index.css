@@ -1741,3 +1741,217 @@ th.pl-th-sort {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 3rem; color: var(--text-muted); gap: 0.75rem; text-align: center;
 }
+
+/* ============================================================================
+   Liquid Glass — materiale del pannello
+   ============================================================================
+   Stile "Apple Liquid Glass": superfici traslucide che rifrangono cio' che
+   hanno dietro, con un bordo chiaro sul lato illuminato e un'ombra morbida.
+
+   Tre regole guida, prese dalla definizione del materiale e non inventate:
+
+   1. Il vetro sta sulla CHROME (barra laterale, schede, controlli, dialoghi),
+      non sul contenuto. Il testo lungo resta su fondo pieno: la leggibilita'
+      viene prima dell'effetto.
+   2. Il colore si usa con parsimonia. Il materiale prende tinta da cio' che
+      c'e' dietro, non da un accento sparato sopra.
+   3. Traslucenza e movimento sono preferenze di sistema: chi ha chiesto meno
+      trasparenza o meno movimento riceve superfici piene e nessuna
+      transizione. Le due media query in fondo non sono un di piu'.
+
+   Questo blocco vive in fondo al foglio e sovrascrive le superfici del design
+   system originale: e' un livello, si toglie in un pezzo solo.
+   ========================================================================= */
+
+:root {
+  /* Il materiale. Due densita': "strong" per la chrome che deve reggere del
+     testo sopra, normale per le superfici di contenuto. */
+  --glass-bg:          linear-gradient(160deg,
+                         rgba(255, 255, 255, 0.10) 0%,
+                         rgba(255, 255, 255, 0.035) 45%,
+                         rgba(255, 255, 255, 0.02) 100%);
+  --glass-bg-strong:   linear-gradient(160deg,
+                         rgba(30, 44, 34, 0.86) 0%,
+                         rgba(10, 16, 11, 0.80) 100%);
+  --glass-bg-hover:    linear-gradient(160deg,
+                         rgba(255, 255, 255, 0.14) 0%,
+                         rgba(255, 255, 255, 0.06) 100%);
+  --glass-border:      rgba(255, 255, 255, 0.14);
+  /* Il bordo interno chiaro in alto e' cio' che rende il vetro "spesso":
+     simula la luce che entra dallo spigolo superiore. */
+  --glass-highlight:   rgba(255, 255, 255, 0.14);
+  --glass-shadow:      0 8px 32px rgba(0, 0, 0, 0.38);
+  --glass-shadow-lg:   0 20px 60px rgba(0, 0, 0, 0.50);
+  --glass-blur:        18px;
+  --glass-blur-strong: 28px;
+  --glass-saturate:    160%;
+}
+
+/* Sul tema chiaro le stesse macchie vanno tenute piu' basse: su bianco
+   saturano subito e il pannello sembra colorato invece che illuminato. */
+[data-theme="light"] body::before {
+  background:
+    radial-gradient(42rem 42rem at 12% 8%,  rgba(22, 163, 74, 0.10), transparent 60%),
+    radial-gradient(38rem 38rem at 88% 22%, rgba(8, 145, 178, 0.08), transparent 62%),
+    radial-gradient(46rem 46rem at 55% 96%, rgba(22, 163, 74, 0.07), transparent 65%);
+}
+
+[data-theme="light"] {
+  /* Su fondo chiaro il vetro e' bianco e il bordo deve scurirsi, altrimenti
+     sparisce: un bordo chiaro su sfondo chiaro non e' un bordo. */
+  --glass-bg:          linear-gradient(160deg,
+                         rgba(255, 255, 255, 0.86) 0%,
+                         rgba(255, 255, 255, 0.60) 100%);
+  --glass-bg-strong:   linear-gradient(160deg,
+                         rgba(255, 255, 255, 0.94) 0%,
+                         rgba(255, 255, 255, 0.80) 100%);
+  --glass-bg-hover:    linear-gradient(160deg,
+                         rgba(255, 255, 255, 0.96) 0%,
+                         rgba(255, 255, 255, 0.78) 100%);
+  --glass-border:      rgba(15, 23, 42, 0.12);
+  --glass-highlight:   rgba(255, 255, 255, 0.85);
+  --glass-shadow:      0 8px 32px rgba(15, 23, 42, 0.10);
+  --glass-shadow-lg:   0 20px 60px rgba(15, 23, 42, 0.16);
+  --glass-saturate:    140%;
+}
+
+/* --- Il fondo da rifrangere ------------------------------------------------
+   Sfocare un colore piatto non produce nulla: il vetro ha bisogno di qualcosa
+   dietro. Queste macchie fisse, tenute molto basse, sono quel qualcosa. Non
+   si notano da sole, si notano attraverso il vetro. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42rem 42rem at 12% 8%,  rgba(74, 222, 128, 0.16), transparent 60%),
+    radial-gradient(38rem 38rem at 88% 22%, rgba(34, 211, 238, 0.13), transparent 62%),
+    radial-gradient(46rem 46rem at 55% 96%, rgba(74, 222, 128, 0.12), transparent 65%);
+}
+
+/* --- La ricetta del vetro --------------------------------------------------
+   Una sola definizione, applicata alle superfici che la compongono. */
+.sidebar,
+.card,
+.stat-card,
+.machine-card,
+.sf-container-card,
+.sf-machine-card,
+.sf-cluster-card,
+.as-item-card,
+.pl-table-wrap,
+.pl-detail,
+.pl-stat,
+.dc-stat,
+.pl-sync-panel,
+.alert {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* La barra laterale regge testo e icone per tutta l'altezza: densita' piena,
+   altrimenti il contenuto della pagina che le scorre dietro rende illeggibili
+   le voci di menu. */
+.sidebar {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  border-right: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg), inset -1px 0 0 var(--glass-highlight);
+}
+
+.card:hover,
+.as-item-card:hover,
+.machine-card:hover {
+  border-color: var(--border-input);
+  box-shadow: var(--glass-shadow-lg), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* --- Controlli -------------------------------------------------------------
+   Bottoni e campi sono controlli, quindi vetro anche loro — ma sottile: un
+   controllo deve leggersi come premibile, non come una finestra. */
+.btn-secondary,
+.form-input,
+.input,
+.pl-search-input,
+.pl-search-filter,
+.dc-select,
+.sf-tab {
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+.btn-secondary:hover:not(:disabled),
+.sf-tab:hover {
+  background: var(--glass-bg-hover);
+}
+.form-input:focus,
+.input:focus,
+.pl-search-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 0 0 3px var(--accent-glow);
+}
+
+/* Il pulsante primario resta pieno: e' l'azione, e un'azione non si nasconde
+   dietro un materiale. Gli si aggiunge solo lo spigolo illuminato. */
+.btn-primary {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 12px var(--accent-glow);
+}
+
+/* --- Sovrapposizioni -------------------------------------------------------
+   Il dialogo e' vetro spesso; il velo dietro di lui sfoca la pagina, che e'
+   esattamente il gesto del materiale. */
+.as-dialog-overlay {
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+}
+.as-dialog {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* I menu a tendina restano OPACHI, deliberatamente. Sono l'unico posto dove
+   la traslucenza ha gia' fatto danni: il testo della pagina sotto passava
+   attraverso e la tendina della ricerca blueprint diventava illeggibile.
+   Prendono il bordo e l'ombra del sistema, non il materiale. */
+.bp-search-dropdown {
+  background: var(--bg-popover);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* --- Preferenze di sistema -------------------------------------------------
+   Chi ha chiesto meno trasparenza riceve superfici piene: non e' un
+   ripiego degradato, e' la stessa interfaccia senza il materiale. */
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar, .card, .stat-card, .machine-card, .sf-container-card,
+  .sf-machine-card, .sf-cluster-card, .as-item-card, .pl-table-wrap,
+  .pl-detail, .pl-stat, .dc-stat, .pl-sync-panel, .alert, .as-dialog,
+  .btn-secondary, .form-input, .input, .pl-search-input, .pl-search-filter,
+  .dc-select, .sf-tab {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--bg-popover);
+  }
+  .as-dialog-overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  body::before { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

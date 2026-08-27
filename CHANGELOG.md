@@ -7,6 +7,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.7.0] - 2026-08-27
+
+### Changed
+
+- **Liquid Glass surfaces.** The panel's chrome — sidebar, cards, stat tiles,
+  dialogs, alerts, tabs, inputs, secondary buttons — is now a translucent
+  material: a blurred, saturated backdrop, a lit top edge, and a soft
+  shadow, in both themes. It is one layer appended to `index.css` and
+  applied to the dozen surface classes everything else composes from, so no
+  page component was touched.
+- **Something to refract.** Blur over a flat colour produces nothing, so a
+  fixed, very low ambient gradient sits behind the app. It is invisible on
+  its own; it is what the glass picks up.
+- **Glass on chrome, not on content.** Long text and tables keep solid
+  backgrounds, and dropdowns stay fully opaque on purpose: translucency
+  there is what once made the blueprint search list unreadable with the page
+  text bleeding through. They take the system's border and shadow, not the
+  material.
+
+### Accessibility
+
+- `prefers-reduced-transparency: reduce` turns every glass surface opaque
+  and removes the ambient layer; `prefers-reduced-motion: reduce` collapses
+  transitions and animations. Both are part of the material's definition,
+  not an afterthought.
+
+---
+
 ## [4.6.3] - 2026-08-27
 
 ### Added
