@@ -7,6 +7,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.6.1] - 2026-08-27
+
+### Fixed
+
+- **The catalogue import had no button.** 4.6.0 shipped the route but no way
+  to call it, so the shop said "an admin has to import the catalogue" with
+  no import in sight. The button now sits in the shop tab itself — where you
+  find out the window is empty — and only for admins.
+
+---
+
 ## [4.6.0] - 2026-08-27
 
 ### Added

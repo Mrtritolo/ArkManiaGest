@@ -309,7 +309,7 @@ function App() {
               {/* Marketplace inside admin layout (embedded) */}
               <Route
                 path="/market"
-                element={<MarketPage embedded />}
+                element={<MarketPage embedded currentUser={currentUser} />}
               />
               <Route path="/serverforge" element={<ServerForgePage />} />
               <Route path="/online" element={<OnlinePlayersPage />} />

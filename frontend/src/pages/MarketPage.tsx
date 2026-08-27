@@ -25,11 +25,14 @@ import {
   type WebShopItem, type WebShopGene, type WebShopOrder,
 } from "../services/api";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
+import type { AuthUser } from "../types";
 
 type TabKey = "browse" | "mine" | "history" | "shop" | "genes" | "orders";
 
 interface MarketPageProps {
   embedded?: boolean;
+  /** Solo nella variante dentro il pannello admin: serve per il catalogo. */
+  currentUser?: AuthUser | null;
 }
 
 function fmtRelative(iso: string | null): string {
@@ -70,7 +73,8 @@ function extractError(err: unknown, fallback: string): string {
   return (err as { message?: string })?.message ?? fallback;
 }
 
-export default function MarketPage({ embedded = false }: MarketPageProps) {
+export default function MarketPage({ embedded = false, currentUser }: MarketPageProps) {
+  const isAdmin = currentUser?.role === "admin";
   const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("browse");
 
@@ -105,6 +109,23 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
       setShopPending(r.data.pending || 0);
     } catch { /* il conteggio in coda e' un di piu', non un errore da mostrare */ }
   }, []);
+
+  /** Admin: importa il catalogo ArkShop nella vetrina web. */
+  async function doImport() {
+    setShopBusy("__import"); setError(""); setSuccess("");
+    try {
+      const r = await webShopApi.importArkshop();
+      const skipped = Object.entries(r.data.skipped || {})
+        .map(([k, v]) => `${k}: ${v}`).join(", ");
+      setSuccess(t("market.shop.imported", {
+        n: r.data.imported, skipped: skipped || "-" }));
+      await loadShop();
+    } catch (e: any) {
+      setError(e.response?.data?.detail || String(e));
+    } finally {
+      setShopBusy(null);
+    }
+  }
 
   /**
    * Compra e mette in coda. Ricarica il portafoglio subito dopo: i punti
@@ -398,13 +419,28 @@ export default function MarketPage({ embedded = false }: MarketPageProps) {
         {/* TAB: Shop del server (oggetti e dino importati da ArkShop) */}
         {tab === "shop" && (
           <>
-            <input
-              className="form-input"
-              placeholder={t("market.shop.searchPh")}
-              value={shopSearch}
-              onChange={e => setShopSearch(e.target.value)}
-              style={{ marginBottom: "0.7rem", width: "100%" }}
-            />
+            <div style={{ display: "flex", gap: 8, marginBottom: "0.7rem" }}>
+              <input
+                className="form-input"
+                placeholder={t("market.shop.searchPh")}
+                value={shopSearch}
+                onChange={e => setShopSearch(e.target.value)}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              {/* Solo admin: riempie la vetrina dalla config di ArkShop. Sta
+                  qui e non in una pagina di impostazioni perche' e' il posto
+                  dove ci si accorge che la vetrina e' vuota. */}
+              {isAdmin && (
+                <button className="btn btn-secondary btn-sm"
+                  disabled={shopBusy !== null}
+                  title={t("market.shop.importHint")}
+                  onClick={doImport}>
+                  {shopBusy === "__import"
+                    ? <Loader2 size={13} className="pl-spin" />
+                    : <RefreshCw size={13} />} {t("market.shop.import")}
+                </button>
+              )}
+            </div>
             {shopLoading ? (
               <div style={{ padding: "1rem", color: "var(--text-muted)" }}>
                 <Loader2 size={14} className="pl-spin" /> {t("common.loading")}
