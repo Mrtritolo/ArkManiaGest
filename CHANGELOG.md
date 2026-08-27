@@ -7,6 +7,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.8.0] - 2026-08-27
+
+### Changed
+
+- **Bigger, roomier UI.** The panel was tuned tight: 10-11px labels, 8px
+  corners, 26-34px controls, rows packed together. Dense is right for an
+  admin panel, but this was below the point where density still helps.
+  The root font size now drives everything — pages write their sizes in
+  `rem`, so one number scales all of them together and keeps the ratios
+  between title, body and label intact. Corners, control heights, card
+  padding and the type hierarchy were raised to match: page titles are
+  27px instead of 21px, stat values 30px, buttons comfortably past the
+  24px web minimum for a click target.
+- 17px and no more: several tables have fixed-pixel column widths that do
+  not scale with the text, and past that point content starts touching the
+  column edges.
+
+---
+
 ## [4.7.2] - 2026-08-27
 
 ### Fixed

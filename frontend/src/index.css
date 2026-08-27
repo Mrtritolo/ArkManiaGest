@@ -1955,3 +1955,119 @@ body::before {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================================
+   Scala e respiro
+   ============================================================================
+   Il pannello era tarato stretto: testo da 10-11 px, angoli da 8, controlli
+   alti 26-34 px, righe attaccate. Denso non e' sbagliato per un pannello di
+   amministrazione, ma questo stava sotto la soglia in cui la densita' aiuta.
+
+   La leva vera e' una sola. Le pagine scrivono le loro misure in `rem`
+   (`fontSize: '0.7rem'` e simili, oltre milleseicento volte), quindi la
+   dimensione del root le scala TUTTE insieme, mantenendo le proporzioni fra
+   titolo, corpo ed etichetta. Alzarla e' un numero; riscrivere millesei-
+   cento stili inline non lo e'.
+
+   17px e non di piu': diverse tabelle hanno colonne a larghezza fissa in px
+   (`gridTemplateColumns: '80px 1fr ...'`) che non scalano col testo, e oltre
+   questa soglia il contenuto comincia a toccare i bordi delle colonne.
+   ========================================================================= */
+
+html {
+  font-size: 17px;
+}
+
+:root {
+  /* Angoli piu' generosi: 8px su una scheda grande legge come una finestra
+     di dieci anni fa. */
+  --radius:    11px;
+  --radius-lg: 18px;
+  /* La barra laterale cresce con il testo che contiene, altrimenti le voci
+     di menu vanno a capo. */
+  --sidebar-width: 268px;
+}
+
+/* --- Controlli ------------------------------------------------------------
+   Altezza minima esplicita: il padding in rem da solo lasciava bottoni da
+   26 px, sotto il minimo di 24 CSS px raccomandato per il web e comunque
+   scomodi da centrare col mouse. */
+.btn {
+  min-height: 2.1rem;
+  padding: 0.55rem 1.05rem;
+  border-radius: 9px;
+}
+.btn-sm {
+  min-height: 1.8rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+.form-input,
+.input,
+.pl-search-input,
+.pl-search-filter,
+.dc-select {
+  min-height: 2.2rem;
+  border-radius: 9px;
+}
+
+/* --- Schede ---------------------------------------------------------------
+   Piu' aria dentro e piu' distanza fra una scheda e l'altra: e' meta' della
+   sensazione di "moderno", l'altra meta' sono gli angoli. */
+.card {
+  padding: 1.35rem 1.45rem;
+}
+.stat-card {
+  padding: 1.1rem 1.2rem;
+}
+.card-title {
+  font-size: 1.08rem;
+  margin-bottom: 1rem;
+}
+
+/* --- Gerarchia ------------------------------------------------------------
+   Il titolo di pagina era poco piu' grande del corpo: senza un salto netto
+   la pagina non ha un punto d'ingresso per l'occhio. */
+.page-title,
+.pl-title {
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+.page-subtitle,
+.pl-subtitle {
+  font-size: 0.92rem;
+}
+.stat-card-value,
+.pl-stat-val,
+.dc-stat-val {
+  font-size: 1.75rem;
+  line-height: 1.15;
+}
+.stat-card-label,
+.pl-stat-lbl,
+.dc-stat-lbl {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+}
+
+/* --- Righe ----------------------------------------------------------------
+   Le tabelle restano dense (e' un pannello, non un sito), ma una riga alta
+   ~1.7rem si legge senza inseguirla. */
+.pl-table td,
+.pl-table th,
+.dc-table td,
+.dc-table th,
+.bp-table td,
+.bp-table th {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+/* --- Navigazione ----------------------------------------------------------
+   Le voci del menu sono l'elemento che si colpisce piu' spesso in assoluto. */
+.sidebar-link {
+  padding: 0.6rem 0.85rem;
+  border-radius: 9px;
+  font-size: 0.92rem;
+}
+.sidebar-brand-title { font-size: 1.15rem; }
