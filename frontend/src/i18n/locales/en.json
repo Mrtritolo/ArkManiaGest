@@ -2302,6 +2302,7 @@
       "structures": "Destroy structures in radius",
       "dinos": "Destroy dinos in radius",
       "all": "Destroy EVERYTHING in radius"
-    }
+    },
+    "mapHintGps": "Calibrated map: fixed square = the whole map, dots at true GPS position (axes in GPS 0..100). Click a dot to select it."
   }
 }

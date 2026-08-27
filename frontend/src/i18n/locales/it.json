@@ -2302,6 +2302,7 @@
       "structures": "Distruggi strutture nel raggio",
       "dinos": "Distruggi dini nel raggio",
       "all": "Distruggi TUTTO nel raggio"
-    }
+    },
+    "mapHintGps": "Mappa calibrata: quadrato fisso = mappa intera, punti alla posizione GPS reale (assi in GPS 0..100). Clicca un punto per selezionarlo."
   }
 }

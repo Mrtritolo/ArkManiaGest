@@ -7,6 +7,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.2.1] - 2026-08-26
+
+### Added
+
+- **Per-map GPS calibration for the player map.** The minimap now places
+  dots at their true in-game GPS position (0..100 lat/lon) on calibrated
+  maps, with GPS shown next to the UU coordinates of the selected point.
+  Official maps ship with built-in calibration
+  (`frontend/src/utils/mapCalibration.ts`); mod maps (Astraeos, Lost City,
+  …) and corrections to a default are supplied at runtime via the
+  `PlayerMap.MapCalibration` config key (server `*`), a JSON object keyed
+  by `map_name` — no redeploy needed. Uncalibrated maps keep the auto-fit
+  UU scatter, so nothing regresses when a map has no entry.
+
+---
+
 ## [4.2.0] - 2026-08-26
 
 Player map: targeted scan with spatial view and surgical admin actions.

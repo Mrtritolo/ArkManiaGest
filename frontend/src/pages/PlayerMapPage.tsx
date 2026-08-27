@@ -9,13 +9,15 @@
  * player if online (ARKM.DM.KillPlayer). Every action re-scans so the map
  * always shows the post-action truth.
  *
- * The minimap is an auto-fit SVG scatter (UU coordinates, north up): it
- * shows *relative* positions without needing per-map GPS calibration.
+ * The minimap uses real GPS placement when the map is calibrated (official
+ * maps built in, mod maps via the PlayerMap.MapCalibration config key), and
+ * falls back to an auto-fit UU scatter (relative positions) otherwise.
  */
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { arkDecayApi, playersApi, serverInstancesApi } from '../services/api'
+import { arkDecayApi, playersApi, serverInstancesApi, arkmaniaApi } from '../services/api'
 import type { PlayerListItem, ServerInstance } from '../types'
+import { DEFAULT_CALIBRATION, parseCalibOverrides, gpsOf, fullMapBounds, type MapCalib } from '../utils/mapCalibration'
 import {
   Crosshair, Loader2, AlertTriangle, RefreshCw, Building, Skull, MapPin, Copy,
 } from 'lucide-react'
@@ -53,10 +55,22 @@ export default function PlayerMapPage() {
   const [acting, setActing] = useState(false)
   const [actionMsg, setActionMsg] = useState('')
 
+  const [calibOverrides, setCalibOverrides] = useState<Record<string, MapCalib>>({})
+
   useEffect(() => {
     playersApi.list({ limit: 1000 }).then(r => setPlayers(r.data)).catch(() => {})
     serverInstancesApi.list({ active_only: true }).then(r => setInstances(r.data)).catch(() => {})
+    // Per-map GPS overrides for mod maps (or corrections to a default),
+    // stored in ARKM_config as PlayerMap.MapCalibration. Absent = no
+    // override, we fall back to DEFAULT_CALIBRATION then to raw UU.
+    arkmaniaApi.getConfig('PlayerMap.MapCalibration', '*')
+      .then(r => setCalibOverrides(parseCalibOverrides(r.data.config_value)))
+      .catch(() => setCalibOverrides({}))
   }, [])
+
+  // Calibration active for the map currently shown, if any.
+  const mapName = rows[0]?.map_name || ''
+  const calib: MapCalib | null = calibOverrides[mapName] || DEFAULT_CALIBRATION[mapName] || null
 
   const filteredPlayers = useMemo(() => {
     const q = playerFilter.trim().toLowerCase()
@@ -126,9 +140,17 @@ export default function PlayerMapPage() {
     }
   }
 
-  // ── Minimap geometry: auto-fit bounds with 6% padding ──────────────────
+  // ── Minimap geometry ───────────────────────────────────────────────────
+  // Calibrated map: fixed square = the whole map (GPS 0..100), so dots sit
+  // at their true in-game position and the axes read as GPS. Uncalibrated:
+  // auto-fit around the objects (relative positions only, no GPS meaning).
   const view = useMemo(() => {
     if (rows.length === 0) return null
+    if (calib) {
+      const b = fullMapBounds(calib)
+      const span = Math.max(b.spanX, b.spanY)
+      return { minX: b.minX, minY: b.minY, span, calibrated: true }
+    }
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
     for (const r of rows) {
       if (r.pos_x < minX) minX = r.pos_x; if (r.pos_x > maxX) maxX = r.pos_x
@@ -136,12 +158,17 @@ export default function PlayerMapPage() {
     }
     const spanX = Math.max(maxX - minX, 1000), spanY = Math.max(maxY - minY, 1000)
     const pad = 0.06 * Math.max(spanX, spanY)
-    return { minX: minX - pad, minY: minY - pad, span: Math.max(spanX, spanY) + 2 * pad }
-  }, [rows])
+    return { minX: minX - pad, minY: minY - pad, span: Math.max(spanX, spanY) + 2 * pad, calibrated: false }
+  }, [rows, calib])
 
   const SIZE = 560
   function px(r: ScanRow) { return view ? ((r.pos_x - view.minX) / view.span) * SIZE : 0 }
   function py(r: ScanRow) { return view ? ((r.pos_y - view.minY) / view.span) * SIZE : 0 }
+  function gpsLabel(r: ScanRow) {
+    if (!calib) return null
+    const g = gpsOf(calib, r.pos_x, r.pos_y)
+    return `${g.lat.toFixed(1)}, ${g.lon.toFixed(1)}`
+  }
 
   const sel = selected !== null ? rows[selected] : null
   const anyOnline = rows.some(r => r.actor_type === 'player' && r.is_online)
@@ -213,6 +240,14 @@ export default function PlayerMapPage() {
                   <line x1={0} y1={(SIZE / 4) * i} x2={SIZE} y2={(SIZE / 4) * i} />
                 </g>
               ))}
+              {/* etichette GPS agli angoli quando la mappa e' calibrata */}
+              {view?.calibrated && (
+                <g fill="var(--text-muted)" fontSize={9} fontFamily="var(--font-mono)">
+                  <text x={3} y={11}>Lon 0 / Lat 0</text>
+                  <text x={SIZE - 3} y={11} textAnchor="end">Lon 100</text>
+                  <text x={3} y={SIZE - 4}>Lat 100</text>
+                </g>
+              )}
               {/* raggio anteprima sul punto selezionato */}
               {sel && view && (
                 <circle cx={px(sel)} cy={py(sel)} r={(radius * 100 / view.span) * SIZE}
@@ -233,7 +268,9 @@ export default function PlayerMapPage() {
                 )
               })}
             </svg>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('playerMap.mapHint')}</div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>
+              {view?.calibrated ? t('playerMap.mapHintGps') : t('playerMap.mapHint')}
+            </div>
           </div>
 
           {/* Pannello azioni + lista */}
@@ -246,6 +283,7 @@ export default function PlayerMapPage() {
                     <b>{sel.custom_name || sel.display_name || sel.class_name}</b>
                     <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginLeft: 8 }}>
                       {Math.round(sel.pos_x)} {Math.round(sel.pos_y)} {Math.round(sel.pos_z)}
+                      {gpsLabel(sel) && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>GPS {gpsLabel(sel)}</span>}
                     </span>
                     <button className="btn btn-ghost btn-sm" onClick={() => copyTp(sel)} title="cheat TPCoords"><Copy size={10} /> TP</button>
                   </div>
