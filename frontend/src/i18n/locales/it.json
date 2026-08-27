@@ -692,7 +692,9 @@
       "copyTp": "Copia TP",
       "copied": "Copiato!",
       "truncated": "Lista limitata a 4000 oggetti — quello che vedi NON è tutto ciò che possiede questa tribù. Il purge distruggerebbe più di quanto elencato qui.",
-      "confirmDestroyOne": "Distruggere \"{{what}}\"? Viene eliminato solo questo oggetto."
+      "confirmDestroyOne": "Distruggere \"{{what}}\"? Viene eliminato solo questo oggetto.",
+      "showLabel": "Mostra",
+      "visibleCount": "{{shown}} di {{total}} visibili"
     },
     "cmd": {
       "pickServer": "Scegli un server...",
@@ -2329,6 +2331,9 @@
     "scanDinos": "Dino",
     "scanPlayers": "Personaggi",
     "scanLayerHint": "Ri-scansiona solo questo layer: gli altri restano come sono.",
-    "toggleLayer": "Mostra o nascondi questo layer sulla mappa"
+    "toggleLayer": "Mostra o nascondi questo layer sulla mappa",
+    "showLabel": "Mostra",
+    "characters": "Personaggi",
+    "visibleCount": "{{shown}} di {{total}} visibili"
   }
 }

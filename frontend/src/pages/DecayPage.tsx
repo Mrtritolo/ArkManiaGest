@@ -9,7 +9,7 @@ import type { ServerInstance } from '../types'
 import {
   Timer, Search, AlertCircle, AlertTriangle, CheckCircle, Clock,
   Trash2, Building, Activity, XCircle, MapPin, Copy, Loader2,
-  RefreshCw, Crosshair, Skull, CalendarPlus, Server, RotateCw
+  RefreshCw, Crosshair, Skull, CalendarPlus, Server, RotateCw, Eye, EyeOff
 } from 'lucide-react'
 
 interface DecayTribe {
@@ -105,6 +105,9 @@ export default function DecayPage() {
   const [detailKey, setDetailKey] = useState<string | null>(null)
   const [detailRows, setDetailRows] = useState<ScanDetailItem[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
+  // What the detail table shows. Purely a view filter: it never touches
+  // the snapshot, and a hidden row is still there when you turn it back on.
+  const [detailKinds, setDetailKinds] = useState({ structure: true, dino: true })
   const [detailTruncated, setDetailTruncated] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
@@ -172,6 +175,14 @@ export default function DecayPage() {
       setDetailLoading(false)
     }
   }
+
+  // Each visible row keeps its index in detailRows, so destroyOne() still
+  // removes the right one after a filter change.
+  const detailVisible = detailRows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => detailKinds[r.actor_type as 'structure' | 'dino'] !== false)
+  const nDetailStruct = detailRows.filter(r => r.actor_type === 'structure').length
+  const nDetailDino = detailRows.filter(r => r.actor_type === 'dino').length
 
   function copyTp(row: ScanDetailItem, idx: number) {
     const cmd = `cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`
@@ -574,11 +585,29 @@ export default function DecayPage() {
                           <AlertTriangle size={13} /> {t('decay.detail.truncated')}
                         </div>
                       )}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                          {t('decay.detail.showLabel')}
+                        </span>
+                        {([['structure', nDetailStruct, t('playerMap.structures')],
+                           ['dino', nDetailDino, t('playerMap.dinos')]] as ['structure' | 'dino', number, string][])
+                          .map(([k, n, label]) => (
+                          <button key={k}
+                            className={detailKinds[k] ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                            style={detailKinds[k] ? undefined : { opacity: 0.55 }}
+                            onClick={() => setDetailKinds(d => ({ ...d, [k]: !d[k] }))}>
+                            {detailKinds[k] ? <Eye size={11} /> : <EyeOff size={11} />} {label} ({n})
+                          </button>
+                        ))}
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {t('decay.detail.visibleCount', { shown: detailVisible.length, total: detailRows.length })}
+                        </span>
+                      </div>
                       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
                           <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.owner')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span><span></span>
                         </div>
-                        {detailRows.map((row, idx) => (
+                        {detailVisible.map(({ r: row, i: idx }) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
                             <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? '#8b5cf6' : 'var(--text-secondary)' }}>{row.actor_type}</span>
                             <span title={row.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.custom_name || row.display_name || row.class_name}</span>

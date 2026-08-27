@@ -692,7 +692,9 @@
       "copyTp": "Copy TP",
       "copied": "Copied!",
       "truncated": "List capped at 4000 objects — what you see is NOT everything this tribe owns. The purge would destroy more than what is listed here.",
-      "confirmDestroyOne": "Destroy \"{{what}}\"? Only this object is affected."
+      "confirmDestroyOne": "Destroy \"{{what}}\"? Only this object is affected.",
+      "showLabel": "Show",
+      "visibleCount": "{{shown}} of {{total}} shown"
     },
     "cmd": {
       "pickServer": "Pick a server...",
@@ -2329,6 +2331,9 @@
     "scanDinos": "Dinos",
     "scanPlayers": "Characters",
     "scanLayerHint": "Re-scan only this layer: the other layers stay as they were.",
-    "toggleLayer": "Show or hide this layer on the map"
+    "toggleLayer": "Show or hide this layer on the map",
+    "showLabel": "Show",
+    "characters": "Characters",
+    "visibleCount": "{{shown}} of {{total}} shown"
   }
 }

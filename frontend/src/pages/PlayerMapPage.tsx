@@ -13,7 +13,7 @@
  * maps built in, mod maps via the PlayerMap.MapCalibration config key), and
  * falls back to an auto-fit UU scatter (relative positions) otherwise.
  */
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ScanKind } from '../services/api'
 import { arkDecayApi, playersApi, serverInstancesApi, arkmaniaApi } from '../services/api'
@@ -21,6 +21,7 @@ import type { PlayerListItem, ServerInstance } from '../types'
 import { DEFAULT_CALIBRATION, parseCalibOverrides, gpsOf, fullMapBounds, type MapCalib } from '../utils/mapCalibration'
 import {
   Crosshair, Loader2, AlertTriangle, RefreshCw, Building, Skull, MapPin, Copy,
+  Eye, EyeOff
 } from 'lucide-react'
 
 interface ScanRow {
@@ -76,10 +77,24 @@ export default function PlayerMapPage() {
         { sensitivity: 'base', numeric: true })),
     [instances])
 
+  // Every player, not the first page. 500 is the endpoint's hard cap per
+  // request (asking for more is a 422), so we walk the pages instead of
+  // silently showing whoever happened to land in page one.
+  const loadAllPlayers = useCallback(async () => {
+    const PAGE = 500
+    const acc: PlayerListItem[] = []
+    for (let offset = 0; ; offset += PAGE) {
+      const r = await playersApi.list({ limit: PAGE, offset })
+      acc.push(...r.data)
+      // Short page = last page. The ceiling is a runaway guard, not a
+      // product limit: it is far above any plausible roster.
+      if (r.data.length < PAGE || acc.length >= 20_000) break
+    }
+    setPlayers(acc)
+  }, [])
+
   useEffect(() => {
-    // 500 is the API's hard cap: asking for more is a 422, which left the
-    // player selector empty with no visible error.
-    playersApi.list({ limit: 500 }).then(r => setPlayers(r.data))
+    loadAllPlayers()
       .catch(e => setError(e.response?.data?.detail?.[0]?.msg || String(e)))
     serverInstancesApi.list({ active_only: true }).then(r => setInstances(r.data)).catch(() => {})
     // Per-map GPS overrides for mod maps (or corrections to a default),
@@ -88,7 +103,7 @@ export default function PlayerMapPage() {
     arkmaniaApi.getConfig('PlayerMap.MapCalibration', '*')
       .then(r => setCalibOverrides(parseCalibOverrides(r.data.config_value)))
       .catch(() => setCalibOverrides({}))
-  }, [])
+  }, [loadAllPlayers])
 
   // Calibration active for the map currently shown, if any.
   const mapName = rows[0]?.map_name || ''
@@ -118,8 +133,6 @@ export default function PlayerMapPage() {
     const base = q
       ? players.filter(p => (p.name || '').toLowerCase().includes(q) || p.eos_id.toLowerCase().includes(q))
       : players
-    // Sort BEFORE the cut, so the 60 shown are the first 60 alphabetically
-    // and not an arbitrary slice of the API order that then looks sorted.
     // localeCompare so accented names land where an Italian reader expects.
     return [...base]
       .sort((a, b) => {
@@ -129,7 +142,6 @@ export default function PlayerMapPage() {
         return (a.name || a.eos_id).localeCompare(b.name || b.eos_id, undefined,
           { sensitivity: 'base', numeric: true })
       })
-      .slice(0, 60)
   }, [players, playerFilter])
 
   async function loadRows(eos: string) {
@@ -318,6 +330,36 @@ export default function PlayerMapPage() {
           ))}
         </div>
         {scanReply && <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flexBasis: '100%' }}>{scanReply}</span>}
+
+        {rows.length > 0 && (
+        <>
+        {/* Display filter, deliberately separate from the scan buttons above:
+            hiding a layer only changes what you look at, it never touches
+            the snapshot. A base with a couple of thousand foundations
+            buries the handful of dots that matter. */}
+        <div style={{ flexBasis: '100%', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+                      borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 2 }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+            {t('playerMap.showLabel')}
+          </span>
+          {([
+            ['structure', nStruct, t('playerMap.structures')],
+            ['dino', nDino, t('playerMap.dinos')],
+            ['player', nChar, t('playerMap.characters')],
+          ] as [ScanRow['actor_type'], number, string][]).map(([k, n, label]) => (
+            <button key={k} onClick={() => toggleLayer(k)}
+              className={layers[k] ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+              style={layers[k] ? undefined : { opacity: 0.55 }}
+              title={t('playerMap.toggleLayer')}>
+              {layers[k] ? <Eye size={11} /> : <EyeOff size={11} />} {label} ({n})
+            </button>
+          ))}
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            {t('playerMap.visibleCount', { shown: visible.length, total: rows.length })}
+          </span>
+        </div>
+        </>
+        )}
       </div>
 
       {error && <div className="alert alert-error" style={{ marginTop: 10 }}><AlertTriangle size={14} /> {error}</div>}
@@ -332,24 +374,18 @@ export default function PlayerMapPage() {
         <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
           {/* Minimappa */}
           <div className="card" style={{ padding: 10 }}>
-            {/* The legend doubles as the layer filter: click a class to
-                show or hide it, both on the map and in the list. */}
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6, display: 'flex', gap: 8 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => toggleLayer('structure')}
-                title={t('playerMap.toggleLayer')}
-                style={{ opacity: layers.structure ? 1 : 0.4, textDecoration: layers.structure ? 'none' : 'line-through' }}>
+            {/* Plain legend: the filter itself lives in the toolbar above,
+                where it is visible before you scroll down to the map. */}
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6, display: 'flex', gap: 14 }}>
+              <span style={{ opacity: layers.structure ? 1 : 0.35 }}>
                 <Building size={11} /> {nStruct} {t('playerMap.structures')}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => toggleLayer('dino')}
-                title={t('playerMap.toggleLayer')}
-                style={{ color: '#8b5cf6', opacity: layers.dino ? 1 : 0.4, textDecoration: layers.dino ? 'none' : 'line-through' }}>
+              </span>
+              <span style={{ color: '#8b5cf6', opacity: layers.dino ? 1 : 0.35 }}>
                 ● {nDino} {t('playerMap.dinos')}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => toggleLayer('player')}
-                title={t('playerMap.toggleLayer')}
-                style={{ color: 'var(--danger)', opacity: layers.player ? 1 : 0.4, textDecoration: layers.player ? 'none' : 'line-through' }}>
-                ● {nChar} {t('playerMap.playerDot')} {anyOnline ? t('playerMap.online') : t('playerMap.offline')}
-              </button>
+              </span>
+              <span style={{ color: 'var(--danger)', opacity: layers.player ? 1 : 0.35 }}>
+                ● {t('playerMap.playerDot')} {anyOnline ? t('playerMap.online') : t('playerMap.offline')}
+              </span>
               <span>{rows[0].map_name}</span>
             </div>
             <svg width={SIZE} height={SIZE} style={{ background: 'var(--bg-card-muted)', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }}>

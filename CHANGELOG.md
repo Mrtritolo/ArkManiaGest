@@ -7,6 +7,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.4.0] - 2026-08-27
+
+### Added
+
+- **View filters, separate from the scan.** The player map and the decay
+  detail table each get an explicit *Show* bar: structures, dinos and (on
+  the map) characters can be hidden independently, with live counts and an
+  "N of M shown" readout. Hiding a layer only changes what you look at —
+  it never touches the snapshot — which is why the control sits apart from
+  the per-layer scan buttons. On the map the filter moved out of the
+  legend and into the toolbar, where it is visible before you scroll down.
+
+### Fixed
+
+- **The map background never appeared.** The image was fetched correctly
+  (nginx logged 200s with the full JPEG), but the page's own CSP listed
+  `img-src 'self' data: https://cdn.discordapp.com` — no `blob:`. The
+  image comes from an authenticated route, so it cannot be a plain `<img
+  src>`; it is fetched with the JWT and wrapped in an object URL, which
+  the browser then silently refused to paint. `blob:` is now allowed:
+  same-origin, unguessable, readable only by the page that made it.
+- **The player list stopped at the first page.** The map's player selector
+  asked for one page of 500 (the endpoint's hard per-request cap) and then
+  showed only the first 60 of those. It now walks the pages and lists
+  every player, with the search box for narrowing.
+
+---
+
 ## [4.3.1] - 2026-08-27
 
 ### Fixed
