@@ -1802,6 +1802,22 @@ export interface DashboardActivity {
   items: DashboardActivityEvent[];
 }
 
+export interface DashboardHome {
+  id:          number;
+  name:        string;
+  server_key:  string | null;
+  server_name: string | null;
+  map_name:    string | null;
+  x:           number | null;
+  y:           number | null;
+  z:           number | null;
+  created_iso: string | null;
+}
+
+export interface DashboardHomes {
+  entries: DashboardHome[];
+}
+
 export interface DashboardResponse {
   discord:     DashboardDiscord;
   character:   DashboardCharacter;
@@ -1813,6 +1829,7 @@ export interface DashboardResponse {
   tribe:       DashboardTribe;
   rare_dinos:  DashboardRareDinos;
   activity:    DashboardActivity;
+  homes:       DashboardHomes;
 }
 
 export const meApi = {
@@ -1830,6 +1847,14 @@ export const meApi = {
    * for the current Discord session, as JSON.  Works for unlinked
    * identities too (no EOS link required).
    */
+  /**
+   * Delete one of the caller's own saved teleport homes.  The backend
+   * scopes the DELETE by the session's EOS id, so an id belonging to
+   * another player answers 404 rather than deleting anything.
+   */
+  deleteHome: (homeId: number) =>
+    api.delete<{ ok: boolean }>(`/me/homes/${homeId}`),
+
   privacyExport: () => api.get<Record<string, unknown>>("/me/privacy/export"),
 
   /**

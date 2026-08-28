@@ -14,6 +14,8 @@ admin for the binding.
 Endpoints:
   GET /me/dashboard        -- combined character + shop + decay snapshot
                               for the current player.
+  DELETE /me/homes/{id}       -- delete one of the caller's own saved
+                              teleport homes (ARKM-Teleport).
   GET    /me/privacy/export   -- GDPR data-portability export (Art. 20).
   DELETE /me/privacy/account  -- GDPR erasure of the Discord link (Art. 17).
 
@@ -232,6 +234,23 @@ class _RareDinoCard(BaseModel):
     recent:     list[_RareDinoEvent] = []   # last 10 events
 
 
+class _HomeEntry(BaseModel):
+    """One saved teleport home (ARKM_homes, written by ARKM-Teleport)."""
+    id:           int
+    name:         str
+    server_key:   Optional[str] = None
+    server_name:  Optional[str] = None
+    map_name:     Optional[str] = None
+    x:            Optional[float] = None
+    y:            Optional[float] = None
+    z:            Optional[float] = None
+    created_iso:  Optional[str] = None
+
+
+class _HomesCard(BaseModel):
+    entries: list[_HomeEntry] = []
+
+
 class _ActivityEvent(BaseModel):
     """Unified item from ARKM_event_log + ARKM_lb_events."""
     source:    str                   # 'event_log' | 'lb_event'
@@ -258,6 +277,7 @@ class _DashboardResponse(BaseModel):
     tribe:       _TribeCard
     rare_dinos:  _RareDinoCard
     activity:    _ActivityCard
+    homes:       _HomesCard
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -604,6 +624,37 @@ async def get_dashboard(
     activity_items.sort(key=lambda x: x.when_iso or "", reverse=True)
     activity_items = activity_items[:15]
 
+    # 11. Saved teleport homes (ARKM-Teleport).  The join on ARKM_servers
+    #     is what makes the list readable: server_key is a hash, and the
+    #     home limit is per map, so "which map" is the one thing the
+    #     player needs to see next to each name.
+    home_rows = (await plugin_db.execute(
+        text(
+            "SELECT h.id, h.name, h.server_key, h.x, h.y, h.z, h.created_at, "
+            "       srv.display_name AS server_name, srv.map_name "
+            "FROM ARKM_homes h "
+            "LEFT JOIN ARKM_servers srv ON h.server_key = srv.server_key "
+            "WHERE h.eos_id = :e "
+            "ORDER BY srv.map_name IS NULL, srv.map_name, h.name"
+        ),
+        {"e": eos},
+    )).mappings().fetchall()
+    home_entries: list[_HomeEntry] = []
+    for r in home_rows:
+        home_entries.append(_HomeEntry(
+            id          = int(r["id"]),
+            name        = str(r.get("name") or ""),
+            server_key  = r.get("server_key"),
+            server_name = r.get("server_name"),
+            map_name    = r.get("map_name"),
+            x           = float(r["x"]) if r.get("x") is not None else None,
+            y           = float(r["y"]) if r.get("y") is not None else None,
+            z           = float(r["z"]) if r.get("z") is not None else None,
+            created_iso = (r["created_at"].isoformat()
+                           if r.get("created_at") and hasattr(r["created_at"], "isoformat")
+                           else None),
+        ))
+
     # ── Assemble response ────────────────────────────────────────────────
 
     discord_card = _DiscordCard(
@@ -709,7 +760,48 @@ async def get_dashboard(
         tribe       = tribe_card,
         rare_dinos  = rare_card,
         activity    = activity_card,
+        homes       = _HomesCard(entries=home_entries),
     )
+
+
+# ── Saved homes ──────────────────────────────────────────────────────────────
+
+@router.delete("/homes/{home_id}")
+async def delete_my_home(
+    home_id:   int,
+    request:   Request,
+    player:    _PlayerSession = Depends(get_current_player),
+    db:        AsyncSession   = Depends(get_db),
+    plugin_db: AsyncSession   = Depends(get_plugin_db),
+):
+    """
+    Delete one of the caller's own saved teleport homes.
+
+    The DELETE is scoped by ``eos_id`` as well as ``id``: the id alone
+    comes from the client and would otherwise let any logged-in player
+    erase another player's home by guessing a number.  A row that does
+    not belong to the caller is indistinguishable from one that does not
+    exist, and both answer 404.
+
+    No cache to invalidate: ARKM-Teleport reads ARKM_homes on every
+    /home and /homes, so the deletion is effective in game immediately,
+    even for a player who is online right now.
+    """
+    res = await plugin_db.execute(
+        text("DELETE FROM ARKM_homes WHERE id = :i AND eos_id = :e"),
+        {"i": home_id, "e": player.eos_id},
+    )
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Home not found.")
+    await plugin_db.commit()
+
+    await audit_event(
+        db, action="me.home_delete",
+        username=f"discord:{player.discord_user_id}",
+        detail=f"eos={player.eos_id} home_id={home_id}",
+        request=request,
+    )
+    return {"ok": True}
 
 
 # ── GDPR endpoints (Art. 17 / 20) ────────────────────────────────────────────

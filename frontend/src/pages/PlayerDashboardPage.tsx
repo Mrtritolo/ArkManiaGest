@@ -24,7 +24,7 @@ import {
   User, Users, ShoppingBag, Timer, Shield, Crown,
   Clock, AlertTriangle, CheckCircle2, Activity as ActivityIcon,
   Trophy, Skull, Server, Wifi, WifiOff,
-  Download, Trash2, FileText,
+  Download, Trash2, FileText, MapPin,
 } from "lucide-react";
 import {
   meApi, discordAuthApi,
@@ -33,6 +33,7 @@ import {
   type DashboardServerPulse, type DashboardLeaderboard,
   type DashboardLeaderboardScoreRow, type DashboardTribe,
   type DashboardRareDinos, type DashboardActivity,
+  type DashboardHomes,
 } from "../services/api";
 import DiscordIcon from "../components/DiscordIcon";
 
@@ -279,7 +280,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
             {t("dashboard.loading")}
           </div>
         ) : data ? (
-          <DashboardGrid data={data} embedded={embedded} />
+          <DashboardGrid data={data} embedded={embedded} onChanged={load} />
         ) : null}
 
         {/* GDPR self-service: policy link, data export, account erasure.
@@ -412,7 +413,11 @@ function PageHeader({
 
 // ── Grid of cards ───────────────────────────────────────────────────────────
 
-function DashboardGrid({ data, embedded }: { data: DashboardResponse; embedded: boolean }) {
+function DashboardGrid({ data, embedded, onChanged }: {
+  data: DashboardResponse;
+  embedded: boolean;
+  onChanged: () => void;
+}) {
   return (
     <div style={{
       display: "grid",
@@ -434,6 +439,7 @@ function DashboardGrid({ data, embedded }: { data: DashboardResponse; embedded: 
       <DecayCard      data={data.decay} />
       <RareDinosCard  data={data.rare_dinos} />
       <TribeCard      data={data.tribe} />
+      <HomesCard      data={data.homes} onChanged={onChanged} />
       <ActivityCard   data={data.activity} />
     </div>
   );
@@ -816,6 +822,75 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
           ))}
         </div>
       )}
+    </Card>
+  );
+}
+
+// ── Saved homes card ────────────────────────────────────────────────────────
+
+function HomesCard({ data, onChanged }: {
+  data: DashboardHomes;
+  onChanged: () => void;
+}) {
+  const { t } = useTranslation();
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError]   = useState("");
+
+  async function handleDelete(home: { id: number; name: string }): Promise<void> {
+    if (!window.confirm(t("dashboard.homes.deleteConfirm", { n: home.name }))) return;
+    setBusyId(home.id);
+    setError("");
+    try {
+      await meApi.deleteHome(home.id);
+      // Refetch instead of splicing locally: the dashboard is one
+      // endpoint, and a home the player also deleted in game would
+      // otherwise linger in the list until the next manual refresh.
+      onChanged();
+    } catch (err: unknown) {
+      setError(extractError(err, t("dashboard.homes.deleteError")));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Card icon={<MapPin size={14} />} title={t("dashboard.homes.title")}>
+      {data.entries.length === 0 ? (
+        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+          {t("dashboard.homes.empty")}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxHeight: "clamp(160px, 35vh, 220px)", overflowY: "auto" }}>
+          {data.entries.map(h => (
+            <div key={h.id} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              gap: "0.5rem",
+              padding: "0.3rem 0.4rem", borderRadius: 3,
+              background: "var(--bg-card-muted, #f5f5f7)",
+              fontSize: "0.78rem",
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {h.name}
+                </div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.7rem" }}>
+                  {h.map_name || h.server_name || h.server_key || "—"}
+                  {h.created_iso ? ` · ${fmtRelative(h.created_iso)}` : ""}
+                </div>
+              </div>
+              <button
+                onClick={() => handleDelete(h)}
+                disabled={busyId !== null}
+                className="btn btn-danger btn-sm"
+                title={t("dashboard.homes.deleteButton")}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <div className="form-message form-message-error" style={{ marginTop: "0.4rem" }}>{error}</div>}
     </Card>
   );
 }

@@ -195,6 +195,13 @@
       "tames": "Tames",
       "empty": "No rare dino interactions recently."
     },
+    "homes": {
+      "title": "Saved homes",
+      "empty": "No saved homes. Use /sethome in game to create one.",
+      "deleteButton": "Delete this home",
+      "deleteConfirm": "Delete the home \"{{n}}\"? This takes effect immediately, even while you are in game.",
+      "deleteError": "Could not delete the home."
+    },
     "activity": {
       "title": "Recent activity",
       "empty": "No recent activity."
