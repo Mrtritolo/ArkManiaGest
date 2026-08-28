@@ -7,6 +7,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.9.0] - 2026-08-27
+
+### Added
+
+- **Saved teleport homes on the player dashboard.** The homes a player set
+  with ARKM-Teleport now appear on their own dashboard — name, server, map
+  and coordinates — and can be deleted from there. The delete is scoped by
+  `eos_id` as well as `id`, so a guessed number cannot erase someone
+  else's home; a row that is not yours answers 404 exactly like one that
+  does not exist. No cache to invalidate: the plugin reads `ARKM_homes` on
+  every `/home`, so the deletion takes effect in game immediately, even
+  for a player who is online.
+
+---
+
 ## [4.8.0] - 2026-08-27
 
 ### Changed
