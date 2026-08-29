@@ -80,8 +80,10 @@ and [CONTRIBUTING.md](CONTRIBUTING.md) before larger changes.
 | Database | MariaDB 10.6+, **two distinct connections** (panel + plugin) | [backend/app/db/session.py](backend/app/db/session.py) |
 | Deploy | Bash + PowerShell scripts, Nginx, systemd, Let's Encrypt | [deploy/](deploy/) |
 
-Current version: **4.1.2** (see [backend/app/main.py:130](backend/app/main.py:130) and
-[frontend/package.json:4](frontend/package.json:4) — keep them in sync).
+Current version: see `APP_VERSION` in
+[backend/app/core/config.py](backend/app/core/config.py) and `version` in
+[frontend/package.json](frontend/package.json) — keep them in sync (see
+§ Versioning below; don't hardcode the number here either, it rots).
 
 ## Repository layout (essentials)
 
@@ -108,10 +110,12 @@ frontend/src/
 └── theme.ts            # Light/dark theme switcher (data-theme on <html>)
 deploy/
 ├── install-panel.{ps1,sh}   # First install
-├── update-{remote,panel}.{ps1,sh}, server-update.sh
+├── update-panel.{ps1,sh}, server-update.sh, status.sh, migrate-env.sh
 ├── migrations/NNN_*.sql     # Idempotent ALTER TABLE migrations
+├── maintainer/              # Release tooling (release.ps1, package-release.ps1)
 └── full-deploy.sh, setup-ssl.sh, setup-cron.sh, backup.sh, restore.sh, test_db.py
-docs/                   # INSTALL.{en,it}.md, DISCORD_INTEGRATION.md, MARKETPLACE_API_CONTRACT.md
+docs/                   # INSTALL.{en,it}.md, DISCORD_INTEGRATION.md, MARKETPLACE_API_CONTRACT.md,
+                        # COMPLIANCE.md, ServerForge API spec + analysis (see docs/README.md)
 reference/              # POK-manager checkout — gitignored, used as a template source
 ```
 

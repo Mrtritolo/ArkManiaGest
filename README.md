@@ -47,8 +47,9 @@ by Acekorneya (referred to as "POK-manager") for:
 - Character transfer between cluster maps over SSH
 
 ### ArkMania plugin suite (DB-centralised)
-- **Config Editor** — manage every module (Login, Plus, RareDino, ItemPlus,
-  ServerRules, DeadSaver, CrossChat, DecayManager, Discord, Messages)
+- **Config Editor** — manage every module of the suite; modules are derived
+  dynamically from the `ARKM_config` key prefixes (Login, Plus, RareDino,
+  DeadSaver, CrossChat, DecayManager, Discord, Messages, …)
 - Everything lives in `ARKM_config` (key/value with per-server overrides)
 - **Ban Manager** — cluster-wide CRUD with expiry, search, unban
 - **Rare Dinos** — pool management with inline stat editing, enable toggles
@@ -77,6 +78,27 @@ by Acekorneya (referred to as "POK-manager") for:
 - SQL console with a **Panel DB / Plugin DB** toggle
 - Table browser + schema panel + in-session query history
 - 30 s statement timeout
+
+### Discord integration
+- **Discord OAuth login** for players (session cookie, separate from the
+  admin JWT)
+- Bot client with **role and VIP sync** between Discord and the plugin DB
+- Configurable from the panel (client secret + bot token stored encrypted)
+
+### Player dashboard & market (public area)
+- **Player dashboard** — each player sees their own stats, shop points,
+  saved teleport homes (with delete) after Discord login
+- **Market** — player-to-player marketplace (sell/buy via the
+  ARKM-Marketplace plugin) with item thumbnails
+- **Web shop** — server shop with catalog imported from ArkShop and gene
+  traits; orders are picked up in game with `/ritiro`
+- **Player map** — live player positions per server
+
+### Auditing & maintenance
+- **Audit log** of panel actions with event history
+- **Self-updater** (`system_update`) — the panel updates itself from a
+  release bundle
+- Data retention service for logs and history tables
 
 ### Security
 - AES-256-GCM encryption for SSH passwords, ASA admin and server
@@ -132,14 +154,23 @@ ArkManiaGest/
 │   │   │   ├── arkmania_*.py        # Config / Ban / Rare / Transfer / Decay / LB
 │   │   │   ├── arkshop.py           # ArkShop editor (SSH)
 │   │   │   ├── auth.py              # Login + panel users
+│   │   │   ├── auth_discord.py      # Discord OAuth for players
+│   │   │   ├── audit_log.py         # Panel action audit log
+│   │   │   ├── blueprints.py        # Blueprint database (Dododex index)
 │   │   │   ├── containers.py        # SSH container scanner (read-only)
+│   │   │   ├── discord.py           # Discord bot config + role/VIP sync
 │   │   │   ├── game_config.py       # Remote INI editor
 │   │   │   ├── machines.py          # SSH machine CRUD
+│   │   │   ├── market.py            # Player marketplace (mixed auth)
+│   │   │   ├── me.py                # Player dashboard (Discord session)
 │   │   │   ├── players.py           # ARK player management
 │   │   │   ├── public.py            # Read-only public API
 │   │   │   ├── serverforge.py       # ServerForge machine import
+│   │   │   ├── servers.py           # ARK ASA instances (POK-manager)
 │   │   │   ├── settings.py          # Setup + DB config
-│   │   │   └── sql_console.py       # Admin SQL console (panel/plugin)
+│   │   │   ├── sql_console.py       # Admin SQL console (panel/plugin)
+│   │   │   ├── system_update.py     # Panel self-update (admin)
+│   │   │   └── web_shop.py          # Server shop + gene catalog
 │   │   ├── core/                    # JWT auth, crypto, config, store
 │   │   ├── db/
 │   │   │   ├── models/
@@ -150,6 +181,9 @@ ArkManiaGest/
 │   │   │   │   └── ark.py           # Plugin ORM tables (Players, ArkShop…)
 │   │   │   └── session.py           # Two async engines (panel + plugin)
 │   │   ├── schemas/                 # Pydantic in/out
+│   │   ├── services/                # self_updater, market_thumbs,
+│   │   │                            # cryopod_parser, map_images, retention
+│   │   ├── discord/                 # Discord OAuth + bot + role/VIP sync
 │   │   └── ssh/                     # SSH manager, scanner, profile parser,
 │   │                                # cross-platform PlatformAdapter
 │   ├── data/                        # Runtime state (not in git)
@@ -169,7 +203,8 @@ ArkManiaGest/
 │   ├── migrate-env.sh               # Idempotent .env key backfill
 │   ├── test_db.py                   # Panel + Plugin DB diagnostics
 │   └── ...                          # Nginx, systemd, SSL, cron, backup
-├── Specifiche/                      # ServerForge API specs (not deployed)
+├── docs/                            # Install guides, Discord/Marketplace
+│                                    # contracts, ServerForge API specs
 ├── reference/                       # POK-manager checkout (gitignored)
 ├── CHANGELOG.md
 └── README.md
