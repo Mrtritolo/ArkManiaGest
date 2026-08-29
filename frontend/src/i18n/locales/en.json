@@ -2280,7 +2280,8 @@
       "shop": "Server shop",
       "genes": "GeneShop",
       "orders": "My purchases",
-      "forge": "Eggs & Embryos"
+      "forge": "Eggs & Embryos",
+      "prices": "Prices"
     },
     "searchPh": "Search by blueprint…",
     "sort": {
@@ -2348,18 +2349,7 @@
       "disabled": "This shop is currently disabled.",
       "species": "Species",
       "speciesPick": "Pick a species…",
-      "embryoHint": "For gestating species (mammals): the embryo implants like an extracted one.",
-      "stats": "Wild stat points",
-      "muts": "Applied mutations",
-      "statLimits": "max {{per}} per stat, {{tot}} total",
-      "stat": {
-        "health": "Health",
-        "stamina": "Stamina",
-        "oxygen": "Oxygen",
-        "food": "Food",
-        "weight": "Weight",
-        "melee": "Melee"
-      },
+      "embryoHint": "For gestating species (mammals): implants like an extracted embryo.",
       "colors": "Colors (region ID)",
       "colorsHint": "0 = random, ARK color ID 1-255",
       "colorRegion": "Region {{n}}",
@@ -2372,10 +2362,33 @@
       "traitPick": "Pick a trait…",
       "traitAdd": "Add",
       "points": "points",
-      "overLimit": "You exceeded the configured limits.",
       "buy": "Forge & buy",
       "confirmBuy": "Forge {{what}} for {{price}} points?",
-      "claimHint": "The egg/embryo arrives via /ritiro in game: the baby hatches with the stats, mutations, colors and traits chosen here."
+      "claimHint": "The egg/embryo arrives via /ritiro in game: the baby hatches with the stats, mutations, colors and traits chosen here.",
+      "levelNote": "Fixed level {{lvl}}: wild stats are rolled randomly by the server, like in the wild.",
+      "emptyList": "No species on sale right now."
+    },
+    "prices": {
+      "geneTitle": "Gene prices (by category and tier)",
+      "geneHint": "Empty cell = price published by the plugin (shown as placeholder). Values entered here override the price list for every trait of the category and survive server reboots.",
+      "noCats": "No categories: the GeneShop has not published the trait catalog yet.",
+      "colCategory": "Category",
+      "colTraits": "Traits",
+      "saveGenes": "Save gene prices",
+      "forgeTitle": "Species price list — Eggs & Embryos",
+      "forgeHint": "Only listed (and enabled) species can be bought. The price is per species: the egg hatches at a fixed level with random stats.",
+      "addSpeciesPick": "Add a species…",
+      "addSpecies": "Add",
+      "noSpecies": "Empty list: add the species you want to sell.",
+      "colSpecies": "Species",
+      "colEggPrice": "Egg price",
+      "colEggOn": "Egg",
+      "colEmbryoPrice": "Embryo price",
+      "colEmbryoOn": "Embryo",
+      "removeSpecies": "Remove from list",
+      "saveForge": "Save price list",
+      "saveHint": "Saving replaces the whole list.",
+      "saved": "Prices saved."
     }
   },
   "auditLog": {

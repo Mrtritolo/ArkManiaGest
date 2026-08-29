@@ -2280,7 +2280,8 @@
       "shop": "Negozio",
       "genes": "GeneShop",
       "orders": "I miei acquisti",
-      "forge": "Uova & Embrioni"
+      "forge": "Uova & Embrioni",
+      "prices": "Prezzi"
     },
     "searchPh": "Cerca per blueprint…",
     "sort": {
@@ -2348,18 +2349,7 @@
       "disabled": "Questo shop non e' attivo al momento.",
       "species": "Specie",
       "speciesPick": "Scegli la specie…",
-      "embryoHint": "Per le specie in gestazione (mammiferi): l'embrione si impianta come da estrazione.",
-      "stats": "Punti stat selvatici",
-      "muts": "Mutazioni applicate",
-      "statLimits": "max {{per}} per stat, {{tot}} totali",
-      "stat": {
-        "health": "Salute",
-        "stamina": "Stamina",
-        "oxygen": "Ossigeno",
-        "food": "Cibo",
-        "weight": "Peso",
-        "melee": "Danno"
-      },
+      "embryoHint": "Per le specie in gestazione (mammiferi): si impianta come un embrione estratto.",
       "colors": "Colori (ID regione)",
       "colorsHint": "0 = casuale, ID colore ARK 1-255",
       "colorRegion": "Regione {{n}}",
@@ -2372,10 +2362,33 @@
       "traitPick": "Scegli un tratto…",
       "traitAdd": "Aggiungi",
       "points": "punti",
-      "overLimit": "Hai superato i limiti configurati.",
       "buy": "Forgia e acquista",
       "confirmBuy": "Forgiare {{what}} per {{price}} punti?",
-      "claimHint": "L'uovo/embrione arriva con /ritiro in gioco: il baby avra' stat, mutazioni, colori e tratti scelti qui."
+      "claimHint": "L'uovo/embrione arriva con /ritiro in gioco: il baby avra' stat, mutazioni, colori e tratti scelti qui.",
+      "levelNote": "Livello fisso {{lvl}}: le stat selvatiche vengono distribuite casualmente dal server, come in natura.",
+      "emptyList": "Nessuna specie in vendita al momento."
+    },
+    "prices": {
+      "geneTitle": "Prezzi geni (per categoria e tier)",
+      "geneHint": "Cella vuota = prezzo pubblicato dal plugin (mostrato come suggerimento). I valori inseriti sovrascrivono il listino per tutti i tratti della categoria e sopravvivono ai riavvii dei server.",
+      "noCats": "Nessuna categoria: il GeneShop non ha ancora pubblicato il catalogo tratti.",
+      "colCategory": "Categoria",
+      "colTraits": "Tratti",
+      "saveGenes": "Salva prezzi geni",
+      "forgeTitle": "Listino specie — Uova & Embrioni",
+      "forgeHint": "Solo le specie in listino (e abilitate) sono acquistabili. Il prezzo e' per specie: l'uovo esce a livello fisso con stat casuali.",
+      "addSpeciesPick": "Aggiungi una specie…",
+      "addSpecies": "Aggiungi",
+      "noSpecies": "Listino vuoto: aggiungi le specie da vendere.",
+      "colSpecies": "Specie",
+      "colEggPrice": "Prezzo uovo",
+      "colEggOn": "Uovo",
+      "colEmbryoPrice": "Prezzo embrione",
+      "colEmbryoOn": "Embrione",
+      "removeSpecies": "Rimuovi dal listino",
+      "saveForge": "Salva listino",
+      "saveHint": "Il salvataggio sostituisce l'intero listino.",
+      "saved": "Prezzi salvati."
     }
   },
   "auditLog": {

@@ -23,22 +23,17 @@ import {
   type MarketListedItem, type MarketMyItem, type MarketWallet,
   type MarketTransaction,
   type WebShopItem, type WebShopGene, type WebShopGeneDino,
-  type WebShopOrder, type WebShopForgeConfig,
+  type WebShopOrder, type WebShopForgeConfig, type WebShopForgePrice,
+  type WebShopGenePriceEntry, type WebShopGeneCategory,
 } from "../services/api";
 import { shopEntryThumbUrl } from "../utils/shopImage";
 import { ShopFallbackIcon } from "../utils/shopFallbackIcon";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 import type { AuthUser } from "../types";
 
-type TabKey = "browse" | "mine" | "history" | "shop" | "genes" | "forge" | "orders";
-
-/** I 6 slot stat esposti dal configuratore uova/embrioni, con l'indice ARK
- *  reale nell'array Egg* a 12 slot (gli altri indici restano a zero). */
-const FORGE_STATS: { idx: number; key: string }[] = [
-  { idx: 0, key: "health" }, { idx: 1, key: "stamina" },
-  { idx: 3, key: "oxygen" }, { idx: 4, key: "food" },
-  { idx: 7, key: "weight" }, { idx: 8, key: "melee" },
-];
+type TabKey =
+  | "browse" | "mine" | "history"
+  | "shop" | "genes" | "forge" | "orders" | "prices";
 
 interface MarketPageProps {
   embedded?: boolean;
@@ -107,15 +102,21 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   // Shop uova / embrioni (configuratore "forge")
   const [eggShopCfg, setEggShopCfg] = useState<WebShopForgeConfig | null>(null);
   const [embryoShopCfg, setEmbryoShopCfg] = useState<WebShopForgeConfig | null>(null);
+  const [forgePrices, setForgePrices] = useState<WebShopForgePrice[]>([]);
   const [forgeMode, setForgeMode] = useState<"egg" | "embryo">("egg");
   const [forgeSpecies, setForgeSpecies] = useState("");
-  const [forgeStats, setForgeStats] = useState<Record<number, number>>({});
-  const [forgeMuts, setForgeMuts] = useState<Record<number, number>>({});
   const [forgeColors, setForgeColors] = useState<number[]>([0, 0, 0, 0, 0, 0]);
   const [forgeGender, setForgeGender] = useState(-1);
   const [forgeTraits, setForgeTraits] = useState<string[]>([]);
   const [forgeTraitPick, setForgeTraitPick] = useState("");
   const [forgeTraitTier, setForgeTraitTier] = useState(0);
+
+  // Tab admin "Prezzi"
+  const [adminCats, setAdminCats] = useState<WebShopGeneCategory[]>([]);
+  const [adminMatrix, setAdminMatrix] = useState<Record<string, string>>({});
+  const [adminForgeRows, setAdminForgeRows] = useState<WebShopForgePrice[]>([]);
+  const [adminSpeciesPick, setAdminSpeciesPick] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
   // Quale pacchetto ha il dettaglio aperto. Uno alla volta: aprirne piu' di
   // uno trasforma la griglia in un muro di liste.
   const [openPack, setOpenPack] = useState<string | null>(null);
@@ -129,6 +130,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       setShopGeneDinos(r.data.gene_dinos || []);
       setEggShopCfg(r.data.egg_shop || null);
       setEmbryoShopCfg(r.data.embryo_shop || null);
+      setForgePrices(r.data.forge_prices || []);
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e));
     } finally {
@@ -142,6 +144,20 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       setShopOrders(r.data.orders || []);
       setShopPending(r.data.pending || 0);
     } catch { /* il conteggio in coda e' un di piu', non un errore da mostrare */ }
+  }, []);
+
+  const loadAdminPrices = useCallback(async () => {
+    try {
+      const r = await webShopApi.adminPrices();
+      setAdminCats(r.data.gene_categories || []);
+      const m: Record<string, string> = {};
+      for (const e of r.data.gene_matrix || [])
+        m[`${e.category}:${e.tier}`] = String(e.price);
+      setAdminMatrix(m);
+      setAdminForgeRows(r.data.forge_prices || []);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || String(e));
+    }
   }, []);
 
   /** Admin: importa il catalogo ArkShop nella vetrina web. */
@@ -262,6 +278,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     if (tab === "history") loadHistory();
     if (tab === "shop" || tab === "genes" || tab === "forge") loadShop();
     if (tab === "orders") loadShopOrders();
+    if (tab === "prices") { loadShop(); loadAdminPrices(); }
   }, [tab, loadMyItems, loadHistory, loadShop, loadShopOrders]);
 
   // Il numero di acquisti da ritirare va saputo appena si apre la pagina:
@@ -428,6 +445,11 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             <TabBtn active={tab === "forge"} onClick={() => setTab("forge")}
                     icon={<Egg size={14} />}
                     label={t("market.tab.forge")} />
+          )}
+          {isAdmin && (
+            <TabBtn active={tab === "prices"} onClick={() => setTab("prices")}
+                    icon={<Coins size={14} />}
+                    label={t("market.tab.prices")} />
           )}
           <TabBtn active={tab === "orders"} onClick={() => setTab("orders")}
                   icon={<Inbox size={14} />}
@@ -664,46 +686,41 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
           </>
         )}
 
-        {/* TAB: Forgia uova / embrioni */}
+        {/* TAB: Forgia uova / embrioni — prezzo per specie (listino admin),
+            livello fisso, stat selvatiche rollate dal server */}
         {tab === "forge" && (() => {
           const cfg = forgeMode === "egg" ? eggShopCfg : embryoShopCfg;
-          const statsArr = Array.from({ length: 12 }, (_, i) => forgeStats[i] || 0);
-          const mutsArr  = Array.from({ length: 12 }, (_, i) => forgeMuts[i] || 0);
-          const statsSum = statsArr.reduce((a, b) => a + b, 0);
-          const mutsSum  = mutsArr.reduce((a, b) => a + b, 0);
+          const speciesRows = forgePrices.filter(r =>
+            forgeMode === "egg"
+              ? r.egg_enabled && r.egg_price > 0
+              : r.embryo_enabled && r.embryo_price > 0);
+          const selected = speciesRows.find(r => r.blueprint === forgeSpecies) || null;
+          const speciesPrice = selected
+            ? (forgeMode === "egg" ? selected.egg_price : selected.embryo_price)
+            : 0;
           const colorsSet = forgeColors.filter(c => c > 0).length;
           const traitPrice = forgeTraits.reduce((sum, tr) => {
             const m = /^(.+)\[([0-2])\]$/.exec(tr);
             const g = m && shopGenes.find(x => x.key === m[1]);
             return sum + (g ? (g.prices[String(Number(m![2]) + 1)] || 0) : 0);
           }, 0);
-          const price = cfg
-            ? cfg.base_price
-              + statsSum * cfg.price_per_stat_point
-              + mutsSum * cfg.price_per_mutation_point
+          const price = cfg && selected
+            ? speciesPrice
               + colorsSet * cfg.price_per_color
               + (forgeGender >= 0 ? cfg.price_gender_choice : 0)
               + traitPrice
             : 0;
-          const overLimit = cfg !== null && (
-            statsArr.some(v => v > cfg.max_per_stat)
-            || statsSum > cfg.max_total_stats
-            || mutsArr.some(v => v > cfg.max_per_mutation)
-            || mutsSum > cfg.max_total_mutations
-            || forgeTraits.length > cfg.max_traits);
 
           const doBuyForge = async () => {
-            if (!cfg || !forgeSpecies) return;
-            const speciesLabel = shopGeneDinos
-              .find(d => d.blueprint === forgeSpecies)?.label || "";
+            if (!cfg || !selected) return;
             if (!window.confirm(t("market.forge.confirmBuy",
-                { what: speciesLabel, price }))) return;
+                { what: selected.label, price }))) return;
             setShopBusy("__forge"); setError(""); setSuccess("");
             try {
               const r = await webShopApi.buy(forgeMode,
-                `${forgeMode}:${speciesLabel}`.slice(0, 128), 1, 1,
-                forgeSpecies,
-                { stats: statsArr, muts: mutsArr, colors: forgeColors,
+                `${forgeMode}:${selected.label}`.slice(0, 128), 1, 1,
+                selected.blueprint,
+                { stats: [], muts: [], colors: forgeColors,
                   traits: forgeTraits, gender: forgeGender });
               setSuccess(t("market.shop.bought", { spent: r.data.spent }));
               await Promise.all([loadWallet(), loadShopOrders()]);
@@ -721,14 +738,14 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
               {eggShopCfg?.enabled && (
                 <button
                   className={forgeMode === "egg" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
-                  onClick={() => setForgeMode("egg")}>
+                  onClick={() => { setForgeMode("egg"); setForgeSpecies(""); }}>
                   <Egg size={13} /> {t("market.forge.eggMode")}
                 </button>
               )}
               {embryoShopCfg?.enabled && (
                 <button
                   className={forgeMode === "embryo" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
-                  onClick={() => setForgeMode("embryo")}>
+                  onClick={() => { setForgeMode("embryo"); setForgeSpecies(""); }}>
                   <Dna size={13} /> {t("market.forge.embryoMode")}
                 </button>
               )}
@@ -736,64 +753,29 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
 
             {!cfg?.enabled ? (
               <div className="alert alert-info">{t("market.forge.disabled")}</div>
+            ) : speciesRows.length === 0 ? (
+              <div className="alert alert-info">{t("market.forge.emptyList")}</div>
             ) : (
             <div className="card" style={{ padding: "0.9rem", maxWidth: 760 }}>
-              {/* Specie */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "0.7rem", flexWrap: "wrap" }}>
+              {/* Specie (dal listino admin, col prezzo) */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "0.4rem", flexWrap: "wrap" }}>
                 <label style={{ fontSize: "0.78rem", fontWeight: 600 }}>
                   {t("market.forge.species")}
                 </label>
-                <select className="form-input" style={{ maxWidth: 280 }}
+                <select className="form-input" style={{ maxWidth: 320 }}
                   value={forgeSpecies}
                   onChange={e => setForgeSpecies(e.target.value)}>
                   <option value="">{t("market.forge.speciesPick")}</option>
-                  {shopGeneDinos.map(d => (
-                    <option key={d.blueprint} value={d.blueprint}>{d.label}</option>
+                  {speciesRows.map(r => (
+                    <option key={r.blueprint} value={r.blueprint}>
+                      {r.label} — {forgeMode === "egg" ? r.egg_price : r.embryo_price} pt
+                    </option>
                   ))}
                 </select>
-                {forgeMode === "embryo" && (
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                    {t("market.forge.embryoHint")}
-                  </span>
-                )}
               </div>
-
-              {/* Stat selvatiche */}
-              <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
-                {t("market.forge.stats")} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-                  ({t("market.forge.statLimits", { per: cfg.max_per_stat, tot: cfg.max_total_stats })})
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: "0.4rem", marginBottom: "0.7rem" }}>
-                {FORGE_STATS.map(s => (
-                  <label key={s.idx} style={{ fontSize: "0.7rem" }}>
-                    {t(`market.forge.stat.${s.key}`)}
-                    <input type="number" min={0} max={cfg.max_per_stat}
-                      className="form-input" style={{ width: "100%" }}
-                      value={forgeStats[s.idx] || 0}
-                      onChange={e => setForgeStats(p => ({ ...p,
-                        [s.idx]: Math.max(0, Number(e.target.value) || 0) }))} />
-                  </label>
-                ))}
-              </div>
-
-              {/* Mutazioni */}
-              <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
-                {t("market.forge.muts")} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-                  ({t("market.forge.statLimits", { per: cfg.max_per_mutation, tot: cfg.max_total_mutations })})
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: "0.4rem", marginBottom: "0.7rem" }}>
-                {FORGE_STATS.map(s => (
-                  <label key={s.idx} style={{ fontSize: "0.7rem" }}>
-                    {t(`market.forge.stat.${s.key}`)}
-                    <input type="number" min={0} max={cfg.max_per_mutation}
-                      className="form-input" style={{ width: "100%" }}
-                      value={forgeMuts[s.idx] || 0}
-                      onChange={e => setForgeMuts(p => ({ ...p,
-                        [s.idx]: Math.max(0, Number(e.target.value) || 0) }))} />
-                  </label>
-                ))}
+              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: "0.7rem" }}>
+                {t("market.forge.levelNote", { lvl: cfg.egg_level })}
+                {forgeMode === "embryo" ? ` ${t("market.forge.embryoHint")}` : ""}
               </div>
 
               {/* Colori + sesso */}
@@ -883,13 +865,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 <span style={{ fontSize: "0.95rem", fontWeight: 700 }}>
                   <Coins size={14} /> {price} {t("market.forge.points")}
                 </span>
-                {overLimit && (
-                  <span style={{ fontSize: "0.72rem", color: "var(--danger)" }}>
-                    {t("market.forge.overLimit")}
-                  </span>
-                )}
                 <button className="btn btn-primary" style={{ marginLeft: "auto" }}
-                  disabled={shopBusy !== null || !forgeSpecies || overLimit}
+                  disabled={shopBusy !== null || !selected}
                   onClick={doBuyForge}>
                   {shopBusy === "__forge"
                     ? <Loader2 size={13} className="pl-spin" />
@@ -901,6 +878,195 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
               </div>
             </div>
             )}
+          </>
+          );
+        })()}
+
+        {/* TAB ADMIN: gestione prezzi (matrice geni + listino specie forge) */}
+        {tab === "prices" && isAdmin && (() => {
+          const saveGenes = async () => {
+            setAdminBusy(true); setError(""); setSuccess("");
+            try {
+              const entries: WebShopGenePriceEntry[] = [];
+              for (const [k, v] of Object.entries(adminMatrix)) {
+                const val = String(v).trim();
+                if (val === "") continue;
+                const [category, tier] = k.split(":");
+                entries.push({ category, tier: Number(tier),
+                               price: Math.max(0, Number(val) || 0) });
+              }
+              await webShopApi.saveGenePrices(entries);
+              setSuccess(t("market.prices.saved"));
+              await Promise.all([loadAdminPrices(), loadShop()]);
+            } catch (e: any) {
+              setError(e.response?.data?.detail || String(e));
+            } finally {
+              setAdminBusy(false);
+            }
+          };
+
+          const saveForge = async () => {
+            setAdminBusy(true); setError(""); setSuccess("");
+            try {
+              await webShopApi.saveForgePrices(adminForgeRows);
+              setSuccess(t("market.prices.saved"));
+              await Promise.all([loadAdminPrices(), loadShop()]);
+            } catch (e: any) {
+              setError(e.response?.data?.detail || String(e));
+            } finally {
+              setAdminBusy(false);
+            }
+          };
+
+          const patchRow = (bp: string, patch: Partial<WebShopForgePrice>) =>
+            setAdminForgeRows(p => p.map(r =>
+              r.blueprint === bp ? { ...r, ...patch } : r));
+
+          return (
+          <>
+            {/* Matrice prezzi geni: categoria x tier. Cella vuota = costo
+                pubblicato dal plugin (mostrato come placeholder). */}
+            <div className="card" style={{ padding: "0.9rem", marginBottom: "0.8rem" }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                {t("market.prices.geneTitle")}
+              </div>
+              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: "0.6rem" }}>
+                {t("market.prices.geneHint")}
+              </div>
+              {adminCats.length === 0 ? (
+                <div className="alert alert-info">{t("market.prices.noCats")}</div>
+              ) : (
+              <table className="pl-table" style={{ maxWidth: 620 }}>
+                <thead>
+                  <tr>
+                    <th>{t("market.prices.colCategory")}</th>
+                    <th>T1</th><th>T2</th><th>T3</th>
+                    <th>{t("market.prices.colTraits")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminCats.map(c => (
+                    <tr key={c.category}>
+                      <td style={{ fontWeight: 600 }}>{c.category}</td>
+                      {[1, 2, 3].map(tier => (
+                        <td key={tier}>
+                          <input type="number" min={0}
+                            className="form-input" style={{ width: 90 }}
+                            placeholder={String(c.fallback[String(tier)] ?? 0)}
+                            value={adminMatrix[`${c.category}:${tier}`] ?? ""}
+                            onChange={e => setAdminMatrix(p => ({
+                              ...p, [`${c.category}:${tier}`]: e.target.value }))} />
+                        </td>
+                      ))}
+                      <td style={{ color: "var(--text-muted)" }}>{c.traits}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              )}
+              <div style={{ marginTop: "0.6rem" }}>
+                <button className="btn btn-primary btn-sm" disabled={adminBusy}
+                  onClick={saveGenes}>
+                  {adminBusy ? <Loader2 size={12} className="pl-spin" /> : <Save size={12} />} {t("market.prices.saveGenes")}
+                </button>
+              </div>
+            </div>
+
+            {/* Listino specie uova / embrioni */}
+            <div className="card" style={{ padding: "0.9rem" }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                {t("market.prices.forgeTitle")}
+              </div>
+              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: "0.6rem" }}>
+                {t("market.prices.forgeHint")}
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginBottom: "0.6rem", flexWrap: "wrap" }}>
+                <select className="form-input" style={{ maxWidth: 300 }}
+                  value={adminSpeciesPick}
+                  onChange={e => setAdminSpeciesPick(e.target.value)}>
+                  <option value="">{t("market.prices.addSpeciesPick")}</option>
+                  {shopGeneDinos
+                    .filter(d => !adminForgeRows.some(r => r.blueprint === d.blueprint))
+                    .map(d => (
+                      <option key={d.blueprint} value={d.blueprint}>{d.label}</option>
+                    ))}
+                </select>
+                <button className="btn btn-secondary btn-sm"
+                  disabled={!adminSpeciesPick}
+                  onClick={() => {
+                    const d = shopGeneDinos.find(x => x.blueprint === adminSpeciesPick);
+                    if (!d) return;
+                    setAdminForgeRows(p => [...p, {
+                      blueprint: d.blueprint, label: d.label,
+                      egg_price: 0, embryo_price: 0,
+                      egg_enabled: true, embryo_enabled: true,
+                    }]);
+                    setAdminSpeciesPick("");
+                  }}>
+                  {t("market.prices.addSpecies")}
+                </button>
+              </div>
+              {adminForgeRows.length === 0 ? (
+                <div className="alert alert-info">{t("market.prices.noSpecies")}</div>
+              ) : (
+              <table className="pl-table">
+                <thead>
+                  <tr>
+                    <th>{t("market.prices.colSpecies")}</th>
+                    <th>{t("market.prices.colEggPrice")}</th>
+                    <th>{t("market.prices.colEggOn")}</th>
+                    <th>{t("market.prices.colEmbryoPrice")}</th>
+                    <th>{t("market.prices.colEmbryoOn")}</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminForgeRows.map(r => (
+                    <tr key={r.blueprint}>
+                      <td style={{ fontWeight: 600 }}>{r.label}</td>
+                      <td>
+                        <input type="number" min={0} className="form-input" style={{ width: 100 }}
+                          value={r.egg_price}
+                          onChange={e => patchRow(r.blueprint,
+                            { egg_price: Math.max(0, Number(e.target.value) || 0) })} />
+                      </td>
+                      <td>
+                        <input type="checkbox" checked={r.egg_enabled}
+                          onChange={e => patchRow(r.blueprint, { egg_enabled: e.target.checked })} />
+                      </td>
+                      <td>
+                        <input type="number" min={0} className="form-input" style={{ width: 100 }}
+                          value={r.embryo_price}
+                          onChange={e => patchRow(r.blueprint,
+                            { embryo_price: Math.max(0, Number(e.target.value) || 0) })} />
+                      </td>
+                      <td>
+                        <input type="checkbox" checked={r.embryo_enabled}
+                          onChange={e => patchRow(r.blueprint, { embryo_enabled: e.target.checked })} />
+                      </td>
+                      <td>
+                        <button className="btn btn-danger btn-sm"
+                          title={t("market.prices.removeSpecies")}
+                          onClick={() => setAdminForgeRows(p =>
+                            p.filter(x => x.blueprint !== r.blueprint))}>
+                          <X size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              )}
+              <div style={{ marginTop: "0.6rem", display: "flex", gap: "0.6rem", alignItems: "center" }}>
+                <button className="btn btn-primary btn-sm" disabled={adminBusy}
+                  onClick={saveForge}>
+                  {adminBusy ? <Loader2 size={12} className="pl-spin" /> : <Save size={12} />} {t("market.prices.saveForge")}
+                </button>
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                  {t("market.prices.saveHint")}
+                </span>
+              </div>
+            </div>
           </>
           );
         })()}

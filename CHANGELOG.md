@@ -7,6 +7,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.12.0] - 2026-08-29
+
+### Added
+
+- **Admin price management tab on the Market page.** Two panel-owned
+  price lists (new tables, migration 004): a **gene price matrix** by
+  category and tier — it overrides the uniform costs the plugin
+  republishes into `ARKM_gene_traits` at every boot, with empty cells
+  falling back to the plugin price — and a **per-species price list**
+  for the egg/embryo shops (price and enable flag per shop, per
+  species).
+
+### Changed
+
+- **Egg/embryo shop pricing model** (supersedes the 4.11.0 parametric
+  one before it ever shipped): the price is now per species from the
+  admin list, the egg hatches at a **fixed level** (default 224,
+  `WebShop.<Shop>.EggLevel`) and the wild stat points are **rolled
+  server-side at purchase**, distributed randomly like a wild dino —
+  one independent roll per egg. Colors, gender and gene traits stay as
+  priced add-ons; trait prices follow the admin gene matrix everywhere
+  (gene shop, egg forge).
+
 ## [4.11.0] - 2026-08-29
 
 ### Added

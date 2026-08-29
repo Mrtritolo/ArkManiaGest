@@ -1057,21 +1057,30 @@ export interface WebShopOrder {
   price: number; status: string; server_key: string
   last_error: string | null; created_at: string | null; claimed_at: string | null
 }
-/** Prezzi e limiti dello shop uova / embrioni (da ARKM_config, namespace
- *  WebShop.Egg.* / WebShop.Embryo.*). null nel catalogo = shop non attivo. */
+/** Config add-on dello shop uova / embrioni (da ARKM_config, namespace
+ *  WebShop.Egg.* / WebShop.Embryo.*). Il prezzo base e' PER SPECIE, dal
+ *  listino admin (WebShopForgePrice); l'uovo esce a livello fisso egg_level
+ *  con le stat selvatiche rollate dal server. */
 export interface WebShopForgeConfig {
   enabled: boolean
-  base_price: number
-  price_per_stat_point: number
-  price_per_mutation_point: number
+  egg_level: number
   price_per_color: number
   price_gender_choice: number
-  max_per_stat: number
-  max_total_stats: number
-  max_per_mutation: number
-  max_total_mutations: number
   max_traits: number
-  stat_index_note: string
+}
+/** Riga del listino admin per specie degli shop uova/embrioni. */
+export interface WebShopForgePrice {
+  blueprint: string; label: string
+  egg_price: number; embryo_price: number
+  egg_enabled: boolean; embryo_enabled: boolean
+}
+/** Cella della matrice prezzi geni (categoria x tier), admin. */
+export interface WebShopGenePriceEntry {
+  category: string; tier: number; price: number
+}
+/** Categoria tratti col fallback dei costi pubblicati dal plugin. */
+export interface WebShopGeneCategory {
+  category: string; fallback: Record<string, number>; traits: number
 }
 /** Parametri di forgiatura di un acquisto egg/embryo (campi Egg* dell'item;
  *  array indicizzati sui 12 slot stat ARK, tratti in forma Nome[0..2]). */
@@ -1092,8 +1101,21 @@ export const webShopApi = {
     api.get<{ items: WebShopItem[]; genes: WebShopGene[];
               gene_dinos: WebShopGeneDino[];
               egg_shop: WebShopForgeConfig | null;
-              embryo_shop: WebShopForgeConfig | null }>(
+              embryo_shop: WebShopForgeConfig | null;
+              forge_prices: WebShopForgePrice[] }>(
       "/shop/catalog", { params: kind ? { kind } : undefined }),
+
+  /** Stato pricing per il tab admin "Prezzi". */
+  adminPrices: () =>
+    api.get<{ gene_categories: WebShopGeneCategory[];
+              gene_matrix: WebShopGenePriceEntry[];
+              forge_prices: WebShopForgePrice[] }>("/shop/admin/prices"),
+  /** Sostituisce la matrice prezzi geni (cella assente = fallback plugin). */
+  saveGenePrices: (entries: WebShopGenePriceEntry[]) =>
+    api.put<{ ok: boolean; cells: number }>("/shop/admin/gene-prices", entries),
+  /** Sostituisce il listino specie degli shop uova/embrioni. */
+  saveForgePrices: (rows: WebShopForgePrice[]) =>
+    api.put<{ ok: boolean; rows: number }>("/shop/admin/forge-prices", rows),
   buy: (kind: "item" | "dino" | "gene" | "egg" | "embryo", key: string,
         quantity = 1, geneTier = 1, geneSpecies = "",
         forge?: WebShopForgeParams) =>

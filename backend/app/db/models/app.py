@@ -417,3 +417,44 @@ class DiscordRoleMap(Base):
     notes               = Column(Text, nullable=True)
     created_at          = Column(DateTime, server_default=func.now())
     updated_at          = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class WebShopGenePrice(Base):
+    """
+    Admin-set gene price matrix (category x tier) for the web shop.
+
+    ARKM_gene_traits is rewritten by the plugin at every boot with a
+    uniform price, so admin pricing cannot live there: this panel-owned
+    matrix overrides it at catalog/buy time. A missing cell falls back
+    to the plugin-published trait cost.
+    """
+    __tablename__ = "arkmaniagest_gene_prices"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    category   = Column(String(32), nullable=False, index=True)
+    tier       = Column(Integer, nullable=False)   # 1..3
+    price      = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class WebShopForgePrice(Base):
+    """
+    Admin-set per-species price list for the fertilized-egg / embryo
+    shops. Only species listed here (and enabled per shop) can be
+    bought; the egg hatches at the configured fixed level with wild-like
+    randomly rolled stats, so the price is per species, not per stat.
+    """
+    __tablename__ = "arkmaniagest_forge_prices"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    blueprint      = Column(String(512), nullable=False, unique=True)
+    label          = Column(String(128), nullable=False, default="")
+    egg_price      = Column(Integer, nullable=False, default=0)
+    embryo_price   = Column(Integer, nullable=False, default=0)
+    egg_enabled    = Column(Boolean, nullable=False, default=True)
+    embryo_enabled = Column(Boolean, nullable=False, default=True)
+
+    created_at     = Column(DateTime, server_default=func.now())
+    updated_at     = Column(DateTime, server_default=func.now(), onupdate=func.now())

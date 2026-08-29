@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
 from typing import Optional
 
@@ -51,32 +52,28 @@ WEB_KINDS = ("item", "dino", "gene", "egg", "embryo")
 
 # ── Shop uova / embrioni ──────────────────────────────────────────────────────
 #
-# Prezzi e limiti vivono in ARKM_config (namespace WebShop.Egg.* /
-# WebShop.Embryo.*, modificabili dal Config Editor del pannello); il prezzo
-# dei tratti riusa il listino del gene shop (ARKM_gene_traits, stessa
-# economia). La consegna la fa ARKM-Marketplace >= 7.5.0: l'item della specie
-# lo ricava il plugin dal CDO del dino, qui viaggiano solo specie e parametri.
+# Il prezzo e' PER SPECIE, dal listino admin arkmaniagest_forge_prices (tab
+# "Prezzi" del Mercato): l'uovo/embrione esce a livello fisso (EggLevel, da
+# ARKM_config WebShop.<Shop>.EggLevel) con le stat selvatiche rollate qui,
+# distribuite a caso come farebbe il gioco. Gli extra (colori, sesso, tratti)
+# restano add-on a prezzo config; i tratti riusano il listino geni (matrice
+# admin con fallback ai costi pubblicati dal plugin). La consegna la fa
+# ARKM-Marketplace >= 7.5.0: l'item della specie lo ricava il plugin dal CDO
+# del dino, qui viaggiano solo specie e parametri.
 
 _FORGE_DEFAULTS = {
-    "Enabled":             "true",
-    "BasePrice":           "500",
-    "PricePerStatPoint":   "10",
-    "PricePerMutationPoint": "25",
-    "PricePerColor":       "50",
-    "PriceGenderChoice":   "100",
-    "MaxPerStat":          "60",
-    "MaxTotalStats":       "300",
-    "MaxPerMutation":      "20",
-    "MaxTotalMutations":   "60",
-    "MaxTraits":           "3",
+    "Enabled":           "true",
+    "EggLevel":          "224",
+    "PricePerColor":     "50",
+    "PriceGenderChoice": "100",
+    "MaxTraits":         "3",
 }
 
-# Ordine ARK degli indici stat negli array Egg* (12 slot). Solo informativo
-# per la UI: il backend valida sui limiti, non sui nomi.
-_EGG_STAT_INDEX_NOTE = (
-    "0=Health 1=Stamina 2=Torpidity 3=Oxygen 4=Food 5=Water 6=Temperature "
-    "7=Weight 8=Melee 9=Speed 10=Fortitude 11=Crafting"
-)
+# Slot dell'array Egg* su cui vengono distribuiti i punti selvatici rollati:
+# Health, Stamina, Oxygen, Food, Weight, Melee. Torpidity/Speed e gli slot
+# non usati restano a zero: un punto li' sarebbe un punto buttato per chi
+# compra, non "regole di gioco".
+_FORGE_ROLL_SLOTS = (0, 1, 3, 4, 7, 8)
 
 
 async def _forge_config(db: AsyncSession, shop: str) -> dict:
@@ -101,18 +98,37 @@ async def _forge_config(db: AsyncSession, shop: str) -> dict:
 
     return {
         "enabled": str(cfg["Enabled"]).strip().lower() in ("true", "1", "yes"),
-        "base_price": _i("BasePrice"),
-        "price_per_stat_point": _i("PricePerStatPoint"),
-        "price_per_mutation_point": _i("PricePerMutationPoint"),
+        "egg_level": max(2, min(500, _i("EggLevel"))),
         "price_per_color": _i("PricePerColor"),
         "price_gender_choice": _i("PriceGenderChoice"),
-        "max_per_stat": _i("MaxPerStat"),
-        "max_total_stats": _i("MaxTotalStats"),
-        "max_per_mutation": _i("MaxPerMutation"),
-        "max_total_mutations": _i("MaxTotalMutations"),
         "max_traits": _i("MaxTraits"),
-        "stat_index_note": _EGG_STAT_INDEX_NOTE,
     }
+
+
+def _roll_wild_stats(level: int) -> list[int]:
+    """
+    Distribuisce i (level-1) punti selvatici a caso sugli slot utili,
+    come farebbe il gioco per un selvatico di quel livello.
+    """
+    stats = [0] * 12
+    for _ in range(max(0, level - 1)):
+        stats[random.choice(_FORGE_ROLL_SLOTS)] += 1
+    return stats
+
+
+async def _gene_price_matrix(panel_db: AsyncSession) -> dict[tuple[str, int], int]:
+    """Matrice admin (categoria, tier) -> prezzo. Vuota se mai configurata."""
+    try:
+        rows = await panel_db.execute(text(
+            "SELECT category, tier, price FROM arkmaniagest_gene_prices"))
+        return {(r[0], int(r[1])): int(r[2]) for r in rows.fetchall()}
+    except Exception:
+        return {}
+
+
+def _gene_price(matrix: dict, category: str, tier: int, fallback: int) -> int:
+    """Prezzo effettivo di un tratto: matrice admin, o costo del plugin."""
+    return matrix.get((category, tier), fallback)
 
 
 _forge_columns_ok: Optional[bool] = None
@@ -211,7 +227,11 @@ async def catalog(
             })
 
     genes: list[dict] = []
-    if kind in (None, "gene"):
+    if kind in (None, "gene", "egg", "embryo"):
+        # La matrice prezzi admin (categoria x tier) sovrascrive i costi
+        # uniformi che il plugin ripubblica a ogni boot; la cella mancante
+        # lascia il costo del plugin.
+        matrix = await _gene_price_matrix(panel_db)
         try:
             rows = await db.execute(text(
                 "SELECT internal_name, display_name, category, description, "
@@ -221,7 +241,11 @@ async def catalog(
                 genes.append({
                     "key": r[0], "label": r[1], "category": r[2],
                     "description": r[3],
-                    "prices": {"1": r[4], "2": r[5], "3": r[6]},
+                    "prices": {
+                        "1": _gene_price(matrix, r[2], 1, r[4]),
+                        "2": _gene_price(matrix, r[2], 2, r[5]),
+                        "3": _gene_price(matrix, r[2], 3, r[6]),
+                    },
                 })
         except Exception:
             # Tabella assente = nessun server ha ancora avviato il GeneShop
@@ -253,17 +277,32 @@ async def catalog(
         except Exception:
             log.info("web_shop: ARKM_blueprints non disponibile")
 
-    # Shop uova / embrioni: prezzi e limiti per il configuratore. La lista
-    # specie e' la stessa gene_dinos (creature reali, gia' filtrate).
+    # Shop uova / embrioni: config add-on + listino per specie (admin).
     egg_shop = None
     embryo_shop = None
+    forge_prices: list[dict] = []
     if kind in (None, "egg"):
         egg_shop = await _forge_config(db, "Egg")
     if kind in (None, "embryo"):
         embryo_shop = await _forge_config(db, "Embryo")
+    if kind in (None, "egg", "embryo"):
+        try:
+            rows = await panel_db.execute(text(
+                "SELECT blueprint, label, egg_price, embryo_price, "
+                "egg_enabled, embryo_enabled FROM arkmaniagest_forge_prices "
+                "ORDER BY label"))
+            forge_prices = [
+                {"blueprint": r[0], "label": r[1], "egg_price": r[2],
+                 "embryo_price": r[3], "egg_enabled": bool(r[4]),
+                 "embryo_enabled": bool(r[5])}
+                for r in rows.fetchall()
+            ]
+        except Exception:
+            log.info("web_shop: arkmaniagest_forge_prices non disponibile")
 
     return {"items": items, "genes": genes, "gene_dinos": gene_dinos,
-            "egg_shop": egg_shop, "embryo_shop": embryo_shop}
+            "egg_shop": egg_shop, "embryo_shop": embryo_shop,
+            "forge_prices": forge_prices}
 
 
 # ── Acquisto ──────────────────────────────────────────────────────────────────
@@ -296,6 +335,7 @@ async def buy(
     data: BuyRequest,
     player: _PlayerSession = Depends(get_current_player),
     db: AsyncSession = Depends(get_plugin_db),
+    panel_db: AsyncSession = Depends(get_db),
 ):
     """
     Compra con i punti ArkShop e mette l'ordine in coda per il ritiro.
@@ -321,12 +361,14 @@ async def buy(
 
     if data.kind == "gene":
         row = (await db.execute(text(
-            "SELECT internal_name, cost_t1, cost_t2, cost_t3 "
+            "SELECT internal_name, cost_t1, cost_t2, cost_t3, category "
             "FROM ARKM_gene_traits WHERE internal_name = :k"),
             {"k": data.key})).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Trait not found.")
-        unit = {1: row[1], 2: row[2], 3: row[3]}[data.gene_tier]
+        matrix = await _gene_price_matrix(panel_db)
+        unit = _gene_price(matrix, row[4], data.gene_tier,
+                           {1: row[1], 2: row[2], 3: row[3]}[data.gene_tier])
         order["source"] = "geneshop"
         order["gene_trait"] = row[0]
         # Il path NON viene validato contro ARKM_blueprints: quella tabella e'
@@ -354,57 +396,66 @@ async def buy(
         if not data.gene_species.strip():
             raise HTTPException(status_code=422, detail="Scegli una specie.")
 
-        stats  = [max(0, int(v)) for v in data.egg_stats]
-        muts   = [max(0, int(v)) for v in data.egg_muts]
-        colors = [max(0, min(255, int(v))) for v in data.egg_colors]
+        # Prezzo PER SPECIE dal listino admin: una specie fuori listino (o
+        # disabilitata per questo shop, o senza prezzo) non e' in vendita.
+        prow = (await panel_db.execute(text(
+            "SELECT label, egg_price, embryo_price, egg_enabled, "
+            "embryo_enabled FROM arkmaniagest_forge_prices "
+            "WHERE blueprint = :b"),
+            {"b": data.gene_species.strip()})).fetchone()
+        species_price = 0
+        if prow:
+            species_price = prow[1] if data.kind == "egg" else prow[2]
+            sp_enabled = bool(prow[3] if data.kind == "egg" else prow[4])
+        if not prow or not sp_enabled or species_price <= 0:
+            raise HTTPException(status_code=404,
+                detail="Questa specie non e' in vendita in questo shop.")
 
-        if any(v > cfg["max_per_stat"] for v in stats):
-            raise HTTPException(status_code=422,
-                detail=f"Max {cfg['max_per_stat']} punti per stat.")
-        if sum(stats) > cfg["max_total_stats"]:
-            raise HTTPException(status_code=422,
-                detail=f"Max {cfg['max_total_stats']} punti stat totali.")
-        if any(v > cfg["max_per_mutation"] for v in muts):
-            raise HTTPException(status_code=422,
-                detail=f"Max {cfg['max_per_mutation']} mutazioni per stat.")
-        if sum(muts) > cfg["max_total_mutations"]:
-            raise HTTPException(status_code=422,
-                detail=f"Max {cfg['max_total_mutations']} mutazioni totali.")
+        colors = [max(0, min(255, int(v))) for v in data.egg_colors]
         if len(data.egg_traits) > cfg["max_traits"]:
             raise HTTPException(status_code=422,
                 detail=f"Max {cfg['max_traits']} tratti.")
 
-        # Tratti "Nome[tier]": validati e prezzati sul listino del gene shop
-        # (tier zero-based nel suffisso, colonne cost_t1..t3).
+        # Tratti "Nome[tier]": validati e prezzati sul listino geni effettivo
+        # (matrice admin con fallback ai costi del plugin).
+        matrix = await _gene_price_matrix(panel_db)
         traits_price = 0
         for t in data.egg_traits:
             m = re.fullmatch(r"([A-Za-z0-9_]+)\[([0-2])\]", t.strip())
             if not m:
                 raise HTTPException(status_code=422,
                     detail=f"Tratto malformato: {t} (atteso Nome[0..2]).")
-            row = (await db.execute(text(
-                "SELECT cost_t1, cost_t2, cost_t3 FROM ARKM_gene_traits "
-                "WHERE internal_name = :n"), {"n": m.group(1)})).fetchone()
-            if not row:
+            trow = (await db.execute(text(
+                "SELECT cost_t1, cost_t2, cost_t3, category "
+                "FROM ARKM_gene_traits WHERE internal_name = :n"),
+                {"n": m.group(1)})).fetchone()
+            if not trow:
                 raise HTTPException(status_code=422,
                     detail=f"Tratto sconosciuto: {m.group(1)}.")
-            traits_price += row[int(m.group(2))]
+            tier = int(m.group(2)) + 1
+            traits_price += _gene_price(matrix, trow[3], tier, trow[tier - 1])
 
-        unit = (cfg["base_price"]
-                + sum(stats)  * cfg["price_per_stat_point"]
-                + sum(muts)   * cfg["price_per_mutation_point"]
+        unit = (species_price
                 + sum(1 for c in colors if c > 0) * cfg["price_per_color"]
                 + (cfg["price_gender_choice"] if data.egg_gender >= 0 else 0)
                 + traits_price)
 
+        # Livello fisso, stat rollate come in natura: i punti (EggLevel-1)
+        # si distribuiscono a caso sugli slot utili. Le stat/mutazioni
+        # eventualmente arrivate dal client si IGNORANO: il roll e' del
+        # server, come il prezzo.
+        rolled = _roll_wild_stats(cfg["egg_level"])
+
         order["source"] = "eggshop" if data.kind == "egg" else "embryoshop"
-        order["gene_species"] = data.gene_species
-        order["egg_stats"]  = ",".join(str(v) for v in stats)
-        order["egg_muts"]   = ",".join(str(v) for v in muts)
+        order["gene_species"] = data.gene_species.strip()
+        order["egg_stats"]  = ",".join(str(v) for v in rolled)
+        order["egg_muts"]   = ""
         order["egg_colors"] = ",".join(str(v) for v in colors)
         order["egg_traits"] = ",".join(t.strip() for t in data.egg_traits)
         order["egg_gender"] = data.egg_gender if data.egg_gender >= 0 else -1
-        # Un uovo per ordine, come dino e geni.
+        # Un uovo per ordine, come dino e geni. NB: il roll qui sopra e'
+        # dell'ordine-tipo; per quantita' > 1 ogni riga accodata sotto
+        # riceve un roll suo, cosi' due uova non sono mai gemelle.
         total = unit * data.quantity
     else:
         row = (await db.execute(text(
@@ -511,7 +562,11 @@ async def buy(
                     "        :estats, :emuts, :ecolors, :etraits, :egender, "
                     "        :price, 'pending')"),
                     {**r, "price": total // n_orders,
-                     "estats": order["egg_stats"], "emuts": order["egg_muts"],
+                     # Roll indipendente per riga: due uova dello stesso
+                     # acquisto non devono mai essere gemelle.
+                     "estats": ",".join(
+                         str(v) for v in _roll_wild_stats(cfg["egg_level"])),
+                     "emuts": order["egg_muts"],
                      "ecolors": order["egg_colors"],
                      "etraits": order["egg_traits"],
                      "egender": order["egg_gender"]})
@@ -567,6 +622,121 @@ async def my_orders(
         })
     pending = sum(1 for o in out if o["status"] == "pending")
     return {"orders": out, "pending": pending}
+
+
+# ── Amministrazione prezzi ────────────────────────────────────────────────────
+#
+# Tab "Prezzi" del Mercato (solo admin). Le tabelle sono del pannello:
+# arkmaniagest_gene_prices (matrice categoria x tier, override dei costi che
+# il plugin ripubblica uniformi a ogni boot) e arkmaniagest_forge_prices
+# (listino per specie degli shop uova/embrioni).
+
+
+class GenePriceEntry(BaseModel):
+    category: str = Field(..., max_length=32)
+    tier: int = Field(..., ge=1, le=3)
+    price: int = Field(..., ge=0)
+
+
+class ForgePriceRow(BaseModel):
+    blueprint: str = Field(..., max_length=512)
+    label: str = Field("", max_length=128)
+    egg_price: int = Field(0, ge=0)
+    embryo_price: int = Field(0, ge=0)
+    egg_enabled: bool = True
+    embryo_enabled: bool = True
+
+
+@router.get("/admin/prices", dependencies=[Depends(require_admin)])
+async def admin_prices(
+    db: AsyncSession = Depends(get_plugin_db),
+    panel_db: AsyncSession = Depends(get_db),
+):
+    """
+    Stato corrente del pricing: categorie tratti con i costi di fallback
+    pubblicati dal plugin, celle della matrice admin, listino specie.
+    """
+    categories: list[dict] = []
+    try:
+        rows = await db.execute(text(
+            "SELECT category, MIN(cost_t1), MIN(cost_t2), MIN(cost_t3), "
+            "COUNT(*) FROM ARKM_gene_traits GROUP BY category "
+            "ORDER BY category"))
+        categories = [
+            {"category": r[0], "fallback": {"1": r[1], "2": r[2], "3": r[3]},
+             "traits": r[4]}
+            for r in rows.fetchall()
+        ]
+    except Exception:
+        log.info("web_shop: ARKM_gene_traits non disponibile (admin/prices)")
+
+    matrix = await _gene_price_matrix(panel_db)
+    forge_rows: list[dict] = []
+    try:
+        rows = await panel_db.execute(text(
+            "SELECT blueprint, label, egg_price, embryo_price, egg_enabled, "
+            "embryo_enabled FROM arkmaniagest_forge_prices ORDER BY label"))
+        forge_rows = [
+            {"blueprint": r[0], "label": r[1], "egg_price": r[2],
+             "embryo_price": r[3], "egg_enabled": bool(r[4]),
+             "embryo_enabled": bool(r[5])}
+            for r in rows.fetchall()
+        ]
+    except Exception:
+        pass
+
+    return {
+        "gene_categories": categories,
+        "gene_matrix": [
+            {"category": c, "tier": t, "price": p}
+            for (c, t), p in sorted(matrix.items())
+        ],
+        "forge_prices": forge_rows,
+    }
+
+
+@router.put("/admin/gene-prices", dependencies=[Depends(require_admin)])
+async def save_gene_prices(
+    entries: list[GenePriceEntry],
+    panel_db: AsyncSession = Depends(get_db),
+):
+    """
+    Sostituisce l'intera matrice prezzi geni. Una cella assente torna al
+    costo pubblicato dal plugin (fallback), quindi inviare [] azzera ogni
+    override.
+    """
+    await panel_db.execute(text("DELETE FROM arkmaniagest_gene_prices"))
+    for e in entries:
+        await panel_db.execute(text(
+            "INSERT INTO arkmaniagest_gene_prices (category, tier, price) "
+            "VALUES (:c, :t, :p)"),
+            {"c": e.category.strip(), "t": e.tier, "p": e.price})
+    await panel_db.commit()
+    return {"ok": True, "cells": len(entries)}
+
+
+@router.put("/admin/forge-prices", dependencies=[Depends(require_admin)])
+async def save_forge_prices(
+    rows: list[ForgePriceRow],
+    panel_db: AsyncSession = Depends(get_db),
+):
+    """Sostituisce l'intero listino specie degli shop uova/embrioni."""
+    seen: set[str] = set()
+    await panel_db.execute(text("DELETE FROM arkmaniagest_forge_prices"))
+    for r in rows:
+        bp = r.blueprint.strip()
+        if not bp or bp in seen:
+            continue
+        seen.add(bp)
+        await panel_db.execute(text(
+            "INSERT INTO arkmaniagest_forge_prices "
+            "(blueprint, label, egg_price, embryo_price, egg_enabled, "
+            " embryo_enabled) VALUES (:b, :l, :ep, :mp, :ee, :me)"),
+            {"b": bp, "l": r.label.strip()[:128], "ep": r.egg_price,
+             "mp": r.embryo_price, "ee": int(r.egg_enabled),
+             "me": int(r.embryo_enabled)})
+    await panel_db.commit()
+    return {"ok": True, "rows": len(seen)}
 
 
 # ── Amministrazione del catalogo ──────────────────────────────────────────────
