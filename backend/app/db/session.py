@@ -583,6 +583,25 @@ async def create_marketplace_tables() -> None:
             ") ENGINE=InnoDB"
         ))
 
+        # ARKM_shop_orders la crea ARKM-Marketplace, non noi: qui si aggiunge
+        # SOLO la colonna che il pannello scrive, e solo se la tabella c'e'
+        # gia'. Senza questa guardia, un pannello aggiornato prima del plugin
+        # farebbe fallire la INSERT dell'ordine DOPO aver scalato i punti —
+        # cioe' il giocatore paga e non riceve. Il caso non e' teorico: il
+        # deploy dei due repository e' indipendente.
+        try:
+            await _add_column_if_missing(
+                conn, table="ARKM_shop_orders", column="gene_species",
+                ddl="ALTER TABLE ARKM_shop_orders "
+                    "ADD COLUMN gene_species VARCHAR(512) NOT NULL DEFAULT ''",
+            )
+        except Exception:  # noqa: BLE001
+            # Tabella ancora inesistente: nessun server ha mai avviato il
+            # plugin. La creera' lui, gia' con la colonna. Si tace invece di
+            # loggare perche' questo modulo non ha un logger e non e' il posto
+            # per introdurne uno.
+            pass
+
         # Vetrina web dello shop. Vive qui e non nel plugin perche' e' il
         # pannello a deciderne il contenuto: il plugin legge solo gli ordini
         # che ne derivano (ARKM_shop_orders, creata da ARKM-Marketplace).

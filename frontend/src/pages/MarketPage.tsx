@@ -22,7 +22,8 @@ import {
   marketApi, webShopApi,
   type MarketListedItem, type MarketMyItem, type MarketWallet,
   type MarketTransaction,
-  type WebShopItem, type WebShopGene, type WebShopOrder,
+  type WebShopItem, type WebShopGene, type WebShopGeneDino,
+  type WebShopOrder,
 } from "../services/api";
 import { shopEntryThumbUrl } from "../utils/shopImage";
 import { ShopFallbackIcon } from "../utils/shopFallbackIcon";
@@ -90,6 +91,10 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   const [shopBusy, setShopBusy] = useState<string | null>(null);
   const [shopSearch, setShopSearch] = useState("");
   const [geneTier, setGeneTier] = useState<Record<string, number>>({});
+  // La specie e' UNA per tutta la scheda, non una per tratto: si sceglie
+  // prima il dino e poi il tratto, come si farebbe scansionando in gioco.
+  const [shopGeneDinos, setShopGeneDinos] = useState<WebShopGeneDino[]>([]);
+  const [geneSpecies, setGeneSpecies] = useState("");
   // Quale pacchetto ha il dettaglio aperto. Uno alla volta: aprirne piu' di
   // uno trasforma la griglia in un muro di liste.
   const [openPack, setOpenPack] = useState<string | null>(null);
@@ -100,6 +105,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       const r = await webShopApi.catalog();
       setShopItems(r.data.items || []);
       setShopGenes(r.data.genes || []);
+      setShopGeneDinos(r.data.gene_dinos || []);
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e));
     } finally {
@@ -137,12 +143,13 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
    * sono la cosa che l'utente controlla per capire se e' andata a buon fine.
    */
   async function doBuy(kind: "item" | "dino" | "gene", key: string,
-                       label: string, price: number, tier = 1) {
+                       label: string, price: number, tier = 1,
+                       species = "") {
     if (!window.confirm(t("market.shop.confirmBuy", { what: label, price })))
       return;
     setShopBusy(key); setError(""); setSuccess("");
     try {
-      const r = await webShopApi.buy(kind, key, 1, tier);
+      const r = await webShopApi.buy(kind, key, 1, tier, species);
       setSuccess(t("market.shop.bought", { spent: r.data.spent }));
       await Promise.all([loadWallet(), loadShopOrders()]);
     } catch (e: any) {
@@ -453,7 +460,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             ) : shopItems.length === 0 ? (
               <div className="alert alert-info">{t("market.shop.emptyItems")}</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "0.6rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.6rem" }}>
                 {shopItems
                   .filter(i => !shopSearch ||
                     i.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
@@ -562,7 +569,29 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             ) : shopGenes.length === 0 ? (
               <div className="alert alert-info">{t("market.shop.emptyGenes")}</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "0.6rem" }}>
+              <>
+              {/* Specie prima del tratto: e' l'ordine con cui si ragiona in
+                  gioco, e vale per tutta la scheda perche' un acquisto e'
+                  "questo tratto, prelevato da questa specie". */}
+              {shopGeneDinos.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8,
+                              marginBottom: "0.6rem", flexWrap: "wrap" }}>
+                  <label style={{ fontSize: "0.78rem" }}>
+                    {t("market.shop.geneSpecies")}
+                  </label>
+                  <select className="form-input" style={{ maxWidth: 260 }}
+                    value={geneSpecies}
+                    onChange={e => setGeneSpecies(e.target.value)}>
+                    <option value="">{t("market.shop.geneSpeciesNone")}</option>
+                    {shopGeneDinos.map(d => (
+                      <option key={d.blueprint} value={d.blueprint}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.6rem" }}>
                 {shopGenes
                   .filter(g => !shopSearch ||
                     g.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
@@ -588,7 +617,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                         </span>
                         <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }}
                           disabled={shopBusy !== null || price <= 0}
-                          onClick={() => doBuy("gene", g.key, `${g.label} T${tier}`, price, tier)}>
+                          onClick={() => doBuy("gene", g.key, `${g.label} T${tier}`, price,
+                                               tier, geneSpecies)}>
                           {shopBusy === g.key
                             ? <Loader2 size={12} className="pl-spin" />
                             : <ShoppingBag size={12} />} {t("market.shop.buy")}
@@ -598,6 +628,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   );
                 })}
               </div>
+              </>
             )}
             <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 8 }}>
               {t("market.shop.geneHint")}

@@ -202,6 +202,29 @@
       "deleteConfirm": "Eliminare la home \"{{n}}\"? L'operazione e' immediata anche se sei in gioco.",
       "deleteError": "Eliminazione della home non riuscita."
     },
+    "tools": {
+      "title": "Strumenti personaggio",
+      "renameLabel": "Cambio nome",
+      "renamePlaceholder": "Nuovo nome del personaggio",
+      "renameButton": "Rinomina",
+      "renameHint": "Applicato in gioco entro pochi secondi se sei online, altrimenti al prossimo accesso. Il nome passa i filtri del server.",
+      "renameQueued": "Richiesta di cambio nome inviata.",
+      "kickButton": "Kick del mio personaggio",
+      "kickHint": "Disconnette il tuo personaggio dal server (utile se e' bloccato).",
+      "kickOffline": "Disponibile solo mentre risulti online su un server.",
+      "kickConfirm": "Disconnettere il tuo personaggio dal server?",
+      "kickQueued": "Richiesta di kick inviata: verrai disconnesso entro pochi secondi.",
+      "genericError": "Richiesta non riuscita.",
+      "entryKick": "Kick personaggio",
+      "entryRename": "Rinomina in \"{{n}}\"",
+      "status": {
+        "pending": "in coda",
+        "done": "eseguita",
+        "rejected": "rifiutata",
+        "expired": "scaduta",
+        "superseded": "sostituita"
+      }
+    },
     "activity": {
       "title": "Attività recente",
       "empty": "Nessuna attività recente."
@@ -2291,7 +2314,7 @@
       "bought": "Acquistato. {{spent}} punti spesi — ritiralo in gioco con /ritiro.",
       "emptyItems": "Il negozio e' vuoto. Un admin deve prima importare il catalogo di ArkShop.",
       "emptyGenes": "Nessun tratto pubblicato: compaiono appena un server si avvia con GeneShop 5.8.0+.",
-      "geneHint": "Il gene arriva come oggetto. Usalo mentre miri o cavalchi la creatura a cui vuoi applicarlo.",
+      "geneHint": "Il gene arriva come Gene Scanner, con il tratto gia' memorizzato dentro. Ritiralo in gioco con /ritiro, poi usalo come un qualsiasi scanner per applicare il tratto alla creatura.",
       "dinoLevel": "livello {{lvl}}",
       "dinoInPod": "Consegnato dentro un cryopod.",
       "pendingHint": "Hai {{n}} acquisti in attesa: scrivi /ritiro in gioco per prenderli.",
@@ -2314,7 +2337,9 @@
       "imported": "Importate {{n}} voci. Saltate: {{skipped}}.",
       "pieces": "{{n}} pezzi",
       "showContent": "Cosa contiene",
-      "hideContent": "Nascondi contenuto"
+      "hideContent": "Nascondi contenuto",
+      "geneSpecies": "Specie:",
+      "geneSpeciesNone": "Nessuna (scanner senza specie)"
     }
   },
   "auditLog": {

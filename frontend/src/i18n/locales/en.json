@@ -202,6 +202,29 @@
       "deleteConfirm": "Delete the home \"{{n}}\"? This takes effect immediately, even while you are in game.",
       "deleteError": "Could not delete the home."
     },
+    "tools": {
+      "title": "Character tools",
+      "renameLabel": "Rename character",
+      "renamePlaceholder": "New character name",
+      "renameButton": "Rename",
+      "renameHint": "Applied in game within seconds while you are online, otherwise at your next login. The name goes through the server filters.",
+      "renameQueued": "Rename request sent.",
+      "kickButton": "Kick my character",
+      "kickHint": "Disconnects your character from the server (useful when it is stuck).",
+      "kickOffline": "Available only while you are online on a server.",
+      "kickConfirm": "Disconnect your character from the server?",
+      "kickQueued": "Kick request sent: you will be disconnected within seconds.",
+      "genericError": "Request failed.",
+      "entryKick": "Character kick",
+      "entryRename": "Rename to \"{{n}}\"",
+      "status": {
+        "pending": "queued",
+        "done": "done",
+        "rejected": "rejected",
+        "expired": "expired",
+        "superseded": "superseded"
+      }
+    },
     "activity": {
       "title": "Recent activity",
       "empty": "No recent activity."
@@ -2291,7 +2314,7 @@
       "bought": "Purchased. {{spent}} points spent — collect it in game with /ritiro.",
       "emptyItems": "The shop is empty. An admin has to import the ArkShop catalogue first.",
       "emptyGenes": "No gene traits published yet: they appear once a server boots with GeneShop 5.8.0+.",
-      "geneHint": "A gene arrives as an item. Use it while aiming at (or riding) the creature you want to apply it to.",
+      "geneHint": "A gene arrives as a Gene Scanner with the trait already stored inside. Claim it in game with /ritiro, then use it like any scanner to apply the trait to a creature.",
       "dinoLevel": "level {{lvl}}",
       "dinoInPod": "Delivered inside a cryopod.",
       "pendingHint": "You have {{n}} purchase(s) waiting: type /ritiro in game to collect them.",
@@ -2314,7 +2337,9 @@
       "imported": "Imported {{n}} entries. Skipped: {{skipped}}.",
       "pieces": "{{n}} pieces",
       "showContent": "What's inside",
-      "hideContent": "Hide contents"
+      "hideContent": "Hide contents",
+      "geneSpecies": "Species:",
+      "geneSpeciesNone": "None (scanner without species)"
     }
   },
   "auditLog": {

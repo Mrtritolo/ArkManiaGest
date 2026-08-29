@@ -16,6 +16,12 @@ Endpoints:
                               for the current player.
   DELETE /me/homes/{id}       -- delete one of the caller's own saved
                               teleport homes (ARKM-Teleport).
+  GET  /me/requests           -- status of the caller's self-service
+                              requests (kick / rename).
+  POST /me/requests/kick      -- queue a kick of the caller's own
+                              character (processed by ARKM-Login).
+  POST /me/requests/rename    -- queue a character rename (validated and
+                              applied by ARKM-Login).
   GET    /me/privacy/export   -- GDPR data-portability export (Art. 20).
   DELETE /me/privacy/account  -- GDPR erasure of the Discord link (Art. 17).
 
@@ -762,6 +768,206 @@ async def get_dashboard(
         activity    = activity_card,
         homes       = _HomesCard(entries=home_entries),
     )
+
+
+# ── Self-service requests (kick / rename) ────────────────────────────────────
+#
+# The panel INSERTs rows into ARKM_player_requests (plugin DB); every
+# cluster server of ARKM-Login (>= 7.4.0) polls the table on a ~10 s
+# timer and processes the requests whose player is online there:
+#   kick   — force-disconnect the requester's own character (stuck /
+#            ghost-session recovery); expires after 10 minutes.
+#   rename — validated server-side by NameControl and applied while the
+#            player is online (or at the next login, within 7 days).
+# The table is owned and created by the plugin — a missing table means
+# the plugin is not updated yet, answered as 503.
+
+_REQUESTS_TABLE_HINT = (
+    "Player-request queue not available: the ARKM-Login plugin on the "
+    "game servers has not been updated to a version that supports web "
+    "requests yet."
+)
+
+
+class _RenameRequest(BaseModel):
+    new_name: str
+
+
+class _PlayerRequestRow(BaseModel):
+    id:            int
+    action:        str
+    payload:       str
+    status:        str
+    result:        str
+    requested_at:  Optional[str] = None
+    processed_at:  Optional[str] = None
+
+
+def _is_missing_table_error(exc: Exception) -> bool:
+    """MySQL 1146 'table doesn't exist' — the plugin owns the schema."""
+    return "1146" in str(exc) or "doesn't exist" in str(exc)
+
+
+async def _pending_request_exists(
+    plugin_db: AsyncSession, eos_id: str, action: str,
+) -> bool:
+    row = (await plugin_db.execute(
+        text(
+            "SELECT id FROM ARKM_player_requests "
+            "WHERE eos_id = :e AND action = :a AND status = 'pending' LIMIT 1"
+        ),
+        {"e": eos_id, "a": action},
+    )).fetchone()
+    return row is not None
+
+
+@router.get("/requests", response_model=list[_PlayerRequestRow])
+async def list_my_requests(
+    player:    _PlayerSession = Depends(get_current_player),
+    plugin_db: AsyncSession   = Depends(get_plugin_db),
+):
+    """Last 10 self-service requests of the caller, newest first."""
+    try:
+        rows = (await plugin_db.execute(
+            text(
+                "SELECT id, action, payload, status, result, "
+                "       requested_at, processed_at "
+                "FROM ARKM_player_requests WHERE eos_id = :e "
+                "ORDER BY id DESC LIMIT 10"
+            ),
+            {"e": player.eos_id},
+        )).mappings().fetchall()
+    except Exception as exc:  # noqa: BLE001 — surface a clean 503 on missing table
+        if _is_missing_table_error(exc):
+            return []
+        raise
+    return [
+        _PlayerRequestRow(
+            id           = r["id"],
+            action       = r["action"],
+            payload      = r["payload"],
+            status       = r["status"],
+            result       = r["result"],
+            requested_at = (r["requested_at"].isoformat()
+                            if r.get("requested_at") is not None
+                               and hasattr(r["requested_at"], "isoformat") else None),
+            processed_at = (r["processed_at"].isoformat()
+                            if r.get("processed_at") is not None
+                               and hasattr(r["processed_at"], "isoformat") else None),
+        )
+        for r in rows
+    ]
+
+
+@router.post("/requests/kick")
+async def request_self_kick(
+    request:   Request,
+    player:    _PlayerSession = Depends(get_current_player),
+    db:        AsyncSession   = Depends(get_db),
+    plugin_db: AsyncSession   = Depends(get_plugin_db),
+):
+    """
+    Queue a kick of the caller's own character.
+
+    Only meaningful while a session is registered (stuck character /
+    ghost session): with no active session there is nothing to kick and
+    the request would just expire, so it is refused up front with 409.
+    """
+    sess = (await plugin_db.execute(
+        text("SELECT server_key FROM ARKM_sessions WHERE eos_id = :e LIMIT 1"),
+        {"e": player.eos_id},
+    )).fetchone()
+    if not sess:
+        raise HTTPException(
+            status_code=409,
+            detail="You are not online on any server right now.",
+        )
+
+    try:
+        if await _pending_request_exists(plugin_db, player.eos_id, "kick"):
+            raise HTTPException(
+                status_code=409, detail="A kick request is already pending.",
+            )
+        await plugin_db.execute(
+            text(
+                "INSERT INTO ARKM_player_requests (eos_id, action, payload) "
+                "VALUES (:e, 'kick', '')"
+            ),
+            {"e": player.eos_id},
+        )
+        await plugin_db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc):
+            raise HTTPException(status_code=503, detail=_REQUESTS_TABLE_HINT) from None
+        raise
+
+    await audit_event(
+        db, action="me.request_kick",
+        username=f"discord:{player.discord_user_id}",
+        detail=f"eos={player.eos_id} server={sess[0]}",
+        request=request,
+    )
+    return {"ok": True}
+
+
+@router.post("/requests/rename")
+async def request_rename(
+    data:      _RenameRequest,
+    request:   Request,
+    player:    _PlayerSession = Depends(get_current_player),
+    db:        AsyncSession   = Depends(get_db),
+    plugin_db: AsyncSession   = Depends(get_plugin_db),
+):
+    """
+    Queue a character rename.
+
+    Only cheap sanity checks happen here (length, printable characters):
+    the authoritative validation — NameControl filters and cluster-wide
+    uniqueness — runs in the plugin when the request is applied, and a
+    rejection shows up in the request status. A new request supersedes a
+    still-pending one.
+    """
+    new_name = data.new_name.strip()
+    if not (2 <= len(new_name) <= 48):
+        raise HTTPException(
+            status_code=422,
+            detail="The new name must be between 2 and 48 characters.",
+        )
+    if any(ord(c) < 32 for c in new_name):
+        raise HTTPException(status_code=422, detail="Invalid characters in name.")
+
+    try:
+        # Supersede any still-pending rename instead of stacking them.
+        await plugin_db.execute(
+            text(
+                "UPDATE ARKM_player_requests "
+                "SET status = 'superseded', processed_at = NOW() "
+                "WHERE eos_id = :e AND action = 'rename' AND status = 'pending'"
+            ),
+            {"e": player.eos_id},
+        )
+        await plugin_db.execute(
+            text(
+                "INSERT INTO ARKM_player_requests (eos_id, action, payload) "
+                "VALUES (:e, 'rename', :p)"
+            ),
+            {"e": player.eos_id, "p": new_name},
+        )
+        await plugin_db.commit()
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc):
+            raise HTTPException(status_code=503, detail=_REQUESTS_TABLE_HINT) from None
+        raise
+
+    await audit_event(
+        db, action="me.request_rename",
+        username=f"discord:{player.discord_user_id}",
+        detail=f"eos={player.eos_id} new_name={new_name!r}",
+        request=request,
+    )
+    return {"ok": True}
 
 
 # ── Saved homes ──────────────────────────────────────────────────────────────

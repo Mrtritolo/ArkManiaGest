@@ -7,6 +7,44 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.10.0] - 2026-08-29
+
+### Added
+
+- **Gene species in the web-shop buy flow.** Buying a gene trait now
+  lets the player pick the dino species the trait reads as coming from;
+  the choice is stored in the new `ARKM_shop_orders.gene_species`
+  column (added guarded, only when the plugin-owned table exists) and
+  the species list comes from the panel's own blueprint catalog — no
+  hand-maintained list. An unresolvable path degrades to a scanner
+  without species, never a failed sale.
+- **Character tools on the player dashboard.** Players can now queue a
+  **self-kick** of their own character (stuck / ghost-session recovery,
+  only while online) and a **character rename** from the web dashboard.
+  Requests land in `ARKM_player_requests` (plugin DB) and are validated
+  and executed by ARKM-Login ≥ 7.4.0 on the game servers — within
+  seconds while the player is online, or at the next login for renames;
+  the card shows each request's status (queued / done / rejected).
+  A panel deployed before the plugin answers 503 with a clear hint.
+- **Server shop cards on a fixed 4-column grid** (items and genes tabs).
+
+### Removed
+
+- **Dead-code cleanup from an over-engineering audit** (~1,300 lines,
+  8 dependencies). Backend: the never-wired MariaDB-instances feature
+  (schema, ORM model, store helpers), the unused raw-SSH router
+  (`/ssh/test-connection`, `/ssh/execute`, `/ssh/upload`) and the SCP
+  upload/download methods with the `scp` dependency, three debug
+  endpoints, the dead generated endpoints of the plugin config editor
+  (`/config/reset`, `/section/*`, `/license`, …) with the
+  `create_plugin_router` factory flattened into a plain module, and the
+  unused `alembic`/`pyyaml`/`pytest`/`pytest-asyncio` requirements.
+  Frontend: the legacy Tailwind/PostCSS pipeline (no component ever used
+  it), ~90 verified-dead CSS selectors (−352 lines in index.css), five
+  byte-identical `extractError` copies and eight date-format
+  re-implementations consolidated into `src/utils/`, plus assorted dead
+  exports (`sshApi`, `serversApi`, unused types).
+
 ## [4.9.0] - 2026-08-27
 
 ### Added

@@ -24,7 +24,7 @@ import {
   User, Users, ShoppingBag, Timer, Shield, Crown,
   Clock, AlertTriangle, CheckCircle2, Activity as ActivityIcon,
   Trophy, Skull, Server, Wifi, WifiOff,
-  Download, Trash2, FileText, MapPin,
+  Download, Trash2, FileText, MapPin, Wrench, UserX, PenLine,
 } from "lucide-react";
 import {
   meApi, discordAuthApi,
@@ -33,8 +33,10 @@ import {
   type DashboardServerPulse, type DashboardLeaderboard,
   type DashboardLeaderboardScoreRow, type DashboardTribe,
   type DashboardRareDinos, type DashboardActivity,
-  type DashboardHomes,
+  type DashboardHomes, type PlayerRequestRow,
 } from "../services/api";
+import { extractError } from "../utils/errors";
+import { fmtDateTime } from "../utils/format";
 import DiscordIcon from "../components/DiscordIcon";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -43,16 +45,6 @@ function avatarUrl(userId: string, hash: string | null): string | null {
   if (!hash) return null;
   const ext = hash.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${userId}/${hash}.${ext}?size=128`;
-}
-
-function fmtDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
 }
 
 /**
@@ -103,14 +95,6 @@ function fmtCountdown(hours: number | null): string {
   const d = Math.floor(hours / 24);
   const h = hours - d * 24;
   return d > 0 ? `${d}g ${h}h` : `${h}h`;
-}
-
-function extractError(err: unknown, fallback: string): string {
-  const msg =
-    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    ?? (err as { message?: string })?.message
-    ?? fallback;
-  return typeof msg === "string" ? msg : fallback;
 }
 
 // ── Privacy footer (GDPR self-service) ──────────────────────────────────────
@@ -440,6 +424,7 @@ function DashboardGrid({ data, embedded, onChanged }: {
       <RareDinosCard  data={data.rare_dinos} />
       <TribeCard      data={data.tribe} />
       <HomesCard      data={data.homes} onChanged={onChanged} />
+      <CharacterToolsCard presence={data.presence} />
       <ActivityCard   data={data.activity} />
     </div>
   );
@@ -891,6 +876,159 @@ function HomesCard({ data, onChanged }: {
         </div>
       )}
       {error && <div className="form-message form-message-error" style={{ marginTop: "0.4rem" }}>{error}</div>}
+    </Card>
+  );
+}
+
+// ── Character tools card (self-service kick / rename) ───────────────────────
+
+const REQUEST_STATUS_COLOR: Record<string, string> = {
+  pending:    "#d97706",
+  done:       "#16a34a",
+  rejected:   "#dc2626",
+  expired:    "#6b7280",
+  superseded: "#6b7280",
+};
+
+function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
+  const { t } = useTranslation();
+  const [requests, setRequests] = useState<PlayerRequestRow[]>([]);
+  const [newName, setNewName]   = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState("");
+  const [notice, setNotice]     = useState("");
+
+  const loadRequests = useCallback(async () => {
+    try {
+      const res = await meApi.requests();
+      setRequests(res.data);
+    } catch {
+      // Silent: the card stays usable, the list just doesn't render.
+    }
+  }, []);
+
+  useEffect(() => { void loadRequests(); }, [loadRequests]);
+
+  async function run(action: () => Promise<unknown>, okMsg: string): Promise<void> {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await action();
+      setNotice(okMsg);
+      await loadRequests();
+    } catch (err: unknown) {
+      setError(extractError(err, t("dashboard.tools.genericError")));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleKick(): void {
+    if (!window.confirm(t("dashboard.tools.kickConfirm"))) return;
+    void run(() => meApi.requestKick(), t("dashboard.tools.kickQueued"));
+  }
+
+  function handleRename(): void {
+    const name = newName.trim();
+    if (name.length < 2) return;
+    void run(async () => {
+      await meApi.requestRename(name);
+      setNewName("");
+    }, t("dashboard.tools.renameQueued"));
+  }
+
+  return (
+    <Card icon={<Wrench size={14} />} title={t("dashboard.tools.title")}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+
+        {/* Rename */}
+        <div>
+          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: "0.3rem" }}>
+            {t("dashboard.tools.renameLabel")}
+          </div>
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <input
+              type="text"
+              value={newName}
+              maxLength={48}
+              placeholder={t("dashboard.tools.renamePlaceholder")}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleRename(); }}
+              className="form-input"
+              style={{ flex: 1, minWidth: 0 }}
+              disabled={busy}
+            />
+            <button
+              onClick={handleRename}
+              disabled={busy || newName.trim().length < 2}
+              className="btn btn-primary btn-sm"
+              title={t("dashboard.tools.renameButton")}
+            >
+              <PenLine size={12} /> {t("dashboard.tools.renameButton")}
+            </button>
+          </div>
+          <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+            {t("dashboard.tools.renameHint")}
+          </div>
+        </div>
+
+        {/* Self-kick */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <button
+            onClick={handleKick}
+            disabled={busy || !presence.online_now}
+            className="btn btn-danger btn-sm"
+            title={presence.online_now
+              ? t("dashboard.tools.kickButton")
+              : t("dashboard.tools.kickOffline")}
+          >
+            <UserX size={12} /> {t("dashboard.tools.kickButton")}
+          </button>
+          <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+            {presence.online_now
+              ? t("dashboard.tools.kickHint")
+              : t("dashboard.tools.kickOffline")}
+          </span>
+        </div>
+
+        {notice && <div className="form-message form-message-success">{notice}</div>}
+        {error  && <div className="form-message form-message-error">{error}</div>}
+
+        {/* Recent requests */}
+        {requests.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxHeight: "clamp(120px, 25vh, 180px)", overflowY: "auto" }}>
+            {requests.map(r => (
+              <div key={r.id} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                gap: "0.5rem", padding: "0.3rem 0.4rem", borderRadius: 3,
+                background: "var(--bg-card-muted, #f5f5f7)", fontSize: "0.75rem",
+              }}>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r.action === "kick"
+                    ? t("dashboard.tools.entryKick")
+                    : t("dashboard.tools.entryRename", { n: r.payload })}
+                  {r.status === "rejected" && r.result
+                    ? ` — ${r.result}` : ""}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", whiteSpace: "nowrap" }}>
+                  <span style={{
+                    fontSize: "0.65rem", fontWeight: 600, padding: "0.1rem 0.35rem",
+                    borderRadius: 8,
+                    color: REQUEST_STATUS_COLOR[r.status] ?? "#6b7280",
+                    background: `${REQUEST_STATUS_COLOR[r.status] ?? "#6b7280"}15`,
+                  }}>
+                    {t(`dashboard.tools.status.${r.status}`, r.status)}
+                  </span>
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    {fmtRelative(r.requested_at)}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

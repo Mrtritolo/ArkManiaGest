@@ -88,6 +88,8 @@ by Acekorneya (referred to as "POK-manager") for:
 ### Player dashboard & market (public area)
 - **Player dashboard** — each player sees their own stats, shop points,
   saved teleport homes (with delete) after Discord login
+- **Character tools** — self-service kick of a stuck character and
+  character rename, executed in game by ARKM-Login
 - **Market** — player-to-player marketplace (sell/buy via the
   ARKM-Marketplace plugin) with item thumbnails
 - **Web shop** — server shop with catalog imported from ArkShop and gene

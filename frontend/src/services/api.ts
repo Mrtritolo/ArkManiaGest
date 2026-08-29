@@ -432,9 +432,6 @@ export interface ImportFromContainerRequest {
   rcon_port?:       number;
 }
 
-// Back-compat alias so legacy imports of `serversApi` keep working.
-export const serversApi = serverInstancesApi;
-
 // ---------------------------------------------------------------------------
 // Instance action log (global view with filters)
 // ---------------------------------------------------------------------------
@@ -484,16 +481,6 @@ export const systemUpdateApi = {
     ),
   status:    () =>
     api.get<SystemUpdateStatus>("/system-update/status"),
-};
-
-// ---------------------------------------------------------------------------
-// SSH direct execution (debug utilities)
-// ---------------------------------------------------------------------------
-
-export const sshApi = {
-  testConnection: (data: unknown) => api.post("/ssh/test-connection", data),
-  execute: (data: unknown) => api.post("/ssh/execute", data),
-  upload: (data: unknown) => api.post("/ssh/upload", data),
 };
 
 // ---------------------------------------------------------------------------
@@ -1059,6 +1046,11 @@ export interface WebShopGene {
   key: string; label: string; category: string; description: string
   prices: Record<string, number>
 }
+/** Una specie selezionabile per un gene: serve solo al plugin per ricavarne
+ *  la DinoEntry da scrivere nello scanner. */
+export interface WebShopGeneDino {
+  label: string; blueprint: string
+}
 export interface WebShopOrder {
   id: number; source: string; item_key: string; kind: string
   blueprint: string; quantity: number; gene_trait: string; gene_tier: number
@@ -1075,12 +1067,14 @@ export interface WebShopOrder {
  */
 export const webShopApi = {
   catalog: (kind?: "item" | "dino" | "gene") =>
-    api.get<{ items: WebShopItem[]; genes: WebShopGene[] }>(
+    api.get<{ items: WebShopItem[]; genes: WebShopGene[];
+              gene_dinos: WebShopGeneDino[] }>(
       "/shop/catalog", { params: kind ? { kind } : undefined }),
   buy: (kind: "item" | "dino" | "gene", key: string,
-        quantity = 1, geneTier = 1) =>
+        quantity = 1, geneTier = 1, geneSpecies = "") =>
     api.post<{ status: string; orders: number; spent: number }>(
-      "/shop/buy", { kind, key, quantity, gene_tier: geneTier }),
+      "/shop/buy", { kind, key, quantity, gene_tier: geneTier,
+                     gene_species: geneSpecies }),
   orders: () =>
     api.get<{ orders: WebShopOrder[]; pending: number }>("/shop/orders"),
   importArkshop: () =>
@@ -1832,6 +1826,22 @@ export interface DashboardResponse {
   homes:       DashboardHomes;
 }
 
+/**
+ * One self-service request (kick / rename) queued from the dashboard.
+ * Rows live in the plugin DB and are processed by ARKM-Login on the
+ * game servers; `status` moves pending -> done / rejected / expired /
+ * superseded and `result` carries the plugin's outcome detail.
+ */
+export interface PlayerRequestRow {
+  id:           number;
+  action:       "kick" | "rename" | string;
+  payload:      string;
+  status:       string;
+  result:       string;
+  requested_at: string | null;
+  processed_at: string | null;
+}
+
 export const meApi = {
   /**
    * Pull the combined character + shop + decay snapshot for the player
@@ -1854,6 +1864,24 @@ export const meApi = {
    */
   deleteHome: (homeId: number) =>
     api.delete<{ ok: boolean }>(`/me/homes/${homeId}`),
+
+  /** Last 10 self-service requests of the caller, newest first. */
+  requests: () => api.get<PlayerRequestRow[]>("/me/requests"),
+
+  /**
+   * Queue a kick of the caller's own character (stuck / ghost-session
+   * recovery).  409 when not online or a kick is already pending; 503
+   * when the ARKM-Login plugin on the servers predates the feature.
+   */
+  requestKick: () => api.post<{ ok: boolean }>("/me/requests/kick"),
+
+  /**
+   * Queue a character rename.  Authoritative validation (name filters +
+   * cluster-wide uniqueness) runs in the plugin when the request is
+   * applied — a rejection shows up in the request status.
+   */
+  requestRename: (newName: string) =>
+    api.post<{ ok: boolean }>("/me/requests/rename", { new_name: newName }),
 
   privacyExport: () => api.get<Record<string, unknown>>("/me/privacy/export"),
 

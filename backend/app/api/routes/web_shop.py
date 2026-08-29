@@ -72,6 +72,7 @@ def _lines_of(items_json: Optional[str]) -> list[dict]:
 async def catalog(
     kind: Optional[str] = Query(None, description="item | dino | gene"),
     db: AsyncSession = Depends(get_plugin_db),
+    panel_db: AsyncSession = Depends(get_db),
 ):
     """
     Catalogo acquistabile dal web: oggetti e dino importati da ArkShop, piu'
@@ -135,7 +136,23 @@ async def catalog(
             # con la versione che la pubblica. Vetrina vuota, non un errore.
             log.info("web_shop: ARKM_gene_traits non disponibile")
 
-    return {"items": items, "genes": genes}
+    # Specie selezionabili per un gene. Servono al plugin solo per ricavare la
+    # DinoEntry da scrivere nello scanner (dal CDO del dino), quindi qui basta
+    # il path del blueprint. Sorgente: il catalogo blueprint del pannello, lo
+    # stesso che alimenta il picker dei rare dino — nessuna lista a mano da
+    # tenere allineata.
+    gene_dinos: list[dict] = []
+    if kind in (None, "gene"):
+        try:
+            rows = await panel_db.execute(text(
+                "SELECT name, blueprint FROM ARKM_blueprints "
+                "WHERE type = 'dino' ORDER BY name"))
+            gene_dinos = [{"label": r[0], "blueprint": r[1]}
+                          for r in rows.fetchall()]
+        except Exception:
+            log.info("web_shop: ARKM_blueprints non disponibile")
+
+    return {"items": items, "genes": genes, "gene_dinos": gene_dinos}
 
 
 # ── Acquisto ──────────────────────────────────────────────────────────────────
@@ -145,6 +162,10 @@ class BuyRequest(BaseModel):
     key: str
     quantity: int = Field(1, ge=1, le=100)
     gene_tier: int = Field(1, ge=1, le=3)
+    # Path del blueprint del dino da cui il tratto risulta prelevato. Solo
+    # per kind='gene': il plugin ne ricava la DinoEntry da scrivere nello
+    # scanner. Vuoto = scanner senza specie, che si consegna lo stesso.
+    gene_species: str = Field("", max_length=512)
 
 
 @router.post("/buy")
@@ -172,7 +193,7 @@ async def buy(
         "kind": data.kind, "item_key": data.key, "blueprint": "",
         "quantity": data.quantity, "quality": 0, "is_blueprint": 0,
         "dino_level": 1, "gene_trait": "", "gene_tier": data.gene_tier,
-        "source": "arkshop",
+        "gene_species": "", "source": "arkshop",
     }
 
     if data.kind == "gene":
@@ -185,6 +206,12 @@ async def buy(
         unit = {1: row[1], 2: row[2], 3: row[3]}[data.gene_tier]
         order["source"] = "geneshop"
         order["gene_trait"] = row[0]
+        # Il path NON viene validato contro ARKM_blueprints: quella tabella e'
+        # solo la vetrina del picker, e un path che non risolve lato server
+        # produce uno scanner senza specie, non un errore. Validarlo qui
+        # vorrebbe dire rifiutare l'acquisto per una voce di catalogo
+        # disallineata, cioe' rompere la vendita per un dettaglio estetico.
+        order["gene_species"] = data.gene_species
         # I geni si consegnano uno per oggetto: la quantita' diventa il
         # numero di ordini, non un campo dentro l'ordine.
         total = unit * data.quantity
@@ -251,6 +278,7 @@ async def buy(
             "src": order["source"], "key": order["item_key"],
             "kind": order["kind"], "lvl": order["dino_level"],
             "trait": order["gene_trait"], "tier": order["gene_tier"],
+            "species": order["gene_species"],
         }
         if data.kind == "item" and lines:
             for _ in range(data.quantity):
@@ -280,9 +308,10 @@ async def buy(
                 "INSERT INTO ARKM_shop_orders "
                 "(eos_id, player_name, source, item_key, kind, blueprint, "
                 " quantity, quality, is_blueprint, dino_level, gene_trait, "
-                " gene_tier, price, status) "
+                " gene_tier, gene_species, price, status) "
                 "VALUES (:eos, :name, :src, :key, :kind, :bp, :qty, :qual, "
-                "        :isbp, :lvl, :trait, :tier, :price, 'pending')"),
+                "        :isbp, :lvl, :trait, :tier, :species, :price, "
+                "        'pending')"),
                 {**r, "price": total // n_orders})
         await db.commit()
     except HTTPException:
