@@ -1057,6 +1057,28 @@ export interface WebShopOrder {
   price: number; status: string; server_key: string
   last_error: string | null; created_at: string | null; claimed_at: string | null
 }
+/** Prezzi e limiti dello shop uova / embrioni (da ARKM_config, namespace
+ *  WebShop.Egg.* / WebShop.Embryo.*). null nel catalogo = shop non attivo. */
+export interface WebShopForgeConfig {
+  enabled: boolean
+  base_price: number
+  price_per_stat_point: number
+  price_per_mutation_point: number
+  price_per_color: number
+  price_gender_choice: number
+  max_per_stat: number
+  max_total_stats: number
+  max_per_mutation: number
+  max_total_mutations: number
+  max_traits: number
+  stat_index_note: string
+}
+/** Parametri di forgiatura di un acquisto egg/embryo (campi Egg* dell'item;
+ *  array indicizzati sui 12 slot stat ARK, tratti in forma Nome[0..2]). */
+export interface WebShopForgeParams {
+  stats: number[]; muts: number[]; colors: number[]
+  traits: string[]; gender: number
+}
 
 /**
  * Shop web: si compra qui, si ritira in gioco con /ritiro.
@@ -1066,15 +1088,25 @@ export interface WebShopOrder {
  * esistono venditori.
  */
 export const webShopApi = {
-  catalog: (kind?: "item" | "dino" | "gene") =>
+  catalog: (kind?: "item" | "dino" | "gene" | "egg" | "embryo") =>
     api.get<{ items: WebShopItem[]; genes: WebShopGene[];
-              gene_dinos: WebShopGeneDino[] }>(
+              gene_dinos: WebShopGeneDino[];
+              egg_shop: WebShopForgeConfig | null;
+              embryo_shop: WebShopForgeConfig | null }>(
       "/shop/catalog", { params: kind ? { kind } : undefined }),
-  buy: (kind: "item" | "dino" | "gene", key: string,
-        quantity = 1, geneTier = 1, geneSpecies = "") =>
+  buy: (kind: "item" | "dino" | "gene" | "egg" | "embryo", key: string,
+        quantity = 1, geneTier = 1, geneSpecies = "",
+        forge?: WebShopForgeParams) =>
     api.post<{ status: string; orders: number; spent: number }>(
-      "/shop/buy", { kind, key, quantity, gene_tier: geneTier,
-                     gene_species: geneSpecies }),
+      "/shop/buy", {
+        kind, key, quantity, gene_tier: geneTier,
+        gene_species: geneSpecies,
+        ...(forge ? {
+          egg_stats: forge.stats, egg_muts: forge.muts,
+          egg_colors: forge.colors, egg_traits: forge.traits,
+          egg_gender: forge.gender,
+        } : {}),
+      }),
   orders: () =>
     api.get<{ orders: WebShopOrder[]; pending: number }>("/shop/orders"),
   importArkshop: () =>

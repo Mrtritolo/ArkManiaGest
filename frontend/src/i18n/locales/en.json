@@ -2279,7 +2279,8 @@
       "history": "History",
       "shop": "Server shop",
       "genes": "GeneShop",
-      "orders": "My purchases"
+      "orders": "My purchases",
+      "forge": "Eggs & Embryos"
     },
     "searchPh": "Search by blueprint…",
     "sort": {
@@ -2340,6 +2341,41 @@
       "hideContent": "Hide contents",
       "geneSpecies": "Species:",
       "geneSpeciesNone": "None (scanner without species)"
+    },
+    "forge": {
+      "eggMode": "Fertilized eggs",
+      "embryoMode": "Embryos",
+      "disabled": "This shop is currently disabled.",
+      "species": "Species",
+      "speciesPick": "Pick a species…",
+      "embryoHint": "For gestating species (mammals): the embryo implants like an extracted one.",
+      "stats": "Wild stat points",
+      "muts": "Applied mutations",
+      "statLimits": "max {{per}} per stat, {{tot}} total",
+      "stat": {
+        "health": "Health",
+        "stamina": "Stamina",
+        "oxygen": "Oxygen",
+        "food": "Food",
+        "weight": "Weight",
+        "melee": "Melee"
+      },
+      "colors": "Colors (region ID)",
+      "colorsHint": "0 = random, ARK color ID 1-255",
+      "colorRegion": "Region {{n}}",
+      "gender": "Gender",
+      "genderAny": "Random",
+      "genderMale": "Male",
+      "genderFemale": "Female",
+      "traits": "Gene traits",
+      "traitsMax": "max {{n}}",
+      "traitPick": "Pick a trait…",
+      "traitAdd": "Add",
+      "points": "points",
+      "overLimit": "You exceeded the configured limits.",
+      "buy": "Forge & buy",
+      "confirmBuy": "Forge {{what}} for {{price}} points?",
+      "claimHint": "The egg/embryo arrives via /ritiro in game: the baby hatches with the stats, mutations, colors and traits chosen here."
     }
   },
   "auditLog": {

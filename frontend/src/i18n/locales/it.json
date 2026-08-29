@@ -2279,7 +2279,8 @@
       "history": "Storico",
       "shop": "Negozio",
       "genes": "GeneShop",
-      "orders": "I miei acquisti"
+      "orders": "I miei acquisti",
+      "forge": "Uova & Embrioni"
     },
     "searchPh": "Cerca per blueprint…",
     "sort": {
@@ -2340,6 +2341,41 @@
       "hideContent": "Nascondi contenuto",
       "geneSpecies": "Specie:",
       "geneSpeciesNone": "Nessuna (scanner senza specie)"
+    },
+    "forge": {
+      "eggMode": "Uova fecondate",
+      "embryoMode": "Embrioni",
+      "disabled": "Questo shop non e' attivo al momento.",
+      "species": "Specie",
+      "speciesPick": "Scegli la specie…",
+      "embryoHint": "Per le specie in gestazione (mammiferi): l'embrione si impianta come da estrazione.",
+      "stats": "Punti stat selvatici",
+      "muts": "Mutazioni applicate",
+      "statLimits": "max {{per}} per stat, {{tot}} totali",
+      "stat": {
+        "health": "Salute",
+        "stamina": "Stamina",
+        "oxygen": "Ossigeno",
+        "food": "Cibo",
+        "weight": "Peso",
+        "melee": "Danno"
+      },
+      "colors": "Colori (ID regione)",
+      "colorsHint": "0 = casuale, ID colore ARK 1-255",
+      "colorRegion": "Regione {{n}}",
+      "gender": "Sesso",
+      "genderAny": "Casuale",
+      "genderMale": "Maschio",
+      "genderFemale": "Femmina",
+      "traits": "Tratti genetici",
+      "traitsMax": "max {{n}}",
+      "traitPick": "Scegli un tratto…",
+      "traitAdd": "Aggiungi",
+      "points": "punti",
+      "overLimit": "Hai superato i limiti configurati.",
+      "buy": "Forgia e acquista",
+      "confirmBuy": "Forgiare {{what}} per {{price}} punti?",
+      "claimHint": "L'uovo/embrione arriva con /ritiro in gioco: il baby avra' stat, mutazioni, colori e tratti scelti qui."
     }
   },
   "auditLog": {

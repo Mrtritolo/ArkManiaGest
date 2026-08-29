@@ -16,21 +16,29 @@ import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, RefreshCw, ShoppingBag, Coins,
   Package, History, Search, Tag, X, Save, Ban,
-  Store, Dna, Inbox, ChevronDown, ChevronUp,
+  Store, Dna, Inbox, ChevronDown, ChevronUp, Egg,
 } from "lucide-react";
 import {
   marketApi, webShopApi,
   type MarketListedItem, type MarketMyItem, type MarketWallet,
   type MarketTransaction,
   type WebShopItem, type WebShopGene, type WebShopGeneDino,
-  type WebShopOrder,
+  type WebShopOrder, type WebShopForgeConfig,
 } from "../services/api";
 import { shopEntryThumbUrl } from "../utils/shopImage";
 import { ShopFallbackIcon } from "../utils/shopFallbackIcon";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 import type { AuthUser } from "../types";
 
-type TabKey = "browse" | "mine" | "history" | "shop" | "genes" | "orders";
+type TabKey = "browse" | "mine" | "history" | "shop" | "genes" | "forge" | "orders";
+
+/** I 6 slot stat esposti dal configuratore uova/embrioni, con l'indice ARK
+ *  reale nell'array Egg* a 12 slot (gli altri indici restano a zero). */
+const FORGE_STATS: { idx: number; key: string }[] = [
+  { idx: 0, key: "health" }, { idx: 1, key: "stamina" },
+  { idx: 3, key: "oxygen" }, { idx: 4, key: "food" },
+  { idx: 7, key: "weight" }, { idx: 8, key: "melee" },
+];
 
 interface MarketPageProps {
   embedded?: boolean;
@@ -95,6 +103,19 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   // prima il dino e poi il tratto, come si farebbe scansionando in gioco.
   const [shopGeneDinos, setShopGeneDinos] = useState<WebShopGeneDino[]>([]);
   const [geneSpecies, setGeneSpecies] = useState("");
+
+  // Shop uova / embrioni (configuratore "forge")
+  const [eggShopCfg, setEggShopCfg] = useState<WebShopForgeConfig | null>(null);
+  const [embryoShopCfg, setEmbryoShopCfg] = useState<WebShopForgeConfig | null>(null);
+  const [forgeMode, setForgeMode] = useState<"egg" | "embryo">("egg");
+  const [forgeSpecies, setForgeSpecies] = useState("");
+  const [forgeStats, setForgeStats] = useState<Record<number, number>>({});
+  const [forgeMuts, setForgeMuts] = useState<Record<number, number>>({});
+  const [forgeColors, setForgeColors] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const [forgeGender, setForgeGender] = useState(-1);
+  const [forgeTraits, setForgeTraits] = useState<string[]>([]);
+  const [forgeTraitPick, setForgeTraitPick] = useState("");
+  const [forgeTraitTier, setForgeTraitTier] = useState(0);
   // Quale pacchetto ha il dettaglio aperto. Uno alla volta: aprirne piu' di
   // uno trasforma la griglia in un muro di liste.
   const [openPack, setOpenPack] = useState<string | null>(null);
@@ -106,6 +127,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       setShopItems(r.data.items || []);
       setShopGenes(r.data.genes || []);
       setShopGeneDinos(r.data.gene_dinos || []);
+      setEggShopCfg(r.data.egg_shop || null);
+      setEmbryoShopCfg(r.data.embryo_shop || null);
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e));
     } finally {
@@ -237,7 +260,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   useEffect(() => {
     if (tab === "mine") loadMyItems();
     if (tab === "history") loadHistory();
-    if (tab === "shop" || tab === "genes") loadShop();
+    if (tab === "shop" || tab === "genes" || tab === "forge") loadShop();
     if (tab === "orders") loadShopOrders();
   }, [tab, loadMyItems, loadHistory, loadShop, loadShopOrders]);
 
@@ -401,6 +424,11 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
           <TabBtn active={tab === "genes"} onClick={() => setTab("genes")}
                   icon={<Dna size={14} />}
                   label={t("market.tab.genes")} />
+          {(eggShopCfg?.enabled || embryoShopCfg?.enabled) && (
+            <TabBtn active={tab === "forge"} onClick={() => setTab("forge")}
+                    icon={<Egg size={14} />}
+                    label={t("market.tab.forge")} />
+          )}
           <TabBtn active={tab === "orders"} onClick={() => setTab("orders")}
                   icon={<Inbox size={14} />}
                   label={shopPending > 0
@@ -635,6 +663,247 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             </div>
           </>
         )}
+
+        {/* TAB: Forgia uova / embrioni */}
+        {tab === "forge" && (() => {
+          const cfg = forgeMode === "egg" ? eggShopCfg : embryoShopCfg;
+          const statsArr = Array.from({ length: 12 }, (_, i) => forgeStats[i] || 0);
+          const mutsArr  = Array.from({ length: 12 }, (_, i) => forgeMuts[i] || 0);
+          const statsSum = statsArr.reduce((a, b) => a + b, 0);
+          const mutsSum  = mutsArr.reduce((a, b) => a + b, 0);
+          const colorsSet = forgeColors.filter(c => c > 0).length;
+          const traitPrice = forgeTraits.reduce((sum, tr) => {
+            const m = /^(.+)\[([0-2])\]$/.exec(tr);
+            const g = m && shopGenes.find(x => x.key === m[1]);
+            return sum + (g ? (g.prices[String(Number(m![2]) + 1)] || 0) : 0);
+          }, 0);
+          const price = cfg
+            ? cfg.base_price
+              + statsSum * cfg.price_per_stat_point
+              + mutsSum * cfg.price_per_mutation_point
+              + colorsSet * cfg.price_per_color
+              + (forgeGender >= 0 ? cfg.price_gender_choice : 0)
+              + traitPrice
+            : 0;
+          const overLimit = cfg !== null && (
+            statsArr.some(v => v > cfg.max_per_stat)
+            || statsSum > cfg.max_total_stats
+            || mutsArr.some(v => v > cfg.max_per_mutation)
+            || mutsSum > cfg.max_total_mutations
+            || forgeTraits.length > cfg.max_traits);
+
+          const doBuyForge = async () => {
+            if (!cfg || !forgeSpecies) return;
+            const speciesLabel = shopGeneDinos
+              .find(d => d.blueprint === forgeSpecies)?.label || "";
+            if (!window.confirm(t("market.forge.confirmBuy",
+                { what: speciesLabel, price }))) return;
+            setShopBusy("__forge"); setError(""); setSuccess("");
+            try {
+              const r = await webShopApi.buy(forgeMode,
+                `${forgeMode}:${speciesLabel}`.slice(0, 128), 1, 1,
+                forgeSpecies,
+                { stats: statsArr, muts: mutsArr, colors: forgeColors,
+                  traits: forgeTraits, gender: forgeGender });
+              setSuccess(t("market.shop.bought", { spent: r.data.spent }));
+              await Promise.all([loadWallet(), loadShopOrders()]);
+            } catch (e: any) {
+              setError(e.response?.data?.detail || String(e));
+            } finally {
+              setShopBusy(null);
+            }
+          };
+
+          return (
+          <>
+            {/* Selettore uovo / embrione */}
+            <div style={{ display: "flex", gap: 8, marginBottom: "0.7rem" }}>
+              {eggShopCfg?.enabled && (
+                <button
+                  className={forgeMode === "egg" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+                  onClick={() => setForgeMode("egg")}>
+                  <Egg size={13} /> {t("market.forge.eggMode")}
+                </button>
+              )}
+              {embryoShopCfg?.enabled && (
+                <button
+                  className={forgeMode === "embryo" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+                  onClick={() => setForgeMode("embryo")}>
+                  <Dna size={13} /> {t("market.forge.embryoMode")}
+                </button>
+              )}
+            </div>
+
+            {!cfg?.enabled ? (
+              <div className="alert alert-info">{t("market.forge.disabled")}</div>
+            ) : (
+            <div className="card" style={{ padding: "0.9rem", maxWidth: 760 }}>
+              {/* Specie */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "0.7rem", flexWrap: "wrap" }}>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600 }}>
+                  {t("market.forge.species")}
+                </label>
+                <select className="form-input" style={{ maxWidth: 280 }}
+                  value={forgeSpecies}
+                  onChange={e => setForgeSpecies(e.target.value)}>
+                  <option value="">{t("market.forge.speciesPick")}</option>
+                  {shopGeneDinos.map(d => (
+                    <option key={d.blueprint} value={d.blueprint}>{d.label}</option>
+                  ))}
+                </select>
+                {forgeMode === "embryo" && (
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                    {t("market.forge.embryoHint")}
+                  </span>
+                )}
+              </div>
+
+              {/* Stat selvatiche */}
+              <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
+                {t("market.forge.stats")} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                  ({t("market.forge.statLimits", { per: cfg.max_per_stat, tot: cfg.max_total_stats })})
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: "0.4rem", marginBottom: "0.7rem" }}>
+                {FORGE_STATS.map(s => (
+                  <label key={s.idx} style={{ fontSize: "0.7rem" }}>
+                    {t(`market.forge.stat.${s.key}`)}
+                    <input type="number" min={0} max={cfg.max_per_stat}
+                      className="form-input" style={{ width: "100%" }}
+                      value={forgeStats[s.idx] || 0}
+                      onChange={e => setForgeStats(p => ({ ...p,
+                        [s.idx]: Math.max(0, Number(e.target.value) || 0) }))} />
+                  </label>
+                ))}
+              </div>
+
+              {/* Mutazioni */}
+              <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
+                {t("market.forge.muts")} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                  ({t("market.forge.statLimits", { per: cfg.max_per_mutation, tot: cfg.max_total_mutations })})
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: "0.4rem", marginBottom: "0.7rem" }}>
+                {FORGE_STATS.map(s => (
+                  <label key={s.idx} style={{ fontSize: "0.7rem" }}>
+                    {t(`market.forge.stat.${s.key}`)}
+                    <input type="number" min={0} max={cfg.max_per_mutation}
+                      className="form-input" style={{ width: "100%" }}
+                      value={forgeMuts[s.idx] || 0}
+                      onChange={e => setForgeMuts(p => ({ ...p,
+                        [s.idx]: Math.max(0, Number(e.target.value) || 0) }))} />
+                  </label>
+                ))}
+              </div>
+
+              {/* Colori + sesso */}
+              <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "0.7rem" }}>
+                <div>
+                  <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
+                    {t("market.forge.colors")} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                      ({t("market.forge.colorsHint")})
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.3rem" }}>
+                    {forgeColors.map((c, i) => (
+                      <input key={i} type="number" min={0} max={255}
+                        className="form-input" style={{ width: 58 }}
+                        title={t("market.forge.colorRegion", { n: i })}
+                        value={c}
+                        onChange={e => setForgeColors(p => p.map((v, j) =>
+                          j === i ? Math.max(0, Math.min(255, Number(e.target.value) || 0)) : v))} />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
+                    {t("market.forge.gender")}
+                  </div>
+                  <select className="form-input" value={forgeGender}
+                    onChange={e => setForgeGender(Number(e.target.value))}>
+                    <option value={-1}>{t("market.forge.genderAny")}</option>
+                    <option value={1}>{t("market.forge.genderMale")}</option>
+                    <option value={2}>{t("market.forge.genderFemale")}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tratti genetici */}
+              <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
+                {t("market.forge.traits")} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                  ({t("market.forge.traitsMax", { n: cfg.max_traits })})
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.4rem" }}>
+                <select className="form-input" style={{ maxWidth: 240 }}
+                  value={forgeTraitPick}
+                  onChange={e => setForgeTraitPick(e.target.value)}>
+                  <option value="">{t("market.forge.traitPick")}</option>
+                  {shopGenes.map(g => (
+                    <option key={g.key} value={g.key}>{g.label}</option>
+                  ))}
+                </select>
+                <select className="form-input" value={forgeTraitTier}
+                  onChange={e => setForgeTraitTier(Number(e.target.value))}>
+                  {[0, 1, 2].map(tier => (
+                    <option key={tier} value={tier}>T{tier + 1}</option>
+                  ))}
+                </select>
+                <button className="btn btn-secondary btn-sm"
+                  disabled={!forgeTraitPick
+                    || forgeTraits.length >= cfg.max_traits}
+                  onClick={() => {
+                    const entry = `${forgeTraitPick}[${forgeTraitTier}]`;
+                    if (!forgeTraits.includes(entry))
+                      setForgeTraits(p => [...p, entry]);
+                  }}>
+                  {t("market.forge.traitAdd")}
+                </button>
+              </div>
+              {forgeTraits.length > 0 && (
+                <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+                  {forgeTraits.map(tr => (
+                    <span key={tr} style={{
+                      fontSize: "0.72rem", padding: "0.15rem 0.45rem",
+                      borderRadius: 10, background: "var(--accent-50, #2563eb12)",
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                    }}>
+                      {tr}
+                      <button onClick={() => setForgeTraits(p => p.filter(x => x !== tr))}
+                        style={{ background: "transparent", border: 0, cursor: "pointer", color: "inherit", padding: 0 }}>
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Prezzo + acquisto */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", borderTop: "1px solid var(--border)", paddingTop: "0.7rem" }}>
+                <span style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                  <Coins size={14} /> {price} {t("market.forge.points")}
+                </span>
+                {overLimit && (
+                  <span style={{ fontSize: "0.72rem", color: "var(--danger)" }}>
+                    {t("market.forge.overLimit")}
+                  </span>
+                )}
+                <button className="btn btn-primary" style={{ marginLeft: "auto" }}
+                  disabled={shopBusy !== null || !forgeSpecies || overLimit}
+                  onClick={doBuyForge}>
+                  {shopBusy === "__forge"
+                    ? <Loader2 size={13} className="pl-spin" />
+                    : <ShoppingBag size={13} />} {t("market.forge.buy")}
+                </button>
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 6 }}>
+                {t("market.forge.claimHint")}
+              </div>
+            </div>
+            )}
+          </>
+          );
+        })()}
 
         {/* TAB: I miei acquisti dallo shop */}
         {tab === "orders" && (

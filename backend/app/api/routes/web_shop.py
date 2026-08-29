@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -46,7 +47,97 @@ router = APIRouter()
 # dietro un bottone web significherebbe che una sessione del pannello puo'
 # farli eseguire sul server. In gioco il rischio e' minore perche' il comando
 # parte comunque da un giocatore presente.
-WEB_KINDS = ("item", "dino", "gene")
+WEB_KINDS = ("item", "dino", "gene", "egg", "embryo")
+
+# ── Shop uova / embrioni ──────────────────────────────────────────────────────
+#
+# Prezzi e limiti vivono in ARKM_config (namespace WebShop.Egg.* /
+# WebShop.Embryo.*, modificabili dal Config Editor del pannello); il prezzo
+# dei tratti riusa il listino del gene shop (ARKM_gene_traits, stessa
+# economia). La consegna la fa ARKM-Marketplace >= 7.5.0: l'item della specie
+# lo ricava il plugin dal CDO del dino, qui viaggiano solo specie e parametri.
+
+_FORGE_DEFAULTS = {
+    "Enabled":             "true",
+    "BasePrice":           "500",
+    "PricePerStatPoint":   "10",
+    "PricePerMutationPoint": "25",
+    "PricePerColor":       "50",
+    "PriceGenderChoice":   "100",
+    "MaxPerStat":          "60",
+    "MaxTotalStats":       "300",
+    "MaxPerMutation":      "20",
+    "MaxTotalMutations":   "60",
+    "MaxTraits":           "3",
+}
+
+# Ordine ARK degli indici stat negli array Egg* (12 slot). Solo informativo
+# per la UI: il backend valida sui limiti, non sui nomi.
+_EGG_STAT_INDEX_NOTE = (
+    "0=Health 1=Stamina 2=Torpidity 3=Oxygen 4=Food 5=Water 6=Temperature "
+    "7=Weight 8=Melee 9=Speed 10=Fortitude 11=Crafting"
+)
+
+
+async def _forge_config(db: AsyncSession, shop: str) -> dict:
+    """Config di uno dei due shop ('Egg' | 'Embryo') con i default."""
+    cfg = dict(_FORGE_DEFAULTS)
+    try:
+        rows = await db.execute(text(
+            "SELECT config_key, config_value FROM ARKM_config "
+            "WHERE server_key = '*' AND config_key LIKE :p"),
+            {"p": f"WebShop.{shop}.%"})
+        prefix_len = len(f"WebShop.{shop}.")
+        for k, v in rows.fetchall():
+            cfg[k[prefix_len:]] = v
+    except Exception:
+        log.info("web_shop: ARKM_config non leggibile, default forge in uso")
+
+    def _i(name: str) -> int:
+        try:
+            return int(cfg[name])
+        except Exception:
+            return int(_FORGE_DEFAULTS[name])
+
+    return {
+        "enabled": str(cfg["Enabled"]).strip().lower() in ("true", "1", "yes"),
+        "base_price": _i("BasePrice"),
+        "price_per_stat_point": _i("PricePerStatPoint"),
+        "price_per_mutation_point": _i("PricePerMutationPoint"),
+        "price_per_color": _i("PricePerColor"),
+        "price_gender_choice": _i("PriceGenderChoice"),
+        "max_per_stat": _i("MaxPerStat"),
+        "max_total_stats": _i("MaxTotalStats"),
+        "max_per_mutation": _i("MaxPerMutation"),
+        "max_total_mutations": _i("MaxTotalMutations"),
+        "max_traits": _i("MaxTraits"),
+        "stat_index_note": _EGG_STAT_INDEX_NOTE,
+    }
+
+
+_forge_columns_ok: Optional[bool] = None
+
+
+async def _forge_supported(db: AsyncSession) -> bool:
+    """
+    True se ARKM_shop_orders ha le colonne egg_* (plugin >= 7.5.0).
+
+    Controllo PRIMA di scalare i punti: su un plugin vecchio la INSERT
+    fallirebbe dopo l'addebito, cioe' il giocatore paga e non riceve.
+    Cache per-processo: le colonne compaiono con un deploy, non spariscono.
+    """
+    global _forge_columns_ok
+    if _forge_columns_ok:
+        return True
+    try:
+        row = (await db.execute(text(
+            "SELECT COUNT(*) FROM information_schema.columns "
+            "WHERE table_name = 'ARKM_shop_orders' "
+            "AND column_name = 'egg_stats'"))).fetchone()
+        _forge_columns_ok = bool(row and row[0])
+    except Exception:
+        _forge_columns_ok = False
+    return bool(_forge_columns_ok)
 
 
 def _lines_of(items_json: Optional[str]) -> list[dict]:
@@ -71,7 +162,7 @@ def _lines_of(items_json: Optional[str]) -> list[dict]:
 
 @router.get("/catalog")
 async def catalog(
-    kind: Optional[str] = Query(None, description="item | dino | gene"),
+    kind: Optional[str] = Query(None, description="item | dino | gene | egg | embryo"),
     db: AsyncSession = Depends(get_plugin_db),
     panel_db: AsyncSession = Depends(get_db),
 ):
@@ -143,7 +234,7 @@ async def catalog(
     # stesso che alimenta il picker dei rare dino — nessuna lista a mano da
     # tenere allineata.
     gene_dinos: list[dict] = []
-    if kind in (None, "gene"):
+    if kind in (None, "gene", "egg", "embryo"):
         try:
             rows = await panel_db.execute(text(
                 "SELECT name, blueprint FROM ARKM_blueprints "
@@ -162,20 +253,42 @@ async def catalog(
         except Exception:
             log.info("web_shop: ARKM_blueprints non disponibile")
 
-    return {"items": items, "genes": genes, "gene_dinos": gene_dinos}
+    # Shop uova / embrioni: prezzi e limiti per il configuratore. La lista
+    # specie e' la stessa gene_dinos (creature reali, gia' filtrate).
+    egg_shop = None
+    embryo_shop = None
+    if kind in (None, "egg"):
+        egg_shop = await _forge_config(db, "Egg")
+    if kind in (None, "embryo"):
+        embryo_shop = await _forge_config(db, "Embryo")
+
+    return {"items": items, "genes": genes, "gene_dinos": gene_dinos,
+            "egg_shop": egg_shop, "embryo_shop": embryo_shop}
 
 
 # ── Acquisto ──────────────────────────────────────────────────────────────────
 
 class BuyRequest(BaseModel):
     kind: str
-    key: str
+    # Chiave di catalogo per item/dino/gene; per egg/embryo non c'e' un
+    # catalogo e il campo porta un'etichetta libera (finisce in item_key
+    # dell'ordine, solo per leggibilita' nello storico).
+    key: str = ""
     quantity: int = Field(1, ge=1, le=100)
     gene_tier: int = Field(1, ge=1, le=3)
-    # Path del blueprint del dino da cui il tratto risulta prelevato. Solo
-    # per kind='gene': il plugin ne ricava la DinoEntry da scrivere nello
-    # scanner. Vuoto = scanner senza specie, che si consegna lo stesso.
+    # Path del blueprint del dino. Per kind='gene' e' la specie da cui il
+    # tratto risulta prelevato (vuoto = scanner senza specie); per
+    # kind='egg'/'embryo' e' la specie da forgiare ed e' OBBLIGATORIO.
     gene_species: str = Field("", max_length=512)
+    # Parametri di forgiatura, solo per kind='egg'/'embryo' (campi Egg*
+    # dell'item, vedi ARKM-Marketplace/EggForge). Indici stat: 0=Health
+    # 1=Stamina 2=Torpidity 3=Oxygen 4=Food 5=Water 6=Temperature 7=Weight
+    # 8=Melee 9=Speed 10=Fortitude 11=Crafting.
+    egg_stats:  list[int] = Field(default_factory=list, max_length=12)
+    egg_muts:   list[int] = Field(default_factory=list, max_length=12)
+    egg_colors: list[int] = Field(default_factory=list, max_length=6)
+    egg_traits: list[str] = Field(default_factory=list, max_length=12)
+    egg_gender: int = Field(-1, ge=-1, le=2)   # -1=casuale, 1=maschio, 2=femmina
 
 
 @router.post("/buy")
@@ -224,6 +337,74 @@ async def buy(
         order["gene_species"] = data.gene_species
         # I geni si consegnano uno per oggetto: la quantita' diventa il
         # numero di ordini, non un campo dentro l'ordine.
+        total = unit * data.quantity
+    elif data.kind in ("egg", "embryo"):
+        # Capability check PRIMA dell'addebito: su un plugin senza colonne
+        # egg_* la INSERT fallirebbe a punti gia' scalati.
+        if not await _forge_supported(db):
+            raise HTTPException(
+                status_code=503,
+                detail="Shop uova/embrioni non ancora attivo: i server di "
+                       "gioco non sono aggiornati (ARKM-Marketplace >= 7.5.0).")
+
+        shop = "Egg" if data.kind == "egg" else "Embryo"
+        cfg = await _forge_config(db, shop)
+        if not cfg["enabled"]:
+            raise HTTPException(status_code=403, detail="Shop disabilitato.")
+        if not data.gene_species.strip():
+            raise HTTPException(status_code=422, detail="Scegli una specie.")
+
+        stats  = [max(0, int(v)) for v in data.egg_stats]
+        muts   = [max(0, int(v)) for v in data.egg_muts]
+        colors = [max(0, min(255, int(v))) for v in data.egg_colors]
+
+        if any(v > cfg["max_per_stat"] for v in stats):
+            raise HTTPException(status_code=422,
+                detail=f"Max {cfg['max_per_stat']} punti per stat.")
+        if sum(stats) > cfg["max_total_stats"]:
+            raise HTTPException(status_code=422,
+                detail=f"Max {cfg['max_total_stats']} punti stat totali.")
+        if any(v > cfg["max_per_mutation"] for v in muts):
+            raise HTTPException(status_code=422,
+                detail=f"Max {cfg['max_per_mutation']} mutazioni per stat.")
+        if sum(muts) > cfg["max_total_mutations"]:
+            raise HTTPException(status_code=422,
+                detail=f"Max {cfg['max_total_mutations']} mutazioni totali.")
+        if len(data.egg_traits) > cfg["max_traits"]:
+            raise HTTPException(status_code=422,
+                detail=f"Max {cfg['max_traits']} tratti.")
+
+        # Tratti "Nome[tier]": validati e prezzati sul listino del gene shop
+        # (tier zero-based nel suffisso, colonne cost_t1..t3).
+        traits_price = 0
+        for t in data.egg_traits:
+            m = re.fullmatch(r"([A-Za-z0-9_]+)\[([0-2])\]", t.strip())
+            if not m:
+                raise HTTPException(status_code=422,
+                    detail=f"Tratto malformato: {t} (atteso Nome[0..2]).")
+            row = (await db.execute(text(
+                "SELECT cost_t1, cost_t2, cost_t3 FROM ARKM_gene_traits "
+                "WHERE internal_name = :n"), {"n": m.group(1)})).fetchone()
+            if not row:
+                raise HTTPException(status_code=422,
+                    detail=f"Tratto sconosciuto: {m.group(1)}.")
+            traits_price += row[int(m.group(2))]
+
+        unit = (cfg["base_price"]
+                + sum(stats)  * cfg["price_per_stat_point"]
+                + sum(muts)   * cfg["price_per_mutation_point"]
+                + sum(1 for c in colors if c > 0) * cfg["price_per_color"]
+                + (cfg["price_gender_choice"] if data.egg_gender >= 0 else 0)
+                + traits_price)
+
+        order["source"] = "eggshop" if data.kind == "egg" else "embryoshop"
+        order["gene_species"] = data.gene_species
+        order["egg_stats"]  = ",".join(str(v) for v in stats)
+        order["egg_muts"]   = ",".join(str(v) for v in muts)
+        order["egg_colors"] = ",".join(str(v) for v in colors)
+        order["egg_traits"] = ",".join(t.strip() for t in data.egg_traits)
+        order["egg_gender"] = data.egg_gender if data.egg_gender >= 0 else -1
+        # Un uovo per ordine, come dino e geni.
         total = unit * data.quantity
     else:
         row = (await db.execute(text(
@@ -299,7 +480,8 @@ async def buy(
                         "qual": int(ln.get("Quality", 0) or 0),
                         "isbp": 1 if ln.get("ForceBlueprint", False) else 0})
         else:
-            n = data.quantity if data.kind in ("dino", "gene") else 1
+            n = (data.quantity
+                 if data.kind in ("dino", "gene", "egg", "embryo") else 1)
             for _ in range(n):
                 rows_to_queue.append({**base,
                     "bp": order["blueprint"], "qty": order["quantity"],
@@ -314,15 +496,35 @@ async def buy(
 
         n_orders = len(rows_to_queue)
         for r in rows_to_queue:
-            await db.execute(text(
-                "INSERT INTO ARKM_shop_orders "
-                "(eos_id, player_name, source, item_key, kind, blueprint, "
-                " quantity, quality, is_blueprint, dino_level, gene_trait, "
-                " gene_tier, gene_species, price, status) "
-                "VALUES (:eos, :name, :src, :key, :kind, :bp, :qty, :qual, "
-                "        :isbp, :lvl, :trait, :tier, :species, :price, "
-                "        'pending')"),
-                {**r, "price": total // n_orders})
+            if data.kind in ("egg", "embryo"):
+                # INSERT esteso con i parametri di forgiatura. Solo per
+                # questi kind: cosi' i kind classici continuano a funzionare
+                # anche su un plugin non ancora aggiornato alle colonne egg_*.
+                await db.execute(text(
+                    "INSERT INTO ARKM_shop_orders "
+                    "(eos_id, player_name, source, item_key, kind, blueprint, "
+                    " quantity, quality, is_blueprint, dino_level, gene_trait, "
+                    " gene_tier, gene_species, egg_stats, egg_muts, "
+                    " egg_colors, egg_traits, egg_gender, price, status) "
+                    "VALUES (:eos, :name, :src, :key, :kind, :bp, :qty, "
+                    "        :qual, :isbp, :lvl, :trait, :tier, :species, "
+                    "        :estats, :emuts, :ecolors, :etraits, :egender, "
+                    "        :price, 'pending')"),
+                    {**r, "price": total // n_orders,
+                     "estats": order["egg_stats"], "emuts": order["egg_muts"],
+                     "ecolors": order["egg_colors"],
+                     "etraits": order["egg_traits"],
+                     "egender": order["egg_gender"]})
+            else:
+                await db.execute(text(
+                    "INSERT INTO ARKM_shop_orders "
+                    "(eos_id, player_name, source, item_key, kind, blueprint, "
+                    " quantity, quality, is_blueprint, dino_level, gene_trait, "
+                    " gene_tier, gene_species, price, status) "
+                    "VALUES (:eos, :name, :src, :key, :kind, :bp, :qty, :qual, "
+                    "        :isbp, :lvl, :trait, :tier, :species, :price, "
+                    "        'pending')"),
+                    {**r, "price": total // n_orders})
         await db.commit()
     except HTTPException:
         # Gia' gestita sopra (rollback incluso): non e' un errore da

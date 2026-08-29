@@ -7,6 +7,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.11.0] - 2026-08-29
+
+### Added
+
+- **Fertilized-egg and embryo shops.** The Market page gains a forge tab
+  where players configure a fertilized egg (or an embryo, for gestating
+  species) — species, wild stat points, applied mutations, colors,
+  gender and gene traits — and buy it with ArkShop points. Prices and
+  limits are driven by `ARKM_config` (`WebShop.Egg.*` /
+  `WebShop.Embryo.*`, editable from the Config Editor); trait prices
+  reuse the gene-shop price list. The price is always recomputed
+  server-side. Delivery happens in game via `/ritiro`
+  (ARKM-Marketplace ≥ 7.5.0: the plugin derives the species' egg or
+  embryo item from the dino class itself); the panel refuses the
+  purchase with a clean 503 while the game servers are not updated,
+  before any points are charged.
+
 ## [4.10.1] - 2026-08-29
 
 ### Fixed
