@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkRareDinosApi, blueprintsApi } from '../services/api'
+import { copyText } from '../utils/clipboard'
 import {
   Eye, Plus, Trash2, Edit2, Save, X, AlertCircle, Search,
   ToggleLeft, ToggleRight, Copy, Filter, Activity, Shuffle, Loader2
@@ -479,7 +480,7 @@ export default function RareDinosPage() {
                 <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.edit')}>
                   <Edit2 size={14} />
                 </button>
-                <button onClick={() => { navigator.clipboard.writeText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.copyBp')}>
+                <button onClick={() => { void copyText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.copyBp')}>
                   <Copy size={14} />
                 </button>
                 <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} title={t('rareDinos.tooltip.delete')}>

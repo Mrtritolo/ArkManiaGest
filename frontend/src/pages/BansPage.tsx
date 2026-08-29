@@ -5,6 +5,8 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkBansApi } from '../services/api'
+import { fmtCompactDateTime } from '../utils/format'
+import { copyText } from '../utils/clipboard'
 import {
   Ban, Search, Plus, XCircle, AlertCircle, X, Shield,
   Clock, UserX, CheckCircle, Copy, ChevronDown
@@ -14,15 +16,6 @@ interface BanItem {
   id: number; eos_id: string; player_name: string | null; reason: string
   banned_by: string; ban_time: string; expire_time: string | null
   is_active: boolean; unbanned_by: string | null; unban_time: string | null
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' }) +
-      ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  } catch { return iso.slice(0, 16) }
 }
 
 export default function BansPage() {
@@ -241,7 +234,7 @@ export default function BansPage() {
 
                 {/* Date */}
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  {formatDate(ban.ban_time)}
+                  {fmtCompactDateTime(ban.ban_time)}
                 </span>
 
                 {/* Expire */}
@@ -252,7 +245,7 @@ export default function BansPage() {
                     background: ban.expire_time ? 'var(--warning-bg)' : 'var(--danger-bg)',
                     color: ban.expire_time ? 'var(--warning)' : 'var(--danger)',
                   }}>
-                    {ban.expire_time ? formatDate(ban.expire_time) : t('bans.permanent')}
+                    {ban.expire_time ? fmtCompactDateTime(ban.expire_time) : t('bans.permanent')}
                   </span>
                 </div>
 
@@ -264,7 +257,7 @@ export default function BansPage() {
                       <CheckCircle size={14} /> {t('bans.unbanButton')}
                     </button>
                   )}
-                  <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(ban.eos_id) }}
+                  <button onClick={e => { e.stopPropagation(); void copyText(ban.eos_id) }}
                     className="btn btn-ghost" style={{ padding: '0.25rem 0.35rem' }} title={t('bans.copyEosTooltip')}>
                     <Copy size={13} />
                   </button>
@@ -285,12 +278,12 @@ export default function BansPage() {
                     </div>
                     <div>
                       <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.bannedAt')}</span>
-                      <div style={{ marginTop: 2 }}>{formatDate(ban.ban_time)}</div>
+                      <div style={{ marginTop: 2 }}>{fmtCompactDateTime(ban.ban_time)}</div>
                     </div>
                     {ban.expire_time && (
                       <div>
                         <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.expires')}</span>
-                        <div style={{ marginTop: 2 }}>{formatDate(ban.expire_time)}</div>
+                        <div style={{ marginTop: 2 }}>{fmtCompactDateTime(ban.expire_time)}</div>
                       </div>
                     )}
                     {!ban.is_active && ban.unbanned_by && (
@@ -301,7 +294,7 @@ export default function BansPage() {
                         </div>
                         <div>
                           <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{t('bans.detail.unbannedAt')}</span>
-                          <div style={{ marginTop: 2 }}>{formatDate(ban.unban_time)}</div>
+                          <div style={{ marginTop: 2 }}>{fmtCompactDateTime(ban.unban_time)}</div>
                         </div>
                       </>
                     )}

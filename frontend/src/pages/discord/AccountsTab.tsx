@@ -28,6 +28,8 @@ import {
   discordApi, usersApi,
   type DiscordAccount, type DiscordPlayerSearchHit,
 } from "../../services/api";
+import { extractError } from "../../utils/errors";
+import { fmtDateTime } from "../../utils/format";
 import type { AuthUser } from "../../types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -38,16 +40,6 @@ function avatarUrl(userId: string, hash: string | null): string | null {
   // Animated avatars start with "a_"; use .gif for those, .png otherwise.
   const ext = hash.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${userId}/${hash}.${ext}?size=64`;
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -253,7 +245,7 @@ export default function AccountsTab() {
                   </td>
 
                   <td style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-                    {fmtDate(acc.linked_at)}
+                    {fmtDateTime(acc.linked_at)}
                   </td>
 
                   <td></td>
@@ -593,12 +585,4 @@ function ModalShell({
       </div>
     </div>
   );
-}
-
-function extractError(err: unknown, fallback: string): string {
-  const msg =
-    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    ?? (err as { message?: string })?.message
-    ?? fallback;
-  return typeof msg === "string" ? msg : fallback;
 }

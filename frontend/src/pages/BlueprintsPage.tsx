@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { blueprintsApi } from '../services/api'
 import { arkItemThumbUrl } from '../utils/arkItem'
+import { fmtLocaleDateTime } from '../utils/format'
+import { copyText } from '../utils/clipboard'
 
 interface BpItem {
   id: number; name: string; blueprint: string; category: string
@@ -311,8 +313,7 @@ export default function BlueprintsPage() {
     }
   }
 
-  function copyBp(bp: string) { navigator.clipboard.writeText(bp); setCopied(bp) }
-  function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString(undefined) : t('blueprints.never') }
+  function copyBp(bp: string) { void copyText(bp); setCopied(bp) }
 
   // ── Category editing ──────────────────────────────────────────
   async function saveCategoryEdit(bpId: number) {
@@ -482,7 +483,7 @@ export default function BlueprintsPage() {
         <div className="page-header-text">
           <h1 className="page-title"><Database size={22} /> {t('blueprints.heading')}</h1>
           <p className="page-subtitle">
-            {t('blueprints.subtitleFilled', { count: totalBp.toLocaleString(undefined), date: fmtDate(lastSync) })}
+            {t('blueprints.subtitleFilled', { count: totalBp.toLocaleString(undefined), date: fmtLocaleDateTime(lastSync, t('blueprints.never')) })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>

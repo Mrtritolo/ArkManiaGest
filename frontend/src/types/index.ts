@@ -268,33 +268,6 @@ export interface PlayerMapResult {
   player_name: string | null;
 }
 
-export interface PlayerMapSearchResponse {
-  eos_id: string;
-  maps: PlayerMapResult[];
-  total: number;
-  errors: string[];
-}
-
-export interface CopyCharacterRequest {
-  source_machine_id: number;
-  source_container: string;
-  source_profile_path: string;
-  dest_machine_id: number;
-  dest_container: string;
-  dest_map_name: string;
-  backup?: boolean;
-}
-
-export interface CopyCharacterResponse {
-  success: boolean;
-  source_path: string;
-  filename: string;
-  dest_path: string;
-  backup_path: string | null;
-  overwritten: boolean;
-  size: number;
-}
-
 export interface PermissionGroupItem {
   id: number;
   group_name: string;

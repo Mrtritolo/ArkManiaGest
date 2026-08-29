@@ -42,13 +42,7 @@ const _PREFIX_PATTERNS = [
  */
 const _NAME_OVERRIDES: Record<string, string> = {
   // raw -> wiki page name
-  "Raw Meat":       "Raw Meat",
-  "Cooked Meat":    "Cooked Meat",
-  "Wood":           "Wood",
-  "Stone":          "Stone",
-  "Thatch":         "Thatch",
   "Fiber":          "Fibers",                // wiki uses plural
-  "Hide":           "Hide",
   "Cementing Paste":"Chitin or Keratin",     // approximation
   // add more as the operator reports broken images
 };
@@ -171,14 +165,4 @@ export function arkItemThumbUrl(blueprint: string): string | null {
   const name = arkItemDisplayName(blueprint);
   if (!name || name === "?") return null;
   return `/api/v1/market/thumb/${encodeURIComponent(name)}`;
-}
-
-/**
- * @deprecated Use arkItemThumbUrl instead -- same-origin cached.
- * Kept temporarily so any in-flight code that still imports this
- * compiles; will be removed in v3.6.0.
- */
-export function arkWikiImageUrl(blueprint: string, size = 96): string | null {
-  void size;
-  return arkItemThumbUrl(blueprint);
 }

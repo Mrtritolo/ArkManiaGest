@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkDecayApi, serverInstancesApi } from '../services/api'
+import { fmtShortDateTime } from '../utils/format'
 import type { ServerInstance } from '../types'
 import {
   Timer, Search, AlertCircle, AlertTriangle, CheckCircle, Clock,
@@ -40,12 +41,6 @@ interface LogItem {
 interface DecayStats {
   total: number; expired: number; expiring_soon: number; safe: number
   pending: number; purged_last_7d: number
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return '—'
-  try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) }
-  catch { return iso.slice(0, 16) }
 }
 
 /** Whole days elapsed since an ISO datetime; null when absent. */
@@ -482,7 +477,7 @@ export default function DecayPage() {
                     </div>
                     <span style={{ fontSize: '0.82rem' }}>{tr.last_refresh_group || t('decay.defaultGroup')}</span>
                     <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{tr.last_refresh_days}g</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(tr.expire_time)}</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(tr.expire_time)}</span>
                     <div style={{ textAlign: 'center' }}>
                       <span style={{
                         fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: 4,
@@ -557,7 +552,7 @@ export default function DecayPage() {
                         ? <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{t('decay.pending.daysAgo', { d: gg })} ⚠</span>
                         : <span style={{ color: 'var(--text-muted)' }}>{t('decay.pending.daysAgo', { d: gg })}</span>}
                   </span>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(p.flagged_at)}</span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(p.flagged_at)}</span>
                   <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end', alignItems: 'center' }}>
                     {/* Icon-only group: five labelled buttons per row made the
                         table unreadable. Every button names its target server
@@ -730,7 +725,7 @@ export default function DecayPage() {
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: l.structures_destroyed > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{l.structures_destroyed}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: l.dinos_destroyed > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{l.dinos_destroyed}</span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{l.purged_by}</span>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDate(l.purged_at)}</span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(l.purged_at)}</span>
                 </div>
               ))}
             </>

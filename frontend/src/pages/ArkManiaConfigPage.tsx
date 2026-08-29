@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
 import { arkmaniaApi, blueprintsApi } from '../services/api'
+import { copyText } from '../utils/clipboard'
 import {
   Settings, Save, Search, Server, RotateCcw, AlertCircle, Check, Download,
   LogIn, Zap, Eye, Package, Shield, Heart, MessageSquare, Timer, Bell, MessageCircle, Trophy,
@@ -280,7 +281,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
     setBpSearch(''); setBpResults([]); setPasteValue(''); setShowPaste(false)
   }
   function removeBp(idx: number) { onChange(JSON.stringify(items.filter((_, i) => i !== idx))) }
-  function copyBp(bp: string) { navigator.clipboard.writeText(bp) }
+  function copyBp(bp: string) { void copyText(bp) }
 
   function extractName(bp: string) {
     const m = bp.match(/\.([^.]+)'?$/)

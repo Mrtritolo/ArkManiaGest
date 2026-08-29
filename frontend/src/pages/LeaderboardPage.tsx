@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkLeaderboardApi } from '../services/api'
+import { fmtShortDateTime } from '../utils/format'
 import {
   Trophy, Search, Crosshair, Heart, Hammer, Skull, Users, Activity,
   AlertCircle, RefreshCw, ChevronDown, Trash2
@@ -35,15 +36,6 @@ const EVENT_COLORS: Record<number, string> = {
 }
 const EVENT_ICONS: Record<number, string> = {
   1: '🗡️', 2: '⚔️', 3: '☠️', 4: '🦎', 5: '🔨', 6: '💥', 7: '💀',
-}
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' +
-           d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  } catch { return iso.slice(0, 16) }
 }
 
 function fmtServer(key: string) {
@@ -306,7 +298,7 @@ export default function LeaderboardPage() {
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.crafts > 0 ? '#3b82f6' : 'var(--text-muted)' }}>{s.crafts}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.structs_destroyed > 0 ? '#8b5cf6' : 'var(--text-muted)' }}>{s.structs_destroyed}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.deaths > 0 ? '#6b7280' : 'var(--text-muted)' }}>{s.deaths}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtDate(s.last_event)}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(s.last_event)}</span>
                   </div>
                 ))}
               </>
@@ -364,7 +356,7 @@ export default function LeaderboardPage() {
                       {ev.target_name || '—'}
                     </span>
                     <span style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 600 }}>{fmtServer(ev.server_key)}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtDate(ev.created_at)}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(ev.created_at)}</span>
                   </div>
                 ))}
               </>

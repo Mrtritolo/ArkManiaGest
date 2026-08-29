@@ -121,42 +121,6 @@ def _find_container(containers_map: dict, machine_id: int, container_name: str) 
     )
 
 
-# ── Debug ─────────────────────────────────────────────────────────────────────
-
-@router.get("/debug")
-async def debug_containers_map():
-    """
-    Return a human-readable summary of the persisted container map.
-
-    Useful for verifying what paths were discovered during the last scan
-    without triggering a new SSH connection.
-    """
-    containers_map = _load_containers_map()
-    summary = [
-        {
-            "machine_id":          mid,
-            "machine_name":        mdata.get("machine_name"),
-            "container":           c.get("name"),
-            "path_keys":           list(c.get("paths", {}).keys()),
-            "has_saved_arks":      "saved_arks" in c.get("paths", {}),
-            "saved_arks_path":     c.get("paths", {}).get("saved_arks"),
-            "saved_arks_contents": c.get("saved_arks_contents", []),
-            "map_dirs":            c.get("map_dirs", []),
-            "plugins":             c.get("plugins", []),
-            "map_name":            c.get("map_name"),
-            "profile_count":       c.get("profile_count", 0),
-            "save_files":          c.get("save_files", []),
-        }
-        for mid, mdata in containers_map.get("machines", {}).items()
-        for c in mdata.get("containers", [])
-    ]
-    return {
-        "last_scan":        containers_map.get("last_scan"),
-        "machines_count":   len(containers_map.get("machines", {})),
-        "containers_summary": summary,
-    }
-
-
 # ── Scan endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/machines/{machine_id}/scan")

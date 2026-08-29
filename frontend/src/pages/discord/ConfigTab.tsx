@@ -32,18 +32,8 @@ import {
   type DiscordConfigStatus, type DiscordGuildInfo,
   type VipSyncReport,
 } from "../../services/api";
-
-function extractError(err: unknown, fallback: string): string {
-  const msg =
-    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    ?? (err as { message?: string })?.message
-    ?? fallback;
-  return typeof msg === "string" ? msg : fallback;
-}
-
-async function copy(text: string): Promise<void> {
-  try { await navigator.clipboard.writeText(text); } catch { /* best-effort */ }
-}
+import { extractError } from "../../utils/errors";
+import { copyText } from "../../utils/clipboard";
 
 export default function ConfigTab() {
   const { t } = useTranslation();
@@ -124,7 +114,7 @@ export default function ConfigTab() {
       >
         <KV label={t("discord.config.field.clientId")}
             value={config.client_id || "—"}
-            onCopy={config.client_id ? () => { copy(config.client_id); setCopied("client_id"); } : undefined}
+            onCopy={config.client_id ? () => { copyText(config.client_id); setCopied("client_id"); } : undefined}
             copied={copied === "client_id"}
         />
         <KV label={t("discord.config.field.publicKey")}
@@ -137,7 +127,7 @@ export default function ConfigTab() {
               : t("discord.config.hint.redirectRegister")
             }
             onCopy={config.redirect_uri
-              ? () => { copy(config.redirect_uri); setCopied("redirect_uri"); }
+              ? () => { copyText(config.redirect_uri); setCopied("redirect_uri"); }
               : undefined}
             copied={copied === "redirect_uri"}
         />
@@ -161,7 +151,7 @@ export default function ConfigTab() {
       >
         <KV label={t("discord.config.field.guildId")}
             value={config.guild_id || "—"}
-            onCopy={config.guild_id ? () => { copy(config.guild_id); setCopied("guild_id"); } : undefined}
+            onCopy={config.guild_id ? () => { copyText(config.guild_id); setCopied("guild_id"); } : undefined}
             copied={copied === "guild_id"}
         />
         <KV label={t("discord.config.field.botToken")}

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle, DownloadCloud, AlertTriangle } from 'lucide-react'
 import { settingsApi, systemApi, systemUpdateApi } from '../services/api'
 import type { SystemUpdatePreflight, SystemUpdateStatus } from '../services/api'
+import { extractError } from '../utils/errors'
 import type { AppSettings, VersionCheckResult } from '../types'
 
 interface HealthInfo {
@@ -107,9 +108,7 @@ export default function GeneralSettingsPage() {
       // Kick one immediate poll so the UI updates right away.
       pollUpdateStatus()
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? (err instanceof Error ? err.message : 'install failed')
+      const detail = extractError(err, 'install failed')
       setInstallError(detail)
       setInstalling(false)
     }
@@ -121,9 +120,7 @@ export default function GeneralSettingsPage() {
       const res = await settingsApi.checkVersion(force)
       setVersionInfo(res.data)
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? (err instanceof Error ? err.message : 'error')
+      const detail = extractError(err, 'error')
       setVersionInfo({
         current: health?.version ?? '',
         current_commit: null,
@@ -184,9 +181,7 @@ export default function GeneralSettingsPage() {
       setMessage(t('generalSettings.saved'))
       setTimeout(() => setMessage(''), 3000)
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? (err instanceof Error ? err.message : t('generalSettings.saveFailed'))
+      const detail = extractError(err, t('generalSettings.saveFailed'))
       setIsError(true)
       setMessage(`${t('generalSettings.errorPrefix')}: ${detail}`)
     } finally {

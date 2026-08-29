@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { settingsApi } from '../services/api'
+import { extractError } from '../utils/errors'
 
 interface SetupWizardProps {
   /** Called when setup completes successfully. */
@@ -62,9 +63,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       })
       onComplete()
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? (err instanceof Error ? err.message : t('setup.errorGeneric'))
+      const detail = extractError(err, t('setup.errorGeneric'))
       setError(detail)
     } finally {
       setCreating(false)

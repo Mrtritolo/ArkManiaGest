@@ -11,10 +11,6 @@ Route ordering note:
     /{player_id} route to prevent interception.
 """
 
-import asyncio
-import base64
-import json
-import os
 from typing import List, Optional
 from datetime import datetime
 
@@ -27,7 +23,7 @@ from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer, PermissionGroup, TribePermission
 from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
-from app.ssh.profile_parser import scan_and_match_profiles, extract_player_data, scan_and_match_tribes
+from app.ssh.profile_parser import scan_and_match_profiles, scan_and_match_tribes
 from app.schemas.players import (
     PlayerFull, PlayerListItem, PlayerUpdate, PlayerPointsUpdate, PlayerPointsAdd,
     PermissionGroupRead, PermissionGroupUpdate, TribePermissionRead, PlayersStats,
@@ -244,153 +240,6 @@ async def list_players(
             last_login=login_map.get(r.EOS_Id),
         ))
     return items
-
-
-# ── Profile debugging helpers ─────────────────────────────────────────────────
-# All sub-paths must be declared BEFORE /{player_id}.
-
-@router.get("/debug-profile")
-async def debug_arkprofile(
-    machine_id: int = Query(...),
-    profile_path: str = Query(..., description="Full path to the .arkprofile file"),
-):
-    """
-    Debug endpoint: run the remote parser on a single .arkprofile and return
-    full diagnostic output including the hex header and all extracted strings.
-    """
-    machine = get_machine_sync(machine_id)
-    if not machine:
-        raise HTTPException(status_code=404, detail="Machine not found.")
-
-    # Paramiko is synchronous: run the entire SSH session on a worker thread
-    # so the FastAPI event loop is not stalled while we wait for the remote
-    # host to reply (each `ssh.execute` is a full round-trip).
-    def _run() -> dict:
-        with SSHManager(
-            host=machine["hostname"],
-            username=machine["ssh_user"],
-            password=machine.get("ssh_password"),
-            key_path=machine.get("ssh_key_path"),
-            port=machine.get("ssh_port", 22),
-        ) as ssh:
-            ascii_out, _, _ = ssh.execute(
-                f'strings -n 3 "{profile_path}" 2>/dev/null | head -200'
-            )
-            utf16_out, _, _ = ssh.execute(
-                f'strings -e l -n 3 "{profile_path}" 2>/dev/null | head -200'
-            )
-            size_out, _, _ = ssh.execute(f'stat -c %s "{profile_path}" 2>/dev/null')
-            hex_out, _, _  = ssh.execute(f'xxd -l 256 "{profile_path}" 2>/dev/null')
-            extracted = extract_player_data(ssh, profile_path)
-        return {
-            "ascii":     ascii_out,
-            "utf16":     utf16_out,
-            "size":      size_out,
-            "hex":       hex_out,
-            "extracted": extracted,
-        }
-
-    try:
-        r = await asyncio.to_thread(_run)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc
-
-    return {
-        "path":            profile_path,
-        "file_size":       r["size"].strip() or None,
-        "extracted_name":  r["extracted"].get("name"),
-        "extracted_eos_id": r["extracted"].get("eos_id"),
-        "strings_ascii":   r["ascii"].strip().splitlines() if r["ascii"] else [],
-        "strings_utf16":   r["utf16"].strip().splitlines() if r["utf16"] else [],
-        "hex_header":      r["hex"].strip() or None,
-    }
-
-
-@router.get("/sync-test")
-async def test_profile_extraction(
-    machine_id: int = Query(...),
-    container_name: str = Query(...),
-    limit: int = Query(3, description="Number of profiles to test"),
-):
-    """
-    Debug endpoint: run the remote parser on the first *limit* .arkprofile
-    files in a container and return the raw extraction results.
-    """
-    machine = get_machine_sync(machine_id)
-    if not machine:
-        raise HTTPException(status_code=404, detail="Machine not found.")
-
-    containers_map = get_containers_map_sync()
-    saved_arks: Optional[str] = None
-    if containers_map:
-        for mid, mdata in containers_map.get("machines", {}).items():
-            if int(mid) != machine_id:
-                continue
-            for container in mdata.get("containers", []):
-                if container["name"] == container_name:
-                    saved_arks = container.get("paths", {}).get("saved_arks")
-                    break
-
-    if not saved_arks:
-        raise HTTPException(
-            status_code=404,
-            detail="SavedArks path not found for this container. Run a scan first.",
-        )
-
-    # Paramiko is synchronous; offload the whole SSH session to a worker
-    # thread so we don't block the event loop for the duration of the
-    # find + N parses + cleanup.
-    def _run() -> dict:
-        with SSHManager(
-            host=machine["hostname"],
-            username=machine["ssh_user"],
-            password=machine.get("ssh_password"),
-            key_path=machine.get("ssh_key_path"),
-            port=machine.get("ssh_port", 22),
-        ) as ssh:
-            # Locate the first N .arkprofile files
-            stdout, _, _ = ssh.execute(
-                f'find "{saved_arks}" -maxdepth 3 -name "*.arkprofile" -type f '
-                f'2>/dev/null | head -{limit}'
-            )
-            if not stdout.strip():
-                return {"empty": True}
-
-            # Upload the parser script once
-            script_path = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "ssh", "ark_parse_profile.py")
-            )
-            with open(script_path, "r") as fh:
-                script_content = fh.read()
-            script_b64 = base64.b64encode(script_content.encode()).decode()
-            ssh.execute(f'echo "{script_b64}" | base64 -d > /tmp/_ark_parse.py')
-
-            profiles = [p.strip() for p in stdout.strip().splitlines() if p.strip()]
-            results = []
-            for prof_path in profiles:
-                filename = prof_path.split("/")[-1]
-                file_id = filename.replace(".arkprofile", "")
-                out, err, code = ssh.execute(f'python3 /tmp/_ark_parse.py "{prof_path}" 2>&1')
-                try:
-                    parsed = json.loads(out.strip())
-                except (json.JSONDecodeError, ValueError):
-                    parsed = {"raw_output": out[:500], "stderr": err[:500], "code": code}
-                results.append({"file": filename, "file_id": file_id, **parsed})
-
-            ssh.execute("rm -f /tmp/_ark_parse.py")
-            return {"empty": False, "results": results}
-
-    try:
-        r = await asyncio.to_thread(_run)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc
-    if r["empty"]:
-        return {"error": "No .arkprofile files found.", "path": saved_arks}
-    return {
-        "saved_arks":      saved_arks,
-        "profiles_tested": len(r["results"]),
-        "results":         r["results"],
-    }
 
 
 @router.get("/sync-containers")

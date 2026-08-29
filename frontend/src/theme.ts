@@ -15,8 +15,6 @@
 
 export type Theme = "dark" | "light";
 
-export const SUPPORTED_THEMES: Theme[] = ["dark", "light"];
-
 const STORAGE_KEY = "arkmaniagest.theme";
 
 function readStoredTheme(): Theme | null {

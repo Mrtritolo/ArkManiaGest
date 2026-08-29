@@ -11,6 +11,7 @@ import {
   UserCheck, UserX, Loader2, AlertCircle, CheckCircle,
 } from 'lucide-react'
 import { usersApi } from '../services/api'
+import { fmtDateTime } from '../utils/format'
 import type { AuthUser, UserRole } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -145,14 +146,6 @@ export default function UsersPage() {
     }
   }
 
-  function formatDate(d: string | null): string {
-    if (!d) return t('users.lastLoginNever')
-    return new Date(d).toLocaleDateString(undefined, {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  }
-
   return (
     <div className="pl-page">
       <div className="pl-header">
@@ -277,8 +270,8 @@ export default function UsersPage() {
                       : <span style={{ color: '#dc2626', fontSize: '0.78rem' }}><UserX size={12} /> {t('users.status.disabled')}</span>
                     }
                   </td>
-                  <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{formatDate(u.last_login)}</td>
-                  <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{formatDate(u.created_at)}</td>
+                  <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{fmtDateTime(u.last_login, t('users.lastLoginNever'))}</td>
+                  <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{fmtDateTime(u.created_at, t('users.lastLoginNever'))}</td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end' }}>
                       <button

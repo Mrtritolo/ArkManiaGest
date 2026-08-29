@@ -32,20 +32,10 @@ import {
   type DiscordConfigStatus, type DiscordConfigUpdate,
   type DiscordGuildRole, type RoleMapping, type RoleSyncReport,
 } from "../../services/api";
+import { extractError } from "../../utils/errors";
+import { copyText } from "../../utils/clipboard";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function extractError(err: unknown, fallback: string): string {
-  const msg =
-    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    ?? (err as { message?: string })?.message
-    ?? fallback;
-  return typeof msg === "string" ? msg : fallback;
-}
-
-async function copyText(text: string): Promise<void> {
-  try { await navigator.clipboard.writeText(text); } catch { /* best-effort */ }
-}
 
 // ── Local form state ────────────────────────────────────────────────────────
 

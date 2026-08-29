@@ -97,19 +97,6 @@ class RateLimitStore:
         self._requests[ip].append(now)
         return len(self._requests[ip])
 
-    # Keep backward-compatible alias
-    add_request = record_request
-
-    def cleanup(self) -> None:
-        """Remove stale entries to prevent unbounded memory growth."""
-        now = time.time()
-        expired_ips = [
-            ip for ip, reqs in self._requests.items()
-            if not reqs or reqs[-1] < now - 120
-        ]
-        for ip in expired_ips:
-            del self._requests[ip]
-
 
 _rate_store = RateLimitStore()
 
@@ -376,7 +363,3 @@ def _extract_client_ip(request: Request) -> str:
             return real_ip.strip()
 
     return direct_ip
-
-
-# Backward-compatible alias
-_get_client_ip = _extract_client_ip

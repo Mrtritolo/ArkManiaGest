@@ -16,6 +16,7 @@ import {
   Map as MapIcon, Copy, CheckCircle, ShieldOff
 } from 'lucide-react'
 import { playersApi, arkBansApi, discordApi } from '../services/api'
+import { fmtDate, fmtLocaleDateTime } from '../utils/format'
 import type { DiscordAccount, SyncNamesAmbiguousEntry } from '../services/api'
 import type { PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
 import DiscordIcon from '../components/DiscordIcon'
@@ -802,7 +803,6 @@ export default function PlayersPage() {
     }
   }
 
-  function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '--' }
   function fmtLoginAgo(d: string | null) {
     if (!d) return null
     const now = Date.now(), tms = new Date(d).getTime(), diff = now - tms
@@ -812,7 +812,6 @@ export default function PlayersPage() {
     if (days < 30) return t('players.timeAgo.days', { n: days })
     return t('players.timeAgo.months', { n: Math.floor(days / 30) })
   }
-  function fmtDateTime(d: string | null) { return d ? new Date(d).toLocaleString(undefined) : '--' }
 
   function toggleSort(col: string) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -1371,7 +1370,7 @@ export default function PlayersPage() {
                       </div>
                     </td>
                     <td>
-                      <span className="pl-cell-date"><Calendar size={10} /> {fmtDate(p.last_login)}{fmtLoginAgo(p.last_login) && <span style={{ opacity: 0.5, marginLeft: 4 }}>{fmtLoginAgo(p.last_login)}</span>}</span>
+                      <span className="pl-cell-date"><Calendar size={10} /> {fmtDate(p.last_login, '--')}{fmtLoginAgo(p.last_login) && <span style={{ opacity: 0.5, marginLeft: 4 }}>{fmtLoginAgo(p.last_login)}</span>}</span>
                     </td>
                     <td><ChevronRight size={14} className="pl-chevron" /></td>
                   </tr>
@@ -1406,7 +1405,7 @@ export default function PlayersPage() {
             {/* Meta */}
             <div className="pl-detail-meta">
               {selectedPlayer.tribe_name && <div className="pl-meta-item"><Home size={13} /><span>{selectedPlayer.tribe_name}</span></div>}
-              <div className="pl-meta-item"><Calendar size={13} /><span>{fmtDateTime(selectedPlayer.last_login)}</span></div>
+              <div className="pl-meta-item"><Calendar size={13} /><span>{fmtLocaleDateTime(selectedPlayer.last_login, '--')}</span></div>
               <div className="pl-meta-item"><CreditCard size={13} /><span>{t('players.detail.spentLabel')} {selectedPlayer.total_spent?.toLocaleString() ?? '0'}</span></div>
             </div>
 

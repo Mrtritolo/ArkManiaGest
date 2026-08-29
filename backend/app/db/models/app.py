@@ -297,54 +297,6 @@ class ARKMInstanceAction(Base):
     duration_ms       = Column(Integer, nullable=True)
 
 
-class ARKMMariaDBInstance(Base):
-    """
-    A managed MariaDB container running on one of the registered SSH
-    machines — typically used as the plugin database for the ARK server
-    instances co-located on that host.
-
-    Multiple instances per host are supported (distinct ports + container
-    names).  ``databases_json`` is a JSON-encoded array of ``{name, user,
-    password_enc}`` objects describing the logical databases provisioned
-    inside the MariaDB container; password blobs are AES-256-GCM encrypted
-    and decrypted by the store layer.
-    """
-    __tablename__ = "ARKM_mariadb_instances"
-
-    id                = Column(Integer, primary_key=True, autoincrement=True)
-    machine_id        = Column(
-        Integer,
-        ForeignKey("arkmaniagest_machines.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    name              = Column(String(64), nullable=False)
-    description       = Column(String(512), nullable=True)
-
-    # --- Network + credentials ---------------------------------------------
-    port              = Column(Integer, nullable=False, default=3306)
-    root_password_enc = Column(Text, nullable=False)
-
-    # --- Docker runtime ----------------------------------------------------
-    container_name    = Column(String(128), nullable=False)
-    image             = Column(String(128), nullable=False, default="mariadb:10.11")
-    volume_path       = Column(String(512), nullable=False)
-    mem_limit_mb      = Column(Integer, nullable=False, default=2048)
-
-    # --- Logical databases/users -------------------------------------------
-    # JSON array: [{"name": str, "user": str, "password_enc": str}, ...]
-    databases_json    = Column(MEDIUMTEXT, nullable=False, default="[]")
-
-    # --- Lifecycle ---------------------------------------------------------
-    is_active         = Column(Boolean, nullable=False, default=True)
-    # created | starting | running | stopping | stopped | error
-    status            = Column(String(20), nullable=False, default="created")
-    last_status_at    = Column(DateTime, nullable=True)
-    last_started_at   = Column(DateTime, nullable=True)
-    created_at        = Column(DateTime, server_default=func.now())
-    updated_at        = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-
 # =============================================
 #  Discord integration (panel DB)
 # =============================================

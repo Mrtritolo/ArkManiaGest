@@ -27,6 +27,7 @@ import {
   discordApi,
   type DiscordGuildInfo, type DiscordGuildRole, type DiscordGuildMember,
 } from "../../services/api";
+import { extractError } from "../../utils/errors";
 
 const PAGE_SIZE = 100;
 
@@ -51,14 +52,6 @@ function fmtJoinedAt(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString();
-}
-
-function extractError(err: unknown, fallback: string): string {
-  const msg =
-    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    ?? (err as { message?: string })?.message
-    ?? fallback;
-  return typeof msg === "string" ? msg : fallback;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────

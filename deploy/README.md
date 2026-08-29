@@ -153,8 +153,7 @@ database installations keep working with no changes.
 
 Tables that live in the **Panel DB**: `arkmaniagest_users`,
 `arkmaniagest_machines`, `arkmaniagest_settings`, and — starting from the
-next phase — `ARKM_server_instances`, `ARKM_instance_actions`,
-`ARKM_mariadb_instances`.
+next phase — `ARKM_server_instances`, `ARKM_instance_actions`.
 
 Tables that live in the **Plugin DB**: all `ARKM_config` / `ARKM_bans` /
 `ARKM_rare_dinos` / `ARKM_rare_spawns` / `ARKM_transfer_rules` /

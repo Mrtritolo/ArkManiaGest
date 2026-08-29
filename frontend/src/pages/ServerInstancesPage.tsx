@@ -41,6 +41,7 @@ import {
   machinesApi,
   containersApi,
 } from "../services/api";
+import { extractError } from "../utils/errors";
 import type {
   AuthUser,
   DiscoveredContainer,
@@ -467,9 +468,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       closeImport();
       await loadInstances();
     } catch (e) {
-      const detail =
-        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? (e instanceof Error ? e.message : t("instances.errors.import"));
+      const detail = extractError(e, t("instances.errors.import"));
       setError(detail);
     } finally {
       setImporting(false);

@@ -43,10 +43,9 @@ jobs:
           from app import main
           from app.db.models.app import (
               AppUser, SSHMachine, AppSetting,
-              ARKMServerInstance, ARKMInstanceAction, ARKMMariaDBInstance,
+              ARKMServerInstance, ARKMInstanceAction,
           )
           from app.schemas.server_instance import ServerInstanceCreate
-          from app.schemas.mariadb_instance import MariaDBInstanceCreate
           from app.schemas.instance_action import InstanceActionRead
           from app.ssh.platform import PlatformAdapter
           adapter = PlatformAdapter(os_type='windows', wsl_distro='Ubuntu')

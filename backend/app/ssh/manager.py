@@ -1,10 +1,9 @@
 """
-ssh/manager.py — SSH session management and SCP file transfer.
+ssh/manager.py — SSH session management.
 
 Wraps Paramiko to provide a simple, context-manager–compatible interface for:
   - Connecting to remote Linux hosts via SSH
   - Executing shell commands and capturing stdout / stderr / exit code
-  - Uploading and downloading files and directories via SCP
 
 Authentication order (first available method wins):
   1. Explicit private key file (``key_path`` argument)
@@ -17,7 +16,6 @@ import os
 from typing import Optional, Tuple
 
 import paramiko
-from scp import SCPClient
 
 DEFAULT_SSH_PORT: int = 22
 DEFAULT_SSH_TIMEOUT: int = 30
@@ -26,7 +24,7 @@ DEFAULT_SSH_KEY_PATH: str = "/home/arkmania/.ssh/id_ed25519"
 
 class SSHManager:
     """
-    Manages a single SSH session with optional SCP file transfer capability.
+    Manages a single SSH session.
 
     Supports use as a context manager for automatic connect/disconnect::
 
@@ -166,56 +164,6 @@ class SSHManager:
             stderr.read().decode("utf-8").strip(),
             exit_code,
         )
-
-    # ── File transfer ─────────────────────────────────────────────────────
-
-    def upload_file(self, local_path: str, remote_path: str) -> None:
-        """
-        Upload a single local file to the remote host via SCP.
-
-        Args:
-            local_path:  Absolute or relative path of the local source file.
-            remote_path: Absolute path of the destination on the remote host.
-
-        Raises:
-            ConnectionError: SSH client is not connected.
-        """
-        if not self._client:
-            raise ConnectionError("SSH client is not connected. Call connect() first.")
-        with SCPClient(self._client.get_transport()) as scp:
-            scp.put(local_path, remote_path)
-
-    def download_file(self, remote_path: str, local_path: str) -> None:
-        """
-        Download a single file from the remote host via SCP.
-
-        Args:
-            remote_path: Absolute path of the source file on the remote host.
-            local_path:  Absolute or relative path of the local destination.
-
-        Raises:
-            ConnectionError: SSH client is not connected.
-        """
-        if not self._client:
-            raise ConnectionError("SSH client is not connected. Call connect() first.")
-        with SCPClient(self._client.get_transport()) as scp:
-            scp.get(remote_path, local_path)
-
-    def upload_directory(self, local_dir: str, remote_dir: str) -> None:
-        """
-        Recursively upload a local directory to the remote host via SCP.
-
-        Args:
-            local_dir:  Path to the local directory to upload.
-            remote_dir: Destination path on the remote host.
-
-        Raises:
-            ConnectionError: SSH client is not connected.
-        """
-        if not self._client:
-            raise ConnectionError("SSH client is not connected. Call connect() first.")
-        with SCPClient(self._client.get_transport()) as scp:
-            scp.put(local_dir, remote_path=remote_dir, recursive=True)
 
     def file_exists(self, remote_path: str) -> bool:
         """

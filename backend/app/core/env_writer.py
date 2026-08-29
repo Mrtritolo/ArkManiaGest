@@ -27,7 +27,6 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
-from typing import Iterable
 
 
 def get_env_file_path() -> Path:
@@ -135,20 +134,3 @@ def update_env_file(
     os.replace(tmp, target)
 
     return dict(updates)
-
-
-def keys_in_env(keys: Iterable[str], *, path: Path | None = None) -> dict[str, bool]:
-    """
-    Lightweight presence check used by the diagnostic UI: reports which
-    keys currently appear in the file (regardless of value).
-    """
-    target = (path or get_env_file_path())
-    if not target.exists():
-        return {k: False for k in keys}
-    seen: set[str] = set()
-    for line in target.read_text(encoding="utf-8").splitlines():
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        seen.add(stripped.split("=", 1)[0].strip())
-    return {k: (k in seen) for k in keys}

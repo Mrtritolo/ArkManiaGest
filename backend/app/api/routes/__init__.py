@@ -26,7 +26,6 @@ from app.api.routes import (
     instance_actions,
     system_update,
     discord,
-    ssh,
     settings,
     machines,
     serverforge,
@@ -146,10 +145,6 @@ router.include_router(
     prefix="/discord",
     tags=["Discord"],
     dependencies=_viewer,   # endpoint-level admin/self checks per route
-)
-router.include_router(
-    ssh.router,
-    prefix="/ssh", tags=["SSH"], dependencies=_viewer,
 )
 router.include_router(
     sql_console.router,
