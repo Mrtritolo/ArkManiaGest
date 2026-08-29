@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin
 from app.db.session import get_db, get_plugin_db
+from app.api.routes.blueprints import is_official_or_s_variant_dino
 from app.api.routes.me import get_current_player, _PlayerSession
 
 log = logging.getLogger("arkmaniagest.web_shop")
@@ -147,8 +148,17 @@ async def catalog(
             rows = await panel_db.execute(text(
                 "SELECT name, blueprint FROM ARKM_blueprints "
                 "WHERE type = 'dino' ORDER BY name"))
-            gene_dinos = [{"label": r[0], "blueprint": r[1]}
-                          for r in rows.fetchall()]
+            # type='dino' also tags item blueprints that live under Dinos/
+            # paths (eggs, costumes, chibis). Keep real creatures only:
+            # same official/S-variant filter as the rare-dino picker, plus
+            # the Character_BP fragment every actual creature BP carries.
+            gene_dinos = [
+                {"label": r[0], "blueprint": r[1]}
+                for r in rows.fetchall()
+                if "character_bp" in (r[1] or "").lower()
+                and is_official_or_s_variant_dino(
+                    {"name": r[0], "blueprint": r[1]})
+            ]
         except Exception:
             log.info("web_shop: ARKM_blueprints non disponibile")
 

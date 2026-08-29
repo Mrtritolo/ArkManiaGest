@@ -7,6 +7,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.10.1] - 2026-08-29
+
+### Fixed
+
+- **Gene-shop species picker listed non-creatures.** The species list
+  came straight from `ARKM_blueprints WHERE type='dino'`, and the type
+  classifier tags anything under a `Dinos/` path as a dino — eggs,
+  costumes, chibis included. The picker now applies the same
+  official/S-variant creature filter as the rare-dino picker, plus a
+  `Character_BP` path requirement that only real creature blueprints
+  satisfy.
+
 ## [4.10.0] - 2026-08-29
 
 ### Added
