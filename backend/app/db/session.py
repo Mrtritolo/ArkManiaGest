@@ -546,14 +546,9 @@ async def create_marketplace_tables() -> None:
             "  INDEX ix_blueprint (blueprint(128))"
             ") ENGINE=InnoDB"
         ))
-        await conn.execute(_t(
-            "CREATE TABLE IF NOT EXISTS ARKM_market_wallets ("
-            "  eos_id     VARCHAR(64) PRIMARY KEY,"
-            "  balance    BIGINT      NOT NULL DEFAULT 0,"
-            "  updated_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP "
-            "             ON UPDATE CURRENT_TIMESTAMP"
-            ") ENGINE=InnoDB"
-        ))
+        # ARKM_market_wallets non si crea piu': tutti gli shop (mercato
+        # giocatori incluso) usano i punti ArkShop (ArkShopPlayers.Points).
+        # La tabella eventualmente presente sui DB esistenti resta, vuota.
         await conn.execute(_t(
             "CREATE TABLE IF NOT EXISTS ARKM_market_transactions ("
             "  id            BIGINT       PRIMARY KEY AUTO_INCREMENT,"

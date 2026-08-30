@@ -260,18 +260,23 @@ def _iso(v) -> Optional[str]:
 
 async def _get_or_create_wallet(plugin_db: AsyncSession, eos_id: str) -> int:
     """
-    Return the wallet balance for *eos_id*, creating the row at 0 if missing.
-    Single round-trip when the row exists; two when it doesn't.
+    Return the market balance for *eos_id* — which IS the ArkShop points
+    balance: every shop on the panel trades in ArkShop points, the
+    player-to-player market included (the separate ARKM_market_wallets
+    ledger is retired; it never held a nonzero balance).
+
+    Missing row: created the way ArkShop itself does on first join
+    (Kits='{}', Points=0).
     """
     row = (await plugin_db.execute(
-        text("SELECT balance FROM ARKM_market_wallets WHERE eos_id = :e LIMIT 1"),
+        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e LIMIT 1"),
         {"e": eos_id},
     )).fetchone()
     if row is not None:
         return int(row[0] or 0)
     await plugin_db.execute(
-        text("INSERT INTO ARKM_market_wallets (eos_id, balance) VALUES (:e, 0) "
-             "ON DUPLICATE KEY UPDATE balance = balance"),
+        text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
+             "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
         {"e": eos_id},
     )
     await plugin_db.commit()
@@ -659,37 +664,38 @@ async def buy_item(
     seller = item["owner_eos_id"]
     price  = int(item["price"] or 0)
 
-    # 2. Lock buyer wallet (auto-create at 0)
+    # 2. Lock buyer points (ArkShop currency; auto-create like ArkShop does)
     await plugin_db.execute(
-        text("INSERT INTO ARKM_market_wallets (eos_id, balance) VALUES (:e, 0) "
-             "ON DUPLICATE KEY UPDATE balance = balance"),
+        text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
+             "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
         {"e": me},
     )
     buyer_bal = int((await plugin_db.execute(
-        text("SELECT balance FROM ARKM_market_wallets WHERE eos_id = :e FOR UPDATE"),
+        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e FOR UPDATE"),
         {"e": me},
     )).scalar() or 0)
     if buyer_bal < price:
         raise HTTPException(status_code=402, detail="INSUFFICIENT_FUNDS")
 
-    # 3. Lock seller wallet (auto-create at 0)
+    # 3. Lock seller points (auto-create at 0)
     await plugin_db.execute(
-        text("INSERT INTO ARKM_market_wallets (eos_id, balance) VALUES (:e, 0) "
-             "ON DUPLICATE KEY UPDATE balance = balance"),
+        text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
+             "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
         {"e": seller},
     )
     await plugin_db.execute(
-        text("SELECT balance FROM ARKM_market_wallets WHERE eos_id = :e FOR UPDATE"),
+        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e FOR UPDATE"),
         {"e": seller},
     )
 
-    # 4. Move tokens
+    # 4. Move points (TotalSpent tracks the buyer's spend, same as the shop)
     await plugin_db.execute(
-        text("UPDATE ARKM_market_wallets SET balance = balance - :p WHERE eos_id = :e"),
+        text("UPDATE ArkShopPlayers SET Points = Points - :p, "
+             "TotalSpent = TotalSpent + :p WHERE EosId = :e"),
         {"p": price, "e": me},
     )
     await plugin_db.execute(
-        text("UPDATE ARKM_market_wallets SET balance = balance + :p WHERE eos_id = :e"),
+        text("UPDATE ArkShopPlayers SET Points = Points + :p WHERE EosId = :e"),
         {"p": price, "e": seller},
     )
 
@@ -726,7 +732,7 @@ async def buy_item(
                  detail=f"seller={seller}")
 
     new_bal = int((await plugin_db.execute(
-        text("SELECT balance FROM ARKM_market_wallets WHERE eos_id = :e"),
+        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e"),
         {"e": me},
     )).scalar() or 0)
 
@@ -741,17 +747,17 @@ async def admin_credit_wallet(
     body:      _AdminCreditRequest,
     plugin_db: AsyncSession = Depends(get_plugin_db),
 ):
-    """Admin top-up / debit of any wallet.  Audited."""
+    """Admin top-up / debit of any player's ArkShop points.  Audited."""
     eos = body.eos_id.strip()
     if not eos:
         raise HTTPException(status_code=422, detail="eos_id required")
     await plugin_db.execute(
-        text("INSERT INTO ARKM_market_wallets (eos_id, balance) VALUES (:e, 0) "
-             "ON DUPLICATE KEY UPDATE balance = balance"),
+        text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
+             "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
         {"e": eos},
     )
     await plugin_db.execute(
-        text("UPDATE ARKM_market_wallets SET balance = balance + :a WHERE eos_id = :e"),
+        text("UPDATE ArkShopPlayers SET Points = Points + :a WHERE EosId = :e"),
         {"a": int(body.amount), "e": eos},
     )
     await plugin_db.commit()
@@ -759,7 +765,7 @@ async def admin_credit_wallet(
                  item_id=None, amount=int(body.amount),
                  detail=(body.reason or "")[:500])
     new_bal = int((await plugin_db.execute(
-        text("SELECT balance FROM ARKM_market_wallets WHERE eos_id = :e"),
+        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e"),
         {"e": eos},
     )).scalar() or 0)
     return {"ok": True, "eos_id": eos, "new_balance": new_bal}

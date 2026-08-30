@@ -599,22 +599,6 @@ async def buy(
     return {"status": "ok", "orders": n_orders, "spent": total}
 
 
-@router.get("/points")
-async def my_points(
-    player: _PlayerSession = Depends(get_current_player),
-    db: AsyncSession = Depends(get_plugin_db),
-):
-    """
-    Punti ArkShop del giocatore corrente. NON e' il portafoglio del
-    marketplace (ARKM_market_wallets): e' la moneta che il negozio del
-    server, il gene shop e la forgia uova/embrioni scalano davvero.
-    """
-    row = (await db.execute(text(
-        "SELECT Points FROM ArkShopPlayers WHERE EosId = :e"),
-        {"e": player.eos_id})).fetchone()
-    return {"points": int(row[0]) if row and row[0] is not None else 0}
-
-
 @router.get("/orders")
 async def my_orders(
     player: _PlayerSession = Depends(get_current_player),

@@ -1131,9 +1131,6 @@ export const webShopApi = {
       }),
   orders: () =>
     api.get<{ orders: WebShopOrder[]; pending: number }>("/shop/orders"),
-  /** Punti ArkShop del giocatore: la moneta di negozio/geni/forgia
-   *  (distinta dal portafoglio del marketplace). */
-  points: () => api.get<{ points: number }>("/shop/points"),
   importArkshop: () =>
     api.post<{ imported: number; skipped: Record<string, number> }>(
       "/shop/admin/import-arkshop", {}, { timeout: 120_000 }),

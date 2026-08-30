@@ -24,7 +24,7 @@ strict — see §Ownership Matrix.
             │                                              │
             └─────────► PLUGIN DB (MariaDB) ◄──────────────┘
                           ARKM_market_items
-                          ARKM_market_wallets
+                          ArkShopPlayers (Points = valuta unica)
                           ARKM_market_transactions
                           ARKM_market_audit
 ```
@@ -51,13 +51,16 @@ is done by the panel via DB writes.
 | Browse listed items             | Panel   | SELECT `market_items` WHERE status='listed'             |
 | Set price + publish (list)      | Panel   | UPDATE `market_items` (status='listed', price, listed_at)|
 | Cancel a listing                | Panel   | UPDATE `market_items` (set buyer_eos_id = owner_eos_id, status='sold') so the plugin's claim flow returns it to the owner |
-| Purchase                        | Panel   | TRANSACTION over `market_items` + `market_wallets` + INSERT `market_transactions` + `market_audit` |
-| Wallet credit (admin / faucet)  | Panel   | UPDATE `market_wallets`, INSERT `audit`                 |
-| Wallet balance display          | Panel   | SELECT `market_wallets`                                 |
+| Purchase                        | Panel   | TRANSACTION over `market_items` + `ArkShopPlayers.Points` (debit buyer / credit seller) + INSERT `market_transactions` + `market_audit` |
+| Wallet credit (admin / faucet)  | Panel   | UPDATE `ArkShopPlayers.Points`, INSERT `audit`          |
+| Wallet balance display          | Panel   | SELECT `ArkShopPlayers.Points`                          |
 
 **Invariants**:
-- The plugin NEVER touches `market_wallets`, `market_transactions`,
-  or `market_audit`.
+- The plugin NEVER touches `market_transactions` or `market_audit`.
+- Currency: `ArkShopPlayers.Points` is the ONE currency of every shop
+  and of the player market. Both sides move it (ArkShop/plugin in game,
+  panel on web buys); the old `ARKM_market_wallets` ledger is retired —
+  never held a nonzero balance, kept on disk only where it already exists.
 - The plugin NEVER changes `price`, `buyer_eos_id` or `status`
   except writing `'claimed'` (only on `/market claim`).
 - The panel NEVER touches `item_data` (the binary blob) or
@@ -126,15 +129,13 @@ CREATE TABLE IF NOT EXISTS ARKM_market_items (
 );
 ```
 
-### `ARKM_market_wallets`
+### Currency — `ArkShopPlayers.Points`
 
-```sql
-CREATE TABLE IF NOT EXISTS ARKM_market_wallets (
-    eos_id     VARCHAR(64) PRIMARY KEY,
-    balance    BIGINT      NOT NULL DEFAULT 0,
-    updated_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-```
+No dedicated wallet table: balances live in ArkShop's own
+`ArkShopPlayers.Points`, the same points the in-game shop uses. The
+panel auto-creates missing rows exactly like ArkShop does
+(`Kits='{}', Points=0`). The former `ARKM_market_wallets` table is
+retired (it never held a nonzero balance) and is no longer created.
 
 ### `ARKM_market_transactions`
 

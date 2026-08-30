@@ -2396,10 +2396,7 @@
       "confirm": "Conferma",
       "cancel": "Annulla"
     },
-    "shopChip": "shop",
-    "shopChipHint": "Punti ArkShop: la moneta di Negozio, GeneShop e Uova & Embrioni.",
-    "walletChip": "mercato",
-    "walletChipHint": "Portafoglio del mercato giocatori: si riempie vendendo i tuoi item."
+    "pointsHint": "Punti ArkShop: la moneta unica di tutti gli shop e del mercato giocatori."
   },
   "auditLog": {
     "title": "Registro Audit",

@@ -7,6 +7,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.14.0] - 2026-08-30
+
+### Changed
+
+- **One currency everywhere: ArkShop points.** The player-to-player
+  market now debits the buyer and credits the seller directly in
+  `ArkShopPlayers.Points` — the same points the server shop, gene shop,
+  egg forge and the in-game commands use. The separate
+  `ARKM_market_wallets` ledger is retired (it never held a nonzero
+  balance): no longer created nor read, the wallet endpoint and the
+  admin credit endpoint now operate on ArkShop points, and the page
+  header shows the single balance. The short-lived `/shop/points`
+  endpoint and the dual-chip UI from 4.13.1 are gone; the purchase
+  modal reads the one balance for every flow. Contract doc updated in
+  both repositories.
+
 ## [4.13.1] - 2026-08-30
 
 ### Fixed

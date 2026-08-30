@@ -2396,10 +2396,7 @@
       "confirm": "Confirm",
       "cancel": "Cancel"
     },
-    "shopChip": "shop",
-    "shopChipHint": "ArkShop points: the currency of the Shop, GeneShop and Eggs & Embryos.",
-    "walletChip": "market",
-    "walletChipHint": "Player-market wallet: filled by selling your items."
+    "pointsHint": "ArkShop points: the single currency of every shop and the player market."
   },
   "auditLog": {
     "title": "Audit Log",
