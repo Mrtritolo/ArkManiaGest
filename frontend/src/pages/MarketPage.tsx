@@ -26,7 +26,7 @@ import {
   type WebShopOrder, type WebShopForgeConfig, type WebShopForgePrice,
   type WebShopGenePriceEntry, type WebShopGeneCategory,
 } from "../services/api";
-import { shopEntryThumbUrl } from "../utils/shopImage";
+import { shopEntryThumbCandidates } from "../utils/shopImage";
 import { ShopFallbackIcon } from "../utils/shopFallbackIcon";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 import type { AuthUser } from "../types";
@@ -521,7 +521,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   return (
                   <div key={i.key} className="card" style={{ padding: "0.7rem" }}>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <ShopThumb entry={i} size={44} />
+                      <ShopThumb entry={i} size={64} />
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
                         <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
@@ -936,7 +936,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
               {adminCats.length === 0 ? (
                 <div className="alert alert-info">{t("market.prices.noCats")}</div>
               ) : (
-              <table className="pl-table" style={{ maxWidth: 620 }}>
+              <table className="pl-table">
                 <thead>
                   <tr>
                     <th>{t("market.prices.colCategory")}</th>
@@ -951,7 +951,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                       {[1, 2, 3].map(tier => (
                         <td key={tier}>
                           <input type="number" min={0}
-                            className="form-input" style={{ width: 90 }}
+                            className="form-input"
+                            style={{ width: "100%", minWidth: 110, maxWidth: 160 }}
                             placeholder={String(c.fallback[String(tier)] ?? 0)}
                             value={adminMatrix[`${c.category}:${tier}`] ?? ""}
                             onChange={e => setAdminMatrix(p => ({
@@ -1025,7 +1026,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                     <tr key={r.blueprint}>
                       <td style={{ fontWeight: 600 }}>{r.label}</td>
                       <td>
-                        <input type="number" min={0} className="form-input" style={{ width: 100 }}
+                        <input type="number" min={0} className="form-input"
+                          style={{ width: "100%", minWidth: 110, maxWidth: 160 }}
                           value={r.egg_price}
                           onChange={e => patchRow(r.blueprint,
                             { egg_price: Math.max(0, Number(e.target.value) || 0) })} />
@@ -1035,7 +1037,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                           onChange={e => patchRow(r.blueprint, { egg_enabled: e.target.checked })} />
                       </td>
                       <td>
-                        <input type="number" min={0} className="form-input" style={{ width: 100 }}
+                        <input type="number" min={0} className="form-input"
+                          style={{ width: "100%", minWidth: 110, maxWidth: 160 }}
                           value={r.embryo_price}
                           onChange={e => patchRow(r.blueprint,
                             { embryo_price: Math.max(0, Number(e.target.value) || 0) })} />
@@ -1683,22 +1686,27 @@ function StatusChip({ status }: { status: string }) {
  * Immagine di una voce di catalogo, con ripiego a icona.
  *
  * La wiki non ha una pagina per tutto (oggetti mod, nomi non standard):
- * quando l'immagine non arriva mostriamo l'icona del tipo invece di un
- * riquadro rotto, cosi' la griglia resta allineata.
+ * si prova ogni candidato in ordine (boss, primo pezzo del pacchetto,
+ * blueprint, etichetta) e solo quando falliscono tutti si mostra l'icona
+ * del tipo — mai un riquadro rotto, la griglia resta allineata.
  */
 function ShopThumb({ entry, size }: { entry: WebShopItem; size: number }) {
-  const [failed, setFailed] = useState(false);
-  const url = shopEntryThumbUrl(entry);
+  const [idx, setIdx] = useState(0);
+  const candidates = shopEntryThumbCandidates(entry);
   const box: React.CSSProperties = {
     width: size, height: size, flexShrink: 0, borderRadius: 6,
     background: "var(--bg-card-muted)", display: "flex",
     alignItems: "center", justifyContent: "center",
   };
-  if (!url || failed)
-    return <div style={box}><ShopFallbackIcon kind={entry.kind} /></div>;
+  if (idx >= candidates.length)
+    return (
+      <div style={box}>
+        <ShopFallbackIcon kind={entry.kind} size={Math.round(size * 0.5)} />
+      </div>
+    );
   return (
-    <img src={url} alt="" style={{ ...box, objectFit: "contain" }}
-      onError={() => setFailed(true)} />
+    <img src={candidates[idx]} alt="" style={{ ...box, objectFit: "contain" }}
+      onError={() => setIdx(i => i + 1)} />
   );
 }
 

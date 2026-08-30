@@ -7,6 +7,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.12.1] - 2026-08-30
+
+### Fixed
+
+- **Shop cards: bigger thumbnails and far fewer missing ones.** The
+  entry image now walks a candidate chain (boss name, first pack line,
+  entry blueprint, then the label itself) before falling back to the
+  type icon, and the thumb grew from 44 to 64 px with a proportionally
+  sized fallback icon.
+- **Prices tab tables no longer clip.** The gene matrix lost its fixed
+  max width (the Traits column was cut off) and the price inputs are
+  wide enough for six-digit values.
+
 ## [4.12.0] - 2026-08-29
 
 ### Added

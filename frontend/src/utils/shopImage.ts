@@ -37,14 +37,24 @@ export function isBossEntry(entry: { label: string }): boolean {
 }
 
 /**
- * URL dell'immagine per una voce di catalogo, o null quando non c'e' nulla
- * di sensato da chiedere. Il chiamante ripiega sull'icona del tipo.
+ * Candidati d'immagine per una voce di catalogo, in ordine di preferenza.
+ *
+ * Non un solo URL ma una catena: la wiki non ha una pagina per tutto
+ * (oggetti mod, kit custom) e ogni candidato fallito fa scattare il
+ * successivo lato <img onError>. Ordine: nome boss, primo oggetto del
+ * pacchetto, blueprint della voce, etichetta cosi' com'e' (molte voci di
+ * catalogo usano il nome wiki esatto come titolo).
  */
-export function shopEntryThumbUrl(entry: WebShopItem): string | null {
+export function shopEntryThumbCandidates(entry: WebShopItem): string[] {
+  const urls: (string | null)[] = [];
   if (isBossEntry(entry)) {
     const name = stripTags(entry.label);
-    if (name) return `/api/v1/market/thumb/${encodeURIComponent(name)}`;
+    if (name) urls.push(`/api/v1/market/thumb/${encodeURIComponent(name)}`);
   }
-  const first = entry.lines?.[0]?.blueprint || entry.blueprint;
-  return first ? arkItemThumbUrl(first) : null;
+  const first = entry.lines?.[0]?.blueprint;
+  if (first) urls.push(arkItemThumbUrl(first));
+  if (entry.blueprint) urls.push(arkItemThumbUrl(entry.blueprint));
+  const label = stripTags(entry.label);
+  if (label) urls.push(`/api/v1/market/thumb/${encodeURIComponent(label)}`);
+  return [...new Set(urls.filter((u): u is string => !!u))];
 }
