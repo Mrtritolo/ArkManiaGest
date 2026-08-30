@@ -510,7 +510,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             ) : shopItems.length === 0 ? (
               <div className="alert alert-info">{t("market.shop.emptyItems")}</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.6rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
                 {shopItems
                   .filter(i => !shopSearch ||
                     i.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
@@ -521,7 +521,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   return (
                   <div key={i.key} className="card" style={{ padding: "0.7rem" }}>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <ShopThumb entry={i} size={64} />
+                      <ShopThumb entry={i} size={72} />
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
                         <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
@@ -641,7 +641,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   </select>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.6rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
                 {shopGenes
                   .filter(g => !shopSearch ||
                     g.label.toLowerCase().includes(shopSearch.toLowerCase()) ||

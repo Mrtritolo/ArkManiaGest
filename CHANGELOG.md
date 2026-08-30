@@ -7,6 +7,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.12.2] - 2026-08-30
+
+### Changed
+
+- Shop grids (items and genes) moved from 4 to 3 columns and thumbnails
+  grew to 72 px: wider cards give the images room to read.
+
 ## [4.12.1] - 2026-08-30
 
 ### Fixed
