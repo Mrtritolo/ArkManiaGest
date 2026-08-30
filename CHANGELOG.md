@@ -7,6 +7,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.13.1] - 2026-08-30
+
+### Fixed
+
+- **Purchase modal showed the wrong currency (always 0).** The panel
+  handles two distinct balances: the player-market wallet
+  (`ARKM_market_wallets`, filled by selling items) and the ArkShop
+  points (`ArkShopPlayers.Points`) that the server shop, gene shop and
+  egg forge actually charge. The modal always displayed the former.
+  A new `GET /shop/points` endpoint exposes the ArkShop balance; each
+  buy flow now hands the modal its own currency, and the page header
+  shows both balances as labeled chips (shop / market) with tooltips.
+
 ## [4.13.0] - 2026-08-30
 
 ### Added

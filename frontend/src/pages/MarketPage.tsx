@@ -121,8 +121,22 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   // uno trasforma la griglia in un muro di liste.
   const [openPack, setOpenPack] = useState<string | null>(null);
 
+  // Punti ArkShop: la moneta di negozio/geni/forgia. Distinti dal wallet
+  // del marketplace, che e' un'altra moneta (vendite fra giocatori).
+  const [shopPoints, setShopPoints] = useState<number | null>(null);
+
+  const loadShopPoints = useCallback(async () => {
+    try {
+      const r = await webShopApi.points();
+      setShopPoints(r.data.points);
+    } catch { /* saldo assente = niente chip, non un errore */ }
+  }, []);
+
+  useEffect(() => { void loadShopPoints(); }, [loadShopPoints]);
+
   const loadShop = useCallback(async () => {
     setShopLoading(true);
+    void loadShopPoints();
     try {
       const r = await webShopApi.catalog();
       setShopItems(r.data.items || []);
@@ -181,7 +195,8 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   // saldo attuale e quello dopo l'acquisto. `run` e' l'acquisto vero, gia'
   // completo della propria gestione errori.
   const [pendingBuy, setPendingBuy] = useState<{
-    label: string; price: number; run: () => Promise<void>;
+    label: string; price: number; balance: number | null;
+    run: () => Promise<void>;
   } | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
 
@@ -203,12 +218,12 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   function doBuy(kind: "item" | "dino" | "gene", key: string,
                  label: string, price: number, tier = 1,
                  species = "") {
-    setPendingBuy({ label, price, run: async () => {
+    setPendingBuy({ label, price, balance: shopPoints, run: async () => {
       setShopBusy(key); setError(""); setSuccess("");
       try {
         const r = await webShopApi.buy(kind, key, 1, tier, species);
         setSuccess(t("market.shop.bought", { spent: r.data.spent }));
-        await Promise.all([loadWallet(), loadShopOrders()]);
+        await Promise.all([loadShopPoints(), loadShopOrders()]);
       } catch (e: any) {
         setError(e.response?.data?.detail || String(e));
       } finally {
@@ -315,6 +330,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     setPendingBuy({
       label: arkItemDisplayName(item.blueprint),
       price: item.price,
+      balance: wallet?.balance ?? null,
       run: async () => {
         try {
           const res = await marketApi.buy(item.id);
@@ -383,11 +399,20 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 {t("market.subtitle")}
               </p>
             </div>
-            {wallet && (
-              <div className="pl-chip" style={{ background: "#16a34a15", color: "#16a34a", borderColor: "#16a34a40", fontSize: "0.85rem" }}>
-                <Coins size={11} /> {wallet.balance.toLocaleString()}
-              </div>
-            )}
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              {shopPoints !== null && (
+                <div className="pl-chip" title={t("market.shopChipHint")}
+                  style={{ background: "#d9770615", color: "#d97706", borderColor: "#d9770640", fontSize: "0.85rem" }}>
+                  <ShoppingBag size={11} /> {shopPoints.toLocaleString()} {t("market.shopChip")}
+                </div>
+              )}
+              {wallet && (
+                <div className="pl-chip" title={t("market.walletChipHint")}
+                  style={{ background: "#16a34a15", color: "#16a34a", borderColor: "#16a34a40", fontSize: "0.85rem" }}>
+                  <Coins size={11} /> {wallet.balance.toLocaleString()} {t("market.walletChip")}
+                </div>
+              )}
+            </div>
           </div>
           {children}
         </div>
@@ -418,16 +443,28 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   </div>
                 </div>
               </div>
-              {wallet && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: "0.4rem",
-                  padding: "0.4rem 0.8rem",
-                  background: "#ffffff22", border: "1px solid #ffffff44",
-                  borderRadius: 99, fontSize: "1.1rem", fontWeight: 700,
-                }}>
-                  <Coins size={16} /> {wallet.balance.toLocaleString()}
-                </div>
-              )}
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                {shopPoints !== null && (
+                  <div title={t("market.shopChipHint")} style={{
+                    display: "flex", alignItems: "center", gap: "0.4rem",
+                    padding: "0.4rem 0.8rem",
+                    background: "#ffffff22", border: "1px solid #ffffff44",
+                    borderRadius: 99, fontSize: "1rem", fontWeight: 700,
+                  }}>
+                    <ShoppingBag size={15} /> {shopPoints.toLocaleString()} {t("market.shopChip")}
+                  </div>
+                )}
+                {wallet && (
+                  <div title={t("market.walletChipHint")} style={{
+                    display: "flex", alignItems: "center", gap: "0.4rem",
+                    padding: "0.4rem 0.8rem",
+                    background: "#ffffff22", border: "1px solid #ffffff44",
+                    borderRadius: 99, fontSize: "1rem", fontWeight: 700,
+                  }}>
+                    <Coins size={15} /> {wallet.balance.toLocaleString()} {t("market.walletChip")}
+                  </div>
+                )}
+              </div>
             </div>
             {children}
           </div>
@@ -504,7 +541,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             --bg-popover, non --bg-card: la seconda e' traslucida e sul tema
             scuro un overlay ci si legge male (fix noto 3.5.5). */}
         {pendingBuy && (() => {
-          const balance = wallet?.balance ?? null;
+          const balance = pendingBuy.balance;
           const after = balance !== null ? balance - pendingBuy.price : null;
           const short = after !== null && after < 0;
           return (
@@ -812,14 +849,14 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             const bp = selected.blueprint, lbl = selected.label;
             const colors = [...forgeColors], traits = [...forgeTraits];
             const gender = forgeGender, mode = forgeMode;
-            setPendingBuy({ label: lbl, price, run: async () => {
+            setPendingBuy({ label: lbl, price, balance: shopPoints, run: async () => {
               setShopBusy("__forge"); setError(""); setSuccess("");
               try {
                 const r = await webShopApi.buy(mode,
                   `${mode}:${lbl}`.slice(0, 128), 1, 1, bp,
                   { stats: [], muts: [], colors, traits, gender });
                 setSuccess(t("market.shop.bought", { spent: r.data.spent }));
-                await Promise.all([loadWallet(), loadShopOrders()]);
+                await Promise.all([loadShopPoints(), loadShopOrders()]);
               } catch (e: any) {
                 setError(e.response?.data?.detail || String(e));
               } finally {

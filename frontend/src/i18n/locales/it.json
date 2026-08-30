@@ -2395,7 +2395,11 @@
       "insufficient": "Punti insufficienti per questo acquisto.",
       "confirm": "Conferma",
       "cancel": "Annulla"
-    }
+    },
+    "shopChip": "shop",
+    "shopChipHint": "Punti ArkShop: la moneta di Negozio, GeneShop e Uova & Embrioni.",
+    "walletChip": "mercato",
+    "walletChipHint": "Portafoglio del mercato giocatori: si riempie vendendo i tuoi item."
   },
   "auditLog": {
     "title": "Registro Audit",
