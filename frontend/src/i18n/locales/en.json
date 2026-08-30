@@ -2266,7 +2266,6 @@
       "list": "Listing failed.",
       "cancel": "Cancellation failed."
     },
-    "confirmBuy": "Buy '{{n}}' for {{p}} coins?",
     "bought": "Purchased! New balance: {{b}}. Use /market claim in-game to collect it.",
     "listed": "Item listed on the market.",
     "confirmCancel": "Cancel the listing?  The item will return to you via /market claim in-game.",
@@ -2312,7 +2311,6 @@
     "shop": {
       "buy": "Buy",
       "searchPh": "Search by name or category...",
-      "confirmBuy": "Buy \"{{what}}\" for {{price}} points?",
       "bought": "Purchased. {{spent}} points spent — collect it in game with /ritiro.",
       "emptyItems": "The shop is empty. An admin has to import the ArkShop catalogue first.",
       "emptyGenes": "No gene traits published yet: they appear once a server boots with GeneShop 5.8.0+.",
@@ -2363,7 +2361,6 @@
       "traitAdd": "Add",
       "points": "points",
       "buy": "Forge & buy",
-      "confirmBuy": "Forge {{what}} for {{price}} points?",
       "claimHint": "The egg/embryo arrives via /ritiro in game: the baby hatches with the stats, mutations, colors and traits chosen here.",
       "levelNote": "Fixed level {{lvl}}: wild stats are rolled randomly by the server, like in the wild.",
       "emptyList": "No species on sale right now."
@@ -2389,6 +2386,15 @@
       "saveForge": "Save price list",
       "saveHint": "Saving replaces the whole list.",
       "saved": "Prices saved."
+    },
+    "buyModal": {
+      "title": "Confirm purchase",
+      "price": "Price",
+      "current": "Current points",
+      "after": "After purchase",
+      "insufficient": "Not enough points for this purchase.",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
     }
   },
   "auditLog": {

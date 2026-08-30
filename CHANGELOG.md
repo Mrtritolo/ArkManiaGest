@@ -7,6 +7,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.13.0] - 2026-08-30
+
+### Added
+
+- **Dedicated purchase-confirmation modal.** Buying anywhere on the
+  Market page (player market, server shop, gene shop, egg/embryo forge)
+  now opens a panel-styled modal instead of the browser confirm: it
+  shows the price, the current point balance and the balance after the
+  purchase, refuses the purchase outright when points are short, and
+  closes on backdrop click.
+
 ## [4.12.2] - 2026-08-30
 
 ### Changed

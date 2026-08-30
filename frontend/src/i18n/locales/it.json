@@ -2266,7 +2266,6 @@
       "list": "Pubblicazione fallita.",
       "cancel": "Cancellazione fallita."
     },
-    "confirmBuy": "Acquisti '{{n}}' per {{p}} coins?",
     "bought": "Acquistato! Nuovo saldo: {{b}}. Usa /market claim in-game per ritirarlo.",
     "listed": "Item pubblicato sul mercato.",
     "confirmCancel": "Annullare il listing?  L'item tornerà a te via /market claim in-game.",
@@ -2312,7 +2311,6 @@
     "shop": {
       "buy": "Compra",
       "searchPh": "Cerca per nome o categoria...",
-      "confirmBuy": "Comprare \"{{what}}\" per {{price}} punti?",
       "bought": "Acquistato. {{spent}} punti spesi — ritiralo in gioco con /ritiro.",
       "emptyItems": "Il negozio e' vuoto. Un admin deve prima importare il catalogo di ArkShop.",
       "emptyGenes": "Nessun tratto pubblicato: compaiono appena un server si avvia con GeneShop 5.8.0+.",
@@ -2363,7 +2361,6 @@
       "traitAdd": "Aggiungi",
       "points": "punti",
       "buy": "Forgia e acquista",
-      "confirmBuy": "Forgiare {{what}} per {{price}} punti?",
       "claimHint": "L'uovo/embrione arriva con /ritiro in gioco: il baby avra' stat, mutazioni, colori e tratti scelti qui.",
       "levelNote": "Livello fisso {{lvl}}: le stat selvatiche vengono distribuite casualmente dal server, come in natura.",
       "emptyList": "Nessuna specie in vendita al momento."
@@ -2389,6 +2386,15 @@
       "saveForge": "Salva listino",
       "saveHint": "Il salvataggio sostituisce l'intero listino.",
       "saved": "Prezzi salvati."
+    },
+    "buyModal": {
+      "title": "Conferma acquisto",
+      "price": "Prezzo",
+      "current": "Punti attuali",
+      "after": "Dopo l'acquisto",
+      "insufficient": "Punti insufficienti per questo acquisto.",
+      "confirm": "Conferma",
+      "cancel": "Annulla"
     }
   },
   "auditLog": {

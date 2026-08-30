@@ -177,25 +177,44 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     }
   }
 
+  // Conferma acquisto: modale dedicato (non window.confirm) che mostra il
+  // saldo attuale e quello dopo l'acquisto. `run` e' l'acquisto vero, gia'
+  // completo della propria gestione errori.
+  const [pendingBuy, setPendingBuy] = useState<{
+    label: string; price: number; run: () => Promise<void>;
+  } | null>(null);
+  const [pendingBusy, setPendingBusy] = useState(false);
+
+  const confirmPendingBuy = async () => {
+    if (!pendingBuy) return;
+    setPendingBusy(true);
+    try {
+      await pendingBuy.run();
+    } finally {
+      setPendingBusy(false);
+      setPendingBuy(null);
+    }
+  };
+
   /**
    * Compra e mette in coda. Ricarica il portafoglio subito dopo: i punti
    * sono la cosa che l'utente controlla per capire se e' andata a buon fine.
    */
-  async function doBuy(kind: "item" | "dino" | "gene", key: string,
-                       label: string, price: number, tier = 1,
-                       species = "") {
-    if (!window.confirm(t("market.shop.confirmBuy", { what: label, price })))
-      return;
-    setShopBusy(key); setError(""); setSuccess("");
-    try {
-      const r = await webShopApi.buy(kind, key, 1, tier, species);
-      setSuccess(t("market.shop.bought", { spent: r.data.spent }));
-      await Promise.all([loadWallet(), loadShopOrders()]);
-    } catch (e: any) {
-      setError(e.response?.data?.detail || String(e));
-    } finally {
-      setShopBusy(null);
-    }
+  function doBuy(kind: "item" | "dino" | "gene", key: string,
+                 label: string, price: number, tier = 1,
+                 species = "") {
+    setPendingBuy({ label, price, run: async () => {
+      setShopBusy(key); setError(""); setSuccess("");
+      try {
+        const r = await webShopApi.buy(kind, key, 1, tier, species);
+        setSuccess(t("market.shop.bought", { spent: r.data.spent }));
+        await Promise.all([loadWallet(), loadShopOrders()]);
+      } catch (e: any) {
+        setError(e.response?.data?.detail || String(e));
+      } finally {
+        setShopBusy(null);
+      }
+    }});
   }
 
   const [error, setError]     = useState("");
@@ -292,21 +311,24 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     return () => clearTimeout(x);
   }, [success]);
 
-  async function handleBuy(item: MarketListedItem) {
-    if (!confirm(t("market.confirmBuy", {
-      n: arkItemDisplayName(item.blueprint), p: item.price,
-    }))) return;
-    try {
-      const res = await marketApi.buy(item.id);
-      setSuccess(t("market.bought", {
-        b: res.data.new_balance,
-      }));
-      setListed(prev => prev.filter(i => i.id !== item.id));
-      setListedTotal(t => t - 1);
-      loadWallet();
-    } catch (err) {
-      setError(extractError(err, t("market.errors.buy")));
-    }
+  function handleBuy(item: MarketListedItem) {
+    setPendingBuy({
+      label: arkItemDisplayName(item.blueprint),
+      price: item.price,
+      run: async () => {
+        try {
+          const res = await marketApi.buy(item.id);
+          setSuccess(t("market.bought", {
+            b: res.data.new_balance,
+          }));
+          setListed(prev => prev.filter(i => i.id !== item.id));
+          setListedTotal(t => t - 1);
+          loadWallet();
+        } catch (err) {
+          setError(extractError(err, t("market.errors.buy")));
+        }
+      },
+    });
   }
 
   async function handleList(itemId: number) {
@@ -477,6 +499,80 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             {success}
           </div>
         )}
+
+        {/* Modale di conferma acquisto: prezzo, saldo attuale e saldo dopo.
+            --bg-popover, non --bg-card: la seconda e' traslucida e sul tema
+            scuro un overlay ci si legge male (fix noto 3.5.5). */}
+        {pendingBuy && (() => {
+          const balance = wallet?.balance ?? null;
+          const after = balance !== null ? balance - pendingBuy.price : null;
+          const short = after !== null && after < 0;
+          return (
+            <div
+              style={{
+                position: "fixed", inset: 0, zIndex: 1000,
+                background: "rgba(0, 0, 0, 0.45)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+              onClick={() => { if (!pendingBusy) setPendingBuy(null); }}>
+              <div
+                style={{
+                  background: "var(--bg-popover)", borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  boxShadow: "0 12px 40px rgba(0, 0, 0, 0.35)",
+                  padding: "1.1rem 1.3rem", width: "min(420px, 92vw)",
+                }}
+                onClick={e => e.stopPropagation()}>
+                <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.3rem" }}>
+                  {t("market.buyModal.title")}
+                </div>
+                <div style={{ fontSize: "0.9rem", marginBottom: "0.8rem" }}>
+                  {pendingBuy.label}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem",
+                              fontSize: "0.85rem", marginBottom: "0.9rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--text-secondary)" }}>{t("market.buyModal.price")}</span>
+                    <span style={{ fontWeight: 700 }}>
+                      <Coins size={13} /> {pendingBuy.price}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--text-secondary)" }}>{t("market.buyModal.current")}</span>
+                    <span style={{ fontWeight: 600 }}>{balance !== null ? balance : "—"}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between",
+                                borderTop: "1px solid var(--border)", paddingTop: "0.3rem" }}>
+                    <span style={{ color: "var(--text-secondary)" }}>{t("market.buyModal.after")}</span>
+                    <span style={{ fontWeight: 700,
+                                   color: short ? "var(--danger)" : "var(--success)" }}>
+                      {after !== null ? after : "—"}
+                    </span>
+                  </div>
+                </div>
+                {short && (
+                  <div className="alert alert-error" style={{ marginBottom: "0.7rem" }}>
+                    {t("market.buyModal.insufficient")}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                  <button className="btn btn-secondary btn-sm"
+                    disabled={pendingBusy}
+                    onClick={() => setPendingBuy(null)}>
+                    {t("market.buyModal.cancel")}
+                  </button>
+                  <button className="btn btn-primary btn-sm"
+                    disabled={pendingBusy || short}
+                    onClick={confirmPendingBuy}>
+                    {pendingBusy
+                      ? <Loader2 size={12} className="pl-spin" />
+                      : <ShoppingBag size={12} />} {t("market.buyModal.confirm")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* TAB: Shop del server (oggetti e dino importati da ArkShop) */}
         {tab === "shop" && (
@@ -711,24 +807,25 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
               + traitPrice
             : 0;
 
-          const doBuyForge = async () => {
+          const doBuyForge = () => {
             if (!cfg || !selected) return;
-            if (!window.confirm(t("market.forge.confirmBuy",
-                { what: selected.label, price }))) return;
-            setShopBusy("__forge"); setError(""); setSuccess("");
-            try {
-              const r = await webShopApi.buy(forgeMode,
-                `${forgeMode}:${selected.label}`.slice(0, 128), 1, 1,
-                selected.blueprint,
-                { stats: [], muts: [], colors: forgeColors,
-                  traits: forgeTraits, gender: forgeGender });
-              setSuccess(t("market.shop.bought", { spent: r.data.spent }));
-              await Promise.all([loadWallet(), loadShopOrders()]);
-            } catch (e: any) {
-              setError(e.response?.data?.detail || String(e));
-            } finally {
-              setShopBusy(null);
-            }
+            const bp = selected.blueprint, lbl = selected.label;
+            const colors = [...forgeColors], traits = [...forgeTraits];
+            const gender = forgeGender, mode = forgeMode;
+            setPendingBuy({ label: lbl, price, run: async () => {
+              setShopBusy("__forge"); setError(""); setSuccess("");
+              try {
+                const r = await webShopApi.buy(mode,
+                  `${mode}:${lbl}`.slice(0, 128), 1, 1, bp,
+                  { stats: [], muts: [], colors, traits, gender });
+                setSuccess(t("market.shop.bought", { spent: r.data.spent }));
+                await Promise.all([loadWallet(), loadShopOrders()]);
+              } catch (e: any) {
+                setError(e.response?.data?.detail || String(e));
+              } finally {
+                setShopBusy(null);
+              }
+            }});
           };
 
           return (
