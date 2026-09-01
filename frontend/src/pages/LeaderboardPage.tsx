@@ -31,8 +31,8 @@ interface LbStats {
 }
 
 const EVENT_COLORS: Record<number, string> = {
-  1: '#ef4444', 2: '#f97316', 3: '#dc2626',
-  4: '#22c55e', 5: '#3b82f6', 6: '#8b5cf6', 7: '#6b7280',
+  1: '#d1614a', 2: '#d9a061', 3: '#d1614a',
+  4: '#8fce5a', 5: '#5cb89a', 6: '#9d7cc0', 7: '#8b9a7e',
 }
 const EVENT_ICONS: Record<number, string> = {
   1: '🗡️', 2: '⚔️', 3: '☠️', 4: '🦎', 5: '🔨', 6: '💥', 7: '💀',
@@ -125,9 +125,9 @@ export default function LeaderboardPage() {
   }
 
   function getRankStyle(rank: number) {
-    if (rank === 1) return { background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000', fontWeight: 900 }
-    if (rank === 2) return { background: 'linear-gradient(135deg, #d1d5db, #9ca3af)', color: '#000', fontWeight: 800 }
-    if (rank === 3) return { background: 'linear-gradient(135deg, #d97706, #b45309)', color: '#fff', fontWeight: 800 }
+    if (rank === 1) return { background: 'linear-gradient(135deg, #d9a061, #d9a061)', color: '#000', fontWeight: 900 }
+    if (rank === 2) return { background: 'linear-gradient(135deg, #dcd8c8, #8b9a7e)', color: '#000', fontWeight: 800 }
+    if (rank === 3) return { background: 'linear-gradient(135deg, #d9a061, #d9a061)', color: '#fff', fontWeight: 800 }
     return { background: 'var(--bg-card-muted)', color: 'var(--text-muted)', fontWeight: 600 }
   }
 
@@ -184,11 +184,11 @@ export default function LeaderboardPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
           {[
             { label: t('leaderboard.stats.players'), value: stats.total_players, icon: Users, color: 'var(--accent)' },
-            { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy, color: '#f59e0b' },
-            { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair, color: '#ef4444' },
-            { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart, color: '#22c55e' },
-            { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer, color: '#3b82f6' },
-            { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull, color: '#6b7280' },
+            { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy, color: '#d9a061' },
+            { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair, color: '#d1614a' },
+            { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart, color: '#8fce5a' },
+            { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer, color: '#5cb89a' },
+            { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull, color: '#8b9a7e' },
           ].map(s => (
             <div key={s.label} style={{
               display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem',
@@ -291,13 +291,13 @@ export default function LeaderboardPage() {
                       <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{s.server_type}</div>
                     </div>
                     {/* Stats */}
-                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString(undefined)}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_wild > 0 ? '#ef4444' : 'var(--text-muted)' }}>{s.kills_wild}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_player > 0 ? '#dc2626' : 'var(--text-muted)' }}>{s.kills_player}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.tames > 0 ? '#22c55e' : 'var(--text-muted)' }}>{s.tames}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.crafts > 0 ? '#3b82f6' : 'var(--text-muted)' }}>{s.crafts}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.structs_destroyed > 0 ? '#8b5cf6' : 'var(--text-muted)' }}>{s.structs_destroyed}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.deaths > 0 ? '#6b7280' : 'var(--text-muted)' }}>{s.deaths}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: '#d9a061', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString(undefined)}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_wild > 0 ? '#d1614a' : 'var(--text-muted)' }}>{s.kills_wild}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_player > 0 ? '#d1614a' : 'var(--text-muted)' }}>{s.kills_player}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.tames > 0 ? '#8fce5a' : 'var(--text-muted)' }}>{s.tames}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.crafts > 0 ? '#5cb89a' : 'var(--text-muted)' }}>{s.crafts}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.structs_destroyed > 0 ? '#9d7cc0' : 'var(--text-muted)' }}>{s.structs_destroyed}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.deaths > 0 ? '#8b9a7e' : 'var(--text-muted)' }}>{s.deaths}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(s.last_event)}</span>
                   </div>
                 ))}
@@ -351,7 +351,7 @@ export default function LeaderboardPage() {
                       <span>{EVENT_ICONS[ev.event_type] || '?'}</span>
                       <span style={{ color: EVENT_COLORS[ev.event_type] || '#888', fontWeight: 600 }}>{ev.event_label}</span>
                     </span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#f59e0b' }}>+{ev.points}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#d9a061' }}>+{ev.points}</span>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ev.target_name || '—'}
                     </span>

@@ -21,10 +21,10 @@ interface ServerItem {
 }
 
 const TRANSFER_LEVEL_META = [
-  { value: 0, color: '#16a34a', bg: 'rgba(22,163,74,0.08)', tkey: 'full' },
-  { value: 1, color: '#ca8a04', bg: 'rgba(202,138,4,0.08)', tkey: 'survivorInv' },
-  { value: 2, color: '#ea580c', bg: 'rgba(234,88,12,0.08)', tkey: 'survivorOnly' },
-  { value: 3, color: '#dc2626', bg: 'rgba(220,38,38,0.08)', tkey: 'blocked' },
+  { value: 0, color: '#8fce5a', bg: 'rgba(22,163,74,0.08)', tkey: 'full' },
+  { value: 1, color: '#d9a061', bg: 'rgba(202,138,4,0.08)', tkey: 'survivorInv' },
+  { value: 2, color: '#d9a061', bg: 'rgba(234,88,12,0.08)', tkey: 'survivorOnly' },
+  { value: 3, color: '#d1614a', bg: 'rgba(220,38,38,0.08)', tkey: 'blocked' },
 ]
 
 export default function TransferRulesPage() {
@@ -151,7 +151,7 @@ export default function TransferRulesPage() {
         </div>
       )}
       {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#16a34a' }}>
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#8fce5a' }}>
           <CheckCircle size={14} /> {success}
         </div>
       )}

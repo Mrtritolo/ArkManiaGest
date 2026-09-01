@@ -39,11 +39,11 @@ interface ScanRow {
 // interior.
 const DOT: Record<string, { r: number; fill: string }> = {
   structure: { r: 3, fill: '#00e5ff' },   // cyan
-  dino:      { r: 5, fill: '#c026ff' },   // magenta
-  player:    { r: 7, fill: '#ff2d55' },   // hot pink/red
+  dino:      { r: 5, fill: '#9d7cc0' },   // magenta
+  player:    { r: 7, fill: '#d1614a' },   // hot pink/red
 }
 const DOT_HALO = 'rgba(0, 0, 0, 0.75)'
-const OFFLINE_FILL = '#ffd400'            // acid yellow: offline character
+const OFFLINE_FILL = '#d9a061'            // acid yellow: offline character
 
 export default function PlayerMapPage() {
   const { t } = useTranslation()
@@ -459,7 +459,7 @@ export default function PlayerMapPage() {
               <span style={{ opacity: layers.structure ? 1 : 0.35 }}>
                 <Building size={11} /> {nStruct} {t('playerMap.structures')}
               </span>
-              <span style={{ color: '#8b5cf6', opacity: layers.dino ? 1 : 0.35 }}>
+              <span style={{ color: '#9d7cc0', opacity: layers.dino ? 1 : 0.35 }}>
                 ● {nDino} {t('playerMap.dinos')}
               </span>
               <span style={{ color: 'var(--danger)', opacity: layers.player ? 1 : 0.35 }}>
@@ -558,7 +558,7 @@ export default function PlayerMapPage() {
               {' '}{t('playerMap.zoomHint')}
             </div>
             {view && !view.calibrated && (
-              <div style={{ fontSize: '0.68rem', color: '#b45309', marginTop: 4 }}>
+              <div style={{ fontSize: '0.68rem', color: '#d9a061', marginTop: 4 }}>
                 {t('playerMap.noCalibration', { map: mapName })}
               </div>
             )}
@@ -627,7 +627,7 @@ export default function PlayerMapPage() {
                   borderBottom: '1px solid var(--border)',
                   background: i === selected ? 'var(--bg-card-muted)' : 'transparent',
                 }}>
-                  <span style={{ fontWeight: 600, color: r.actor_type === 'dino' ? '#8b5cf6' : r.actor_type === 'player' ? (r.is_online ? 'var(--danger)' : '#f59e0b') : 'var(--text-secondary)' }}>
+                  <span style={{ fontWeight: 600, color: r.actor_type === 'dino' ? '#9d7cc0' : r.actor_type === 'player' ? (r.is_online ? 'var(--danger)' : '#d9a061') : 'var(--text-secondary)' }}>
                     {r.actor_type === 'player' ? (r.is_online ? t('playerMap.online') : t('playerMap.offline')) : r.actor_type}
                   </span>
                   <span title={r.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.custom_name || r.display_name || r.class_name}</span>

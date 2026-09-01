@@ -44,7 +44,7 @@ function avatarUrl(userId: string, hash: string | null): string | null {
  * Color 0 means "no override" -- caller should fall back to a neutral grey.
  */
 function roleColorHex(c: number): string {
-  if (!c) return "#6b7280";
+  if (!c) return "#8b9a7e";
   return "#" + c.toString(16).padStart(6, "0");
 }
 
@@ -418,7 +418,7 @@ function MemberRow({
                         display: "flex", alignItems: "center", gap: "0.4rem",
                         padding: "0.3rem 0.55rem", cursor: "pointer", fontSize: "0.82rem",
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-50, #2563eb15)")}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-50, #5cb89a15)")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <span
@@ -453,7 +453,7 @@ function MemberRow({
           </button>
           <button
             className="btn btn-secondary btn-sm"
-            style={{ padding: "0.2rem 0.4rem", color: "#d97706" }}
+            style={{ padding: "0.2rem 0.4rem", color: "#d9a061" }}
             title={t("discord.members.action.kick")}
             onClick={onKick}
           >
@@ -461,7 +461,7 @@ function MemberRow({
           </button>
           <button
             className="btn btn-secondary btn-sm"
-            style={{ padding: "0.2rem 0.4rem", color: "#dc2626" }}
+            style={{ padding: "0.2rem 0.4rem", color: "#d1614a" }}
             title={t("discord.members.action.ban")}
             onClick={onBan}
           >
@@ -519,7 +519,7 @@ function DmModal({
           style={{ resize: "vertical", minHeight: 120 }}
         />
         <div style={{
-          fontSize: "0.7rem", color: remaining < 100 ? "#dc2626" : "var(--text-secondary)",
+          fontSize: "0.7rem", color: remaining < 100 ? "#d1614a" : "var(--text-secondary)",
           marginTop: 4, textAlign: "right",
         }}>
           {remaining} / 2000
@@ -608,7 +608,7 @@ function BanModal({
           onClick={ban}
           disabled={saving}
           className="btn btn-primary btn-sm"
-          style={{ background: "#dc2626", borderColor: "#dc2626" }}
+          style={{ background: "#d1614a", borderColor: "#d1614a" }}
         >
           {saving ? <Loader2 size={14} className="pl-spin" /> : <BanIcon size={14} />}
           {" "}{t("discord.members.modal.banConfirm")}

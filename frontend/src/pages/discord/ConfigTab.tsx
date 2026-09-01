@@ -175,8 +175,8 @@ export default function ConfigTab() {
               <div style={{
                 display: "flex", alignItems: "center", gap: "0.55rem",
                 padding: "0.55rem 0.7rem", borderRadius: 6,
-                background: "var(--accent-50, #16a34a15)",
-                border: "1px solid #16a34a40",
+                background: "var(--accent-50, #8fce5a15)",
+                border: "1px solid #8fce5a40",
               }}>
                 {guild.icon && (
                   <img
@@ -335,11 +335,11 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
           display: "flex", flexDirection: "column", gap: "0.3rem",
         }}>
           <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
-            <Metric value={report.assigned_count} label="assegnati" color="#16a34a" />
-            <Metric value={report.removed_count}  label="rimossi"   color="#d97706" />
-            <Metric value={report.noop_count}     label="no-op"     color="#6b7280" />
-            <Metric value={report.error_count}    label="errori"    color={report.error_count > 0 ? "#dc2626" : "#6b7280"} />
-            <Metric value={report.unmapped_with_vip.length} label="stranger VIP" color="#6b7280" />
+            <Metric value={report.assigned_count} label="assegnati" color="#8fce5a" />
+            <Metric value={report.removed_count}  label="rimossi"   color="#d9a061" />
+            <Metric value={report.noop_count}     label="no-op"     color="#8b9a7e" />
+            <Metric value={report.error_count}    label="errori"    color={report.error_count > 0 ? "#d1614a" : "#8b9a7e"} />
+            <Metric value={report.unmapped_with_vip.length} label="stranger VIP" color="#8b9a7e" />
           </div>
 
           {report.unmapped_with_vip.length > 0 && (
@@ -440,22 +440,22 @@ function Metric({ value, label, color }: { value: number; label: string; color: 
 }
 
 function actionBg(a: string): string {
-  if (a === "assigned") return "#16a34a15";
-  if (a === "removed")  return "#d9770615";
-  if (a === "error")    return "#dc262615";
-  return "#6b728015";
+  if (a === "assigned") return "#8fce5a15";
+  if (a === "removed")  return "#d9a06115";
+  if (a === "error")    return "#d1614a15";
+  return "#8b9a7e15";
 }
 function actionColor(a: string): string {
-  if (a === "assigned") return "#16a34a";
-  if (a === "removed")  return "#d97706";
-  if (a === "error")    return "#dc2626";
-  return "#6b7280";
+  if (a === "assigned") return "#8fce5a";
+  if (a === "removed")  return "#d9a061";
+  if (a === "error")    return "#d1614a";
+  return "#8b9a7e";
 }
 function actionBorder(a: string): string {
-  if (a === "assigned") return "#16a34a40";
-  if (a === "removed")  return "#d9770640";
-  if (a === "error")    return "#dc262640";
-  return "#6b728040";
+  if (a === "assigned") return "#8fce5a40";
+  if (a === "removed")  return "#d9a06140";
+  if (a === "error")    return "#d1614a40";
+  return "#8b9a7e40";
 }
 
 // ── Layout helpers ───────────────────────────────────────────────────────────
@@ -479,9 +479,9 @@ function Section({
         <span
           className="pl-chip"
           style={{
-            background: ready ? "#16a34a15" : "#dc262615",
-            color:      ready ? "#16a34a"   : "#dc2626",
-            borderColor: ready ? "#16a34a40" : "#dc262640",
+            background: ready ? "#8fce5a15" : "#d1614a15",
+            color:      ready ? "#8fce5a"   : "#d1614a",
+            borderColor: ready ? "#8fce5a40" : "#d1614a40",
           }}
         >
           {ready ? <ShieldCheck size={9} /> : <ShieldAlert size={9} />}
@@ -526,7 +526,7 @@ function KV({
             style={{ padding: "0.15rem 0.35rem" }}
             title="Copy"
           >
-            {copied ? <CheckCircle size={11} color="#16a34a" /> : <Copy size={11} />}
+            {copied ? <CheckCircle size={11} color="#8fce5a" /> : <Copy size={11} />}
           </button>
         )}
       </div>
@@ -545,13 +545,13 @@ function MissingHint({ keys }: { keys: string[] }) {
       style={{
         marginTop: "0.4rem",
         padding: "0.45rem 0.6rem",
-        background: "#dc262610",
-        border: "1px solid #dc262640",
+        background: "#d1614a10",
+        border: "1px solid #d1614a40",
         borderRadius: 6,
         fontSize: "0.78rem",
       }}
     >
-      <div style={{ fontWeight: 600, color: "#dc2626", marginBottom: "0.2rem" }}>
+      <div style={{ fontWeight: 600, color: "#d1614a", marginBottom: "0.2rem" }}>
         Missing .env keys:
       </div>
       <code style={{ fontFamily: "monospace", fontSize: "0.78rem" }}>

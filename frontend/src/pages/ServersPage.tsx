@@ -152,7 +152,7 @@ export default function ServersPage() {
         </div>
       )}
       {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#16a34a' }}>
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#8fce5a' }}>
           <CheckCircle size={14} /> {success}
         </div>
       )}
@@ -160,35 +160,35 @@ export default function ServersPage() {
       {/* Stats cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(22,163,74,0.08)', border: '1px solid #16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wifi size={13} color="#16a34a" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(22,163,74,0.08)', border: '1px solid #8fce5a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Wifi size={13} color="#8fce5a" />
           </div>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#16a34a', lineHeight: 1 }}>{online}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#8fce5a', lineHeight: 1 }}>{online}</div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.online')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(220,38,38,0.08)', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <WifiOff size={13} color="#dc2626" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(220,38,38,0.08)', border: '1px solid #d1614a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <WifiOff size={13} color="#d1614a" />
           </div>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#dc2626', lineHeight: 1 }}>{servers.length - online}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#d1614a', lineHeight: 1 }}>{servers.length - online}</div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.offline')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(59,130,246,0.08)', border: '1px solid #3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Users size={13} color="#3b82f6" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(59,130,246,0.08)', border: '1px solid #5cb89a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Users size={13} color="#5cb89a" />
           </div>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#3b82f6', lineHeight: 1 }}>{totalPlayers}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#5cb89a', lineHeight: 1 }}>{totalPlayers}</div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.players')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(107,114,128,0.08)', border: '1px solid #6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Server size={13} color="#6b7280" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(107,114,128,0.08)', border: '1px solid #8b9a7e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Server size={13} color="#8b9a7e" />
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{servers.length}</div>
@@ -296,7 +296,7 @@ export default function ServersPage() {
                   gridTemplateColumns: '36px 1.2fr 1fr 0.7fr 0.7fr 0.8fr 70px 70px 80px',
                   padding: '0.5rem 1rem', alignItems: 'center',
                   borderBottom: '1px solid var(--border)',
-                  borderLeft: `3px solid ${s.is_online ? '#16a34a' : '#dc2626'}`,
+                  borderLeft: `3px solid ${s.is_online ? '#8fce5a' : '#d1614a'}`,
                   transition: 'background 0.1s',
                 }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.04)')}
@@ -305,8 +305,8 @@ export default function ServersPage() {
                   {/* Status dot */}
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     {s.is_online
-                      ? <Wifi size={14} color="#16a34a" />
-                      : <WifiOff size={14} color="#dc2626" />}
+                      ? <Wifi size={14} color="#8fce5a" />
+                      : <WifiOff size={14} color="#d1614a" />}
                   </div>
 
                   {/* Display name */}
@@ -344,8 +344,8 @@ export default function ServersPage() {
                       display: 'inline-flex', padding: '0.1rem 0.4rem', borderRadius: 4,
                       fontSize: '0.72rem', fontWeight: 700,
                       background: s.game_mode === 'PvP' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
-                      color: s.game_mode === 'PvP' ? '#dc2626' : '#16a34a',
-                      border: `1px solid ${s.game_mode === 'PvP' ? '#dc262620' : '#16a34a20'}`,
+                      color: s.game_mode === 'PvP' ? '#d1614a' : '#8fce5a',
+                      border: `1px solid ${s.game_mode === 'PvP' ? '#d1614a20' : '#8fce5a20'}`,
                     }}>{s.game_mode}</span>
                   )}
 
@@ -377,7 +377,7 @@ export default function ServersPage() {
                       style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem', width: '100%' }} />
                   ) : (
                     <span style={{ fontSize: '0.82rem' }}>
-                      <span style={{ fontWeight: 700, color: s.player_count > 0 ? '#3b82f6' : 'var(--text-primary)' }}>
+                      <span style={{ fontWeight: 700, color: s.player_count > 0 ? '#5cb89a' : 'var(--text-primary)' }}>
                         {s.player_count}
                       </span>
                       <span style={{ color: 'var(--text-muted)' }}>/{s.max_players}</span>

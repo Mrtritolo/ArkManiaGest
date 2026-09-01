@@ -43,15 +43,15 @@ interface ServerItem {
 // Visual styling only — labels are resolved via i18n using the key
 // `eventLog.types.<EVENT_TYPE>` (see locales/*.json).
 const EVENT_STYLES: Record<string, { color: string; bg: string; icon: LucideIcon }> = {
-  LOGIN:        { color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   icon: LogIn },
-  RARE_SPAWN:   { color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   icon: Sparkles },
-  RARE_DESPAWN: { color: '#6b7280', bg: 'rgba(107,114,128,0.08)',  icon: Eye },
-  RARE_KILLED:  { color: '#dc2626', bg: 'rgba(220,38,38,0.08)',    icon: Skull },
-  RARE_TAMED:   { color: '#16a34a', bg: 'rgba(22,163,74,0.08)',    icon: Heart },
-  DECAY_SCAN:   { color: '#ca8a04', bg: 'rgba(202,138,4,0.08)',    icon: Timer },
+  LOGIN:        { color: '#5cb89a', bg: 'rgba(59,130,246,0.08)',   icon: LogIn },
+  RARE_SPAWN:   { color: '#9d7cc0', bg: 'rgba(139,92,246,0.08)',   icon: Sparkles },
+  RARE_DESPAWN: { color: '#8b9a7e', bg: 'rgba(107,114,128,0.08)',  icon: Eye },
+  RARE_KILLED:  { color: '#d1614a', bg: 'rgba(220,38,38,0.08)',    icon: Skull },
+  RARE_TAMED:   { color: '#8fce5a', bg: 'rgba(22,163,74,0.08)',    icon: Heart },
+  DECAY_SCAN:   { color: '#d9a061', bg: 'rgba(202,138,4,0.08)',    icon: Timer },
 }
 
-const DEFAULT_STYLE = { color: '#6b7280', bg: 'rgba(107,114,128,0.08)', icon: ScrollText }
+const DEFAULT_STYLE = { color: '#8b9a7e', bg: 'rgba(107,114,128,0.08)', icon: ScrollText }
 
 function getStyle(type: string) {
   return EVENT_STYLES[type] || DEFAULT_STYLE
@@ -200,15 +200,15 @@ export default function EventLogPage() {
 
       {/* Success message */}
       {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#16a34a' }}>
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#8fce5a' }}>
           <CheckCircle size={14} /> {success}
         </div>
       )}
 
       {/* Purge panel */}
       {showPurge && (
-        <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid #dc2626' }}>
-          <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: '#dc2626' }}>
+        <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid #d1614a' }}>
+          <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: '#d1614a' }}>
             <Trash2 size={14} style={{ verticalAlign: -2 }} /> {t('eventLog.purgeTitle')}
           </h3>
           <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
@@ -235,7 +235,7 @@ export default function EventLogPage() {
               </select>
             </div>
             <button onClick={handlePurge} disabled={purging} className="btn btn-primary"
-              style={{ fontSize: '0.82rem', background: '#dc2626', borderColor: '#dc2626' }}>
+              style={{ fontSize: '0.82rem', background: '#d1614a', borderColor: '#d1614a' }}>
               {purging ? t('eventLog.purging') : t('eventLog.purgeGo')}
             </button>
             <button onClick={() => setShowPurge(false)} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('common.cancel')}</button>

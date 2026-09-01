@@ -125,6 +125,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   on Windows those files are locked, so the update would fail halfway
   and leave a partially rewritten tree.
 
+- **Restyle: OrcaCtl's structure, ARK's colours.** The layout language is
+  taken from orcactl.io -- solid panels instead of frosted glass, 4/6px
+  corners instead of 11/18, one type family (Archivo + JetBrains Mono)
+  instead of three, a filled primary button, no neon glow. Its palette is
+  not: the panel is fern green and bark brown, with gradients kept inside
+  the family (green -> olive -> amber are adjacent, so they ramp without
+  going grey in the middle). Both themes redone; the light one is parchment,
+  not clinical white. Variable *names* are unchanged, so every component
+  inherited the new theme without being rewritten, and the 273 hardcoded
+  colour literals across the pages were remapped hex-to-hex -- not to
+  `var()`, because half the dashboard builds its tints by concatenating an
+  alpha suffix onto the colour string.
+- Fixed: a "readability" block at the foot of the stylesheet silently reset
+  `--radius` to 11px, overriding the token layer at the top. Text size and
+  sidebar width from that block are kept -- those are legibility decisions,
+  not style ones.
+- Fixed: links had never been styled and fell back to the browser's default
+  blue.
+
 - **Shop catalogue is categorised.** The catalogue had no categories: the
   ArkShop import wrote the *Permissions* string into `category`, so the
   subtitle under 52 of 55 tiles read "WL". Entries are now classified into

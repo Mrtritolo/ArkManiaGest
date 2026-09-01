@@ -460,7 +460,7 @@ export default function ArkShopPage() {
           <p className="page-subtitle">{t('arkshop.subtitleStats', { items: shopItems.length, kits: kits.length, sell: sellItems.length })}</p>
         </div>
         <div className="page-header-actions">
-          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: '#dc2626' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>
+          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: '#d1614a' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>
           <button onClick={handleUploadClick} className="btn btn-secondary btn-sm"><Upload size={14} /> {t('arkshop.actions.reload')}</button>
           <button onClick={handleExport} className="btn btn-secondary btn-sm"><Download size={14} /> {t('arkshop.actions.export')}</button>
           <button onClick={() => setShowDeploy(!showDeploy)} className="btn btn-primary btn-sm" disabled={pushing}>
@@ -531,7 +531,7 @@ export default function ArkShopPage() {
                               <RotateCcw size={10} />
                             </button>
                             <button onClick={() => handleDeleteVersion(v.id)}
-                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: '#dc2626' }} title={t('arkshop.deploy.deleteTitle')}>
+                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: '#d1614a' }} title={t('arkshop.deploy.deleteTitle')}>
                               <Trash2 size={10} />
                             </button>
                           </div>
@@ -575,7 +575,7 @@ export default function ArkShopPage() {
                               result.status === 'deployed'
                                 ? <span style={{ color: 'var(--success)', fontSize: '0.75rem' }}><CheckCircle size={11} /> {t('arkshop.deploy.deployed')}</span>
                                 : result.status === 'running'
-                                  ? <span style={{ color: '#d97706', fontSize: '0.75rem' }}><Play size={11} /> {t('arkshop.deploy.active')}</span>
+                                  ? <span style={{ color: '#d9a061', fontSize: '0.75rem' }}><Play size={11} /> {t('arkshop.deploy.active')}</span>
                                   : <span style={{ color: 'var(--danger)', fontSize: '0.75rem' }} title={result.message}><AlertCircle size={11} /> {t('arkshop.deploy.errorStatus')}</span>
                             ) : (
                               <button onClick={() => handleDeploy(deployVersionId ?? undefined, s.machine_id, s.container_name)}
@@ -662,9 +662,9 @@ export default function ArkShopPage() {
                         {it.Quality > 0 && <span className="as-bp-quality">Q{it.Quality}</span>}
                         {it.ForceBlueprint && <span className="as-bp-tag">{t('arkshop.sub.bp')}</span>}
                       </>) : (<>
-                        <span className="as-bp-amount" style={{ color: '#64748b' }}>{t('arkshop.shop.bpCommandTag')}</span>
+                        <span className="as-bp-amount" style={{ color: '#8b9a7e' }}>{t('arkshop.shop.bpCommandTag')}</span>
                         <span className="as-bp-name">{it.Command || it.DisplayAs || '?'}</span>
-                        {it.ExecuteAsAdmin && <span className="as-bp-tag" style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>{t('arkshop.shop.bpAdminTag')}</span>}
+                        {it.ExecuteAsAdmin && <span className="as-bp-tag" style={{ background: 'rgba(220,38,38,0.08)', color: '#d1614a' }}>{t('arkshop.shop.bpAdminTag')}</span>}
                       </>)}
                     </div>
                   ))}

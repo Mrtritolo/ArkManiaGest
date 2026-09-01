@@ -1586,7 +1586,7 @@ export default function PlayersPage() {
                     <details style={{ marginBottom: '0.5rem' }}>
                       <summary style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '0.3rem' }}>{t('players.maps.debugInfo', { count: mapsDebug.length })}</summary>
                       <pre style={{
-                        fontSize: '0.65rem', background: '#0f172a', color: '#e2e8f0',
+                        fontSize: '0.65rem', background: '#1b2116', color: '#dcd8c8',
                         padding: '0.5rem', borderRadius: '6px', maxHeight: '250px',
                         overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
                       }}>{JSON.stringify(mapsDebug, null, 2)}</pre>
@@ -1959,7 +1959,7 @@ export default function PlayersPage() {
               paddingBottom: '0.5rem',
             }}>
               <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <AlertCircle size={16} color="#d97706" />
+                <AlertCircle size={16} color="#d9a061" />
                 {t('players.ambiguous.title', {
                   n: ambiguousList.length,
                 })}
@@ -2006,10 +2006,10 @@ export default function PlayersPage() {
                           style={{
                             display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
                             padding: '0.3rem 0.45rem',
-                            border: checked ? '2px solid var(--accent, #2563eb)' : '1px solid var(--border)',
+                            border: checked ? '2px solid var(--accent, #5cb89a)' : '1px solid var(--border)',
                             borderRadius: 4,
                             cursor: applyingAmbig ? 'not-allowed' : 'pointer',
-                            background: checked ? 'var(--accent-50, #2563eb15)' : 'var(--surface, #fff)',
+                            background: checked ? 'var(--accent-50, #5cb89a15)' : 'var(--surface, #fff)',
                           }}
                         >
                           <input
@@ -2148,7 +2148,7 @@ export default function PlayersPage() {
               />
               <div style={{
                 fontSize: '0.7rem',
-                color: 2000 - dmContent.length < 100 ? '#dc2626' : 'var(--text-secondary)',
+                color: 2000 - dmContent.length < 100 ? '#d1614a' : 'var(--text-secondary)',
                 marginTop: 4, textAlign: 'right',
               }}>
                 {2000 - dmContent.length} / 2000
@@ -2279,7 +2279,7 @@ export default function PlayersPage() {
                     display: 'flex', alignItems: 'center', gap: '0.5rem',
                     padding: '0.3rem 0.55rem',
                     cursor: importing ? 'not-allowed' : 'pointer',
-                    background: checked ? 'var(--accent-50, #2563eb12)' : 'transparent',
+                    background: checked ? 'var(--accent-50, #5cb89a12)' : 'transparent',
                     borderBottom: '1px solid var(--border)',
                   }}>
                     <input
@@ -2353,10 +2353,10 @@ export default function PlayersPage() {
           >
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              marginBottom: '0.6rem', borderBottom: '1px solid #dc262640',
+              marginBottom: '0.6rem', borderBottom: '1px solid #d1614a40',
               paddingBottom: '0.5rem',
             }}>
-              <span style={{ fontWeight: 600, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontWeight: 600, color: '#d1614a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Skull size={16} />
                 {t('players.wipe.title')}
               </span>
@@ -2417,7 +2417,7 @@ export default function PlayersPage() {
                     </div>
                   ))}
                   {wipePreview.errors?.length > 0 && (
-                    <div style={{ marginTop: '0.4rem', color: '#dc2626' }}>
+                    <div style={{ marginTop: '0.4rem', color: '#d1614a' }}>
                       {wipePreview.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
                     </div>
                   )}
@@ -2437,7 +2437,7 @@ export default function PlayersPage() {
                 onClick={confirmWipe}
                 disabled={wiping || wipeLoading || !wipePreview || wipePreview.total_files === 0}
                 className="btn btn-primary btn-sm"
-                style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                style={{ background: '#d1614a', borderColor: '#d1614a' }}
               >
                 {wiping
                   ? <><Loader2 size={12} className="pl-spin" /> {t('players.wipe.deleting')}</>

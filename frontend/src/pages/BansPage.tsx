@@ -207,7 +207,7 @@ export default function BansPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <div style={{
                       width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                      background: ban.is_active ? '#ef4444' : '#94a3b8',
+                      background: ban.is_active ? '#d1614a' : '#94a3b8',
                       boxShadow: ban.is_active ? '0 0 4px rgba(239,68,68,0.5)' : 'none',
                     }} />
                     <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

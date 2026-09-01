@@ -441,7 +441,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             </div>
             {wallet && (
               <div className="pl-chip" title={t("market.pointsHint")}
-                style={{ background: "#16a34a15", color: "#16a34a", borderColor: "#16a34a40", fontSize: "0.85rem" }}>
+                style={{ background: "#8fce5a15", color: "#8fce5a", borderColor: "#8fce5a40", fontSize: "0.85rem" }}>
                 <Coins size={11} /> {wallet.balance.toLocaleString()}
               </div>
             )}
@@ -459,7 +459,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               gap: "1rem", padding: "0.8rem 1.1rem",
-              background: "linear-gradient(135deg, #16a34a 0%, #047857 100%)",
+              background: "linear-gradient(135deg, #8fce5a 0%, #047857 100%)",
               color: "#fff", borderRadius: 12,
               boxShadow: "0 4px 12px rgba(22, 163, 74, 0.25)",
               marginBottom: "1rem",
@@ -1027,7 +1027,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   {forgeTraits.map(tr => (
                     <span key={tr} style={{
                       fontSize: "0.72rem", padding: "0.15rem 0.45rem",
-                      borderRadius: 10, background: "var(--accent-50, #2563eb12)",
+                      borderRadius: 10, background: "var(--accent-50, #5cb89a12)",
                       display: "inline-flex", alignItems: "center", gap: 4,
                     }}>
                       {tr}
@@ -1372,10 +1372,10 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
         {tab === "mine" && (
           <>
             <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.7rem", flexWrap: "wrap" }}>
-              <Stat label="Draft" value={myStats.draft} color="#6b7280" />
-              <Stat label="In vendita" value={myStats.listed} color="#16a34a" />
-              <Stat label="Venduti (in claim)" value={myStats.sold} color="#d97706" />
-              <Stat label="Conclusi" value={myStats.claimed} color="#2563eb" />
+              <Stat label="Draft" value={myStats.draft} color="#8b9a7e" />
+              <Stat label="In vendita" value={myStats.listed} color="#8fce5a" />
+              <Stat label="Venduti (in claim)" value={myStats.sold} color="#d9a061" />
+              <Stat label="Conclusi" value={myStats.claimed} color="#5cb89a" />
             </div>
             {myLoading ? (
               <div className="pl-loading"><Loader2 size={16} className="pl-spin" /></div>
@@ -1401,7 +1401,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                         <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
                           <div style={{
                             width: 38, height: 38,
-                            background: "linear-gradient(135deg, #1f2937 0%, #374151 100%)",
+                            background: "linear-gradient(135deg, #131a13 0%, #1c261a 100%)",
                             borderRadius: 6, padding: 3, flexShrink: 0,
                             display: "flex", alignItems: "center", justifyContent: "center",
                           }}>
@@ -1444,13 +1444,13 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                         )}
                         {it.role === "owner" && it.status === "listed" && (
                           <div style={{ display: "flex", gap: "0.3rem", justifyContent: "flex-end" }}>
-                            <button onClick={() => handleCancel(it.id)} className="btn btn-secondary btn-sm" style={{ color: "#dc2626" }}>
+                            <button onClick={() => handleCancel(it.id)} className="btn btn-secondary btn-sm" style={{ color: "#d1614a" }}>
                               <Ban size={11} /> {t("market.cancel")}
                             </button>
                           </div>
                         )}
                         {it.status === "sold" && it.role === "buyer" && (
-                          <span style={{ fontSize: "0.78rem", color: "#d97706" }}>
+                          <span style={{ fontSize: "0.78rem", color: "#d9a061" }}>
                             {t("market.useClaim")}
                           </span>
                         )}
@@ -1489,9 +1489,9 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                       <td style={{ fontSize: "0.78rem" }}>{fmtRelative(tx.created_at)}</td>
                       <td>
                         <span className="pl-chip" style={{
-                          background: tx.role === "buyer" ? "#dc262615" : "#16a34a15",
-                          color:      tx.role === "buyer" ? "#dc2626"   : "#16a34a",
-                          borderColor:tx.role === "buyer" ? "#dc262640" : "#16a34a40",
+                          background: tx.role === "buyer" ? "#d1614a15" : "#8fce5a15",
+                          color:      tx.role === "buyer" ? "#d1614a"   : "#8fce5a",
+                          borderColor:tx.role === "buyer" ? "#d1614a40" : "#8fce5a40",
                         }}>
                           {tx.role === "buyer" ? t("market.bought2") : t("market.sold")}
                         </span>
@@ -1501,7 +1501,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                         {tx.counterpart_name || tx.counterpart_eos.slice(0, 8) + "…"}
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 600,
-                        color: tx.role === "buyer" ? "#dc2626" : "#16a34a" }}>
+                        color: tx.role === "buyer" ? "#d1614a" : "#8fce5a" }}>
                         {tx.role === "buyer" ? "−" : "+"}{tx.price.toLocaleString()} 🪙
                       </td>
                     </tr>
@@ -1568,7 +1568,7 @@ function ItemCard({
         width: "100%", aspectRatio: "1 / 1",
         background: isCryo
           ? "linear-gradient(135deg, #4c1d95 0%, #1e1b4b 100%)"
-          : "linear-gradient(135deg, #1f2937 0%, #374151 100%)",
+          : "linear-gradient(135deg, #131a13 0%, #1c261a 100%)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "0.5rem", position: "relative",
       }}>
@@ -1600,7 +1600,7 @@ function ItemCard({
         {isCryo && it.dino?.level && (
           <span style={{
             position: "absolute", top: 6, right: 6,
-            background: "linear-gradient(135deg, #f59e0b, #d97706)",
+            background: "linear-gradient(135deg, #d9a061, #d9a061)",
             color: "#fff",
             fontSize: "0.78rem", fontWeight: 700,
             padding: "0.15rem 0.55rem", borderRadius: 99,
@@ -1614,7 +1614,7 @@ function ItemCard({
         {it.is_blueprint && (
           <span style={{
             position: "absolute", top: 6, left: 6,
-            background: "#2563eb", color: "#fff",
+            background: "#5cb89a", color: "#fff",
             fontSize: "0.65rem", fontWeight: 700,
             padding: "0.1rem 0.4rem", borderRadius: 4,
             letterSpacing: 0.5, textTransform: "uppercase",
@@ -1630,7 +1630,7 @@ function ItemCard({
         {isCryo && it.dino?.gender && (
           <span style={{
             position: "absolute", top: 6, left: 6,
-            background: it.dino.gender === "FEMALE" ? "#ec4899" : "#3b82f6",
+            background: it.dino.gender === "FEMALE" ? "#c2739e" : "#5cb89a",
             color: "#fff",
             // Bigger circular chip with the gender glyph centred.
             width: 36, height: 36, borderRadius: "50%",
@@ -1735,7 +1735,7 @@ function ItemCard({
           <div style={{
             display: "flex", alignItems: "center", gap: "0.25rem",
             fontSize: "1.15rem", fontWeight: 700,
-            color: hasEnough ? "#16a34a" : "#dc2626",
+            color: hasEnough ? "#8fce5a" : "#d1614a",
           }}>
             <Coins size={14} /> {it.price.toLocaleString()}
           </div>
@@ -1793,7 +1793,7 @@ function ItemImage({
       <div style={{
         width: size, height: size,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "#ffffff10", color: "#9ca3af", borderRadius: 8,
+        background: "#ffffff10", color: "#8b9a7e", borderRadius: 8,
       }}>
         <Package size={Math.round(size * 0.45)} />
       </div>
@@ -1847,12 +1847,12 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
 
 function StatusChip({ status }: { status: string }) {
   const colors: Record<string, [string, string]> = {
-    draft:   ["#6b7280", "Bozza"],
-    listed:  ["#16a34a", "In vendita"],
-    sold:    ["#d97706", "Venduto"],
-    claimed: ["#2563eb", "Concluso"],
+    draft:   ["#8b9a7e", "Bozza"],
+    listed:  ["#8fce5a", "In vendita"],
+    sold:    ["#d9a061", "Venduto"],
+    claimed: ["#5cb89a", "Concluso"],
   };
-  const [c, lbl] = colors[status] ?? ["#6b7280", status];
+  const [c, lbl] = colors[status] ?? ["#8b9a7e", status];
   return (
     <span className="pl-chip" style={{
       background: `${c}15`, color: c, borderColor: `${c}40`,

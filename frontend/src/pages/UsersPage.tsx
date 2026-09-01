@@ -17,9 +17,9 @@ import type { AuthUser, UserRole } from '../types'
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  admin:    '#dc2626',
-  operator: '#2563eb',
-  viewer:   '#6b7280',
+  admin:    '#d1614a',
+  operator: '#5cb89a',
+  viewer:   '#8b9a7e',
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ export default function UsersPage() {
                     <div className="pl-cell-player">
                       <div
                         className="pl-avatar"
-                        style={u.role === 'admin' ? { background: 'linear-gradient(135deg, #dc2626, #f97316)' } : {}}
+                        style={u.role === 'admin' ? { background: 'linear-gradient(135deg, #d1614a, #d9a061)' } : {}}
                       >
                         {u.display_name[0].toUpperCase()}
                       </div>
@@ -266,8 +266,8 @@ export default function UsersPage() {
                   </td>
                   <td>
                     {u.active
-                      ? <span style={{ color: '#16a34a', fontSize: '0.78rem' }}><UserCheck size={12} /> {t('users.status.active')}</span>
-                      : <span style={{ color: '#dc2626', fontSize: '0.78rem' }}><UserX size={12} /> {t('users.status.disabled')}</span>
+                      ? <span style={{ color: '#8fce5a', fontSize: '0.78rem' }}><UserCheck size={12} /> {t('users.status.active')}</span>
+                      : <span style={{ color: '#d1614a', fontSize: '0.78rem' }}><UserX size={12} /> {t('users.status.disabled')}</span>
                     }
                   </td>
                   <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{fmtDateTime(u.last_login, t('users.lastLoginNever'))}</td>
@@ -293,7 +293,7 @@ export default function UsersPage() {
                       <button
                         onClick={() => handleDelete(u)}
                         className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.2rem 0.4rem', color: '#dc2626' }}
+                        style={{ padding: '0.2rem 0.4rem', color: '#d1614a' }}
                         title={t('users.action.delete')}
                       >
                         <Trash2 size={12} />

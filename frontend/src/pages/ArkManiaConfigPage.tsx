@@ -295,13 +295,13 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
 
   function getTypeBadge(type: string) {
     const map: Record<string, { bg: string; color: string; labelKey: string }> = {
-      dino:      { bg: 'rgba(34,197,94,0.12)', color: '#16a34a', labelKey: 'arkmaniaConfig.typeBadge.dino' },
-      armor:     { bg: 'rgba(37,99,235,0.1)', color: '#2563eb', labelKey: 'arkmaniaConfig.typeBadge.armor' },
-      weapon:    { bg: 'rgba(239,68,68,0.1)', color: '#dc2626', labelKey: 'arkmaniaConfig.typeBadge.weapon' },
-      resource:  { bg: 'rgba(217,119,6,0.1)', color: '#d97706', labelKey: 'arkmaniaConfig.typeBadge.resource' },
-      consumable:{ bg: 'rgba(168,85,247,0.1)', color: '#a855f7', labelKey: 'arkmaniaConfig.typeBadge.consumable' },
-      structure: { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', labelKey: 'arkmaniaConfig.typeBadge.structure' },
-      item:      { bg: 'rgba(107,114,128,0.08)', color: '#9ca3af', labelKey: 'arkmaniaConfig.typeBadge.item' },
+      dino:      { bg: 'rgba(34,197,94,0.12)', color: '#8fce5a', labelKey: 'arkmaniaConfig.typeBadge.dino' },
+      armor:     { bg: 'rgba(37,99,235,0.1)', color: '#5cb89a', labelKey: 'arkmaniaConfig.typeBadge.armor' },
+      weapon:    { bg: 'rgba(239,68,68,0.1)', color: '#d1614a', labelKey: 'arkmaniaConfig.typeBadge.weapon' },
+      resource:  { bg: 'rgba(217,119,6,0.1)', color: '#d9a061', labelKey: 'arkmaniaConfig.typeBadge.resource' },
+      consumable:{ bg: 'rgba(168,85,247,0.1)', color: '#9d7cc0', labelKey: 'arkmaniaConfig.typeBadge.consumable' },
+      structure: { bg: 'rgba(107,114,128,0.12)', color: '#8b9a7e', labelKey: 'arkmaniaConfig.typeBadge.structure' },
+      item:      { bg: 'rgba(107,114,128,0.08)', color: '#8b9a7e', labelKey: 'arkmaniaConfig.typeBadge.item' },
     }
     const m = map[type] || map.item
     return (
@@ -1010,7 +1010,7 @@ export default function ArkManiaConfigPage() {
                             }}>
                             <div style={{
                               width: 36, height: 20, borderRadius: 10, flexShrink: 0, position: 'relative',
-                              background: isOn ? 'var(--green)' : '#374151', transition: 'background 0.2s',
+                              background: isOn ? 'var(--green)' : '#1c261a', transition: 'background 0.2s',
                             }}>
                               <div style={{
                                 width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute',

@@ -43,9 +43,9 @@ function avatarUrl(userId: string, hash: string | null): string | null {
 }
 
 const ROLE_COLORS: Record<string, string> = {
-  admin:    "#dc2626",
-  operator: "#2563eb",
-  viewer:   "#6b7280",
+  admin:    "#d1614a",
+  operator: "#5cb89a",
+  viewer:   "#8b9a7e",
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ export default function AccountsTab() {
               const display = acc.discord_global_name || acc.discord_username || acc.discord_user_id;
               const roleColor = acc.app_user_role
                 ? ROLE_COLORS[acc.app_user_role] ?? ROLE_COLORS.viewer
-                : "#6b7280";
+                : "#8b9a7e";
               return (
                 <tr key={acc.discord_user_id}>
                   {/* Discord identity */}
@@ -221,7 +221,7 @@ export default function AccountsTab() {
                         <span
                           className="pl-chip"
                           title={acc.eos_id}
-                          style={{ background: "#16a34a15", color: "#16a34a", borderColor: "#16a34a30" }}
+                          style={{ background: "#8fce5a15", color: "#8fce5a", borderColor: "#8fce5a30" }}
                         >
                           <Database size={9} /> {acc.eos_id.slice(0, 8)}…
                         </span>
@@ -377,8 +377,8 @@ function LinkAppUserModal({
               style={{
                 display: "flex", alignItems: "center", gap: "0.5rem",
                 padding: "0.4rem 0.55rem", cursor: "pointer",
-                background: active ? "var(--accent-50, #2563eb22)" : "transparent",
-                borderLeft: active ? "3px solid var(--accent, #2563eb)" : "3px solid transparent",
+                background: active ? "var(--accent-50, #5cb89a22)" : "transparent",
+                borderLeft: active ? "3px solid var(--accent, #5cb89a)" : "3px solid transparent",
               }}
             >
               <div className="pl-avatar" style={{ width: 26, height: 26, fontSize: 11 }}>
@@ -514,8 +514,8 @@ function LinkEosModal({
               style={{
                 display: "flex", alignItems: "center", gap: "0.5rem",
                 padding: "0.4rem 0.55rem", cursor: "pointer",
-                background: active ? "var(--accent-50, #2563eb22)" : "transparent",
-                borderLeft: active ? "3px solid var(--accent, #2563eb)" : "3px solid transparent",
+                background: active ? "var(--accent-50, #5cb89a22)" : "transparent",
+                borderLeft: active ? "3px solid var(--accent, #5cb89a)" : "3px solid transparent",
               }}
             >
               <div style={{ flex: 1 }}>

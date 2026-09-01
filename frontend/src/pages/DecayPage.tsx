@@ -394,7 +394,7 @@ export default function DecayPage() {
           { label: t('decay.stats.expired'), value: stats.expired, icon: XCircle, color: 'var(--danger)', bg: 'var(--danger-bg)' },
           { label: t('decay.stats.expiring'), value: stats.expiring_soon, icon: AlertTriangle, color: 'var(--warning)', bg: 'var(--warning-bg)' },
           { label: t('decay.stats.safe'), value: stats.safe, icon: CheckCircle, color: 'var(--success)', bg: 'var(--success-bg)' },
-          { label: t('decay.stats.pending'), value: stats.pending, icon: Clock, color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },
+          { label: t('decay.stats.pending'), value: stats.pending, icon: Clock, color: '#9d7cc0', bg: 'rgba(139,92,246,0.08)' },
           { label: t('decay.stats.purged7d'), value: stats.purged_last_7d, icon: Trash2, color: 'var(--text-muted)', bg: 'var(--bg-card-muted)' },
         ].map(s => (
           <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.85rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
@@ -541,7 +541,7 @@ export default function DecayPage() {
                   <span style={{ fontSize: '0.82rem' }}>{p.server_name || p.server_key.split('_')[0]}</span>
                   <span style={{
                     fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase',
-                    color: p.reason === 'orphaned' ? '#8b5cf6' : 'var(--danger)',
+                    color: p.reason === 'orphaned' ? '#9d7cc0' : 'var(--danger)',
                   }}>{p.reason === 'orphaned' ? t('decay.reason.orphaned') : p.reason === 'expired' ? t('decay.reason.expired') : p.reason}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: p.structure_count > 500 ? 700 : 400, color: p.structure_count > 500 ? 'var(--danger)' : 'var(--text-secondary)' }}>{p.structure_count.toLocaleString(undefined)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{p.dino_count}</span>
@@ -644,7 +644,7 @@ export default function DecayPage() {
                     ) : (
                       <>
                       {detailTruncated && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem', fontWeight: 600, color: '#b45309', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 6, padding: '0.4rem 0.7rem', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem', fontWeight: 600, color: '#d9a061', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 6, padding: '0.4rem 0.7rem', marginBottom: 6 }}>
                           <AlertTriangle size={13} /> {t('decay.detail.truncated')}
                         </div>
                       )}
@@ -672,7 +672,7 @@ export default function DecayPage() {
                         </div>
                         {detailVisible.map(({ r: row, i: idx }) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
-                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? '#8b5cf6' : 'var(--text-secondary)' }}>{row.actor_type}</span>
+                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? '#9d7cc0' : 'var(--text-secondary)' }}>{row.actor_type}</span>
                             <span title={row.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.custom_name || row.display_name || row.class_name}</span>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{row.owner_name || '—'}</span>
                             <span style={{ fontFamily: 'var(--font-mono)' }}>{row.actor_type === 'dino' && row.dino_level > 0 ? row.dino_level : '—'}</span>

@@ -213,7 +213,7 @@ export default function OnlinePlayersPage() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                background: '#22c55e', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
+                                background: '#8fce5a', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
                   <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)',
                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.player_name || t('onlinePlayers.unknownPlayer')}

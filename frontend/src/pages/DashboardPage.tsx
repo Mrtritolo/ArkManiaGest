@@ -101,7 +101,7 @@ export default function DashboardPage() {
       <div style={{
         display: 'flex', alignItems: 'center', gap: '1rem',
         padding: '1rem 1.25rem', marginBottom: '1.25rem',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%)',
+        background: 'linear-gradient(135deg, #1b2116 0%, #1e3a5f 50%, #1b2116 100%)',
         borderRadius: 'var(--radius-lg)', border: '1px solid rgba(59,130,246,0.15)',
         boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
         position: 'relative', overflow: 'hidden',
@@ -203,7 +203,7 @@ export default function DashboardPage() {
                 padding: '0.45rem 1rem', borderBottom: '1px solid var(--border)',
               }}>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                              background: '#22c55e', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
+                              background: '#8fce5a', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
                 <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)',
                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.player_name || t('dashboard.card.unknown')}

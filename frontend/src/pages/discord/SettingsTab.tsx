@@ -571,7 +571,7 @@ function RoleMappingSection() {
                 <button
                   onClick={() => del(m.id)}
                   className="btn btn-secondary btn-sm"
-                  style={{ padding: "0.2rem 0.4rem", color: "#dc2626" }}
+                  style={{ padding: "0.2rem 0.4rem", color: "#d1614a" }}
                   title={t("discord.roleMap.delete")}
                 >
                   <Trash2 size={12} />
@@ -666,17 +666,17 @@ function RoleMappingSection() {
                 padding: "0.25rem 0.45rem",
                 borderBottom: "1px solid var(--border)",
                 display: "flex", justifyContent: "space-between",
-                color: a.error ? "#dc2626" : "var(--text)",
+                color: a.error ? "#d1614a" : "var(--text)",
               }}>
                 <span>
                   {a.player_name || a.eos_id.slice(0, 8) + "…"}
                   {a.groups_added.length > 0 && (
-                    <span style={{ color: "#16a34a", marginLeft: 6 }}>
+                    <span style={{ color: "#8fce5a", marginLeft: 6 }}>
                       +{a.groups_added.join(",")}
                     </span>
                   )}
                   {a.groups_removed.length > 0 && (
-                    <span style={{ color: "#d97706", marginLeft: 6 }}>
+                    <span style={{ color: "#d9a061", marginLeft: 6 }}>
                       -{a.groups_removed.join(",")}
                     </span>
                   )}
@@ -757,7 +757,7 @@ function SecretField({
               onClick={() => onModeChange("clear")}
               className="btn btn-secondary btn-sm"
               type="button"
-              style={{ color: "#dc2626" }}
+              style={{ color: "#d1614a" }}
               title={t("discord.settings.secret.clearTitle")}
             >
               {t("discord.settings.secret.clear")}

@@ -484,15 +484,15 @@ function CharacterHero({
       <div style={{
         padding: "1rem 1.2rem",
         background: isVip
-          ? "linear-gradient(135deg, #facc1520 0%, transparent 60%)"
+          ? "linear-gradient(135deg, #d9a06120 0%, transparent 60%)"
           : "transparent",
         display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap",
       }}>
         <div style={{
           width: 60, height: 60, borderRadius: "50%",
           background: isVip
-            ? "linear-gradient(135deg, #facc15, #f97316)"
-            : "linear-gradient(135deg, #6b7280, #4b5563)",
+            ? "linear-gradient(135deg, #d9a061, #d9a061)"
+            : "linear-gradient(135deg, #8b9a7e, #4b5563)",
           color: "#fff",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "1.6rem", fontWeight: 700,
@@ -509,8 +509,8 @@ function CharacterHero({
             </span>
             {isVip && (
               <span className="pl-chip" style={{
-                background: "linear-gradient(90deg, #facc15, #f97316)",
-                color: "#fff", borderColor: "#f59e0b",
+                background: "linear-gradient(90deg, #d9a061, #d9a061)",
+                color: "#fff", borderColor: "#d9a061",
                 fontSize: "0.78rem", padding: "0.15rem 0.55rem",
               }}>
                 <Crown size={11} /> VIP
@@ -523,7 +523,7 @@ function CharacterHero({
             )}
             {presence.online_now && (
               <span className="pl-chip" style={{
-                background: "#16a34a15", color: "#16a34a", borderColor: "#16a34a40",
+                background: "#8fce5a15", color: "#8fce5a", borderColor: "#8fce5a40",
               }}>
                 <Wifi size={9} /> {t("dashboard.online")}
               </span>
@@ -580,7 +580,7 @@ function CharacterHero({
           </span>
           {activeTimed.map((g, i) => (
             <span key={`${g.group}-${i}`} className="pl-chip" style={{
-              background: "#16a34a10", color: "#16a34a", borderColor: "#16a34a40",
+              background: "#8fce5a10", color: "#8fce5a", borderColor: "#8fce5a40",
             }}>
               <Clock size={9} /> {g.group} · {t("dashboard.character.expires", { r: fmtRelative(g.expires_at_iso, t) })}
             </span>
@@ -598,8 +598,8 @@ function ShopCard({ data }: { data: DashboardShop }) {
   return (
     <Card icon={<ShoppingBag size={14} />} title={t("dashboard.shop.title")}>
       <div style={{ display: "flex", justifyContent: "space-around", gap: "0.5rem" }}>
-        <BigStat value={data.points.toLocaleString()} label={t("dashboard.shop.points")} color="#16a34a" />
-        <BigStat value={data.total_spent.toLocaleString()} label={t("dashboard.shop.totalSpent")} color="#6b7280" />
+        <BigStat value={data.points.toLocaleString()} label={t("dashboard.shop.points")} color="#8fce5a" />
+        <BigStat value={data.total_spent.toLocaleString()} label={t("dashboard.shop.totalSpent")} color="#8b9a7e" />
       </div>
       {data.kits_raw && (
         <details style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
@@ -661,13 +661,13 @@ function LeaderboardScoreBlock({ score }: { score: DashboardLeaderboardScoreRow 
       </div>
       {rankPct !== null && (
         <div style={{
-          height: 6, background: "var(--bg-card-muted, #e5e7eb)", borderRadius: 3,
+          height: 6, background: "var(--bg-card-muted, #dcd8c8)", borderRadius: 3,
           marginTop: 4, marginBottom: 8, overflow: "hidden",
         }}>
           <div style={{
             height: "100%",
             width: `${Math.max(2, rankPct)}%`,
-            background: rankPct > 75 ? "#16a34a" : rankPct > 25 ? "#f59e0b" : "#dc2626",
+            background: rankPct > 75 ? "#8fce5a" : rankPct > 25 ? "#d9a061" : "#d1614a",
             transition: "width 0.4s",
           }} />
         </div>
@@ -736,9 +736,9 @@ function DecayCard({ data }: { data: DashboardDecay }) {
 function DecayMapBlock({ m }: { m: DashboardDecayMap }) {
   const { t } = useTranslation();
   const statusColor =
-    m.status === "expired"  ? "#dc2626" :
-    m.status === "expiring" ? "#d97706" :
-    m.status === "safe"     ? "#16a34a" : "#6b7280";
+    m.status === "expired"  ? "#d1614a" :
+    m.status === "expiring" ? "#d9a061" :
+    m.status === "safe"     ? "#8fce5a" : "#8b9a7e";
   const StatusIcon =
     m.status === "expired"  ? AlertTriangle :
     m.status === "expiring" ? AlertCircle   :
@@ -793,8 +793,8 @@ function DecayMapBlock({ m }: { m: DashboardDecayMap }) {
       {m.scheduled_for_purge && (
         <div style={{
           marginTop: "0.4rem", padding: "0.35rem 0.5rem",
-          background: "#dc262615", border: "1px solid #dc262640",
-          borderRadius: 5, fontSize: "0.75rem", color: "#dc2626",
+          background: "#d1614a15", border: "1px solid #d1614a40",
+          borderRadius: 5, fontSize: "0.75rem", color: "#d1614a",
         }}>
           <AlertTriangle size={11} style={{ verticalAlign: "middle" }} />{" "}
           {t("dashboard.decay.scheduledPurge")}
@@ -832,12 +832,12 @@ function TribeCard({ data }: { data: DashboardTribe }) {
           <div key={m.eos_id} style={{
             display: "flex", alignItems: "center", gap: "0.5rem",
             padding: "0.3rem 0.4rem", borderRadius: 4,
-            background: m.is_self ? "var(--accent-50, #2563eb15)" : "transparent",
+            background: m.is_self ? "var(--accent-50, #5cb89a15)" : "transparent",
           }}>
             <span style={{
               width: 10, height: 10, borderRadius: "50%",
-              background: m.online_now ? "#16a34a" : "#9ca3af",
-              boxShadow: m.online_now ? "0 0 6px #16a34a" : "none",
+              background: m.online_now ? "#8fce5a" : "#8b9a7e",
+              boxShadow: m.online_now ? "0 0 6px #8fce5a" : "none",
               flexShrink: 0,
             }} />
             <span style={{ flex: 1, fontSize: "0.85rem", fontWeight: m.is_self ? 600 : 400 }}>
@@ -863,8 +863,8 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
   return (
     <Card icon={<Skull size={14} />} title={t("dashboard.rare.title")}>
       <div style={{ display: "flex", justifyContent: "space-around", marginBottom: "0.5rem" }}>
-        <BigStat value={String(data.kills_30d)} label={t("dashboard.rare.kills")} color="#dc2626" />
-        <BigStat value={String(data.tames_30d)} label={t("dashboard.rare.tames")} color="#16a34a" />
+        <BigStat value={String(data.kills_30d)} label={t("dashboard.rare.kills")} color="#d1614a" />
+        <BigStat value={String(data.tames_30d)} label={t("dashboard.rare.tames")} color="#8fce5a" />
       </div>
       {data.recent.length === 0 ? (
         <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
@@ -882,8 +882,8 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
               <span>
                 <span style={{
                   fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: 8,
-                  background: e.event_type === "KILLED" ? "#dc262615" : "#16a34a15",
-                  color: e.event_type === "KILLED" ? "#dc2626" : "#16a34a",
+                  background: e.event_type === "KILLED" ? "#d1614a15" : "#8fce5a15",
+                  color: e.event_type === "KILLED" ? "#d1614a" : "#8fce5a",
                   marginRight: 6, fontWeight: 600,
                 }}>
                   {e.event_type}
@@ -1038,11 +1038,11 @@ function HomeMapCard({ group, overridesRaw, onChanged }: {
 // ── Character tools card (self-service kick / rename) ───────────────────────
 
 const REQUEST_STATUS_COLOR: Record<string, string> = {
-  pending:    "#d97706",
-  done:       "#16a34a",
-  rejected:   "#dc2626",
-  expired:    "#6b7280",
-  superseded: "#6b7280",
+  pending:    "#d9a061",
+  done:       "#8fce5a",
+  rejected:   "#d1614a",
+  expired:    "#8b9a7e",
+  superseded: "#8b9a7e",
 };
 
 function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
@@ -1170,8 +1170,8 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
                   <span style={{
                     fontSize: "0.65rem", fontWeight: 600, padding: "0.1rem 0.35rem",
                     borderRadius: 8,
-                    color: REQUEST_STATUS_COLOR[r.status] ?? "#6b7280",
-                    background: `${REQUEST_STATUS_COLOR[r.status] ?? "#6b7280"}15`,
+                    color: REQUEST_STATUS_COLOR[r.status] ?? "#8b9a7e",
+                    background: `${REQUEST_STATUS_COLOR[r.status] ?? "#8b9a7e"}15`,
                   }}>
                     {t(`dashboard.tools.status.${r.status}`, r.status)}
                   </span>
@@ -1208,19 +1208,19 @@ function ActivityCard({ data }: { data: DashboardActivity }) {
           <div key={i} style={{
             display: "flex", justifyContent: "space-between", gap: "0.5rem",
             padding: "0.3rem 0.4rem", borderRadius: 3,
-            background: e.source === "lb_event" ? "var(--accent-50, #2563eb12)" : "var(--bg-card-muted, #f5f5f7)",
+            background: e.source === "lb_event" ? "var(--accent-50, #5cb89a12)" : "var(--bg-card-muted, #f5f5f7)",
             fontSize: "0.78rem",
           }}>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{
                 fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: 8,
-                background: e.source === "lb_event" ? "#2563eb15" : "#6b728015",
-                color: e.source === "lb_event" ? "#2563eb" : "#6b7280",
+                background: e.source === "lb_event" ? "#5cb89a15" : "#8b9a7e15",
+                color: e.source === "lb_event" ? "#5cb89a" : "#8b9a7e",
                 marginRight: 6, fontWeight: 600,
               }}>
                 {e.kind}
               </span>
-              {e.points !== null && <strong style={{ color: "#16a34a" }}>+{e.points} </strong>}
+              {e.points !== null && <strong style={{ color: "#8fce5a" }}>+{e.points} </strong>}
               {e.detail && (
                 <span style={{ color: "var(--text-secondary)" }}>{e.detail}</span>
               )}

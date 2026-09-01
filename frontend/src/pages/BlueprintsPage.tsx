@@ -83,9 +83,9 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: st
   artifact: Crown, command: Terminal, item: Package,
 }
 const TYPE_COLORS: Record<string, string> = {
-  dino: '#16a34a', weapon: '#dc2626', armor: '#3b82f6', structure: '#d97706',
-  consumable: '#a855f7', resource: '#ca8a04', cosmetic: '#ec4899',
-  artifact: '#f59e0b', command: '#64748b', item: '#475569',
+  dino: '#8fce5a', weapon: '#d1614a', armor: '#5cb89a', structure: '#d9a061',
+  consumable: '#9d7cc0', resource: '#d9a061', cosmetic: '#c2739e',
+  artifact: '#d9a061', command: '#8b9a7e', item: '#475569',
 }
 
 export default function BlueprintsPage() {
