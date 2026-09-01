@@ -68,6 +68,11 @@ WIKI_IMAGE: dict[str, str] = {
     # Arena shots are photographs, so the wiki files are .jpg and the
     # "<page>.png" form never finds them.
     "TheCenterBoss": "The Center Arena.jpg",
+    # Both "<full name>.png" forms redirect to the same line-art icon, so the
+    # two Void bosses came out with an identical picture. These are their
+    # actual screenshots, and they are the only images the wiki has of them.
+    "ShallocisAlpha": "Shallocis_Size_Comparison.JPG",
+    "AbyssalusAlpha": "Abyssalus.JPG",
 }
 
 WIKI_PAGE: dict[str, str] = {
@@ -82,10 +87,6 @@ WIKI_PAGE: dict[str, str] = {
     "TamingBPSet":   "Crossbow",
     "Dreadmare":     "Dreadmare",
     "Rhyniognatha":  "Rhyniognatha",
-    # The catalogue title carries the difficulty in parentheses, the wiki
-    # page does not.
-    "ShallocisAlpha": "Shallocis the Void Above",
-    "AbyssalusAlpha": "Abyssalus the Void Beneath",
 }
 
 
