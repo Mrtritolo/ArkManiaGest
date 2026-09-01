@@ -190,8 +190,8 @@
 
 /* Scrollbar track -- the dark-theme value (#0a0f0a) clashes on light pages. */
 [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-card-muted); }
-[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd5e1; }
-[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cfcab6; }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #b3ad99; }
 
 /* Card hover border was a hardcoded green-rgba; tone it down for light. */
 [data-theme="light"] .card:hover         { border-color: rgba(79,127,44,0.30); }
@@ -241,15 +241,15 @@ code {
 ::selection { background: var(--green); color: var(--text-on-accent); }
 
 /* --- Native form elements dark mode --- */
-select, option { background: #0d1117; color: var(--text-primary); }
+select, option { background: var(--bg-popover); color: var(--text-primary); }
 input, textarea { background: rgba(255,255,255,0.05); color: var(--text-primary); }
 input::placeholder, textarea::placeholder { color: var(--text-muted); }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--green); }
 
 /* --- Scrollbar (custom dark) --- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0a0f0a; }
-::-webkit-scrollbar-thumb { background: #1a2e1a; border-radius: 3px; }
+::-webkit-scrollbar-track { background: var(--bg-card-muted); }
+::-webkit-scrollbar-thumb { background: var(--border-input); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--green); }
 
 /* --- App Layout --- */
@@ -589,7 +589,7 @@ select.form-input {
 }
 .setup-overlay {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #060a06 0%, #0a1a0a 50%, #060a06 100%);
+  background: var(--bg-root);
   padding: 2rem;
 }
 .setup-container {
@@ -823,9 +823,9 @@ select.form-input {
   width: 36px; height: 36px; display: flex; align-items: center;
   justify-content: center; border-radius: 6px; flex-shrink: 0;
 }
-.pl-stat-icon-blue   { background: rgba(92,184,154,0.1); color: #3b82f6; }
-.pl-stat-icon-gold   { background: rgba(217,160,97,0.1); color: #ca8a04; }
-.pl-stat-icon-purple { background: rgba(157,124,192,0.1); color: #a855f7; }
+.pl-stat-icon-blue   { background: rgba(92,184,154,0.1); color: #5cb89a; }
+.pl-stat-icon-gold   { background: rgba(217,160,97,0.1); color: #d9a061; }
+.pl-stat-icon-purple { background: rgba(157,124,192,0.1); color: #9d7cc0; }
 .pl-stat-icon-green  { background: rgba(79,127,44,0.08); color: var(--success); }
 .pl-stat-val { font-size: 1.15rem; font-weight: 800; font-family: var(--font-mono); color: var(--text-primary); line-height: 1.1; }
 .pl-stat-lbl { font-size: 0.68rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
@@ -855,7 +855,7 @@ select.form-input {
   border: none; border-radius: 4px; font-size: 0.82rem; font-weight: 600;
   cursor: pointer; font-family: var(--font-body); transition: background 0.15s;
 }
-.pl-btn-search:hover { background: #1d4ed8; }
+.pl-btn-search:hover { background: #4a9c82; }
 
 /* Layout */
 .pl-layout { display: flex; gap: 1rem; }
@@ -901,7 +901,7 @@ select.form-input {
 .pl-cell-tribe { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; color: var(--text-secondary); font-weight: 500; white-space: nowrap; }
 .pl-cell-points {
   display: inline-flex; align-items: center; gap: 0.3rem;
-  font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; color: #ca8a04;
+  font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; color: #d9a061;
 }
 .pl-cell-groups { display: flex; flex-wrap: wrap; gap: 0.2rem; }
 .pl-chip {
@@ -909,15 +909,15 @@ select.form-input {
   font-size: 0.6rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.04em;
   padding: 0.15rem 0.5rem; border-radius: 4px;
-  background: rgba(92,184,154,0.08); color: #1d4ed8;
+  background: rgba(92,184,154,0.08); color: #4a9c82;
   border: 1px solid rgba(92,184,154,0.15); white-space: nowrap;
 }
 .pl-chip-timed {
-  background: rgba(157,124,192,0.08); color: #7c3aed;
+  background: rgba(157,124,192,0.08); color: #9d7cc0;
   border-color: rgba(157,124,192,0.2);
 }
 .pl-chip-expired {
-  background: rgba(209,97,74,0.06); color: #b91c1c;
+  background: rgba(209,97,74,0.06); color: #d1614a;
   border-color: rgba(209,97,74,0.15); text-decoration: line-through;
   opacity: 0.6;
 }
@@ -982,7 +982,7 @@ th.pl-th-sort {
 .pl-section-title svg { color: var(--accent); }
 
 /* Points */
-.pl-points-current { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 800; color: #ca8a04; margin-bottom: 0.45rem; }
+.pl-points-current { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 800; color: #d9a061; margin-bottom: 0.45rem; }
 .pl-points-controls { display: flex; gap: 0.4rem; margin-bottom: 0.45rem; }
 .pl-points-input {
   width: 90px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-input);
@@ -1000,7 +1000,7 @@ th.pl-th-sort {
   font-family: var(--font-body); transition: all 0.15s;
 }
 .pl-btn-primary { background: var(--accent); color: #fff; }
-.pl-btn-primary:hover { background: #1d4ed8; }
+.pl-btn-primary:hover { background: #4a9c82; }
 .pl-btn-full { width: 100%; justify-content: center; margin-top: 0.5rem; }
 .pl-btn-ghost-green { background: var(--success-bg); color: var(--success); border-color: rgba(79,127,44,0.15); }
 .pl-btn-ghost-green:hover { background: rgba(79,127,44,0.12); }
@@ -1156,11 +1156,11 @@ th.pl-th-sort {
 }
 .as-bp-quality {
   font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600;
-  color: #a855f7; background: rgba(157,124,192,0.08);
+  color: #9d7cc0; background: rgba(157,124,192,0.08);
   padding: 0.05rem 0.35rem; border-radius: 3px;
 }
 .as-bp-tag {
-  font-size: 0.6rem; font-weight: 700; color: #ca8a04;
+  font-size: 0.6rem; font-weight: 700; color: #d9a061;
   background: rgba(217,160,97,0.08); padding: 0.05rem 0.3rem; border-radius: 3px;
 }
 /* General settings */
@@ -1239,7 +1239,7 @@ th.pl-th-sort {
 }
 .as-list-price {
   display: inline-flex; align-items: center; gap: 0.15rem;
-  font-family: var(--font-mono); font-weight: 700; font-size: 0.82rem; color: #ca8a04;
+  font-family: var(--font-mono); font-weight: 700; font-size: 0.82rem; color: #d9a061;
   min-width: 55px;
 }
 .as-list-perms { display: flex; gap: 0.15rem; flex: 1; min-width: 0; overflow: hidden; }
