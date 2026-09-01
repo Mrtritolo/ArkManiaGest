@@ -31,6 +31,45 @@ function stripTags(title: string): string {
   return out;
 }
 
+/**
+ * Suffissi che marcano un PACCHETTO, non l'oggetto: la wiki ha
+ * "Manticore", non "Manticore Arena"; "Rhyniognatha", non
+ * "Rhyniognatha Kit".
+ */
+const BUNDLE_SUFFIXES = [
+  " Taming Kit", " Boss Pack", " Arena", " Kit", " Pack", " Set",
+];
+
+/**
+ * Varianti del titolo da provare quando il titolo intero non e' una
+ * pagina wiki. Due regole, entrambe viste nel catalogo reale:
+ *
+ *  - `A / B` — il titolo elenca il boss di due mappe ("Broodmother
+ *    Lysrix / Natrix"): la wiki ha una pagina per ciascuno, non per la
+ *    coppia. Si prova il primo.
+ *  - suffisso di pacchetto — "Manticore Arena" -> "Manticore".
+ *
+ * Le varianti si compongono: "Megapithecus / Thodes" -> "Megapithecus".
+ */
+function labelVariants(label: string): string[] {
+  const out: string[] = [];
+  const push = (s: string) => {
+    const v = s.trim();
+    if (v && v !== label && !out.includes(v)) out.push(v);
+  };
+
+  const bases = [label];
+  if (label.includes("/")) bases.push(label.split("/")[0]);
+
+  for (const base of bases) {
+    push(base);
+    for (const suffix of BUNDLE_SUFFIXES)
+      if (base.toLowerCase().endsWith(suffix.toLowerCase()))
+        push(base.slice(0, -suffix.length));
+  }
+  return out;
+}
+
 /** True quando la voce e' un kit boss. */
 export function isBossEntry(entry: { label: string }): boolean {
   return entry.label.trim().toUpperCase().startsWith(BOSS_PREFIX);
@@ -55,6 +94,10 @@ export function shopEntryThumbCandidates(entry: WebShopItem): string[] {
   if (first) urls.push(arkItemThumbUrl(first));
   if (entry.blueprint) urls.push(arkItemThumbUrl(entry.blueprint));
   const label = stripTags(entry.label);
-  if (label) urls.push(`/api/v1/market/thumb/${encodeURIComponent(label)}`);
+  if (label) {
+    urls.push(`/api/v1/market/thumb/${encodeURIComponent(label)}`);
+    for (const v of labelVariants(label))
+      urls.push(`/api/v1/market/thumb/${encodeURIComponent(v)}`);
+  }
   return [...new Set(urls.filter((u): u is string => !!u))];
 }

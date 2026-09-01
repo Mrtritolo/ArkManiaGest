@@ -44,6 +44,24 @@ const _NAME_OVERRIDES: Record<string, string> = {
   // raw -> wiki page name
   "Fiber":          "Fibers",                // wiki uses plural
   "Cementing Paste":"Chitin or Keratin",     // approximation
+
+  // Metal armour is called "Flak" in-game and on the wiki; only the
+  // blueprint classes kept the old "Metal" name.
+  "Metal Helmet":   "Flak Helmet",
+  "Metal Shirt":    "Flak Chestpiece",
+  "Metal Gloves":   "Flak Gauntlets",
+  "Metal Pants":    "Flak Leggings",
+  "Metal Boots":    "Flak Boots",
+
+  // Head slots whose class name doesn't match the item name.
+  "Hazard Suit Helmet":   "Hazard Suit Hat",
+  "Scuba Helmet Goggles": "SCUBA Mask",
+
+  // Kibble classes are named by size tier, the wiki by quality tier.
+  "Base X Small":   "Basic Kibble",
+
+  // The wiki page carries the tier prefix, the class doesn't.
+  "Dedicated Storage": "Tek Dedicated Storage",
   // add more as the operator reports broken images
 };
 

@@ -7,6 +7,141 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.15.0] - 2026-08-30
+
+### Added
+
+- **Native-Windows runtime.** Machines gain a `runtime` selector:
+  `pok` (POK-manager + Docker, the ASA Windows binaries under Proton in
+  a Linux container — on Linux directly or on Windows through WSL) or
+  `native` (`ArkAscendedServer.exe` / `AsaApiLoader.exe` supervised by
+  WinSW straight on Windows, with no Docker, WSL or Proton). Lifecycle,
+  status, update and backup dispatch on it; the routes are unchanged,
+  the branch lives in the executor. New `app/ssh/windows_native.py`
+  holds every PowerShell builder as a pure function.
+- **Shared installation with junctions on native hosts.** One SteamCMD
+  tree per host serves every instance: `ShooterGame/Content` and
+  `Engine` are NTFS junctions, only `ShooterGame/Binaries` is copied
+  per instance because AsaApi writes its logs and loads its plugins
+  from there. Roughly 20 GB saved per additional instance.
+- **`deploy/windows-native/bootstrap.ps1`.** Idempotent host
+  provisioning: SteamCMD, the shared ASA install, the MSVC 2019
+  redistributable AsaApi requires, WinSW, the cluster directory, long
+  path support, a Defender exclusion, and optionally Syncthing.
+- **Windows hardening, script and panel.**
+  `deploy/windows-native/harden.ps1` carries 22 controls across firewall,
+  SSH, Windows services, network protocols, accounts and platform: it
+  shrinks the inbound surface to the game ports plus administration,
+  moves the ARK services off SYSTEM onto a restricted local account, and
+  removes the standing footguns (SMBv1, LLMNR, NetBIOS, Print Spooler,
+  Remote Registry, unprotected LSA). Audit is the default; `-Apply`
+  fixes, and every fix is re-checked afterwards rather than trusted.
+  `GET /machines/{id}/hardening` and `POST .../hardening/apply` (admin
+  only) drive the same file: the panel uploads the copy that ships with
+  it before each run, so the UI and the command line cannot drift. A
+  `Hardening` page groups the controls by category with per-control
+  selection.
+
+  Lockout safety is layered, because applying this over the connection
+  that administers the host is exactly how people lose a server. The
+  five controls that can sever access are tagged `lockout` and are
+  never applied without an explicit opt-in; on top of that
+  `fw.default_deny` refuses to run unless an inbound SSH allow rule
+  already exists, `ssh.no_password_auth` refuses unless a usable
+  administrator key is installed, and the firewall rules default their
+  allow-list to the address the current session came from.
+
+  `svc.ark_least_privilege` deliberately does not restart the services
+  it reconfigures: a running ARK server only writes its world on a
+  graceful shutdown, so the new logon takes effect at the next restart
+  from the panel instead of costing players their session.
+
+- **Cluster sync page.** A `Cluster sync` entry renders the verdict per
+  cluster and, per host, the directory ARK actually writes to, its file
+  count, size and last write, plus whether a Syncthing daemon is
+  covering that exact directory. Device IDs are shown with a copy
+  button so pairing a new host does not need a shell. The probe also
+  reports the specific misconfiguration that hides the problem:
+  replicating one level off the cluster path.
+- **Memory watchdog for native instances.** Docker enforces
+  `mem_limit_mb` with a cgroup; Windows offers no equivalent a service
+  can be launched under, so a leaking instance would grow until the
+  whole host swapped. `app/services/native_watchdog.py` polls resident
+  memory instead, and restarts an instance only after three consecutive
+  samples above its threshold plus a 10% margin, at most one instance
+  per pass. Off by default (`NATIVE_WATCHDOG_ENABLED`): when off it
+  still polls and logs breaches, which is how you size the thresholds
+  before letting it act.
+- **Countdown restarts on native hosts.** POK broadcasts its countdown
+  from inside the container; natively the panel owns the timer, so
+  `POST /servers/{id}/restart?minutes=N` schedules a background task
+  that announces the 30/15/10/5/3/1 minute marks over RCON and only
+  then saves, exits and restarts. The request returns immediately, and
+  `DELETE /servers/{id}/restart` cancels a pending countdown.
+- **Provision action.** `POST /servers/{id}/provision` (and its button
+  on the instances page, shown only for native instances) builds the
+  instance tree, junctions, WinSW service and firewall rule. POK hosts
+  reject it rather than silently doing nothing.
+- **Cluster directory health.** `GET /cluster-sync` fingerprints the
+  cluster directory on every host that runs part of a cluster and
+  reports `ok` / `drift` / `stale` / `unknown`. ARK cluster transfers
+  are files on disk, so when replication breaks nothing errors —
+  uploads keep succeeding on the origin and silently never arrive.
+  Machines gain `cluster_dir` and `cluster_sync_mode`. The panel does
+  not replicate anything itself; it reports when the hosts stop
+  agreeing.
+
+### Changed
+
+- **RCON is spoken by the panel, over the SSH connection.** Instead of
+  `docker exec` into the container to run POK-manager's
+  `rcon_interface.sh` (or gorcon as a fallback), the backend now
+  implements Source RCON in `app/ssh/rcon.py` and tunnels it through a
+  `direct-tcpip` channel on the SSH transport it already holds. One
+  implementation for both runtimes, no host-side binary to deploy, and
+  the instance's RCON port never has to leave loopback. The password no
+  longer reaches any command line.
+- Docker-only instance columns (`container_name`, `image`,
+  `pok_base_dir`) are now nullable; `install_dir` and `service_name`
+  added for native instances. Migration
+  `005_windows_native_runtime.sql`, mirrored in-place at boot.
+- The instances page shows the WinSW service name where a native
+  instance has no container name, and the update action refuses to run
+  SteamCMD while any instance sharing the installation is still up --
+  on Windows those files are locked, so the update would fail halfway
+  and leave a partially rewritten tree.
+
+### Fixed
+
+- **Every action on a Windows/WSL host was double-wrapped.** Each
+  `exec_*` helper already wraps its command through the platform
+  adapter, and `run_action` wrapped it a second time, producing
+  `wsl.exe -- bash -c 'wsl.exe -- bash -c ...'`. Harmless on Linux,
+  where the wrap is a no-op, which is why it went unnoticed. The
+  command is now passed through verbatim, as its docstring always
+  claimed.
+- **The machines API silently dropped `runtime`, `cluster_dir` and
+  `cluster_sync_mode`.** The columns and the form existed, but the
+  Pydantic schema, `_machine_to_read` and both the INSERT and the
+  update allow-list did not carry them, so a host could never actually
+  be switched to the native runtime through the UI.
+- **`SSHManager` had no `close()`, so every action leaked its
+  connection.** `_run_remote_sync` called `ssh.close()` inside a bare
+  `except`, so the `AttributeError` was swallowed and the session was
+  never torn down. Added as an alias of `disconnect()`.
+- **Shop thumbnails blanked out by wiki throttling.** `_fetch_from_wiki`
+  treated every non-200 as "the wiki has no such image", so a throttled
+  burst (429) or a 5xx wrote a 24h negative-cache marker over items that
+  do have pictures. Rendering a full catalogue fires dozens of fetches at
+  once, which is exactly when the wiki throttles. Transient failures now
+  raise `TransientWikiError` and leave no marker, so the next render
+  retries. Genuine 404/410 still negative-cache as before.
+- **Item names that don't match their blueprint class.** Added wiki-name
+  overrides for the Metal/Flak armour pieces (`Metal Boots` ->
+  `Flak Boots`, and the other four), `Hazard Suit Helmet` ->
+  `Hazard Suit Hat`, `Scuba Helmet Goggles` -> `SCUBA Mask`, and
+  `Base X Small` -> `Basic Kibble`.
+
 ## [4.14.0] - 2026-08-30
 
 ### Changed

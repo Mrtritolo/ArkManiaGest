@@ -143,28 +143,52 @@ def _is_negative_cached(safe_name: str) -> bool:
     return True
 
 
+class TransientWikiError(Exception):
+    """The wiki was momentarily unavailable (throttling, 5xx, timeout).
+
+    Distinct from "the wiki has no such image": only the latter may be
+    negative-cached. See :func:`_fetch_from_wiki`.
+    """
+
+
 async def _fetch_from_wiki(display_name: str) -> Optional[bytes]:
     """
     Pull the image from ark.wiki.gg's Special:FilePath redirect.
 
-    Returns None when the wiki responds 404 / 410 / etc.; raises only
-    on connection-level failures (caller logs + treats as miss).
+    Returns None ONLY when the wiki genuinely has no such image (404 /
+    410 / a non-image 200). Raises :class:`TransientWikiError` when the
+    failure is momentary -- throttling (429), server errors (5xx), or a
+    connection-level problem -- so the caller does not mistake it for a
+    missing image and negative-cache it for 24h.
+
+    That distinction matters: rendering a full shop catalogue fires
+    dozens of thumb fetches at once, the wiki throttles the burst, and
+    treating those responses as "no image" blanked out items that have
+    perfectly good pictures until the marker expired.
     """
     url = f"https://ark.wiki.gg/wiki/Special:FilePath/{display_name}.png"
-    async with httpx.AsyncClient(
-        timeout=_FETCH_TIMEOUT_SECONDS,
-        follow_redirects=True,
-        headers={"User-Agent": _USER_AGENT, "Accept": "image/*"},
-    ) as client:
-        resp = await client.get(url)
-        if resp.status_code == 200 and resp.content:
-            ctype = resp.headers.get("content-type", "")
-            if not ctype.startswith("image/"):
-                # Wiki sometimes returns an HTML error page with 200;
-                # discard those.
-                return None
-            return resp.content
-        return None
+    try:
+        async with httpx.AsyncClient(
+            timeout=_FETCH_TIMEOUT_SECONDS,
+            follow_redirects=True,
+            headers={"User-Agent": _USER_AGENT, "Accept": "image/*"},
+        ) as client:
+            resp = await client.get(url)
+    except httpx.HTTPError as exc:
+        raise TransientWikiError(f"request failed: {exc}") from exc
+
+    if resp.status_code == 200 and resp.content:
+        ctype = resp.headers.get("content-type", "")
+        if not ctype.startswith("image/"):
+            # Wiki sometimes returns an HTML error page with 200;
+            # discard those.
+            return None
+        return resp.content
+
+    if resp.status_code in (403, 429) or resp.status_code >= 500:
+        raise TransientWikiError(f"HTTP {resp.status_code}")
+
+    return None
 
 
 async def get_or_fetch_thumb(display_name: str) -> Optional[bytes]:
@@ -204,6 +228,12 @@ async def get_or_fetch_thumb(display_name: str) -> Optional[bytes]:
 
         try:
             data = await _fetch_from_wiki(display_name)
+        except TransientWikiError as exc:
+            # Momentary failure: report a miss for THIS request but leave
+            # no negative marker, so the next render retries instead of
+            # showing a blank tile for 24h.
+            log.warning("market_thumbs: wiki unavailable for %r: %s", display_name, exc)
+            return None
         except Exception as exc:                                # noqa: BLE001
             log.warning("market_thumbs: wiki fetch failed for %r: %s", display_name, exc)
             return None
