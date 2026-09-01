@@ -50,6 +50,97 @@ router = APIRouter()
 # parte comunque da un giocatore presente.
 WEB_KINDS = ("item", "dino", "gene", "egg", "embryo")
 
+# ── Categorie di catalogo ────────────────────────────────────────────────────
+#
+# ArkShop non ha il concetto di categoria, quindi la classificazione la tiene
+# il pannello. Chiave = chiave della voce in ShopItems, valore = slug che la
+# UI traduce (le etichette stanno negli en.json / it.json, non qui).
+#
+# Curata a mano e non dedotta dal titolo perche' a decidere e' il CONTENUTO:
+# "S.O.S Taming" contiene una balestra e un fucile ma e' un kit da taming,
+# una voce "[BOSS] ..." sono i tributi per evocarlo e non il boss, e un
+# "Cryo Pack" contiene un frigo ma e' logistica dino, non una struttura.
+# Fino al 4.15.0 questa colonna conteneva la stringa dei Permessi ArkShop,
+# per cui la vetrina scriveva "WL" sotto 52 voci su 55.
+#
+# Una chiave non mappata finisce in OTHER: e' visibile nella vetrina ed e' il
+# segnale che una voce nuova del catalogo aspetta una riga qui.
+SHOP_CATEGORY_OTHER = "other"
+
+SHOP_CATEGORIES: dict[str, str] = {
+    # Tributi e sblocchi arena.
+    "BloodMother":    "boss",
+    "DesertTitan":    "boss",
+    "Dragon":         "boss",
+    "ForestTitan":    "boss",
+    "IceTitan":       "boss",
+    "KingTitan":      "boss",
+    "Manticore":      "boss",
+    "Megapithecus":   "boss",
+    "Nunatak":        "boss",
+    "RedHanded":      "boss",
+    "Rockwell":       "boss",
+    "TekCave":        "boss",
+    "TheCenterBoss":  "boss",
+    "ShallocisAlpha": "boss",
+    "AbyssalusAlpha": "boss",
+
+    # Set di armatura, craftati e blueprint, piu' i pezzi singoli.
+    "DesertSet":      "armor",
+    "BPDesertSet":    "armor",
+    "FurSet":         "armor",
+    "FurSetBP":       "armor",
+    "GhilliSet":      "armor",
+    "GhilliSetBP":    "armor",
+    "HazardSet":      "armor",
+    "HazardSetBP":    "armor",
+    "RiotSet":        "armor",
+    "RiotSetBP":      "armor",
+    "ScubaSet":       "armor",
+    "SetFlack":       "armor",
+    "FlakBP":         "armor",
+    "TekSet":         "armor",
+    "TekSetBP":       "armor",
+    "GasMask":        "armor",
+
+    # Tutto cio' che serve a domare, nutrire o trasportare un dino.
+    "SOSTAMING":             "dino",
+    "TamingBPSet":           "dino",
+    "KibblePack":            "dino",
+    "Dreadmare":             "dino",
+    "Rhyniognatha":          "dino",
+    "RhyniognathaPheromone": "dino",
+    "CryoPack":              "dino",
+
+    # Materie prime, ingredienti e consumabili.
+    "BlackPearl":        "resources",
+    "Cementine":         "resources",
+    "DeathwormHorn":     "resources",
+    "Metal":             "resources",
+    "Milk":              "resources",
+    "NamelessVenom":     "resources",
+    "PristineVulpite":   "resources",
+    "SilkPack":          "resources",
+    "WhitePearl":        "resources",
+    "GoldEgg":           "resources",
+    "AlgaeSushi":        "resources",
+    "ProtoSpeciesRSeed": "resources",
+
+    # Attrezzi da lavoro.
+    "Base":              "tools",
+    "BP_AccettaPiccone": "tools",
+    "MotoSega":          "tools",
+
+    # Strutture piazzabili.
+    "BeeHive":   "structures",
+    "Dedicated": "structures",
+}
+
+
+def _shop_category(item_key: str) -> str:
+    """Categoria di catalogo per una voce ArkShop; OTHER se non mappata."""
+    return SHOP_CATEGORIES.get(item_key, SHOP_CATEGORY_OTHER)
+
 # ── Shop uova / embrioni ──────────────────────────────────────────────────────
 #
 # Il prezzo e' PER SPECIE, dal listino admin arkmaniagest_forge_prices (tab
@@ -800,6 +891,7 @@ async def import_from_arkshop(db: AsyncSession = Depends(get_plugin_db)):
             "VALUES (:k, :lbl, :kind, :cat, :bp, :qty, :qual, :isbp, :lvl, "
             "        :price, 1, :ij) "
             "ON DUPLICATE KEY UPDATE label=VALUES(label), kind=VALUES(kind), "
+            "category=VALUES(category), "
             "blueprint=VALUES(blueprint), quantity=VALUES(quantity), "
             "quality=VALUES(quality), is_blueprint=VALUES(is_blueprint), "
             "dino_level=VALUES(dino_level), items_json=VALUES(items_json)"),
@@ -807,7 +899,7 @@ async def import_from_arkshop(db: AsyncSession = Depends(get_plugin_db)):
                 "k": key[:128],
                 "lbl": str(val.get("Title", key))[:128],
                 "kind": kind,
-                "cat": str(val.get("Permissions", ""))[:64],
+                "cat": _shop_category(key),
                 "bp": blueprint[:512],
                 "qty": quantity,
                 "qual": quality,

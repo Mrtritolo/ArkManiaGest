@@ -125,6 +125,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   on Windows those files are locked, so the update would fail halfway
   and leave a partially rewritten tree.
 
+- **Shop catalogue is categorised.** The catalogue had no categories: the
+  ArkShop import wrote the *Permissions* string into `category`, so the
+  subtitle under 52 of 55 tiles read "WL". Entries are now classified into
+  six categories -- Bosses & Arenas, Armor, Dinos & Taming, Resources &
+  Ingredients, Tools, Structures -- curated per item key in
+  `SHOP_CATEGORIES` (web_shop.py), because the contents decide and the
+  titles lie: "S.O.S Taming" ships a crossbow but is a taming kit. The shop
+  grid is split into sections with a category filter row; an unmapped entry
+  lands in "Other", which is visible and is the cue to add a line.
+  `category` is now refreshed on re-import -- it was missing from the
+  ON DUPLICATE KEY UPDATE list, so existing rows would have kept the old
+  value forever. Applying it to a live install needs one click on
+  "Importa" in the Shop tab.
+
 - **Shop thumbnails are static files.** They used to be resolved at render
   time through a chain of guessed wiki page names; painting the catalogue
   fired ~50 concurrent requests at ark.wiki.gg, which answered 429 and left

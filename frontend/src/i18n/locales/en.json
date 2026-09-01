@@ -2373,7 +2373,18 @@
       "showContent": "What's inside",
       "hideContent": "Hide contents",
       "geneSpecies": "Species:",
-      "geneSpeciesNone": "None (scanner without species)"
+      "geneSpeciesNone": "None (scanner without species)",
+      "catAll": "All",
+      "noMatch": "No item matches the search.",
+      "cat": {
+        "boss": "Bosses & Arenas",
+        "armor": "Armor",
+        "dino": "Dinos & Taming",
+        "resources": "Resources & Ingredients",
+        "tools": "Tools",
+        "structures": "Structures",
+        "other": "Other"
+      }
     },
     "forge": {
       "eggMode": "Fertilized eggs",

@@ -82,6 +82,10 @@ WIKI_PAGE: dict[str, str] = {
     "TamingBPSet":   "Crossbow",
     "Dreadmare":     "Dreadmare",
     "Rhyniognatha":  "Rhyniognatha",
+    # The catalogue title carries the difficulty in parentheses, the wiki
+    # page does not.
+    "ShallocisAlpha": "Shallocis the Void Above",
+    "AbyssalusAlpha": "Abyssalus the Void Beneath",
 }
 
 

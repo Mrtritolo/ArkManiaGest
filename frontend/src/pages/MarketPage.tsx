@@ -31,6 +31,19 @@ import { ShopFallbackIcon } from "../utils/shopFallbackIcon";
 import { arkItemDisplayName, arkItemThumbUrl } from "../utils/arkItem";
 import type { AuthUser } from "../types";
 
+/**
+ * Ordine in cui le categorie del catalogo compaiono nella vetrina.
+ *
+ * Gli slug li scrive l'import di ArkShop (SHOP_CATEGORIES in web_shop.py);
+ * qui vive solo l'ordine di lettura -- prima cio' che si compra per fare una
+ * cosa (boss, equipaggiamento, dino), poi cio' che si compra per averlo.
+ * "other" chiude sempre la lista: e' il segnale che una voce nuova del
+ * catalogo aspetta una categoria.
+ */
+const SHOP_CATEGORY_ORDER = [
+  "boss", "armor", "dino", "resources", "tools", "structures", "other",
+];
+
 type TabKey =
   | "browse" | "mine" | "history"
   | "shop" | "genes" | "forge" | "orders" | "prices";
@@ -93,6 +106,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   const [shopLoading, setShopLoading] = useState(false);
   const [shopBusy, setShopBusy] = useState<string | null>(null);
   const [shopSearch, setShopSearch] = useState("");
+  const [shopCat, setShopCat] = useState("");   // "" = tutte le categorie
   const [geneTier, setGeneTier] = useState<Record<string, number>>({});
   // La specie e' UNA per tutta la scheda, non una per tratto: si sceglie
   // prima il dino e poi il tratto, come si farebbe scansionando in gioco.
@@ -361,6 +375,48 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     }
   }
 
+  // ── Catalogo dello shop: ricerca, filtro categoria, raggruppamento ────
+  //
+  // La ricerca resta globale (cerca in tutte le categorie, non solo in
+  // quella selezionata) perche' chi scrive "flak" vuole trovare il flak,
+  // non scoprire di essere nella sezione sbagliata.
+
+  /** Quante voci ha ogni categoria, prima del filtro di categoria. */
+  const shopCatCounts = useMemo(() => {
+    const q = shopSearch.trim().toLowerCase();
+    const out: Record<string, number> = {};
+    for (const i of shopItems) {
+      if (q && !i.label.toLowerCase().includes(q)) continue;
+      const c = i.category || "other";
+      out[c] = (out[c] ?? 0) + 1;
+    }
+    return out;
+  }, [shopItems, shopSearch]);
+
+  /** Voci che passano ricerca + categoria. */
+  const shopVisible = useMemo(() => {
+    const q = shopSearch.trim().toLowerCase();
+    return shopItems.filter(i =>
+      (!q || i.label.toLowerCase().includes(q)) &&
+      (!shopCat || (i.category || "other") === shopCat));
+  }, [shopItems, shopSearch, shopCat]);
+
+  /** [categoria, voci][] nell'ordine di lettura; le vuote non compaiono. */
+  const shopGroups = useMemo(() => {
+    const by = new Map<string, typeof shopVisible>();
+    for (const i of shopVisible) {
+      const c = i.category || "other";
+      const bucket = by.get(c);
+      if (bucket) bucket.push(i);
+      else by.set(c, [i]);
+    }
+    // Una categoria sconosciuta (slug nuovo lato backend) non sparisce:
+    // finisce in fondo, dopo quelle note.
+    const known = SHOP_CATEGORY_ORDER.filter(c => by.has(c));
+    const rest = [...by.keys()].filter(c => !SHOP_CATEGORY_ORDER.includes(c)).sort();
+    return [...known, ...rest].map(c => [c, by.get(c)!] as const);
+  }, [shopVisible]);
+
   // Stats grouped per status -- shown in the My-Items tab
   const myStats = useMemo(() => {
     const out = { draft: 0, listed: 0, sold: 0, claimed: 0 };
@@ -600,101 +656,127 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 </button>
               )}
             </div>
+            {/* Filtro per categoria. I conteggi seguono la ricerca, cosi'
+                una categoria che la ricerca ha svuotato si vede subito. */}
+            {shopItems.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: "0.7rem" }}>
+                <CategoryChip active={!shopCat} onClick={() => setShopCat("")}
+                  label={t("market.shop.catAll")} count={shopVisible.length} />
+                {SHOP_CATEGORY_ORDER.filter(c => shopCatCounts[c]).map(c => (
+                  <CategoryChip key={c} active={shopCat === c}
+                    onClick={() => setShopCat(shopCat === c ? "" : c)}
+                    label={t(`market.shop.cat.${c}`)} count={shopCatCounts[c]} />
+                ))}
+              </div>
+            )}
             {shopLoading ? (
               <div style={{ padding: "1rem", color: "var(--text-muted)" }}>
                 <Loader2 size={14} className="pl-spin" /> {t("common.loading")}
               </div>
             ) : shopItems.length === 0 ? (
               <div className="alert alert-info">{t("market.shop.emptyItems")}</div>
+            ) : shopVisible.length === 0 ? (
+              <div className="alert alert-info">{t("market.shop.noMatch")}</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
-                {shopItems
-                  .filter(i => !shopSearch ||
-                    i.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
-                    i.category.toLowerCase().includes(shopSearch.toLowerCase()))
-                  .map(i => {
-                  const isPack = i.line_count > 1;
-                  const open = openPack === i.key;
-                  return (
-                  <div key={i.key} className="card" style={{ padding: "0.7rem" }}>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <ShopThumb entry={i} size={72} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
-                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                          {i.category || "—"}
-                          {i.kind === "dino"
-                            ? ` · ${t("market.shop.dinoLevel", { lvl: i.dino_level })}`
-                            : isPack
-                              ? ` · ${t("market.shop.pieces", { n: i.line_count })}`
-                              : ` · x${i.quantity}`}
-                          {i.is_blueprint ? " · BP" : ""}
+              <>
+              {shopGroups.map(([cat, items]) => (
+                <section key={cat} style={{ marginBottom: "1.1rem" }}>
+                  <h3 style={{
+                    display: "flex", alignItems: "baseline", gap: 8,
+                    fontSize: "0.78rem", fontWeight: 700, textTransform: "uppercase",
+                    letterSpacing: 0.6, color: "var(--text-muted)",
+                    margin: "0 0 0.45rem", paddingBottom: "0.3rem",
+                    borderBottom: "1px solid var(--border)",
+                  }}>
+                    {t(`market.shop.cat.${cat}`)}
+                    <span style={{ fontWeight: 500 }}>{items.length}</span>
+                  </h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
+                    {items.map(i => {
+                    const isPack = i.line_count > 1;
+                    const open = openPack === i.key;
+                    return (
+                    <div key={i.key} className="card" style={{ padding: "0.7rem" }}>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <ShopThumb entry={i} size={72} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{i.label}</div>
+                          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                            {i.kind === "dino"
+                              ? t("market.shop.dinoLevel", { lvl: i.dino_level })
+                              : isPack
+                                ? t("market.shop.pieces", { n: i.line_count })
+                                : `x${i.quantity}`}
+                            {i.is_blueprint ? " · BP" : ""}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    {i.kind === "dino" && (
-                      <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", margin: "6px 0" }}>
-                        {t("market.shop.dinoInPod")}
-                      </div>
-                    )}
-                    {/* Il contenuto del pacchetto: sta chiuso perche' un kit
-                        da 31 righe seppellirebbe la griglia, ma e' a un clic
-                        perche' comprare senza sapere cosa c'e' dentro non e'
-                        comprare. */}
-                    {isPack && (
-                      <button className="btn btn-ghost btn-sm"
-                        style={{ marginTop: 6, padding: "1px 4px" }}
-                        onClick={() => setOpenPack(open ? null : i.key)}>
-                        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        {open ? t("market.shop.hideContent") : t("market.shop.showContent")}
-                      </button>
-                    )}
-                    {isPack && open && (
-                      <div style={{
-                        maxHeight: 190, overflowY: "auto", marginTop: 4,
-                        borderTop: "1px solid var(--border)", paddingTop: 4,
-                      }}>
-                        {i.lines.map((ln, idx) => (
-                          <div key={idx} style={{
-                            display: "flex", alignItems: "center", gap: 6,
-                            fontSize: "0.72rem", padding: "1px 0",
-                          }}>
-                            <LineThumb blueprint={ln.blueprint} />
-                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden",
-                                           textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {arkItemDisplayName(ln.blueprint)}
-                            </span>
-                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
-                              x{ln.amount}
-                            </span>
-                            {ln.is_blueprint && (
-                              <span style={{ fontSize: "0.62rem", color: "var(--accent)" }}>BP</span>
-                            )}
-                            {ln.quality > 0 && (
-                              <span style={{ fontSize: "0.62rem", color: "var(--text-muted)" }}>
-                                Q{ln.quality}
+                      {i.kind === "dino" && (
+                        <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", margin: "6px 0" }}>
+                          {t("market.shop.dinoInPod")}
+                        </div>
+                      )}
+                      {/* Il contenuto del pacchetto: sta chiuso perche' un kit
+                          da 31 righe seppellirebbe la griglia, ma e' a un clic
+                          perche' comprare senza sapere cosa c'e' dentro non e'
+                          comprare. */}
+                      {isPack && (
+                        <button className="btn btn-ghost btn-sm"
+                          style={{ marginTop: 6, padding: "1px 4px" }}
+                          onClick={() => setOpenPack(open ? null : i.key)}>
+                          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          {open ? t("market.shop.hideContent") : t("market.shop.showContent")}
+                        </button>
+                      )}
+                      {isPack && open && (
+                        <div style={{
+                          maxHeight: 190, overflowY: "auto", marginTop: 4,
+                          borderTop: "1px solid var(--border)", paddingTop: 4,
+                        }}>
+                          {i.lines.map((ln, idx) => (
+                            <div key={idx} style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              fontSize: "0.72rem", padding: "1px 0",
+                            }}>
+                              <LineThumb blueprint={ln.blueprint} />
+                              <span style={{ flex: 1, minWidth: 0, overflow: "hidden",
+                                             textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {arkItemDisplayName(ln.blueprint)}
                               </span>
-                            )}
-                          </div>
-                        ))}
+                              <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+                                x{ln.amount}
+                              </span>
+                              {ln.is_blueprint && (
+                                <span style={{ fontSize: "0.62rem", color: "var(--accent)" }}>BP</span>
+                              )}
+                              {ln.quality > 0 && (
+                                <span style={{ fontSize: "0.62rem", color: "var(--text-muted)" }}>
+                                  Q{ln.quality}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                        <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
+                          <Coins size={12} /> {i.price}
+                        </span>
+                        <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }}
+                          disabled={shopBusy !== null}
+                          onClick={() => doBuy(i.kind, i.key, i.label, i.price)}>
+                          {shopBusy === i.key
+                            ? <Loader2 size={12} className="pl-spin" />
+                            : <ShoppingBag size={12} />} {t("market.shop.buy")}
+                        </button>
                       </div>
-                    )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
-                        <Coins size={12} /> {i.price}
-                      </span>
-                      <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }}
-                        disabled={shopBusy !== null}
-                        onClick={() => doBuy(i.kind, i.key, i.label, i.price)}>
-                        {shopBusy === i.key
-                          ? <Loader2 size={12} className="pl-spin" />
-                          : <ShoppingBag size={12} />} {t("market.shop.buy")}
-                      </button>
                     </div>
+                    );
+                    })}
                   </div>
-                  );
-                })}
-              </div>
+                </section>
+              ))}
+              </>
             )}
           </>
         )}
@@ -1806,6 +1888,24 @@ function ShopThumb({ entry, size }: { entry: WebShopItem; size: number }) {
     <img src={candidates[idx]} alt="" loading="lazy"
       style={{ ...box, objectFit: "contain" }}
       onError={() => setIdx(i => i + 1)} />
+  );
+}
+
+/** Chip di filtro categoria sopra la vetrina dello shop. */
+function CategoryChip({ label, count, active, onClick }: {
+  label: string; count: number; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} className="btn btn-sm"
+      style={{
+        border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+        background: active ? "var(--accent)" : "transparent",
+        color: active ? "#fff" : "var(--text)",
+        borderRadius: 99, padding: "0.15rem 0.6rem", fontSize: "0.75rem",
+      }}>
+      {label}
+      <span style={{ marginLeft: 5, opacity: 0.7 }}>{count}</span>
+    </button>
   );
 }
 
