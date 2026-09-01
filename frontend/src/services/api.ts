@@ -1799,8 +1799,15 @@ export interface DashboardShop {
   kits_raw:    string | null;
 }
 
-export interface DashboardDecay {
-  has_tribe:           boolean;
+/**
+ * Decay state of the player's tribe on ONE map.  Decay is per map: the
+ * tribe on Ragnarok is a different targeting_team, with its own name and
+ * its own timer, from the one on The Island.
+ */
+export interface DashboardDecayMap {
+  server_key:          string | null;
+  server_name:         string | null;
+  map_name:            string | null;
   tribe_id:            number | null;
   tribe_name:          string | null;
   expire_at:           string | null;
@@ -1810,6 +1817,12 @@ export interface DashboardDecay {
   last_refresh_at:     string | null;
   last_refresh_name:   string | null;
   last_refresh_days:   number | null;
+}
+
+export interface DashboardDecay {
+  has_tribe: boolean;
+  /** Soonest deadline first; maps with no timer yet come last. */
+  maps:      DashboardDecayMap[];
 }
 
 export interface DashboardDiscord {
@@ -1902,17 +1915,34 @@ export interface DashboardActivity {
 export interface DashboardHome {
   id:          number;
   name:        string;
-  server_key:  string | null;
-  server_name: string | null;
-  map_name:    string | null;
   x:           number | null;
   y:           number | null;
   z:           number | null;
   created_iso: string | null;
 }
 
+/**
+ * The homes saved on one map.  `lat_*`/`lon_*` are the world settings the
+ * game publishes for that map (`ARKM_map_calibration`); feed them to
+ * `calibFromWorldSettings` to turn the stored world units into the GPS
+ * lat/lon a player reads off the implant.  Null when the map publishes
+ * nothing -- fall back to `DEFAULT_CALIBRATION`.
+ */
+export interface DashboardHomeGroup {
+  server_key:  string | null;
+  server_name: string | null;
+  map_name:    string | null;
+  lat_origin:  number | null;
+  lat_scale:   number | null;
+  lon_origin:  number | null;
+  lon_scale:   number | null;
+  entries:     DashboardHome[];
+}
+
 export interface DashboardHomes {
-  entries: DashboardHome[];
+  groups: DashboardHomeGroup[];
+  /** Raw `PlayerMap.MapCalibration` value; parse with `parseCalibOverrides`. */
+  calibration_overrides: string | null;
 }
 
 export interface DashboardResponse {

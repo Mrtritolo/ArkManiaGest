@@ -155,7 +155,8 @@
     "character": {
       "noTribe": "No tribe",
       "lastSeen": "last seen {{r}}",
-      "timedShort": "Timed permissions"
+      "timedShort": "Timed permissions",
+      "expires": "expires {{r}}"
     },
     "shop": {
       "title": "ArkShop",
@@ -165,7 +166,8 @@
     },
     "leaderboard": {
       "title": "Leaderboard",
-      "empty": "No leaderboard points yet."
+      "empty": "No leaderboard points yet.",
+      "rankLine": "#{{rank}} of {{total}} ({{type}})"
     },
     "lb": {
       "killWild": "Wild kills",
@@ -183,13 +185,20 @@
       "statusExpiring": "Expiring",
       "statusSafe": "OK",
       "lastRefreshAt": "Last refresh",
-      "scheduledPurge": "Tribe scheduled for purge."
+      "scheduledPurge": "Tribe scheduled for purge.",
+      "titleWithCount": "Decay · {{n}} maps",
+      "statusUnknown": "No timer",
+      "tribeUnnamed": "Unnamed tribe",
+      "expiresAt": "Expires",
+      "noTimer": "Timer not started yet",
+      "expiredSince": "expired {{v}} ago"
     },
     "tribe": {
       "title": "Tribe",
       "empty": "No registered tribe.",
       "titleWithCount": "Tribe: {{n}} ({{m}} members · {{o}} online)",
-      "onlineNow": "now"
+      "onlineNow": "now",
+      "self": "(you)"
     },
     "rare": {
       "title": "Rare dinos (30d)",
@@ -202,7 +211,12 @@
       "empty": "No saved homes. Use /sethome in game to create one.",
       "deleteButton": "Delete this home",
       "deleteConfirm": "Delete the home \"{{n}}\"? This takes effect immediately, even while you are in game.",
-      "deleteError": "Could not delete the home."
+      "deleteError": "Could not delete the home.",
+      "mapTitle": "Homes · {{map}} ({{n}})",
+      "gps": "Lat {{lat}} · Lon {{lon}}",
+      "rawUnits": "X {{x}} · Y {{y}} (world units)",
+      "savedOn": "saved {{v}}",
+      "noCalibration": "Map not calibrated: coordinates are world units, not GPS."
     },
     "tools": {
       "title": "Character tools",
@@ -2557,5 +2571,15 @@
       "platform": "Platform",
       "preflight": "Pre-flight"
     }
+  },
+  "time": {
+    "underMinute": "< 1m",
+    "underHour": "< 1h",
+    "minutes": "{{n}}m",
+    "hours": "{{n}}h",
+    "days": "{{n}}d",
+    "dayHour": "{{d}}d {{h}}h",
+    "ago": "{{v}} ago",
+    "in": "in {{v}}"
   }
 }

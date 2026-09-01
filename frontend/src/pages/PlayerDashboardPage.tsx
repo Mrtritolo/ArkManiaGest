@@ -11,13 +11,19 @@
  *   └────────────────────────────────────────────────────┘
  *   ┌─── shop ───┐ ┌─── leaderboard (with rank bar) ────┐
  *   ├─── decay ──┤ ├─── rare dinos (last 30d feed) ─────┤
- *   ├─── tribe ──┤ ├─── activity feed ──────────────────┤
+ *   ├─── tribe ──┤ ├─── homes, one card per map ────────┤
+ *   ├─── tools ──┤ ├─── activity feed ──────────────────┤
+ *
+ * Decay and homes are per MAP, not per player: a cluster player has a
+ * separate tribe (own name, own decay timer) and a separate home limit on
+ * every map they play, so each gets its own block/card rather than one
+ * cluster-wide row that silently showed whichever map they logged into last.
  *
  * Two render modes (governed by `embedded`):
  *   - standalone: full-canvas wrapper with slim header + logout
  *   - embedded:   slots into the admin layout via pl-page (no logout)
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, RefreshCw, LogOut,
@@ -33,10 +39,15 @@ import {
   type DashboardServerPulse, type DashboardLeaderboard,
   type DashboardLeaderboardScoreRow, type DashboardTribe,
   type DashboardRareDinos, type DashboardActivity,
-  type DashboardHomes, type PlayerRequestRow,
+  type DashboardHomes, type DashboardHomeGroup, type DashboardDecayMap,
+  type PlayerRequestRow,
 } from "../services/api";
 import { extractError } from "../utils/errors";
 import { fmtDateTime } from "../utils/format";
+import {
+  DEFAULT_CALIBRATION, parseCalibOverrides, calibFromWorldSettings, gpsOf,
+  type MapCalib,
+} from "../utils/mapCalibration";
 import DiscordIcon from "../components/DiscordIcon";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -46,6 +57,9 @@ function avatarUrl(userId: string, hash: string | null): string | null {
   const ext = hash.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${userId}/${hash}.${ext}?size=128`;
 }
+
+/** The `t` from `useTranslation()`, narrowed to what the helpers below need. */
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
 /**
  * Bidirectional relative time:
@@ -57,20 +71,24 @@ function avatarUrl(userId: string, hash: string | null): string | null {
  * VIP-chip + timed-permission-group expiry labels on the dashboard,
  * which were rendering 'scade ora' for VIPs that actually expire in
  * 12 days.
+ *
+ * `t` is a parameter rather than a hook because these are plain functions
+ * called from render bodies -- the units and the "fa"/"tra" framing used to
+ * be hardcoded Italian, which an EN player saw untranslated.
  */
-function fmtRelative(iso: string | null): string {
+function fmtRelative(iso: string | null, t: TFunc): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const diff = Date.now() - d.getTime();
   const abs  = Math.abs(diff);
   let label: string;
-  if (abs < 60_000)             label = "< 1m";
-  else if (abs < 3_600_000)     label = `${Math.floor(abs / 60_000)}m`;
-  else if (abs < 86_400_000)    label = `${Math.floor(abs / 3_600_000)}h`;
-  else if (abs < 86_400_000*30) label = `${Math.floor(abs / 86_400_000)}g`;
+  if (abs < 60_000)             label = t("time.underMinute");
+  else if (abs < 3_600_000)     label = t("time.minutes", { n: Math.floor(abs / 60_000) });
+  else if (abs < 86_400_000)    label = t("time.hours",   { n: Math.floor(abs / 3_600_000) });
+  else if (abs < 86_400_000*30) label = t("time.days",    { n: Math.floor(abs / 86_400_000) });
   else return d.toLocaleDateString();
-  return diff >= 0 ? `${label} fa` : `tra ${label}`;
+  return diff >= 0 ? t("time.ago", { v: label }) : t("time.in", { v: label });
 }
 
 /** Humanise minutes (login duration) into "Xh YYm" / "Mm". */
@@ -83,18 +101,33 @@ function fmtMinutes(min: number | null): string {
 }
 
 /** Humanise hours into "Xg Yh" / "Yh" / "<1h" / "scaduto da Xh". */
-function fmtCountdown(hours: number | null): string {
+function fmtCountdown(hours: number | null, t: TFunc): string {
   if (hours === null) return "—";
-  if (hours < 0) {
-    const abs = Math.abs(hours);
-    const d = Math.floor(abs / 24);
-    const h = abs - d * 24;
-    return d > 0 ? `scaduto da ${d}g ${h}h` : `scaduto da ${h}h`;
-  }
-  if (hours < 1) return "< 1h";
-  const d = Math.floor(hours / 24);
-  const h = hours - d * 24;
-  return d > 0 ? `${d}g ${h}h` : `${h}h`;
+  const abs  = Math.abs(hours);
+  const days = Math.floor(abs / 24);
+  const rest = abs - days * 24;
+  const span = days > 0
+    ? t("time.dayHour", { d: days, h: rest })
+    : (abs < 1 ? t("time.underHour") : t("time.hours", { n: rest }));
+  return hours < 0 ? t("dashboard.decay.expiredSince", { v: span }) : span;
+}
+
+/**
+ * A home's position the way the player reads it in game: GPS lat/lon.
+ *
+ * Falls back to raw world units when the map has no calibration at all --
+ * a wrong GPS pair is worse than an honest UU pair, because the player
+ * would fly to it.
+ */
+function fmtHomePos(
+  home: { x: number | null; y: number | null },
+  calib: MapCalib | null,
+  t: TFunc,
+): string {
+  if (home.x === null || home.y === null) return "—";
+  if (!calib) return t("dashboard.homes.rawUnits", { x: Math.round(home.x), y: Math.round(home.y) });
+  const g = gpsOf(calib, home.x, home.y);
+  return t("dashboard.homes.gps", { lat: g.lat.toFixed(1), lon: g.lon.toFixed(1) });
 }
 
 // ── Privacy footer (GDPR self-service) ──────────────────────────────────────
@@ -423,7 +456,9 @@ function DashboardGrid({ data, embedded, onChanged }: {
       <DecayCard      data={data.decay} />
       <RareDinosCard  data={data.rare_dinos} />
       <TribeCard      data={data.tribe} />
-      <HomesCard      data={data.homes} onChanged={onChanged} />
+      {/* One card per map the player has homes on -- spread into the grid
+          rather than nested, so each map gets its own tile. */}
+      {homeCards(data.homes, onChanged)}
       <CharacterToolsCard presence={data.presence} />
       <ActivityCard   data={data.activity} />
     </div>
@@ -481,7 +516,7 @@ function CharacterHero({
                 <Crown size={11} /> VIP
                 {vipExpiry && (
                   <span style={{ opacity: 0.85, marginLeft: 4 }}>
-                    {" · scade " + fmtRelative(vipExpiry)}
+                    {" · " + t("dashboard.character.expires", { r: fmtRelative(vipExpiry, t) })}
                   </span>
                 )}
               </span>
@@ -510,7 +545,7 @@ function CharacterHero({
                     m: fmtMinutes(presence.duration_minutes),
                   })
                 : t("dashboard.character.lastSeen", {
-                    r: fmtRelative(character.last_login),
+                    r: fmtRelative(character.last_login, t),
                   })}
             </span>
           </div>
@@ -547,7 +582,7 @@ function CharacterHero({
             <span key={`${g.group}-${i}`} className="pl-chip" style={{
               background: "#16a34a10", color: "#16a34a", borderColor: "#16a34a40",
             }}>
-              <Clock size={9} /> {g.group} · scade {fmtRelative(g.expires_at_iso)}
+              <Clock size={9} /> {g.group} · {t("dashboard.character.expires", { r: fmtRelative(g.expires_at_iso, t) })}
             </span>
           ))}
         </div>
@@ -614,7 +649,11 @@ function LeaderboardScoreBlock({ score }: { score: DashboardLeaderboardScoreRow 
     <div style={{ marginBottom: "0.6rem" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "0.4rem" }}>
         <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-          {score.server_type ? `#${score.rank} su ${score.total_players} (${score.server_type})` : "—"}
+          {score.server_type
+            ? t("dashboard.leaderboard.rankLine", {
+                rank: score.rank, total: score.total_players, type: score.server_type,
+              })
+            : "—"}
         </span>
         <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
           {score.total_points.toLocaleString()} pt
@@ -662,56 +701,106 @@ function Stat({ icon, label, value }: { icon: string; label: string; value: numb
 
 // ── Decay card ──────────────────────────────────────────────────────────────
 
+/**
+ * Decay, one block per map.
+ *
+ * A cluster player has a separate tribe -- separate name, separate timer --
+ * on every map they have played, and the single "your tribe expires in 40h"
+ * line this card used to show was whichever of them they happened to log into
+ * last.  Blocks arrive soonest-deadline-first from the backend, so the base
+ * that needs a refresh is the one at the top.
+ */
 function DecayCard({ data }: { data: DashboardDecay }) {
   const { t } = useTranslation();
-  if (!data.has_tribe) {
+  if (!data.has_tribe || data.maps.length === 0) {
     return (
       <Card icon={<Timer size={14} />} title={t("dashboard.decay.title")}>
-        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.decay.noTribe")}
-        </div>
+        <EmptyNote>{t("dashboard.decay.noTribe")}</EmptyNote>
       </Card>
     );
   }
-  const statusColor =
-    data.status === "expired"  ? "#dc2626" :
-    data.status === "expiring" ? "#d97706" : "#16a34a";
-  const StatusIcon =
-    data.status === "expired"  ? AlertTriangle :
-    data.status === "expiring" ? AlertCircle   : CheckCircle2;
   return (
-    <Card icon={<Timer size={14} />} title={t("dashboard.decay.title")}>
-      <div style={{
-        padding: "0.5rem 0.65rem", borderRadius: 6,
-        background: `${statusColor}15`, border: `1px solid ${statusColor}40`,
-        display: "flex", alignItems: "center", gap: "0.55rem",
-        marginBottom: "0.5rem",
-      }}>
-        <StatusIcon size={16} color={statusColor} />
-        <div>
-          <div style={{ fontWeight: 600, color: statusColor }}>
-            {data.status === "expired" && t("dashboard.decay.statusExpired")}
-            {data.status === "expiring" && t("dashboard.decay.statusExpiring")}
-            {data.status === "safe" && t("dashboard.decay.statusSafe")}
-          </div>
-          <div style={{ fontSize: "0.78rem" }}>{fmtCountdown(data.hours_left)}</div>
-        </div>
+    <Card
+      icon={<Timer size={14} />}
+      title={data.maps.length > 1
+        ? t("dashboard.decay.titleWithCount", { n: data.maps.length })
+        : t("dashboard.decay.title")}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {data.maps.map(m => <DecayMapBlock key={`${m.server_key}-${m.tribe_id}`} m={m} />)}
       </div>
+    </Card>
+  );
+}
+
+function DecayMapBlock({ m }: { m: DashboardDecayMap }) {
+  const { t } = useTranslation();
+  const statusColor =
+    m.status === "expired"  ? "#dc2626" :
+    m.status === "expiring" ? "#d97706" :
+    m.status === "safe"     ? "#16a34a" : "#6b7280";
+  const StatusIcon =
+    m.status === "expired"  ? AlertTriangle :
+    m.status === "expiring" ? AlertCircle   :
+    m.status === "safe"     ? CheckCircle2  : Clock;
+  const statusLabel =
+    m.status === "expired"  ? t("dashboard.decay.statusExpired")  :
+    m.status === "expiring" ? t("dashboard.decay.statusExpiring") :
+    m.status === "safe"     ? t("dashboard.decay.statusSafe")     :
+                              t("dashboard.decay.statusUnknown");
+
+  return (
+    <div style={{
+      padding: "0.5rem 0.65rem", borderRadius: 6,
+      background: `${statusColor}12`, border: `1px solid ${statusColor}38`,
+    }}>
+      {/* Map + tribe: which base this timer is about.  The tribe name is
+          per map, so it belongs here and not in the page header. */}
+      <div style={{
+        display: "flex", alignItems: "baseline", justifyContent: "space-between",
+        gap: "0.5rem", marginBottom: "0.35rem",
+      }}>
+        <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>
+          {m.map_name || m.server_name || m.server_key || "—"}
+        </span>
+        <span style={{
+          fontSize: "0.72rem", fontWeight: 600, color: statusColor,
+          display: "inline-flex", alignItems: "center", gap: "0.25rem",
+          whiteSpace: "nowrap",
+        }}>
+          <StatusIcon size={12} /> {statusLabel}
+        </span>
+      </div>
+
+      <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "0.35rem" }}>
+        <Users size={11} style={{ verticalAlign: "middle" }} />{" "}
+        {m.tribe_name || t("dashboard.decay.tribeUnnamed")}
+        {m.tribe_id !== null && ` (#${m.tribe_id})`}
+      </div>
+
+      {/* The deadline as an actual date -- a countdown alone makes the
+          player do the arithmetic to find out whether they have to log in
+          before the weekend. */}
+      <KV label={t("dashboard.decay.expiresAt")}
+          value={m.expire_at
+            ? `${fmtDateTime(m.expire_at)} · ${fmtCountdown(m.hours_left, t)}`
+            : t("dashboard.decay.noTimer")} />
       <KV label={t("dashboard.decay.lastRefreshAt")}
-          value={data.last_refresh_at
-            ? `${fmtRelative(data.last_refresh_at)}${data.last_refresh_name ? ` (${data.last_refresh_name})` : ""}`
+          value={m.last_refresh_at
+            ? `${fmtRelative(m.last_refresh_at, t)}${m.last_refresh_name ? ` (${m.last_refresh_name})` : ""}`
             : "—"} />
-      {data.scheduled_for_purge && (
+
+      {m.scheduled_for_purge && (
         <div style={{
-          marginTop: "0.5rem", padding: "0.4rem 0.55rem",
+          marginTop: "0.4rem", padding: "0.35rem 0.5rem",
           background: "#dc262615", border: "1px solid #dc262640",
-          borderRadius: 6, fontSize: "0.78rem", color: "#dc2626",
+          borderRadius: 5, fontSize: "0.75rem", color: "#dc2626",
         }}>
           <AlertTriangle size={11} style={{ verticalAlign: "middle" }} />{" "}
           {t("dashboard.decay.scheduledPurge")}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -753,12 +842,12 @@ function TribeCard({ data }: { data: DashboardTribe }) {
             }} />
             <span style={{ flex: 1, fontSize: "0.85rem", fontWeight: m.is_self ? 600 : 400 }}>
               {m.name || m.eos_id.slice(0, 8) + "…"}
-              {m.is_self && <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "var(--accent)" }}>(tu)</span>}
+              {m.is_self && <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "var(--accent)" }}>{t("dashboard.tribe.self")}</span>}
             </span>
             <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
               {m.online_now
                 ? t("dashboard.tribe.onlineNow")
-                : fmtRelative(m.last_login_iso)}
+                : fmtRelative(m.last_login_iso, t)}
             </span>
           </div>
         ))}
@@ -802,7 +891,7 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
                 {e.dino_name || "?"}
                 {e.dino_level !== null ? ` (lvl ${e.dino_level})` : ""}
               </span>
-              <span style={{ color: "var(--text-secondary)" }}>{fmtRelative(e.event_at_iso)}</span>
+              <span style={{ color: "var(--text-secondary)" }}>{fmtRelative(e.event_at_iso, t)}</span>
             </div>
           ))}
         </div>
@@ -813,13 +902,60 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
 
 // ── Saved homes card ────────────────────────────────────────────────────────
 
-function HomesCard({ data, onChanged }: {
-  data: DashboardHomes;
+/**
+ * Saved homes, one card per map.
+ *
+ * The `/sethome` limit is per map and the coordinates only mean anything
+ * against a map, so the map is the unit -- a flat cluster-wide list forced
+ * the player to read a map name off every single row to find the two homes
+ * that were on the map they were standing on.
+ *
+ * Returns an array so the caller can spread the cards straight into the
+ * dashboard grid instead of nesting a grid inside a card.
+ */
+function homeCards(
+  data: DashboardHomes,
+  onChanged: () => void,
+): React.ReactNode[] {
+  if (data.groups.length === 0) return [<HomesEmptyCard key="homes-empty" />];
+  return data.groups.map(g => (
+    <HomeMapCard key={g.server_key || g.map_name || "?"} group={g}
+                 overridesRaw={data.calibration_overrides} onChanged={onChanged} />
+  ));
+}
+
+function HomesEmptyCard() {
+  const { t } = useTranslation();
+  return (
+    <Card icon={<MapPin size={14} />} title={t("dashboard.homes.title")}>
+      <EmptyNote>{t("dashboard.homes.empty")}</EmptyNote>
+    </Card>
+  );
+}
+
+function HomeMapCard({ group, overridesRaw, onChanged }: {
+  group: DashboardHomeGroup;
+  overridesRaw: string | null;
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError]   = useState("");
+
+  // Same resolution order as the admin map page, so a coordinate reads
+  // identically in both places: operator override, then what the game
+  // itself published, then the built-in table for official maps.
+  const calib = useMemo<MapCalib | null>(() => {
+    const map = group.map_name || "";
+    const overrides = parseCalibOverrides(overridesRaw);
+    const fromGame = (group.lat_scale && group.lon_scale)
+      ? calibFromWorldSettings({
+          lat_origin: group.lat_origin ?? 0, lat_scale: group.lat_scale,
+          lon_origin: group.lon_origin ?? 0, lon_scale: group.lon_scale,
+        })
+      : null;
+    return overrides[map] || fromGame || DEFAULT_CALIBRATION[map] || null;
+  }, [group, overridesRaw]);
 
   async function handleDelete(home: { id: number; name: string }): Promise<void> {
     if (!window.confirm(t("dashboard.homes.deleteConfirm", { n: home.name }))) return;
@@ -838,41 +974,60 @@ function HomesCard({ data, onChanged }: {
     }
   }
 
+  const mapLabel = group.map_name || group.server_name || group.server_key || "—";
+
   return (
-    <Card icon={<MapPin size={14} />} title={t("dashboard.homes.title")}>
-      {data.entries.length === 0 ? (
-        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          {t("dashboard.homes.empty")}
+    <Card
+      icon={<MapPin size={14} />}
+      title={t("dashboard.homes.mapTitle", { map: mapLabel, n: group.entries.length })}
+    >
+      {group.server_name && group.server_name !== mapLabel && (
+        <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginBottom: "0.35rem" }}>
+          <Server size={10} style={{ verticalAlign: "middle" }} /> {group.server_name}
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxHeight: "clamp(160px, 35vh, 220px)", overflowY: "auto" }}>
-          {data.entries.map(h => (
-            <div key={h.id} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              gap: "0.5rem",
-              padding: "0.3rem 0.4rem", borderRadius: 3,
-              background: "var(--bg-card-muted, #f5f5f7)",
-              fontSize: "0.78rem",
-            }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {h.name}
-                </div>
-                <div style={{ color: "var(--text-secondary)", fontSize: "0.7rem" }}>
-                  {h.map_name || h.server_name || h.server_key || "—"}
-                  {h.created_iso ? ` · ${fmtRelative(h.created_iso)}` : ""}
-                </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+        {group.entries.map(h => (
+          <div key={h.id} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: "0.5rem",
+            padding: "0.35rem 0.45rem", borderRadius: 4,
+            background: "var(--bg-card-muted, #f5f5f7)",
+            fontSize: "0.78rem",
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {h.name}
               </div>
-              <button
-                onClick={() => handleDelete(h)}
-                disabled={busyId !== null}
-                className="btn btn-danger btn-sm"
-                title={t("dashboard.homes.deleteButton")}
-              >
-                <Trash2 size={12} />
-              </button>
+              <div style={{
+                color: "var(--text-secondary)", fontSize: "0.72rem",
+                fontFamily: "var(--font-mono)",
+              }}>
+                {fmtHomePos(h, calib, t)}
+              </div>
+              {h.created_iso && (
+                <div
+                  style={{ color: "var(--text-secondary)", fontSize: "0.68rem" }}
+                  title={fmtDateTime(h.created_iso)}
+                >
+                  {t("dashboard.homes.savedOn", { v: fmtRelative(h.created_iso, t) })}
+                </div>
+              )}
             </div>
-          ))}
+            <button
+              onClick={() => handleDelete(h)}
+              disabled={busyId !== null}
+              className="btn btn-danger btn-sm"
+              title={t("dashboard.homes.deleteButton")}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {!calib && (
+        <div style={{ marginTop: "0.35rem", fontSize: "0.68rem", color: "var(--text-secondary)" }}>
+          {t("dashboard.homes.noCalibration")}
         </div>
       )}
       {error && <div className="form-message form-message-error" style={{ marginTop: "0.4rem" }}>{error}</div>}
@@ -1021,7 +1176,7 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
                     {t(`dashboard.tools.status.${r.status}`, r.status)}
                   </span>
                   <span style={{ color: "var(--text-secondary)" }}>
-                    {fmtRelative(r.requested_at)}
+                    {fmtRelative(r.requested_at, t)}
                   </span>
                 </span>
               </div>
@@ -1071,7 +1226,7 @@ function ActivityCard({ data }: { data: DashboardActivity }) {
               )}
             </span>
             <span style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-              {fmtRelative(e.when_iso)}
+              {fmtRelative(e.when_iso, t)}
             </span>
           </div>
         ))}
@@ -1099,6 +1254,15 @@ function Card({
       <div className="pl-sync-body" style={{ padding: "0.7rem 0.8rem" }}>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** The "nothing here yet" line, so every card says it the same way. */
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+      {children}
     </div>
   );
 }

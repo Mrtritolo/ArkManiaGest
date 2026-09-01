@@ -1,7 +1,13 @@
 /**
  * shopImage.ts — quale immagine mostra una voce del negozio.
  *
- * Le regole, in ordine:
+ * La regola principale e' una sola: l'immagine e' un file STATICO in
+ * `public/shop-thumbs/<chiave voce ArkShop>.png`, prodotto una volta sola
+ * da `deploy/maintainer/fetch-shop-thumbs.py`. Nessuna wiki a runtime,
+ * nessuna catena di nomi da indovinare mentre il giocatore guarda.
+ *
+ * Le regole sotto restano solo come fallback per una voce nuova, aggiunta
+ * al catalogo dopo l'ultimo giro dello script:
  *
  *  1. `[BOSS] X` — il titolo nomina il boss, e l'immagine giusta e' quella
  *     del boss, non quella del primo tributo che serve per evocarlo. La
@@ -11,7 +17,7 @@
  *     non richiede di indovinare quale pezzo rappresenti il pacchetto.
  *  3. Voce singola / dino — l'immagine del suo blueprint.
  *
- * Le immagini passano tutte dalla cache del pannello (`/market/thumb/...`),
+ * Anche il fallback passa dalla cache del pannello (`/market/thumb/...`),
  * non dalla wiki: la CSP resta `img-src 'self'` e un cambio di slug lato
  * wiki non rompe decine di schede insieme.
  */
@@ -78,14 +84,22 @@ export function isBossEntry(entry: { label: string }): boolean {
 /**
  * Candidati d'immagine per una voce di catalogo, in ordine di preferenza.
  *
- * Non un solo URL ma una catena: la wiki non ha una pagina per tutto
- * (oggetti mod, kit custom) e ogni candidato fallito fa scattare il
- * successivo lato <img onError>. Ordine: nome boss, primo oggetto del
- * pacchetto, blueprint della voce, etichetta cosi' com'e' (molte voci di
- * catalogo usano il nome wiki esatto come titolo).
+ * Il primo candidato e' l'immagine STATICA, gia' scaricata dalla wiki una
+ * volta sola da `deploy/maintainer/fetch-shop-thumbs.py` e servita da
+ * `frontend/public/shop-thumbs/<chiave>.png`. E' quella che deve vincere
+ * sempre: la catena a runtime che veniva prima sbagliava nome per una
+ * dozzina di voci, e per tutte le altre sparava ~50 richieste in parallelo
+ * alla wiki, che rispondeva 429 e lasciava meta' vetrina senza immagine.
+ *
+ * Il resto della catena resta come rete di sicurezza per una voce aggiunta
+ * al catalogo dopo l'ultimo giro dello script: ogni candidato fallito fa
+ * scattare il successivo lato <img onError>. Ordine: nome boss, primo
+ * oggetto del pacchetto, blueprint della voce, etichetta cosi' com'e'
+ * (molte voci di catalogo usano il nome wiki esatto come titolo).
  */
 export function shopEntryThumbCandidates(entry: WebShopItem): string[] {
   const urls: (string | null)[] = [];
+  if (entry.key) urls.push(`/shop-thumbs/${encodeURIComponent(entry.key)}.png`);
   if (isBossEntry(entry)) {
     const name = stripTags(entry.label);
     if (name) urls.push(`/api/v1/market/thumb/${encodeURIComponent(name)}`);

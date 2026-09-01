@@ -1803,7 +1803,8 @@ function ShopThumb({ entry, size }: { entry: WebShopItem; size: number }) {
       </div>
     );
   return (
-    <img src={candidates[idx]} alt="" style={{ ...box, objectFit: "contain" }}
+    <img src={candidates[idx]} alt="" loading="lazy"
+      style={{ ...box, objectFit: "contain" }}
       onError={() => setIdx(i => i + 1)} />
   );
 }

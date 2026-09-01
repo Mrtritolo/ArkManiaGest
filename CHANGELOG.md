@@ -91,6 +91,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   not replicate anything itself; it reports when the hosts stop
   agreeing.
 
+- **Player dashboard: decay is now shown per map.** A cluster player has a
+  separate tribe -- own name, own timer -- on every map they have played,
+  and the card showed whichever one they happened to log into last. It now
+  lists one block per map with the map name, the tribe name on that map, the
+  absolute expiry date next to the countdown, the last refresh, and the purge
+  flag. `/me/dashboard` returns `decay.maps[]`, soonest deadline first.
+- **Player dashboard: one home card per map.** Saved `/sethome` points were a
+  flat cluster-wide list; the limit is per map, so the map is now the card.
+  Each home shows its position as the in-game GPS lat/lon rather than raw
+  world units, converted with the same calibration chain the admin map page
+  uses (operator override, then the world settings the game publishes, then
+  the built-in table for official maps). A map with no calibration at all
+  says so and shows honest world units instead of a plausible wrong GPS.
+
 ### Changed
 
 - **RCON is spoken by the panel, over the SSH connection.** Instead of
@@ -110,6 +124,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   SteamCMD while any instance sharing the installation is still up --
   on Windows those files are locked, so the update would fail halfway
   and leave a partially rewritten tree.
+
+- **Shop thumbnails are static files.** They used to be resolved at render
+  time through a chain of guessed wiki page names; painting the catalogue
+  fired ~50 concurrent requests at ark.wiki.gg, which answered 429 and left
+  half the shop without a picture, and a dozen entries had no wiki page under
+  any derivable name anyway (`[BOSS] Red-Handed` lives at *Lost King*). The
+  new `deploy/maintainer/fetch-shop-thumbs.py` resolves and downloads all 53
+  entries once, serially, with backoff, into
+  `frontend/public/shop-thumbs/<item key>.png`. The runtime chain stays as a
+  fallback for entries added after the last run.
+- Dashboard time labels ("2h fa", "tra 3g", "scaduto da 4g 2h") went through
+  i18n; they were hardcoded Italian and an EN player saw them untranslated.
+  Same for the tribe roster's "(tu)" and the leaderboard rank line.
 
 ### Fixed
 

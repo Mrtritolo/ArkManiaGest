@@ -155,7 +155,8 @@
     "character": {
       "noTribe": "Senza tribù",
       "lastSeen": "ultimo accesso {{r}}",
-      "timedShort": "Permessi a tempo"
+      "timedShort": "Permessi a tempo",
+      "expires": "scade {{r}}"
     },
     "shop": {
       "title": "ArkShop",
@@ -165,7 +166,8 @@
     },
     "leaderboard": {
       "title": "Classifica",
-      "empty": "Nessun punto in classifica ancora."
+      "empty": "Nessun punto in classifica ancora.",
+      "rankLine": "#{{rank}} su {{total}} ({{type}})"
     },
     "lb": {
       "killWild": "Kill wild",
@@ -183,13 +185,20 @@
       "statusExpiring": "In scadenza",
       "statusSafe": "OK",
       "lastRefreshAt": "Ultimo refresh",
-      "scheduledPurge": "Tribù programmata per purge."
+      "scheduledPurge": "Tribù programmata per purge.",
+      "titleWithCount": "Decadimento · {{n}} mappe",
+      "statusUnknown": "Nessun timer",
+      "tribeUnnamed": "Tribù senza nome",
+      "expiresAt": "Scadenza",
+      "noTimer": "Timer non ancora avviato",
+      "expiredSince": "scaduto da {{v}}"
     },
     "tribe": {
       "title": "Tribù",
       "empty": "Nessuna tribù registrata.",
       "titleWithCount": "Tribù: {{n}} ({{m}} membri · {{o}} online)",
-      "onlineNow": "ora"
+      "onlineNow": "ora",
+      "self": "(tu)"
     },
     "rare": {
       "title": "Rare dino (30g)",
@@ -202,7 +211,12 @@
       "empty": "Nessuna home salvata. Usa /sethome in gioco per crearne una.",
       "deleteButton": "Elimina questa home",
       "deleteConfirm": "Eliminare la home \"{{n}}\"? L'operazione e' immediata anche se sei in gioco.",
-      "deleteError": "Eliminazione della home non riuscita."
+      "deleteError": "Eliminazione della home non riuscita.",
+      "mapTitle": "Home · {{map}} ({{n}})",
+      "gps": "Lat {{lat}} · Lon {{lon}}",
+      "rawUnits": "X {{x}} · Y {{y}} (unità di gioco)",
+      "savedOn": "salvata {{v}}",
+      "noCalibration": "Mappa non calibrata: coordinate in unità di gioco, non GPS."
     },
     "tools": {
       "title": "Strumenti personaggio",
@@ -2557,5 +2571,15 @@
       "platform": "Piattaforma",
       "preflight": "Pre-verifica"
     }
+  },
+  "time": {
+    "underMinute": "< 1m",
+    "underHour": "< 1h",
+    "minutes": "{{n}}m",
+    "hours": "{{n}}h",
+    "days": "{{n}}g",
+    "dayHour": "{{d}}g {{h}}h",
+    "ago": "{{v}} fa",
+    "in": "tra {{v}}"
   }
 }

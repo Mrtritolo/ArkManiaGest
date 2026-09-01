@@ -152,17 +152,32 @@ class _ShopCard(BaseModel):
     kits_raw:     Optional[str] = None
 
 
-class _DecayCard(BaseModel):
-    has_tribe:           bool
+class _DecayMapRow(BaseModel):
+    """
+    Decay state of the caller's tribe on ONE map.
+
+    Decay is a per-map fact, not a per-player one: the PK of
+    ``ARKM_player_tribes`` is ``(eos_id, targeting_team, server_key)``, and a
+    tribe on Ragnarok is a different ``targeting_team`` -- with its own name
+    and its own timer -- from the one on The Island.
+    """
+    server_key:          Optional[str] = None
+    server_name:         Optional[str] = None
+    map_name:            Optional[str] = None
     tribe_id:            Optional[int] = None
     tribe_name:          Optional[str] = None
     expire_at:           Optional[str] = None       # ISO 8601
-    hours_left:          Optional[int] = None        # negative when expired
-    status:              Optional[str] = None        # 'safe' | 'expiring' | 'expired'
+    hours_left:          Optional[int] = None       # negative when expired
+    status:              Optional[str] = None       # 'safe' | 'expiring' | 'expired'
     scheduled_for_purge: bool = False
     last_refresh_at:     Optional[str] = None
     last_refresh_name:   Optional[str] = None
     last_refresh_days:   Optional[int] = None
+
+
+class _DecayCard(BaseModel):
+    has_tribe: bool = False
+    maps:      list[_DecayMapRow] = []
 
 
 class _DiscordCard(BaseModel):
@@ -244,17 +259,39 @@ class _HomeEntry(BaseModel):
     """One saved teleport home (ARKM_homes, written by ARKM-Teleport)."""
     id:           int
     name:         str
-    server_key:   Optional[str] = None
-    server_name:  Optional[str] = None
-    map_name:     Optional[str] = None
     x:            Optional[float] = None
     y:            Optional[float] = None
     z:            Optional[float] = None
     created_iso:  Optional[str] = None
 
 
+class _HomeMapGroup(BaseModel):
+    """
+    The homes saved on one map, plus what that map needs to read them.
+
+    The home limit is per map and the coordinates only mean anything against
+    a map, so the map -- not the flat list -- is the unit the player thinks
+    in.  ``lat_*``/``lon_*`` are the world settings the game itself publishes
+    (``ARKM_map_calibration``); the client turns them into the GPS lat/lon a
+    player reads off the implant.  Null on a map that publishes nothing --
+    the client then falls back to its built-in table for official maps.
+    """
+    server_key:  Optional[str] = None
+    server_name: Optional[str] = None
+    map_name:    Optional[str] = None
+    lat_origin:  Optional[float] = None
+    lat_scale:   Optional[float] = None
+    lon_origin:  Optional[float] = None
+    lon_scale:   Optional[float] = None
+    entries:     list[_HomeEntry] = []
+
+
 class _HomesCard(BaseModel):
-    entries: list[_HomeEntry] = []
+    groups: list[_HomeMapGroup] = []
+    # Raw ``PlayerMap.MapCalibration`` config value: the operator's manual
+    # calibration for maps the game gets wrong.  Same source the admin map
+    # page uses, so both views place a coordinate identically.
+    calibration_overrides: Optional[str] = None
 
 
 class _ActivityEvent(BaseModel):
@@ -331,6 +368,21 @@ def _parse_timed_perm_groups(raw: Optional[str]) -> list[dict]:
     return out
 
 
+def _iso(value: object) -> Optional[str]:
+    """ISO-8601 string for a DB datetime; None when the column is empty."""
+    return value.isoformat() if hasattr(value, "isoformat") else None
+
+
+def _as_float(value: object) -> Optional[float]:
+    """Float for a numeric column; None when the column is empty."""
+    return float(value) if value is not None else None            # type: ignore[arg-type]
+
+
+def _as_int(value: object) -> Optional[int]:
+    """Int for a numeric column; None when the column is empty."""
+    return int(value) if value is not None else None              # type: ignore[call-overload]
+
+
 def _decay_status_label(hours_left: Optional[int]) -> Optional[str]:
     """Mirror the existing /arkmania/decay status thresholds."""
     if hours_left is None:
@@ -390,16 +442,43 @@ async def get_dashboard(
             detail="Your linked ARK character is not present on this server.",
         )
 
-    # 2. Tribe (latest entry by last_login)
-    t_row = (await plugin_db.execute(
+    # 2. Tribes + decay, one row per (map, tribe) the player has played.
+    #
+    #    ARKM_tribe_decay is keyed on targeting_team alone, but a team only
+    #    ever exists on one map, so joining it onto the per-map tribe rows
+    #    yields the independent per-map timers -- which is what the player
+    #    actually needs: "my Ragnarok base expires Friday" is a different
+    #    fact from "my Island base expires next week".
+    tribe_rows = (await plugin_db.execute(
         text(
-            "SELECT eos_id, targeting_team, tribe_name, last_login "
-            "FROM ARKM_player_tribes "
-            "WHERE eos_id = :e "
-            "ORDER BY last_login DESC LIMIT 1"
+            "SELECT pt.targeting_team, pt.tribe_name, pt.server_key, pt.last_login, "
+            "       srv.display_name AS server_name, srv.map_name, "
+            "       d.tribe_name AS decay_tribe_name, d.expire_time, "
+            "       d.last_refresh_name, d.last_refresh_time, d.last_refresh_days, "
+            "       TIMESTAMPDIFF(HOUR, NOW(), d.expire_time) AS hours_left, "
+            "       dp.targeting_team AS pending_team "
+            "FROM ARKM_player_tribes pt "
+            "LEFT JOIN ARKM_servers srv ON srv.server_key = pt.server_key "
+            "LEFT JOIN ARKM_tribe_decay d ON d.targeting_team = pt.targeting_team "
+            "LEFT JOIN ARKM_decay_pending dp "
+            "       ON dp.targeting_team = pt.targeting_team "
+            "      AND dp.server_key = pt.server_key "
+            "WHERE pt.eos_id = :e "
+            "ORDER BY pt.last_login DESC"
         ),
         {"e": eos},
-    )).mappings().fetchone()
+    )).mappings().fetchall()
+
+    # One row per map: a player who left a tribe and joined another on the
+    # same map has two rows there, and only the latest one is their tribe now.
+    # The rows arrive newest-first, so the first hit per server_key wins.
+    current_by_map: dict[str, dict] = {}
+    for r in tribe_rows:
+        current_by_map.setdefault(r.get("server_key") or "", r)
+
+    # The most recent tribe overall still drives the header and the roster
+    # card; only decay is broken out per map.
+    t_row = tribe_rows[0] if tribe_rows else None
 
     # 3. Shop row
     s_row = (await plugin_db.execute(
@@ -409,29 +488,6 @@ async def get_dashboard(
         ),
         {"e": eos},
     )).mappings().fetchone()
-
-    # 4. Decay row (only when we resolved a tribe)
-    d_row = None
-    pending_row = None
-    if t_row and t_row.get("targeting_team") is not None:
-        d_row = (await plugin_db.execute(
-            text(
-                "SELECT targeting_team, tribe_name, expire_time, "
-                "       last_refresh_eos, last_refresh_name, "
-                "       last_refresh_group, last_refresh_days, "
-                "       last_refresh_time, "
-                "       TIMESTAMPDIFF(HOUR, NOW(), expire_time) AS hours_left "
-                "FROM ARKM_tribe_decay WHERE targeting_team = :t LIMIT 1"
-            ),
-            {"t": int(t_row["targeting_team"])},
-        )).mappings().fetchone()
-        pending_row = (await plugin_db.execute(
-            text(
-                "SELECT 1 FROM ARKM_decay_pending "
-                "WHERE targeting_team = :t LIMIT 1"
-            ),
-            {"t": int(t_row["targeting_team"])},
-        )).fetchone()
 
     # 5. Presence (real-time online status of THIS player)
     sess_row = (await plugin_db.execute(
@@ -630,36 +686,62 @@ async def get_dashboard(
     activity_items.sort(key=lambda x: x.when_iso or "", reverse=True)
     activity_items = activity_items[:15]
 
-    # 11. Saved teleport homes (ARKM-Teleport).  The join on ARKM_servers
-    #     is what makes the list readable: server_key is a hash, and the
-    #     home limit is per map, so "which map" is the one thing the
-    #     player needs to see next to each name.
+    # 11. Saved teleport homes (ARKM-Teleport), grouped by map.
+    #
+    #     server_key is a hash, so ARKM_servers supplies the readable map
+    #     name; ARKM_map_calibration supplies the world settings that turn
+    #     the stored world units into the GPS the player reads in game.  The
+    #     home limit is per map, so the map is the unit the card is built
+    #     around, not a column in a flat list.
     home_rows = (await plugin_db.execute(
         text(
             "SELECT h.id, h.name, h.server_key, h.x, h.y, h.z, h.created_at, "
-            "       srv.display_name AS server_name, srv.map_name "
+            "       srv.display_name AS server_name, srv.map_name, "
+            "       mc.lat_origin, mc.lat_scale, mc.lon_origin, mc.lon_scale "
             "FROM ARKM_homes h "
-            "LEFT JOIN ARKM_servers srv ON h.server_key = srv.server_key "
+            "LEFT JOIN ARKM_servers srv ON srv.server_key = h.server_key "
+            "LEFT JOIN ARKM_map_calibration mc ON mc.map_name = srv.map_name "
             "WHERE h.eos_id = :e "
             "ORDER BY srv.map_name IS NULL, srv.map_name, h.name"
         ),
         {"e": eos},
     )).mappings().fetchall()
-    home_entries: list[_HomeEntry] = []
+    home_groups: list[_HomeMapGroup] = []
+    group_by_key: dict[str, _HomeMapGroup] = {}
     for r in home_rows:
-        home_entries.append(_HomeEntry(
+        key = r.get("server_key") or ""
+        group = group_by_key.get(key)
+        if group is None:
+            group = _HomeMapGroup(
+                server_key  = r.get("server_key"),
+                server_name = r.get("server_name"),
+                map_name    = r.get("map_name"),
+                lat_origin  = _as_float(r.get("lat_origin")),
+                lat_scale   = _as_float(r.get("lat_scale")),
+                lon_origin  = _as_float(r.get("lon_origin")),
+                lon_scale   = _as_float(r.get("lon_scale")),
+            )
+            group_by_key[key] = group
+            home_groups.append(group)
+        group.entries.append(_HomeEntry(
             id          = int(r["id"]),
             name        = str(r.get("name") or ""),
-            server_key  = r.get("server_key"),
-            server_name = r.get("server_name"),
-            map_name    = r.get("map_name"),
-            x           = float(r["x"]) if r.get("x") is not None else None,
-            y           = float(r["y"]) if r.get("y") is not None else None,
-            z           = float(r["z"]) if r.get("z") is not None else None,
-            created_iso = (r["created_at"].isoformat()
-                           if r.get("created_at") and hasattr(r["created_at"], "isoformat")
-                           else None),
+            x           = _as_float(r.get("x")),
+            y           = _as_float(r.get("y")),
+            z           = _as_float(r.get("z")),
+            created_iso = _iso(r.get("created_at")),
         ))
+
+    # Operator-side calibration for maps whose published world settings are
+    # wrong or absent.  Read once, handed to the client raw -- it already
+    # parses this exact value for the admin map page.
+    calib_overrides = (await plugin_db.execute(
+        text(
+            "SELECT config_value FROM ARKM_config "
+            "WHERE config_key = 'PlayerMap.MapCalibration' AND server_key = '*' "
+            "LIMIT 1"
+        ),
+    )).scalar()
 
     # ── Assemble response ────────────────────────────────────────────────
 
@@ -688,33 +770,29 @@ async def get_dashboard(
         kits_raw    = s_row.get("Kits") if s_row else None,
     )
 
-    decay_card: _DecayCard
-    if d_row:
-        hours_left = (
-            int(d_row["hours_left"])
-            if d_row.get("hours_left") is not None
-            else None
-        )
-        decay_card = _DecayCard(
-            has_tribe           = True,
-            tribe_id            = int(d_row["targeting_team"]),
-            tribe_name          = d_row.get("tribe_name") or character_card.tribe_name,
-            expire_at           = (d_row["expire_time"].isoformat()
-                                   if d_row.get("expire_time") and hasattr(d_row["expire_time"], "isoformat")
-                                   else None),
+    # Maps the player has a tribe on, sorted the way the card lists them:
+    # soonest deadline first, so what needs attention is at the top.  Maps
+    # with no decay row (tribe registered, timer not started yet) sink to
+    # the bottom instead of pretending to be safe forever.
+    decay_maps: list[_DecayMapRow] = []
+    for r in current_by_map.values():
+        hours_left = _as_int(r.get("hours_left"))
+        decay_maps.append(_DecayMapRow(
+            server_key          = r.get("server_key"),
+            server_name         = r.get("server_name"),
+            map_name            = r.get("map_name"),
+            tribe_id            = _as_int(r.get("targeting_team")),
+            tribe_name          = (r.get("decay_tribe_name") or r.get("tribe_name")) or None,
+            expire_at           = _iso(r.get("expire_time")),
             hours_left          = hours_left,
             status              = _decay_status_label(hours_left),
-            scheduled_for_purge = bool(pending_row),
-            last_refresh_at     = (d_row["last_refresh_time"].isoformat()
-                                   if d_row.get("last_refresh_time") and hasattr(d_row["last_refresh_time"], "isoformat")
-                                   else None),
-            last_refresh_name   = d_row.get("last_refresh_name"),
-            last_refresh_days   = (int(d_row["last_refresh_days"])
-                                   if d_row.get("last_refresh_days") is not None
-                                   else None),
-        )
-    else:
-        decay_card = _DecayCard(has_tribe=False)
+            scheduled_for_purge = r.get("pending_team") is not None,
+            last_refresh_at     = _iso(r.get("last_refresh_time")),
+            last_refresh_name   = r.get("last_refresh_name") or None,
+            last_refresh_days   = _as_int(r.get("last_refresh_days")),
+        ))
+    decay_maps.sort(key=lambda m: (m.hours_left is None, m.hours_left or 0))
+    decay_card = _DecayCard(has_tribe=bool(decay_maps), maps=decay_maps)
 
     presence_card = _PresenceCard(
         online_now       = bool(sess_row),
@@ -766,7 +844,10 @@ async def get_dashboard(
         tribe       = tribe_card,
         rare_dinos  = rare_card,
         activity    = activity_card,
-        homes       = _HomesCard(entries=home_entries),
+        homes       = _HomesCard(
+            groups                = home_groups,
+            calibration_overrides = calib_overrides,
+        ),
     )
 
 
