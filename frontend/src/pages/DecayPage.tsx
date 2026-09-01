@@ -459,7 +459,7 @@ export default function DecayPage() {
               <div className="pl-empty"><Timer size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyTribes')}</p></div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 130px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1.2fr 1.2fr 0.8fr 80px 120px 90px 130px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                   <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.tribes.table.group')}</span><span>{t('decay.tribes.table.days')}</span><span>{t('decay.tribes.table.expires')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.status')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
                 </div>
                 {tribes.map(tr => (
@@ -524,7 +524,7 @@ export default function DecayPage() {
             <div className="pl-empty"><CheckCircle size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyPending')}</p></div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 215px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 0.8fr 80px 70px 60px 100px 100px 215px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                 <span>{t('decay.tribes.table.id')}</span><span>{t('decay.tribes.table.name')}</span><span>{t('decay.tribes.table.player')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.pending.table.reason')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.pending.table.lastLogin')}</span><span>{t('decay.pending.table.flaggedAt')}</span><span style={{ textAlign: 'center' }}>{t('decay.tribes.table.actions')}</span>
               </div>
               {pending.map(p => { const dKey = `${p.targeting_team}-${p.server_key}`; const dOpen = detailKey === dKey; const gg = daysSince(p.last_member_login); const tgt = targetFor(p.server_key); const tgtName = tgt ? (tgt.display_name || tgt.name) : ''; return (
@@ -649,7 +649,7 @@ export default function DecayPage() {
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                           {t('decay.detail.showLabel')}
                         </span>
                         {([['structure', nDetailStruct, t('playerMap.structures')],
@@ -667,7 +667,7 @@ export default function DecayPage() {
                         </span>
                       </div>
                       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', padding: '0.3rem 0.5rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)' }}>
                           <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.owner')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span><span></span>
                         </div>
                         {detailVisible.map(({ r: row, i: idx }) => (
@@ -711,7 +711,7 @@ export default function DecayPage() {
             <div className="pl-empty"><Activity size={40} style={{ opacity: 0.15 }} /><p>{t('decay.emptyLog')}</p></div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 100px 100px 100px 130px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 100px 100px 100px 130px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                 <span>{t('decay.tribes.table.id')}</span><span>{t('decay.pending.table.server')}</span><span>{t('decay.log.table.map')}</span><span>{t('decay.pending.table.structures')}</span><span>{t('decay.pending.table.dinos')}</span><span>{t('decay.log.table.by')}</span><span>{t('decay.log.table.date')}</span>
               </div>
               {log.map(l => (

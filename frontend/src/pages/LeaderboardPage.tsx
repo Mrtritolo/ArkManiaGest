@@ -262,7 +262,7 @@ export default function LeaderboardPage() {
               <div className="pl-empty"><Trophy size={40} style={{ opacity: 0.12 }} /><p>{t('leaderboard.emptyRanking')}</p></div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '50px 1.5fr 80px 80px 70px 70px 70px 70px 70px 100px', padding: '0.45rem 1rem', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)', position: 'sticky', top: 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '50px 1.5fr 80px 80px 70px 70px 70px 70px 70px 100px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)', position: 'sticky', top: 0 }}>
                   <span>#</span><span>{t('leaderboard.table.player')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.points')}</span>
                   <span style={{ textAlign: 'right' }}>{t('leaderboard.table.killsWild')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.killsPvp')}</span>
                   <span style={{ textAlign: 'right' }}>{t('leaderboard.table.tames')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.crafts')}</span>
@@ -336,7 +336,7 @@ export default function LeaderboardPage() {
               <div className="pl-empty"><Activity size={40} style={{ opacity: 0.12 }} /><p>{t('leaderboard.emptyEvents')}</p></div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1.5fr 80px 100px', padding: '0.45rem 1rem', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1.5fr 80px 100px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
                   <span>{t('leaderboard.table.player')}</span><span>{t('leaderboard.events.table.event')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.events.table.points')}</span>
                   <span>{t('leaderboard.events.table.target')}</span><span>{t('leaderboard.events.table.server')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.events.table.date')}</span>
                 </div>

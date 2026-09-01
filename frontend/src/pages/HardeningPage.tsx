@@ -275,7 +275,6 @@ export default function HardeningPage({ currentUser }: Props) {
                       {c.title}
                       <span style={{
                         marginLeft: 8, fontSize: '0.62rem', fontWeight: 700,
-                        textTransform: 'uppercase', letterSpacing: '0.05em',
                         color: RISK_COLOR[c.risk],
                       }}>
                         {t(`hardening.risk.${c.risk}`)}

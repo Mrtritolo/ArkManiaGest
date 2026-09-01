@@ -291,19 +291,19 @@ export default function RareDinosPage() {
             {/* Generator controls */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.countLabel')}</label>
+                <label style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.countLabel')}</label>
                 <input type="number" value={genCount} onChange={e => setGenCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
                   min={1} max={50} className="input" style={{ fontFamily: 'var(--font-mono)' }} />
               </div>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.mapLabel')}</label>
+                <label style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.mapLabel')}</label>
                 <select value={genMap} onChange={e => setGenMap(e.target.value)} className="input">
                   <option value="*">{t('rareDinos.generator.allMaps')}</option>
                   {maps.filter(m => m !== '*').map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.statPresetLabel')}</label>
+                <label style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)', display: 'block', marginBottom: 4 }}>{t('rareDinos.generator.statPresetLabel')}</label>
                 <select value={genPreset} onChange={e => setGenPreset(e.target.value)} className="input">
                   <option value="none">{t('rareDinos.generator.preset.none')}</option>
                   <option value="low">{t('rareDinos.generator.preset.low')}</option>
@@ -339,10 +339,10 @@ export default function RareDinosPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colDino')}</th>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colHp')}</th>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colMelee')}</th>
-                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colSpeed')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colDino')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colHp')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colMelee')}</th>
+                        <th style={{ padding: '0.4rem 0.6rem', textAlign: 'center', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{t('rareDinos.generator.colSpeed')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -431,7 +431,7 @@ export default function RareDinosPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 80px repeat(7, 70px) 80px', gap: 0, padding: '0.5rem 1rem', background: 'var(--bg-card-muted)', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 80px repeat(7, 70px) 80px', gap: 0, padding: '0.5rem 1rem', background: 'var(--bg-card-muted)', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
             <span>{t('rareDinos.table.dino')}</span>
             <span>{t('rareDinos.table.map')}</span>
             <span style={{ textAlign: 'center' }}>{t('rareDinos.table.status')}</span>
@@ -514,7 +514,7 @@ export default function RareDinosPage() {
               {/* Blueprint + Map */}
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
                     {t('rareDinos.modal.blueprintLabel')}
                   </label>
                   <div style={{ position: 'relative' }}>
@@ -603,7 +603,7 @@ export default function RareDinosPage() {
                   )}
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
                     {t('rareDinos.modal.mapLabel')}
                   </label>
                   <select className="input" value={form.map_name} onChange={e => setForm(prev => ({ ...prev, map_name: e.target.value }))}
@@ -634,7 +634,7 @@ export default function RareDinosPage() {
               </div>
 
               {/* Stats grid */}
-              <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
                 {t('rareDinos.modal.statsHeading')}
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.65rem' }}>

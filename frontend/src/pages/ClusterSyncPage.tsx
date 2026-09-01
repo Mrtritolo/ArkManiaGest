@@ -129,7 +129,6 @@ export default function ClusterSyncPage() {
                   {cluster.cluster_id}
                   <span style={{
                     marginLeft: 8, fontSize: '0.65rem', fontWeight: 700,
-                    textTransform: 'uppercase', letterSpacing: '0.06em',
                     color: style.color,
                   }}>
                     {t(`clusterSync.status.${cluster.status}`)}
@@ -145,7 +144,6 @@ export default function ClusterSyncPage() {
             <div style={{
               display: 'grid', gridTemplateColumns: GRID_COLUMNS,
               padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: '0.06em',
               color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)',
             }}>
               <span>{t('clusterSync.column.machine')}</span>

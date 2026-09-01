@@ -197,7 +197,7 @@ export default function OnlinePlayersPage() {
           <div style={{
             display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 100px 140px',
             padding: '0.55rem 1rem', background: 'var(--bg-card-muted)',
-            fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
+            fontSize: '0.72rem', fontWeight: 700,
             letterSpacing: '0.06em', color: 'var(--text-secondary)',
           }}>
             <span>{t('onlinePlayers.table.player')}</span><span>{t('onlinePlayers.table.server')}</span><span>{t('onlinePlayers.table.map')}</span>

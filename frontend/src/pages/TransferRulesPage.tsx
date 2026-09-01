@@ -184,7 +184,7 @@ export default function TransferRulesPage() {
           <form onSubmit={handleAdd}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr 1fr', gap: '0.6rem', alignItems: 'end' }}>
               <div>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.sourceLabel')}</label>
+                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.sourceLabel')}</label>
                 <select className="input" required value={newRule.source_server} onChange={e => setNewRule({ ...newRule, source_server: e.target.value })} style={{ fontSize: '0.82rem' }}>
                   <option value="">{t('transferRules.form.selectPlaceholder')}</option>
                   {serverOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -192,14 +192,14 @@ export default function TransferRulesPage() {
               </div>
               <ArrowRight size={18} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
               <div>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.destLabel')}</label>
+                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.destLabel')}</label>
                 <select className="input" required value={newRule.dest_server} onChange={e => setNewRule({ ...newRule, dest_server: e.target.value })} style={{ fontSize: '0.82rem' }}>
                   <option value="">{t('transferRules.form.selectPlaceholder')}</option>
                   {serverOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.levelLabel')}</label>
+                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.levelLabel')}</label>
                 <select className="input" value={newRule.transfer_level} onChange={e => setNewRule({ ...newRule, transfer_level: Number(e.target.value) })} style={{ fontSize: '0.82rem' }}>
                   {TRANSFER_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label} — {l.desc}</option>)}
                 </select>
@@ -227,7 +227,7 @@ export default function TransferRulesPage() {
         ) : (
           <>
             {/* Header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 30px 1.2fr 140px 1fr 80px', padding: '0.5rem 1rem', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 30px 1.2fr 140px 1fr 80px', padding: '0.5rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
               <span>{t('transferRules.table.source')}</span><span></span><span>{t('transferRules.table.dest')}</span><span>{t('transferRules.table.level')}</span><span>{t('transferRules.table.notes')}</span><span></span>
             </div>
             {/* Rows */}

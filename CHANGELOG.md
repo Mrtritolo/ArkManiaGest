@@ -125,6 +125,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   on Windows those files are locked, so the update would fail halfway
   and leave a partially rewritten tree.
 
+- **Micro-labels are sentence case.** The letter-spaced small caps were the
+  last of the previous identity: 18 stylesheet rules and 58 inline styles on
+  labels, section titles and table headers now read as normal text, with the
+  wide tracking gone (it existed to make caps legible and frays a lowercase
+  word). Chips, badges, status pills and avatar initials keep their caps --
+  they render raw API values (`running`, `item`) or a single letter, and
+  lowercasing those would be wrong, not consistent.
+
 - **The frontend type-checks clean.** `tsc --noEmit` went from 126 errors to
   zero, with no `any` and no `@ts-ignore`: every one was an API response left
   untyped, and each fix is the shape the backend actually returns

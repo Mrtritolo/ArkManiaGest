@@ -305,7 +305,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
     }
     const m = map[type] || map.item
     return (
-      <span style={{ fontSize: '0.58rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+      <span style={{ fontSize: '0.72rem', fontWeight: 700,
         padding: '0.1rem 0.35rem', borderRadius: 3, background: m.bg, color: m.color, whiteSpace: 'nowrap' }}>
         {t(m.labelKey)}
       </span>
@@ -660,14 +660,14 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
               <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--border)', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {/* Name */}
                 <div>
-                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>{t('arkmaniaConfig.editors.nameLabel')}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>{t('arkmaniaConfig.editors.nameLabel')}</label>
                   <input value={rule.Name} onChange={e => updateRule(i, { Name: e.target.value })}
                     style={{ fontSize: '0.82rem', height: 30, padding: '0.25rem 0.5rem', width: '100%', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, outline: 'none', marginTop: 2 }} />
                 </div>
 
                 {/* Blueprint + picker */}
                 <div>
-                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>{t('arkmaniaConfig.editors.blueprintLabel')}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>{t('arkmaniaConfig.editors.blueprintLabel')}</label>
                   <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
                     <input value={rule.Blueprint} onChange={e => updateRule(i, { Blueprint: e.target.value })} placeholder={t('arkmaniaConfig.editors.blueprintPlaceholder')}
                       style={{ flex: 1, fontSize: '0.72rem', fontFamily: 'var(--font-mono)', height: 30, padding: '0.25rem 0.5rem', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, outline: 'none' }} />
@@ -703,10 +703,10 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
 
                 {/* Groups table */}
                 <div>
-                  <label style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 1 }}>{t('arkmaniaConfig.editors.limitsPerGroup')}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>{t('arkmaniaConfig.editors.limitsPerGroup')}</label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 }}>
                     {/* Header */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px 24px', gap: 6, padding: '0 0.3rem', fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px 24px', gap: 6, padding: '0 0.3rem', fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                       <span>{t('arkmaniaConfig.editors.columnGroup')}</span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Gauge size={10} /> {t('arkmaniaConfig.editors.columnSpeed')}</span>
                       <span><Package size={10} style={{ verticalAlign: 'middle' }} /> {t('arkmaniaConfig.editors.columnMax')}</span>
@@ -931,7 +931,7 @@ export default function ArkManiaConfigPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '210px 1fr', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', minHeight: 'calc(100vh - 200px)', background: 'var(--bg-card)' }}>
         {/* Left sidebar — plugin list */}
         <div style={{ background: 'var(--bg-card-muted)', borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '0.4rem' }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 3, fontFamily: 'var(--font-mono)', color: 'var(--green)', padding: '0.6rem 0.6rem 0.3rem', fontWeight: 600 }}>{t('arkmaniaConfig.plugins')}</div>
+          <div style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--green)', padding: '0.6rem 0.6rem 0.3rem', fontWeight: 600 }}>{t('arkmaniaConfig.plugins')}</div>
           {modules.map(m => {
             const Icon = MODULE_ICONS[m.prefix] || Settings
             const isActive = activeModule === m.prefix

@@ -205,24 +205,24 @@ export default function ServersPage() {
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem' }}>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.serverKey')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.serverKey')}</label>
               <input className="input" placeholder={t('serversPage.form.keyPlaceholder')} value={newServer.server_key}
                 onChange={e => setNewServer({ ...newServer, server_key: e.target.value })} />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.name')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.name')}</label>
               <input className="input" placeholder={t('serversPage.form.namePlaceholder')} value={newServer.display_name}
                 onChange={e => setNewServer({ ...newServer, display_name: e.target.value })} />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.map')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.map')}</label>
               <input className="input" placeholder={t('serversPage.form.mapPlaceholder')} value={newServer.map_name}
                 onChange={e => setNewServer({ ...newServer, map_name: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px', gap: '0.6rem', marginTop: '0.5rem' }}>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.gameMode')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.gameMode')}</label>
               <select className="input" value={newServer.game_mode}
                 onChange={e => setNewServer({ ...newServer, game_mode: e.target.value })}>
                 <option value="PvE">PvE</option>
@@ -231,7 +231,7 @@ export default function ServersPage() {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.type')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.type')}</label>
               <select className="input" value={newServer.server_type}
                 onChange={e => setNewServer({ ...newServer, server_type: e.target.value })}>
                 <option value="PvE">PvE</option>
@@ -239,12 +239,12 @@ export default function ServersPage() {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.cluster')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.cluster')}</label>
               <input className="input" value={newServer.cluster_group}
                 onChange={e => setNewServer({ ...newServer, cluster_group: e.target.value })} />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.maxPlayers')}</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.maxPlayers')}</label>
               <input className="input" type="number" value={newServer.max_players}
                 onChange={e => setNewServer({ ...newServer, max_players: Number(e.target.value) })} />
             </div>

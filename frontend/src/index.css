@@ -296,11 +296,11 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--g
 }
 .sidebar-brand-sub {
   font-size: 0.65rem; color: var(--text-muted);
-  letter-spacing: 0.03em; text-transform: uppercase; font-weight: 600;
+  font-weight: 600;
 }
 .sidebar-nav { flex: 1; padding: 0.85rem 0.7rem; display: flex; flex-direction: column; gap: 1px; }
 .sidebar-section-label {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 3px;
+  font-size: 0.72rem;
   font-family: var(--font-mono);
   color: var(--green); padding: 0.6rem 0.75rem 0.35rem; font-weight: 600;
 }
@@ -450,7 +450,7 @@ select.form-input {
 }
 .form-legend {
   font-size: 0.72rem; font-weight: 700; color: var(--accent);
-  text-transform: uppercase; letter-spacing: 0.06em; padding: 0 0.5rem;
+  padding: 0 0.5rem;
 }
 .form-actions {
   display: flex; align-items: center; gap: 0.85rem;
@@ -585,7 +585,7 @@ textarea:focus-visible,
 }
 .machine-card-detail { display: flex; flex-direction: column; gap: 0.08rem; }
 .detail-label {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 2px;
+  font-size: 0.72rem;
   color: var(--text-muted); font-weight: 600; font-family: var(--font-mono);
 }
 .detail-value { font-size: 0.82rem; color: var(--text-secondary); }
@@ -599,7 +599,7 @@ textarea:focus-visible,
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.85rem; }
 .info-item { display: flex; flex-direction: column; gap: 0.1rem; }
 .info-label {
-  font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.72rem;
   color: var(--text-muted); font-weight: 600;
 }
 .info-value { font-size: 0.88rem; color: var(--text-primary); font-family: var(--font-mono); }
@@ -720,7 +720,7 @@ textarea:focus-visible,
   margin-bottom: 0.65rem; padding: 0.55rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
 }
 .sf-container-stat { display: flex; flex-direction: column; align-items: center; gap: 0.08rem; }
-.sf-stat-label { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+.sf-stat-label { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
 .sf-stat-value { font-size: 0.8rem; font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
 .sf-update-banner { background: var(--warning-bg); color: var(--warning); font-size: 0.72rem; font-weight: 600; text-align: center; padding: 0.25rem; border-radius: 4px; margin-bottom: 0.4rem; }
 .sf-container-cluster { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.4rem; }
@@ -835,7 +835,7 @@ textarea:focus-visible,
 }
 .pl-sync-table th {
   text-align: left; font-size: 0.65rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+  color: var(--text-muted);
   padding: 0.35rem 0.5rem; border-bottom: 2px solid var(--border);
 }
 .pl-sync-table td {
@@ -869,7 +869,7 @@ textarea:focus-visible,
 .pl-stat-icon-purple { background: rgba(157,124,192,0.1); color: #9d7cc0; }
 .pl-stat-icon-green  { background: rgba(69,112,36,0.08); color: var(--success); }
 .pl-stat-val { font-size: 1.15rem; font-weight: 800; font-family: var(--font-mono); color: var(--text-primary); line-height: 1.1; }
-.pl-stat-lbl { font-size: 0.68rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.pl-stat-lbl { font-size: 0.68rem; color: var(--text-secondary); font-weight: 600; }
 
 /* Search */
 .pl-search { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
@@ -911,7 +911,7 @@ textarea:focus-visible,
   font-size: 0.85rem; table-layout: fixed; box-shadow: var(--shadow-sm);
 }
 .pl-table thead th {
-  text-align: left; font-size: 0.68rem; text-transform: uppercase;
+  text-align: left; font-size: 0.68rem;
   letter-spacing: 0.08em; color: var(--text-secondary); font-weight: 700;
   padding: 0.75rem 0.85rem; background: var(--bg-card-muted);
   border-bottom: 2px solid var(--border);
@@ -1017,7 +1017,7 @@ th.pl-th-sort {
 }
 .pl-section-title {
   display: flex; align-items: center; gap: 0.4rem;
-  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  font-size: 0.72rem; font-weight: 700;
   letter-spacing: 0.06em; color: var(--text-primary); margin-bottom: 0.55rem;
 }
 .pl-section-title svg { color: var(--accent); }
@@ -1092,7 +1092,7 @@ th.pl-th-sort {
   display: grid; grid-template-columns: 50px 1fr; gap: 0.35rem; margin-bottom: 0.4rem;
 }
 .pl-timed-field { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
-.pl-timed-field label { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+.pl-timed-field label { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
 .pl-timed-field input, .pl-timed-field select {
   background: var(--bg-input); border: 1px solid var(--border);
   border-radius: 5px; padding: 0.25rem 0.4rem; font-size: 0.72rem;
@@ -1140,7 +1140,7 @@ th.pl-th-sort {
 .pl-copy-fields { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; }
 .pl-copy-field label {
   display: block; font-size: 0.68rem; font-weight: 600; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px;
+  margin-bottom: 2px;
 }
 .pl-copy-field select, .pl-copy-field input {
   width: 100%; padding: 0.35rem 0.5rem; font-size: 0.78rem;
@@ -1178,7 +1178,7 @@ th.pl-th-sort {
 }
 .as-detail-section { margin-bottom: 0.5rem; }
 .as-detail-label {
-  display: block; font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  display: block; font-size: 0.72rem; font-weight: 700;
   letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 0.3rem;
 }
 .as-bp-row {
@@ -1232,7 +1232,6 @@ th.pl-th-sort {
 .as-gen-check input { accent-color: var(--accent); }
 .as-gen-section {
   grid-column: 1 / -1; font-size: 0.72rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--accent); padding-top: 0.5rem;
   border-top: 1px solid var(--border);
 }
@@ -1321,7 +1320,7 @@ th.pl-th-sort {
   display: flex; flex-direction: column; gap: 0.2rem;
 }
 .as-dlg-field label {
-  font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+  font-size: 0.68rem; font-weight: 600;
   letter-spacing: 0.05em; color: var(--text-secondary);
 }
 .as-dlg-field input, .as-dlg-field select {
@@ -1332,7 +1331,7 @@ th.pl-th-sort {
 .as-dlg-field input:focus { border-color: var(--border-focus); box-shadow: var(--focus-ring); }
 .as-dlg-field input:disabled { opacity: 0.45; }
 .as-dlg-section {
-  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  font-size: 0.72rem; font-weight: 700;
   letter-spacing: 0.06em; color: var(--accent); margin-top: 1rem; margin-bottom: 0.5rem;
   padding-top: 0.75rem; border-top: 1px solid var(--border);
 }
@@ -1357,7 +1356,7 @@ th.pl-th-sort {
 }
 .as-sub-field { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
 .as-sub-field label {
-  font-size: 0.55rem; font-weight: 600; text-transform: uppercase;
+  font-size: 0.72rem; font-weight: 600;
   letter-spacing: 0.05em; color: var(--text-muted);
 }
 .as-sub-field input, .as-sub-field select {
@@ -1451,7 +1450,7 @@ th.pl-th-sort {
   font-size: 0.82rem; box-shadow: var(--shadow-sm);
 }
 .bp-table thead th {
-  text-align: left; font-size: 0.65rem; text-transform: uppercase;
+  text-align: left; font-size: 0.72rem;
   letter-spacing: 0.08em; color: var(--text-secondary); font-weight: 700;
   padding: 0.7rem 0.75rem; background: var(--bg-card-muted);
   border-bottom: 2px solid var(--border);

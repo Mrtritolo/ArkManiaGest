@@ -575,7 +575,7 @@ function CharacterHero({
           borderTop: "1px solid var(--border)",
           display: "flex", flexWrap: "wrap", gap: "0.3rem", alignItems: "center",
         }}>
-          <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
             {t("dashboard.character.timedShort")}
           </span>
           {activeTimed.map((g, i) => (
@@ -1099,7 +1099,7 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
 
         {/* Rename */}
         <div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: "0.3rem" }}>
+          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
             {t("dashboard.tools.renameLabel")}
           </div>
           <div style={{ display: "flex", gap: "0.4rem" }}>

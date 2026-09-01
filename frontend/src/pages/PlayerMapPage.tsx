@@ -373,7 +373,7 @@ export default function PlayerMapPage() {
       {/* Selettori */}
       <div className="card" style={{ padding: '0.9rem 1rem', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ minWidth: 260 }}>
-          <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>{t('playerMap.player')}</label>
+          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{t('playerMap.player')}</label>
           <input className="input" placeholder={t('playerMap.searchPlayer')} value={playerFilter}
             onChange={e => setPlayerFilter(e.target.value)} style={{ width: '100%', marginTop: 4 }} />
           <select className="input" value={eosId} onChange={e => setEosId(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
@@ -384,7 +384,7 @@ export default function PlayerMapPage() {
           </select>
         </div>
         <div style={{ minWidth: 220 }}>
-          <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>{t('playerMap.server')}</label>
+          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{t('playerMap.server')}</label>
           <select className="input" value={instanceId} onChange={e => setInstanceId(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '100%', marginTop: 4 }}>
             <option value="">—</option>
             {sortedInstances.map(i => (
@@ -418,7 +418,7 @@ export default function PlayerMapPage() {
             buries the handful of dots that matter. */}
         <div style={{ flexBasis: '100%', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
                       borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 2 }}>
-          <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
             {t('playerMap.showLabel')}
           </span>
           {([
@@ -617,7 +617,7 @@ export default function PlayerMapPage() {
             </div>
 
             <div className="card" style={{ padding: 0, maxHeight: 420, overflowY: 'auto' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 60px 190px', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', padding: '0.35rem 0.8rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 60px 190px', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', padding: '0.35rem 0.8rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
                 <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span>
               </div>
               {visible.map(({ r, i }) => (
