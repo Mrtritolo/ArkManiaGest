@@ -165,6 +165,81 @@ class SSHManager:
             exit_code,
         )
 
+    def open_tunnel(self, dest_port: int, dest_host: str = "127.0.0.1"):
+        """
+        Open a ``direct-tcpip`` channel to a port on the remote side.
+
+        This is the SSH equivalent of ``ssh -L``: the returned channel is a
+        socket-like object whose traffic is forwarded by the remote sshd to
+        ``dest_host:dest_port`` *as seen from the remote host*.  It lets the
+        panel speak RCON to an instance without that port ever being exposed
+        on the network — see :mod:`app.ssh.rcon`.
+
+        The caller owns the channel and must close it.
+
+        Args:
+            dest_port: Destination port on the remote side.
+            dest_host: Destination host as resolved remotely (default
+                       loopback, which is where ARK binds RCON).
+
+        Returns:
+            A :class:`paramiko.Channel` supporting ``settimeout`` /
+            ``sendall`` / ``recv``.
+
+        Raises:
+            ConnectionError: The SSH client is not connected.
+            paramiko.ssh_exception.SSHException: The remote sshd refused to
+                open the channel (commonly ``AllowTcpForwarding no``).
+        """
+        if not self._client:
+            raise ConnectionError("SSH client is not connected. Call connect() first.")
+
+        transport = self._client.get_transport()
+        if transport is None:
+            raise ConnectionError("SSH transport is not available.")
+
+        # The originator address is informational only; sshd logs it.
+        return transport.open_channel(
+            "direct-tcpip",
+            (dest_host, int(dest_port)),
+            ("127.0.0.1", 0),
+            timeout=self.timeout,
+        )
+
+    def upload_text(self, remote_path: str, content: str) -> None:
+        """
+        Write *content* to *remote_path* over SFTP.
+
+        Used to push panel-owned scripts onto a host so the version that runs
+        is always the one shipped with the panel, instead of whatever an
+        operator installed by hand months ago.
+
+        The file is written as UTF-8 **without a BOM**: Windows PowerShell
+        5.1 reads a BOM-less UTF-8 script fine, while a BOM in front of a
+        ``param(...)`` block is a parse error.
+
+        Args:
+            remote_path: Absolute destination path on the remote host.
+            content:     File body.
+
+        Raises:
+            ConnectionError: The SSH client is not connected.
+            IOError: The remote path could not be written.
+        """
+        if not self._client:
+            raise ConnectionError("SSH client is not connected. Call connect() first.")
+
+        sftp = self._client.open_sftp()
+        try:
+            with sftp.file(remote_path, "wb") as handle:
+                handle.write(content.encode("utf-8"))
+        finally:
+            sftp.close()
+
+    def close(self) -> None:
+        """Alias of :meth:`disconnect` for callers that expect socket naming."""
+        self.disconnect()
+
     def file_exists(self, remote_path: str) -> bool:
         """
         Check whether a file exists on the remote host.

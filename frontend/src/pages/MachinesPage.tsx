@@ -23,6 +23,9 @@ const emptyMachine: SSHMachineCreate = {
   ark_plugins_path: '/opt/ark/ShooterGame/Binaries/Linux/Plugins',
   os_type: 'linux',
   wsl_distro: 'Ubuntu',
+  runtime: 'pok',
+  cluster_dir: '',
+  cluster_sync_mode: 'none',
   is_active: true,
 }
 
@@ -181,6 +184,9 @@ export default function MachinesPage() {
       ark_plugins_path: machine.ark_plugins_path,
       os_type: machine.os_type || 'linux',
       wsl_distro: machine.wsl_distro || 'Ubuntu',
+      runtime: machine.runtime || 'pok',
+      cluster_dir: machine.cluster_dir || '',
+      cluster_sync_mode: machine.cluster_sync_mode || 'none',
       is_active: machine.is_active,
     })
     setEditingId(machine.id); setShowForm(true); setShowImport(false); setError(''); setValidationErrors({})
@@ -400,6 +406,16 @@ export default function MachinesPage() {
               </div>
               {form.os_type === 'windows' && (
                 <div className="form-group form-group-2">
+                  <label className="form-label">{t('machines.field.runtime')}</label>
+                  <select name="runtime" value={form.runtime} onChange={handleChange} className="form-input">
+                    <option value="pok">{t('machines.runtime.pok')}</option>
+                    <option value="native">{t('machines.runtime.native')}</option>
+                  </select>
+                  <span className="form-hint">{t('machines.runtimeHint')}</span>
+                </div>
+              )}
+              {form.os_type === 'windows' && form.runtime === 'pok' && (
+                <div className="form-group form-group-2">
                   <label className="form-label">{t('machines.field.wslDistro')}</label>
                   <input type="text" name="wsl_distro" value={form.wsl_distro || ''}
                     onChange={handleChange} className="form-input" placeholder="Ubuntu" />
@@ -408,6 +424,23 @@ export default function MachinesPage() {
                   </span>
                 </div>
               )}
+              <div className="form-group form-group-2">
+                <label className="form-label">{t('machines.field.clusterDir')}</label>
+                <input type="text" name="cluster_dir" value={form.cluster_dir || ''}
+                  onChange={handleChange} className="form-input"
+                  placeholder={form.runtime === 'native' ? 'C:\ArkMania\Cluster' : '/gameadmin'} />
+                <span className="form-hint">{t('machines.clusterDirHint')}</span>
+              </div>
+              <div className="form-group form-group-2">
+                <label className="form-label">{t('machines.field.clusterSyncMode')}</label>
+                <select name="cluster_sync_mode" value={form.cluster_sync_mode}
+                  onChange={handleChange} className="form-input">
+                  <option value="none">{t('machines.clusterSync.none')}</option>
+                  <option value="syncthing">{t('machines.clusterSync.syncthing')}</option>
+                  <option value="smb">{t('machines.clusterSync.smb')}</option>
+                </select>
+                <span className="form-hint">{t('machines.clusterSyncHint')}</span>
+              </div>
             </div>
           </fieldset>
 
@@ -509,7 +542,9 @@ export default function MachinesPage() {
           {machines.map((machine) => {
             const isExpanded = expandedId === machine.id
             const osLong = machine.os_type === 'windows'
-              ? `${t('machines.os.windows')} (${machine.wsl_distro || 'Ubuntu'})`
+              ? (machine.runtime === 'native'
+                  ? `${t('machines.os.windows')} (${t('machines.runtime.native')})`
+                  : `${t('machines.os.windows')} (WSL: ${machine.wsl_distro || 'Ubuntu'})`)
               : t('machines.os.linux')
             return (
               <div key={machine.id} className={`machine-card ${!machine.is_active ? 'machine-card-inactive' : ''}`}>

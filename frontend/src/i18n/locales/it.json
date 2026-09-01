@@ -40,7 +40,9 @@
     "myDashboard": "La mia dashboard",
     "market": "Mercato",
     "logout": "Esci",
-    "playerMap": "Mappa giocatore"
+    "playerMap": "Mappa giocatore",
+    "clusterSync": "Sincronia cluster",
+    "hardening": "Hardening"
   },
   "auth": {
     "login": {
@@ -257,7 +259,10 @@
       "arkPlugins": "Directory plugin",
       "active": "Attiva",
       "osType": "Sistema operativo host",
-      "wslDistro": "Distro WSL"
+      "wslDistro": "Distro WSL",
+      "runtime": "Runtime",
+      "clusterDir": "Directory cluster",
+      "clusterSyncMode": "Replica cluster"
     },
     "auth": {
       "password": "Password",
@@ -266,14 +271,16 @@
     },
     "os": {
       "linux": "Linux nativo",
-      "windows": "Windows + WSL"
+      "windows": "Windows + WSL",
+      "windowsNative": "Windows (nativo)"
     },
     "osHint": "Determina come POK-manager e docker vengono invocati via SSH.",
     "wslHint": "Nome della distribuzione WSL (verifica con {{cmd}}).",
     "tag": {
       "inactive": "disattivata",
       "linux": "Linux",
-      "windows": "Windows+WSL"
+      "windows": "Windows+WSL",
+      "native": "Windows nativo"
     },
     "status": {
       "unknown": "Sconosciuto",
@@ -342,7 +349,19 @@
         "passwordRequired": "Inserisci la password SSH per importare",
         "generic": "Errore durante l'importazione"
       }
-    }
+    },
+    "runtime": {
+      "pok": "POK-manager + Docker (Proton)",
+      "native": "Windows nativo (WinSW)"
+    },
+    "runtimeHint": "POK esegue i binari Windows di ASA sotto Proton in un container Linux via WSL. Nativo li esegue direttamente su Windows, senza Docker, WSL o Proton.",
+    "clusterDirHint": "Radice passata a -ClusterDirOverride. ARK aggiunge da solo clusters/<ClusterID>, quindi indica la radice e non la cartella del cluster.",
+    "clusterSync": {
+      "none": "Nessuna (host isolato)",
+      "syncthing": "Syncthing",
+      "smb": "Condivisione SMB (copia unica autoritativa)"
+    },
+    "clusterSyncHint": "Come la directory cluster di questo host resta allineata alle altre. Il pannello non la replica, segnala solo quando gli host smettono di concordare."
   },
   "validation": {
     "required": "Obbligatorio",
@@ -1954,7 +1973,8 @@
       "probe": "Aggiorna stato",
       "edit": "Modifica",
       "delete": "Elimina",
-      "running": "In corso…"
+      "running": "In corso…",
+      "provision": "Provisiona"
     },
     "form": {
       "newTitle": "Crea istanza server ARK",
@@ -2466,5 +2486,76 @@
     "zoomReset": "Mostra tutta la mappa",
     "zoomHint": "Rotella per lo zoom, trascina per spostarti.",
     "noCalibration": "{{map}} non ha ancora una calibrazione GPS: le posizioni sono relative e lo sfondo non viene disegnato. Compare appena un server con questa mappa si avvia con il plugin 5.7.0+."
+  },
+  "clusterSync": {
+    "title": "Sincronia cluster",
+    "subtitle": "ARK sposta i trasferimenti come file su disco. Se gli host di un cluster smettono di vedere la stessa directory, gli upload continuano a riuscire e non arrivano mai.",
+    "refresh": "Aggiorna",
+    "loading": "Interrogazione degli host...",
+    "empty": "Nessuna istanza ha un cluster id impostato, quindi non c'e nulla da confrontare.",
+    "loadError": "Impossibile leggere lo stato del cluster.",
+    "status": {
+      "ok": "allineati",
+      "drift": "divergenza",
+      "stale": "ferma",
+      "unknown": "host singolo"
+    },
+    "column": {
+      "machine": "Macchina",
+      "path": "Directory in cui scrive ARK",
+      "files": "File",
+      "size": "Dimensione",
+      "newest": "Ultima scrittura",
+      "replication": "Replica"
+    },
+    "syncthing": {
+      "absent": "non installato",
+      "present": "attivo",
+      "wrongFolder": "cartella errata",
+      "copyId": "Copia device ID"
+    },
+    "hintTitle": "Se un host mostra la cartella errata",
+    "hintBody": "ARK aggiunge da solo clusters/<ClusterID> a -ClusterDirOverride. Punta la replica alla directory mostrata in questa tabella, o al suo genitore - mai un livello piu in alto, altrimenti ottieni una directory verosimile in cui nessun server scrive mai."
+  },
+  "hardening": {
+    "title": "Hardening Windows",
+    "subtitle": "Un host ARK e un server di gioco pubblico: le porte UDP sono esposte a internet e l'amministrazione passa da SSH. Questi controlli riducono quella superficie.",
+    "machine": "Host",
+    "noNativeMachines": "Nessun host Windows nativo",
+    "noNativeHint": "L'hardening si applica agli host con runtime Windows nativo. Un host POK esegue i server di gioco dentro container Linux, dove questi controlli non si applicano.",
+    "runAudit": "Esegui audit",
+    "auditing": "Analisi dell'host in corso...",
+    "notRunYet": "Esegui un audit per vedere lo stato attuale. Non viene modificato nulla sull'host.",
+    "machinesError": "Impossibile caricare l'elenco delle macchine.",
+    "auditError": "Non e stato possibile completare l'audit.",
+    "applyError": "Non e stato possibile applicare i controlli.",
+    "satisfied": "controlli soddisfatti",
+    "lockoutPending": "{{count}} controllo/i non conformi possono tagliare l'accesso amministrativo e richiedono un consenso esplicito",
+    "includeRisky": "Consenti i controlli a rischio lockout",
+    "selectFailing": "Seleziona non conformi",
+    "applySelected": "Applica ({{count}})",
+    "adminOnly": "Applicare i controlli richiede un account amministratore. L'audit e eseguibile da qualsiasi ruolo.",
+    "riskyWarning": "I controlli a rischio lockout possono tagliarti l'accesso a questo host. Lo script rifiuta comunque i casi strutturalmente pericolosi, ma verifica di avere una seconda via d'accesso prima di applicare.",
+    "confirmApply": "Applicare {{count}} controllo/i a questo host?",
+    "confirmRisky": "Stai per applicare {{count}} controllo/i che possono tagliare l'accesso amministrativo a questo host: {{names}}. Assicurati di avere un'altra via d'accesso. Continuare?",
+    "risk": {
+      "none": "sicuro",
+      "service": "impatta i server",
+      "lockout": "rischio lockout"
+    },
+    "applied": {
+      "yes": "Applicato e verificato.",
+      "failed": "Correzione fallita",
+      "skipped": "Saltato: spunta il consenso qui sopra per applicarlo."
+    },
+    "category": {
+      "firewall": "Firewall",
+      "ssh": "SSH",
+      "services": "Servizi Windows",
+      "network": "Protocolli di rete",
+      "accounts": "Account",
+      "platform": "Piattaforma",
+      "preflight": "Pre-verifica"
+    }
   }
 }

@@ -83,6 +83,20 @@ export type AuthMethod = "password" | "key" | "key_password";
 
 export type OSType = "linux" | "windows";
 
+/**
+ * Execution runtime for the ARK instances on a host.
+ *
+ * - `pok`    POK-manager + Docker. The ASA Windows binaries run under Proton
+ *            inside a Linux container, either on a Linux host or on a Windows
+ *            host through WSL.
+ * - `native` ArkAscendedServer.exe supervised by WinSW straight on Windows.
+ *            No Docker, no WSL, no Proton. Requires `os_type === "windows"`.
+ */
+export type RuntimeKind = "pok" | "native";
+
+/** How a host's ARK cluster directory is kept in step with the other hosts. */
+export type ClusterSyncMode = "none" | "syncthing" | "smb";
+
 export interface SSHMachine {
   id: number;
   name: string;
@@ -98,6 +112,9 @@ export interface SSHMachine {
   ark_plugins_path: string;
   os_type: OSType;
   wsl_distro: string | null;
+  runtime: RuntimeKind;
+  cluster_dir: string | null;
+  cluster_sync_mode: ClusterSyncMode;
   is_active: boolean;
   last_connection: string | null;
   last_status: string;
@@ -121,6 +138,9 @@ export interface SSHMachineCreate {
   ark_plugins_path: string;
   os_type: OSType;
   wsl_distro?: string;
+  runtime: RuntimeKind;
+  cluster_dir?: string;
+  cluster_sync_mode?: ClusterSyncMode;
   is_active: boolean;
 }
 
@@ -296,7 +316,7 @@ export interface LoginResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Server instances (ARK game servers managed via POK-manager in Docker)
+// Server instances (ARK game servers: POK-manager in Docker, or native Windows)
 // ---------------------------------------------------------------------------
 
 export type InstanceStatus =
@@ -329,13 +349,23 @@ export interface ServerInstance {
   game_port: number;
   rcon_port: number;
 
-  container_name: string;
-  image: string;
+  /** Docker fields: null on instances hosted on a `native` machine. */
+  container_name: string | null;
+  image: string | null;
+  /**
+   * Hard cgroup cap on POK hosts. Windows has no cgroup equivalent, so on
+   * native instances this is only an advisory threshold.
+   */
   mem_limit_mb: number;
   timezone: string;
 
-  pok_base_dir: string;
+  /** Null on native instances, which have no POK-manager tree. */
+  pok_base_dir: string | null;
   instance_dir: string;
+
+  /** Native-Windows fields: null on instances hosted on a `pok` machine. */
+  install_dir: string | null;
+  service_name: string | null;
 
   mod_api: boolean;
   battleye: boolean;
@@ -478,3 +508,107 @@ export interface InstanceAction {
   completed_at: string | null;
   duration_ms: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// Cluster directory health
+// ---------------------------------------------------------------------------
+
+/**
+ * Verdict for one cluster across every host that runs part of it.
+ *
+ * - `ok`      every host reports an identical directory.
+ * - `drift`   hosts disagree, or one cannot read it. Transfers are silently
+ *             broken: uploads keep succeeding on the origin and never arrive.
+ * - `stale`   hosts agree but nothing has been written for a long time, which
+ *             usually means replication targets the wrong directory.
+ * - `unknown` fewer than two hosts to compare, which is not a fault.
+ */
+export type ClusterSyncStatus = "ok" | "drift" | "stale" | "unknown";
+
+/** What a host reports about its Syncthing daemon, for pairing. */
+export interface ClusterSyncSyncthing {
+  present: boolean;
+  /** Public key fingerprint, meant to be exchanged. Not a secret. */
+  device_id: string;
+  folders: string[];
+  /**
+   * Whether a configured folder actually covers the directory ARK writes to.
+   * A daemon replicating something else is worth as much as no daemon.
+   */
+  covers_cluster_dir: boolean;
+}
+
+export interface ClusterSyncMember {
+  machine_id: number;
+  machine_name: string;
+  /** Where ARK actually writes: `<cluster_dir>/clusters/<cluster_id>`. */
+  path: string;
+  exists: boolean;
+  file_count: number;
+  total_bytes: number;
+  /** Unix timestamp of the newest file, 0 when the directory is empty. */
+  newest_epoch: number;
+  syncthing: ClusterSyncSyncthing | null;
+  digest: string;
+  error: string;
+}
+
+export interface ClusterSyncHealth {
+  cluster_id: string;
+  status: ClusterSyncStatus;
+  detail: string;
+  members: ClusterSyncMember[];
+}
+
+// ---------------------------------------------------------------------------
+// Windows hardening
+// ---------------------------------------------------------------------------
+
+/**
+ * How dangerous applying a control is.
+ *
+ * - `none`    safe to apply unattended.
+ * - `service` can interrupt the game servers.
+ * - `lockout` can cut administrative access to the host, so it is never
+ *             applied unless the caller opts in explicitly.
+ */
+export type HardeningRisk = "none" | "service" | "lockout";
+
+export type HardeningApplied = "no" | "yes" | "failed" | "skipped-risky";
+
+export interface HardeningControl {
+  /** Stable id, e.g. "fw.default_deny". */
+  id: string;
+  title: string;
+  /** firewall | ssh | services | network | accounts | platform */
+  category: string;
+  risk: HardeningRisk;
+  compliant: boolean;
+  /** Why it fails, or what the compliant state looks like. */
+  detail: string;
+  applied: HardeningApplied;
+  error: string;
+}
+
+export interface HardeningSummary {
+  total: number;
+  compliant: number;
+  failing: number;
+  /** Failing controls that need an explicit opt-in to apply. */
+  lockout_pending: number;
+}
+
+export interface HardeningReport {
+  machine_id: number;
+  machine_name: string;
+  summary: HardeningSummary;
+  controls: HardeningControl[];
+}
+
+export interface HardeningApplyRequest {
+  /** Empty means every failing control that is not tagged "lockout". */
+  controls?: string[];
+  include_risky?: boolean;
+  service_account?: string;
+}
+

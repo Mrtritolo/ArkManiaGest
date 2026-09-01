@@ -14,7 +14,7 @@ from typing import List
 # duplicated as a literal in main.py (twice) and as the fallback of the
 # app_version setting, which is how the panel kept advertising 3.5.5 long
 # after 3.5.5 shipped.  Bump this and frontend/package.json together.
-APP_VERSION: str = "4.14.0"
+APP_VERSION: str = "4.15.0"
 
 
 class ServerSettings(BaseSettings):
@@ -97,6 +97,12 @@ class ServerSettings(BaseSettings):
     # than this are purged daily by app/services/retention.py.  Set to 0
     # to disable automatic purging.
     DATA_RETENTION_DAYS: int = 365
+    # Native-Windows memory watchdog (app/services/native_watchdog.py).
+    # Windows has no cgroup, so on native hosts mem_limit_mb cannot be
+    # enforced -- it is only measured.  When this is False the watchdog
+    # still polls and logs breaches but never restarts anything, which is
+    # how you size the thresholds before letting it act.
+    NATIVE_WATCHDOG_ENABLED: bool = False
     # Comma-separated IPs trusted to set X-Forwarded-For / X-Real-IP
     # (e.g. your reverse-proxy / load-balancer addresses).  When the
     # panel is bound directly to the public interface, leave this empty;

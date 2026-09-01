@@ -28,6 +28,12 @@ from typing import Literal, Optional
 
 OSType = Literal["linux", "windows"]
 
+# Execution runtime for the ARK instances on a host.  ``pok`` is the
+# POK-manager + Docker stack (Proton inside a Linux container, on Linux
+# directly or on Windows through WSL); ``native`` runs the ASA Windows
+# binaries straight on Windows under WinSW, with no container involved.
+RuntimeKind = Literal["pok", "native"]
+
 # Default destinations for the POK-manager bootstrap when the user leaves
 # the field blank.  On Windows the path intentionally lives inside the WSL
 # distro filesystem (via the WSL user's home).
@@ -63,13 +69,31 @@ class PlatformAdapter:
                     Ignored for Linux hosts.
     """
 
-    __slots__ = ("os_type", "wsl_distro")
+    __slots__ = ("os_type", "wsl_distro", "runtime", "base_dir")
 
-    def __init__(self, os_type: OSType = "linux", wsl_distro: str = "Ubuntu") -> None:
+    def __init__(
+        self,
+        os_type: OSType = "linux",
+        wsl_distro: str = "Ubuntu",
+        runtime: RuntimeKind = "pok",
+        base_dir: str = "",
+    ) -> None:
         if os_type not in ("linux", "windows"):
             raise ValueError(f"Invalid os_type: {os_type!r}")
+        if runtime not in ("pok", "native"):
+            raise ValueError(f"Invalid runtime: {runtime!r}")
         self.os_type = os_type
         self.wsl_distro = wsl_distro or "Ubuntu"
+        self.runtime = runtime
+        # Install root on the host.  On native hosts this is the Windows
+        # directory holding ServerFiles\, Instances\, Cluster\ and steamcmd\;
+        # it comes from the machine's ``ark_root_path``.
+        self.base_dir = base_dir or ""
+
+    @property
+    def is_native(self) -> bool:
+        """True when commands are PowerShell run straight on Windows."""
+        return self.runtime == "native"
 
     # ── Constructors ──────────────────────────────────────────────────────
 
@@ -85,7 +109,33 @@ class PlatformAdapter:
         if os_type not in ("linux", "windows"):
             os_type = "linux"
         wsl_distro = machine.get("wsl_distro") or "Ubuntu"
-        return cls(os_type=os_type, wsl_distro=wsl_distro)  # type: ignore[arg-type]
+        runtime = str(machine.get("runtime") or "pok").lower()
+        if runtime not in ("pok", "native"):
+            runtime = "pok"
+        # "native" is meaningless on a Linux host: there are no Windows
+        # binaries to run without a compatibility layer.  Fall back rather
+        # than raise, so one bad row cannot take the machines page down.
+        if runtime == "native" and os_type != "windows":
+            runtime = "pok"
+        base_dir = machine.get("ark_root_path") or ""
+        return cls(  # type: ignore[arg-type]
+            os_type=os_type, wsl_distro=wsl_distro, runtime=runtime,
+            base_dir=base_dir,
+        )
+
+    def native_base_dir(self) -> str:
+        """
+        Install root to use for native commands.
+
+        Falls back to :data:`app.ssh.windows_native.DEFAULT_NATIVE_BASE_DIR`
+        when the machine still carries the Linux-flavoured default that
+        ``ark_root_path`` ships with.
+        """
+        from app.ssh.windows_native import DEFAULT_NATIVE_BASE_DIR
+        base = (self.base_dir or "").strip()
+        if not base or base.startswith("/"):
+            return DEFAULT_NATIVE_BASE_DIR
+        return base.rstrip("\\")
 
     # ── Core wrapping ─────────────────────────────────────────────────────
 
@@ -97,8 +147,13 @@ class PlatformAdapter:
         Linux terminal.  On Linux hosts it is returned unchanged; on
         Windows hosts it is wrapped in ``wsl.exe -d <distro> -- bash -c '...'``
         with proper single-quote escaping.
+
+        Native-Windows hosts are the exception: their commands are built by
+        :mod:`app.ssh.windows_native` and are already PowerShell, so they
+        pass through untouched.  Wrapping them would hand PowerShell source
+        to bash.
         """
-        if self.os_type == "linux":
+        if self.os_type == "linux" or self.is_native:
             return bash_command
         escaped = _bash_single_quote(bash_command)
         return f"wsl.exe -d {self.wsl_distro} -- bash -c '{escaped}'"
@@ -149,6 +204,12 @@ class PlatformAdapter:
         endpoint (docker version, compose version, and — on Windows — the
         WSL distro availability).
         """
+        if self.is_native:
+            # Native hosts have neither docker nor WSL to check; the
+            # native-runtime prerequisites live in windows_native so that
+            # this module stays free of ARK specifics.
+            from app.ssh.windows_native import prereqs_cmd
+            return prereqs_cmd(self.native_base_dir())
         if self.os_type == "linux":
             return (
                 "echo '=== uname ===' && uname -a && "

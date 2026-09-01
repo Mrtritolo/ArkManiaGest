@@ -180,6 +180,70 @@ async def create_app_tables() -> None:
             ),
         )
 
+        # Migration 005 mirror: native-Windows runtime.  Same reasoning as
+        # the 002 mirror above -- create_all() never ALTERs an existing
+        # table, so an install upgrading through update-panel.{sh,ps1}
+        # would break on the first machine query without these.
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_machines",
+            column="runtime",
+            ddl=(
+                "ALTER TABLE arkmaniagest_machines "
+                "ADD COLUMN runtime VARCHAR(16) NOT NULL DEFAULT 'pok' "
+                "AFTER wsl_distro"
+            ),
+        )
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_machines",
+            column="cluster_dir",
+            ddl=(
+                "ALTER TABLE arkmaniagest_machines "
+                "ADD COLUMN cluster_dir VARCHAR(512) NULL AFTER runtime"
+            ),
+        )
+        await _add_column_if_missing(
+            conn,
+            table="arkmaniagest_machines",
+            column="cluster_sync_mode",
+            ddl=(
+                "ALTER TABLE arkmaniagest_machines "
+                "ADD COLUMN cluster_sync_mode VARCHAR(16) NOT NULL "
+                "DEFAULT 'none' AFTER cluster_dir"
+            ),
+        )
+        await _add_column_if_missing(
+            conn,
+            table="ARKM_server_instances",
+            column="install_dir",
+            ddl=(
+                "ALTER TABLE ARKM_server_instances "
+                "ADD COLUMN install_dir VARCHAR(512) NULL AFTER instance_dir"
+            ),
+        )
+        await _add_column_if_missing(
+            conn,
+            table="ARKM_server_instances",
+            column="service_name",
+            ddl=(
+                "ALTER TABLE ARKM_server_instances "
+                "ADD COLUMN service_name VARCHAR(128) NULL AFTER install_dir"
+            ),
+        )
+        # A native instance has no container, no image and no POK base dir.
+        for _col, _type in (
+            ("container_name", "VARCHAR(128) NULL"),
+            ("image",          "VARCHAR(128) NULL"),
+            ("pok_base_dir",   "VARCHAR(512) NULL"),
+        ):
+            await _relax_column_to_null(
+                conn,
+                table="ARKM_server_instances",
+                column=_col,
+                new_type=_type,
+            )
+
         # One-shot migration: legacy single-JSON-blob blueprint storage
         # at arkmaniagest_settings.key='plugin.blueprints_db' moves into
         # the new per-row ARKM_blueprints table.  Idempotent -- runs

@@ -59,6 +59,8 @@ import DatabaseSettingsPage from "./pages/DatabaseSettingsPage";
 import MachinesPage from "./pages/MachinesPage";
 import GeneralSettingsPage from "./pages/GeneralSettingsPage";
 import ServerForgePage from "./pages/ServerForgePage";
+import ClusterSyncPage from "./pages/ClusterSyncPage";
+import HardeningPage from "./pages/HardeningPage";
 import PlayersPage from "./pages/PlayersPage";
 import ArkShopPage from "./pages/ArkShopPage";
 import BlueprintsPage from "./pages/BlueprintsPage";
@@ -324,6 +326,7 @@ function App() {
                 path="/instances"
                 element={<ServerInstancesPage currentUser={currentUser} />}
               />
+              <Route path="/cluster-sync" element={<ClusterSyncPage />} />
               <Route path="/event-log" element={<EventLogPage />} />
 
               {/* Plugin management */}
@@ -356,6 +359,10 @@ function App() {
                 element={<DatabaseSettingsPage />}
               />
               <Route path="/settings/machines" element={<MachinesPage />} />
+              <Route
+                path="/settings/hardening"
+                element={<HardeningPage currentUser={currentUser} />}
+              />
               <Route
                 path="/settings/general"
                 element={<GeneralSettingsPage />}

@@ -4,6 +4,7 @@ api/routes/machines.py — SSH machine CRUD and connectivity testing.
 SSH passwords and passphrases are encrypted with AES-256-GCM before storage.
 The raw credential values are never exposed through any read endpoint.
 """
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import List
@@ -12,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.auth import require_admin
 from app.core.config import server_settings
 from app.db.session import get_db
 from app.core.encryption import encrypt_value
@@ -28,6 +30,13 @@ from app.schemas.ssh_machine import (
     SSHMachineRead,
     SSHTestResult,
 )
+from app.schemas.hardening import (
+    HardeningApplyRequest,
+    HardeningControlRead,
+    HardeningReport,
+    HardeningSummary,
+)
+from app.ssh import windows_hardening as harden
 from app.ssh.manager import SSHManager
 
 router = APIRouter()
@@ -62,6 +71,9 @@ def _machine_to_read(machine: dict) -> SSHMachineRead:
         ark_plugins_path=machine.get("ark_plugins_path", ""),
         os_type=machine.get("os_type") or "linux",
         wsl_distro=machine.get("wsl_distro") or "Ubuntu",
+        runtime=machine.get("runtime") or "pok",
+        cluster_dir=machine.get("cluster_dir"),
+        cluster_sync_mode=machine.get("cluster_sync_mode") or "none",
         is_active=machine.get("is_active", True),
         last_connection=machine.get("last_connection"),
         last_status=machine.get("last_status", "unknown"),
@@ -156,12 +168,12 @@ async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_
                 "(name, description, hostname, ip_address, ssh_port, ssh_user, auth_method, "
                 "ssh_password_enc, ssh_key_path, ssh_passphrase_enc, "
                 "ark_root_path, ark_config_path, ark_plugins_path, "
-                "os_type, wsl_distro, "
+                "os_type, wsl_distro, runtime, cluster_dir, cluster_sync_mode, "
                 "is_active, last_status, created_at, updated_at) "
                 "VALUES (:name, :desc, :host, :ip, :port, :user, :auth, "
                 ":pw_enc, :key_path, :pp_enc, "
                 ":ark_root, :ark_config, :ark_plugins, "
-                ":os_type, :wsl_distro, "
+                ":os_type, :wsl_distro, :runtime, :cluster_dir, :cluster_sync_mode, "
                 ":active, 'unknown', :now, :now)"
             ),
             {
@@ -180,6 +192,9 @@ async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_
                 "ark_plugins": raw.get("ark_plugins_path", ""),
                 "os_type":     raw.get("os_type", "linux"),
                 "wsl_distro":  raw.get("wsl_distro") or "Ubuntu",
+                "runtime":     raw.get("runtime", "pok"),
+                "cluster_dir": raw.get("cluster_dir") or None,
+                "cluster_sync_mode": raw.get("cluster_sync_mode", "none"),
                 "active":      1 if raw.get("is_active", True) else 0,
                 "now":         now,
             },
@@ -237,6 +252,7 @@ async def update_machine(
         "ssh_user", "auth_method", "ssh_key_path",
         "ark_root_path", "ark_config_path", "ark_plugins_path",
         "os_type", "wsl_distro",
+        "runtime", "cluster_dir", "cluster_sync_mode",
     }
     for field in simple_columns:
         if field in raw and raw[field] is not None:
@@ -446,3 +462,114 @@ async def test_machine_connection(
             message=f"Connection failed: {exc}",
             hostname=machine["hostname"],
         )
+
+
+# ── Windows hardening ─────────────────────────────────────────────────────────
+#
+# The control catalogue lives in deploy/windows-native/harden.ps1, which the
+# panel uploads before every run so the version that executes always matches
+# the version that ships with the panel.  See app/ssh/windows_hardening.py.
+
+
+async def _machine_game_ports(db: AsyncSession, machine_id: int) -> List[int]:
+    """
+    UDP game ports of the instances on a machine.
+
+    The firewall control needs them to tell "no rule for this port" from
+    "this host simply has no instance on that port".  ASA also listens on
+    game_port + 1 for Steam queries; harden.ps1 opens the pair, so only the
+    base port is passed here.
+    """
+    res = await db.execute(
+        text(
+            "SELECT game_port FROM ARKM_server_instances "
+            "WHERE machine_id = :mid AND is_active = 1"
+        ),
+        {"mid": machine_id},
+    )
+    return sorted({int(r[0]) for r in res.fetchall() if r[0]})
+
+
+async def _run_hardening(
+    db: AsyncSession,
+    machine_id: int,
+    *,
+    apply: bool = False,
+    controls: List[str] | None = None,
+    include_risky: bool = False,
+    service_account: str = "ArkManiaSvc",
+) -> HardeningReport:
+    """Shared body of the audit and apply endpoints."""
+    machine = await get_machine_async(db, machine_id)
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found.")
+
+    try:
+        results = await asyncio.to_thread(
+            harden.run_sync,
+            machine,
+            game_ports=await _machine_game_ports(db, machine_id),
+            apply=apply,
+            controls=controls or [],
+            include_risky=include_risky,
+            service_account=service_account,
+        )
+    except harden.HardeningError as exc:
+        # A misconfigured or unreachable host is the caller's problem to fix,
+        # not a server fault -- 400 keeps it out of the error logs as a bug.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return HardeningReport(
+        machine_id=machine["id"],
+        machine_name=machine["name"],
+        summary=HardeningSummary(**harden.summarise(results)),
+        controls=[
+            HardeningControlRead(
+                id=r.id, title=r.title, category=r.category, risk=r.risk,
+                compliant=r.compliant, detail=r.detail,
+                applied=r.applied, error=r.error,
+            )
+            for r in results
+        ],
+    )
+
+
+@router.get("/{machine_id}/hardening", response_model=HardeningReport)
+async def audit_hardening(machine_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Audit the security posture of a native-Windows host.
+
+    Read-only: nothing on the host is changed.  Every control reports whether
+    it is satisfied and, when it is not, what the exposure is.
+    """
+    return await _run_hardening(db, machine_id, apply=False)
+
+
+@router.post("/{machine_id}/hardening/apply", response_model=HardeningReport)
+async def apply_hardening(
+    machine_id: int,
+    payload: HardeningApplyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """
+    Apply hardening controls to a native-Windows host.  Admin only.
+
+    Controls tagged ``lockout`` can sever administrative access, so they are
+    skipped unless ``include_risky`` is set.  Even then the script refuses the
+    orderings that are structurally unsafe -- blocking inbound by default with
+    no SSH allow rule in place, or disabling password authentication with no
+    key installed -- and reports them as failed rather than executing them.
+
+    The response is a fresh audit: each control is re-checked after its fix,
+    so ``compliant`` reflects the state of the host, not the fix's own
+    opinion of itself.
+    """
+    return await _run_hardening(
+        db,
+        machine_id,
+        apply=True,
+        controls=payload.controls,
+        include_risky=payload.include_risky,
+        service_account=payload.service_account,
+    )

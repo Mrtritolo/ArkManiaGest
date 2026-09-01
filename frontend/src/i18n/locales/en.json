@@ -40,7 +40,9 @@
     "myDashboard": "My dashboard",
     "market": "Marketplace",
     "logout": "Log out",
-    "playerMap": "Player map"
+    "playerMap": "Player map",
+    "clusterSync": "Cluster sync",
+    "hardening": "Hardening"
   },
   "auth": {
     "login": {
@@ -257,7 +259,10 @@
       "arkPlugins": "Plugin directory",
       "active": "Active",
       "osType": "Host OS",
-      "wslDistro": "WSL distribution"
+      "wslDistro": "WSL distribution",
+      "runtime": "Runtime",
+      "clusterDir": "Cluster directory",
+      "clusterSyncMode": "Cluster replication"
     },
     "auth": {
       "password": "Password",
@@ -266,14 +271,16 @@
     },
     "os": {
       "linux": "Native Linux",
-      "windows": "Windows + WSL"
+      "windows": "Windows + WSL",
+      "windowsNative": "Windows (native)"
     },
     "osHint": "Determines how POK-manager and docker are invoked over SSH.",
     "wslHint": "Name of the WSL distribution (check with {{cmd}}).",
     "tag": {
       "inactive": "disabled",
       "linux": "Linux",
-      "windows": "Windows+WSL"
+      "windows": "Windows+WSL",
+      "native": "Windows native"
     },
     "status": {
       "unknown": "Unknown",
@@ -342,7 +349,19 @@
         "passwordRequired": "Provide the SSH password before importing",
         "generic": "Import failed"
       }
-    }
+    },
+    "runtime": {
+      "pok": "POK-manager + Docker (Proton)",
+      "native": "Native Windows (WinSW)"
+    },
+    "runtimeHint": "POK runs the ASA Windows binaries under Proton in a Linux container via WSL. Native runs them directly on Windows, with no Docker, WSL or Proton.",
+    "clusterDirHint": "Root passed to -ClusterDirOverride. ARK appends clusters/<ClusterID> itself, so point this at the root, not at the cluster-id folder.",
+    "clusterSync": {
+      "none": "None (standalone host)",
+      "syncthing": "Syncthing",
+      "smb": "SMB share (single authoritative copy)"
+    },
+    "clusterSyncHint": "How this host's cluster directory stays in step with the others. The panel does not replicate it, it only reports when the hosts stop agreeing."
   },
   "validation": {
     "required": "Required",
@@ -1954,7 +1973,8 @@
       "probe": "Refresh status",
       "edit": "Edit",
       "delete": "Delete",
-      "running": "Running…"
+      "running": "Running…",
+      "provision": "Provision"
     },
     "form": {
       "newTitle": "Create ARK server instance",
@@ -2466,5 +2486,76 @@
     "zoomReset": "Fit whole map",
     "zoomHint": "Scroll to zoom, drag to pan.",
     "noCalibration": "{{map}} has no GPS calibration yet, so positions are relative and no background is drawn. It appears as soon as a server running this map boots with plugin 5.7.0+."
+  },
+  "clusterSync": {
+    "title": "Cluster sync",
+    "subtitle": "ARK moves transfers as files on disk. If the hosts of a cluster stop seeing the same directory, uploads keep succeeding and never arrive.",
+    "refresh": "Refresh",
+    "loading": "Probing the hosts...",
+    "empty": "No instance has a cluster id set, so there is nothing to compare.",
+    "loadError": "Could not read cluster health.",
+    "status": {
+      "ok": "in sync",
+      "drift": "drift",
+      "stale": "stale",
+      "unknown": "single host"
+    },
+    "column": {
+      "machine": "Machine",
+      "path": "Directory ARK writes to",
+      "files": "Files",
+      "size": "Size",
+      "newest": "Last write",
+      "replication": "Replication"
+    },
+    "syncthing": {
+      "absent": "not installed",
+      "present": "running",
+      "wrongFolder": "wrong folder",
+      "copyId": "Copy device ID"
+    },
+    "hintTitle": "If a host shows the wrong folder",
+    "hintBody": "ARK appends clusters/<ClusterID> to -ClusterDirOverride itself. Point the replication at the directory shown in this table, or at its parent - never one level higher up the tree, or you get a plausible-looking directory that no server ever writes to."
+  },
+  "hardening": {
+    "title": "Windows hardening",
+    "subtitle": "An ARK host is a public game server: UDP ports face the internet and it is administered over SSH. These controls shrink that surface.",
+    "machine": "Host",
+    "noNativeMachines": "No native-Windows host",
+    "noNativeHint": "Hardening applies to hosts with the native Windows runtime. A POK host runs its game servers inside Linux containers, where these controls do not apply.",
+    "runAudit": "Run audit",
+    "auditing": "Auditing the host...",
+    "notRunYet": "Run an audit to see the current posture. Nothing on the host is changed.",
+    "machinesError": "Could not load the machine list.",
+    "auditError": "The audit could not be completed.",
+    "applyError": "The controls could not be applied.",
+    "satisfied": "controls satisfied",
+    "lockoutPending": "{{count}} failing control(s) can cut administrative access and need an explicit opt-in",
+    "includeRisky": "Allow lockout-risk controls",
+    "selectFailing": "Select failing",
+    "applySelected": "Apply ({{count}})",
+    "adminOnly": "Applying controls requires an administrator account. You can run the audit from any role.",
+    "riskyWarning": "Lockout-risk controls can cut your access to this host. The script still refuses the structurally unsafe cases, but verify you have a second way in before applying.",
+    "confirmApply": "Apply {{count}} control(s) to this host?",
+    "confirmRisky": "You are about to apply {{count}} control(s) that can cut administrative access to this host: {{names}}. Make sure you have another way in. Continue?",
+    "risk": {
+      "none": "safe",
+      "service": "affects servers",
+      "lockout": "lockout risk"
+    },
+    "applied": {
+      "yes": "Applied and verified.",
+      "failed": "Fix failed",
+      "skipped": "Skipped: tick the opt-in above to apply this one."
+    },
+    "category": {
+      "firewall": "Firewall",
+      "ssh": "SSH",
+      "services": "Windows services",
+      "network": "Network protocols",
+      "accounts": "Accounts",
+      "platform": "Platform",
+      "preflight": "Pre-flight"
+    }
   }
 }

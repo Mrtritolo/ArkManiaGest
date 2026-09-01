@@ -27,6 +27,28 @@ class OSTypeEnum(str, Enum):
     WINDOWS = "windows"
 
 
+class RuntimeEnum(str, Enum):
+    """
+    Execution runtime for the ARK instances on a host.
+
+    ``pok`` is POK-manager + Docker (the ASA Windows binaries under Proton in
+    a Linux container, on Linux directly or on Windows through WSL);
+    ``native`` runs them straight on Windows under WinSW.  ``native`` is only
+    meaningful together with ``os_type = "windows"``.
+    """
+
+    POK = "pok"
+    NATIVE = "native"
+
+
+class ClusterSyncModeEnum(str, Enum):
+    """How a host's ARK cluster directory is kept in step with the others."""
+
+    NONE = "none"
+    SYNCTHING = "syncthing"
+    SMB = "smb"
+
+
 class SSHMachineCreate(BaseModel):
     """Fields required to register a new SSH machine."""
 
@@ -55,6 +77,15 @@ class SSHMachineCreate(BaseModel):
         description="WSL distribution name; only used when os_type = 'windows'.",
     )
 
+    runtime: RuntimeEnum = RuntimeEnum.POK
+    cluster_dir: Optional[str] = Field(
+        default=None, max_length=512,
+        description="Root passed to -ClusterDirOverride. ARK appends "
+                    "clusters/<ClusterID> itself, so this is the parent of "
+                    "the directory it actually writes to.",
+    )
+    cluster_sync_mode: ClusterSyncModeEnum = ClusterSyncModeEnum.NONE
+
     is_active: bool = True
 
 
@@ -76,6 +107,9 @@ class SSHMachineUpdate(BaseModel):
     ark_plugins_path: Optional[str] = None
     os_type: Optional[OSTypeEnum] = None
     wsl_distro: Optional[str] = Field(default=None, max_length=64)
+    runtime: Optional[RuntimeEnum] = None
+    cluster_dir: Optional[str] = Field(default=None, max_length=512)
+    cluster_sync_mode: Optional[ClusterSyncModeEnum] = None
     is_active: Optional[bool] = None
 
 
@@ -101,6 +135,9 @@ class SSHMachineRead(BaseModel):
     ark_plugins_path: str = "/opt/ark/ShooterGame/Binaries/Linux/Plugins"
     os_type: OSTypeEnum = OSTypeEnum.LINUX
     wsl_distro: Optional[str] = "Ubuntu"
+    runtime: RuntimeEnum = RuntimeEnum.POK
+    cluster_dir: Optional[str] = None
+    cluster_sync_mode: ClusterSyncModeEnum = ClusterSyncModeEnum.NONE
     is_active: bool = True
     last_connection: Optional[datetime] = None
     # Status values: "unknown" | "online" | "offline" | "error"

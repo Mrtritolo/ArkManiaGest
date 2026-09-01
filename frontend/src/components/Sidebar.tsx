@@ -23,6 +23,7 @@ import {
   BookOpen,
   LogOut,
   Shield,
+  ShieldCheck,
   UserCog,
   Eye,
   Sliders,
@@ -31,6 +32,7 @@ import {
   Timer,
   Trophy,
   Terminal,
+  Network,
   ScrollText,
   Globe,
   Sun,
@@ -95,6 +97,7 @@ const NAV_MAIN: NavItem[] = [
   { to: "/instances",       i18nKey: "nav.instances",  icon: HardDrive },
   { to: "/game-config",     i18nKey: "nav.gameConfig", icon: Sliders },
   { to: "/servers-manager", i18nKey: "nav.servers",    icon: Server },
+  { to: "/cluster-sync",    i18nKey: "nav.clusterSync", icon: Network },
   { to: "/event-log",       i18nKey: "nav.eventLog",   icon: ScrollText },
 ];
 
@@ -116,6 +119,7 @@ const NAV_SETTINGS: NavItem[] = [
   { to: "/settings/discord",    i18nKey: "nav.discord",    icon: DiscordIcon, adminOnly: true },
   { to: "/settings/audit",      i18nKey: "nav.auditLog",   icon: Shield,      adminOnly: true },
   { to: "/settings/machines",   i18nKey: "nav.machines",   icon: Monitor },
+  { to: "/settings/hardening",  i18nKey: "nav.hardening",  icon: ShieldCheck },
   { to: "/settings/blueprints", i18nKey: "nav.blueprints", icon: BookOpen },
   { to: "/settings/general",    i18nKey: "nav.settings",   icon: Settings,    adminOnly: true },
 ];

@@ -49,6 +49,9 @@ import type {
   InstanceAction,
   InstanceActionKind,
   InstanceActionStatus,
+  ClusterSyncHealth,
+  HardeningReport,
+  HardeningApplyRequest,
 } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -382,6 +385,35 @@ export const machinesApi = {
 // Server instances (ARK game server Docker containers managed via POK-manager)
 // ---------------------------------------------------------------------------
 
+/**
+ * Cluster directory health.
+ *
+ * Read-only diagnostics: the panel never performs the replication itself
+ * (Syncthing / DFS-R / an SMB share do), it only reports whether the hosts of
+ * a cluster still agree on the directory ARK writes transfers into.
+ */
+/**
+ * Windows hardening for native hosts.
+ *
+ * The control catalogue lives in deploy/windows-native/harden.ps1; the panel
+ * uploads that exact file before each run, so the UI and the command line can
+ * never disagree about what a control means.
+ */
+export const hardeningApi = {
+  /** Read-only: nothing on the host is changed. */
+  audit: (machineId: number) =>
+    api.get<HardeningReport>(`/machines/${machineId}/hardening`),
+  /** Admin only. Returns a fresh audit: every fix is re-checked after it runs. */
+  apply: (machineId: number, body: HardeningApplyRequest) =>
+    api.post<HardeningReport>(`/machines/${machineId}/hardening/apply`, body),
+};
+
+export const clusterSyncApi = {
+  list: () => api.get<ClusterSyncHealth[]>("/cluster-sync"),
+  get: (clusterId: string) =>
+    api.get<ClusterSyncHealth>(`/cluster-sync/${encodeURIComponent(clusterId)}`),
+};
+
 export const serverInstancesApi = {
   list: (params?: { machine_id?: number; active_only?: boolean }) =>
     api.get<ServerInstance[]>("/servers", { params }),
@@ -396,7 +428,24 @@ export const serverInstancesApi = {
   // Lifecycle actions (all return an InstanceActionResult)
   start:   (id: number) => api.post<InstanceActionResult>(`/servers/${id}/start`),
   stop:    (id: number) => api.post<InstanceActionResult>(`/servers/${id}/stop`),
-  restart: (id: number) => api.post<InstanceActionResult>(`/servers/${id}/restart`),
+  // `minutes` is the in-game countdown. POK broadcasts it inside the
+  // container; native hosts schedule it in the panel and return immediately
+  // with { scheduled: true }, so the caller must not assume an action result.
+  restart: (id: number, minutes?: number) =>
+    api.post<InstanceActionResult | { scheduled: true; minutes: number; detail: string }>(
+      `/servers/${id}/restart`,
+      undefined,
+      minutes === undefined ? undefined : { params: { minutes } },
+    ),
+  // Cancels a countdown restart scheduled on a native host. POK countdowns
+  // run inside the container and cannot be called back.
+  cancelRestart: (id: number) =>
+    api.delete<{ cancelled: boolean; detail: string }>(`/servers/${id}/restart`),
+  // Native-Windows hosts only: builds the instance directory, junctions,
+  // WinSW service and firewall rule. POK hosts create the container on
+  // first start and reject this call.
+  provision: (id: number) =>
+    api.post<InstanceActionResult>(`/servers/${id}/provision`),
   // POK update pulls the latest ASA build from Steam; it can run for
   // 10+ minutes, well past axios' 30s default, so we bump the per-call
   // timeout to 30 minutes.  The backend also respects SSH_TIMEOUT.

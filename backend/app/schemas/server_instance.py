@@ -144,13 +144,18 @@ class ServerInstanceRead(BaseModel):
     game_port: int = 7777
     rcon_port: int = 27020
 
-    container_name: str
-    image: str = "acekorneya/asa_server:2_1_latest"
+    # Docker fields: None on instances hosted on a native-Windows machine.
+    container_name: Optional[str] = None
+    image: Optional[str] = None
     mem_limit_mb: int = 16_384
     timezone: str = "Europe/Rome"
 
-    pok_base_dir: str
+    # None on native instances, which have no POK-manager tree.
+    pok_base_dir: Optional[str] = None
     instance_dir: str
+    # Native-Windows fields: None on instances hosted on a POK machine.
+    install_dir: Optional[str] = None
+    service_name: Optional[str] = None
 
     mod_api: bool = False
     battleye: bool = False

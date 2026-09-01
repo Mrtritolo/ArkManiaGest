@@ -52,10 +52,14 @@ from app.schemas.server_instance import (
 from app.ssh.pok_executor import (
     ActionResult,
     exec_pok_lifecycle,
+    run_action,
     exec_rcon,
     exec_status_probe,
+    cancel_native_restart,
+    schedule_native_restart,
     DEFAULT_RESTART_MINUTES,
 )
+from app.ssh import windows_native as win
 from app.ssh.platform import PlatformAdapter
 
 
@@ -97,12 +101,14 @@ def _instance_to_read(inst: dict) -> ServerInstanceRead:
         custom_args=inst.get("custom_args"),
         game_port=inst.get("game_port", 7777),
         rcon_port=inst.get("rcon_port", 27020),
-        container_name=inst["container_name"],
-        image=inst.get("image", "acekorneya/asa_server:2_1_latest"),
+        container_name=inst.get("container_name"),
+        image=inst.get("image"),
         mem_limit_mb=inst.get("mem_limit_mb", 16_384),
         timezone=inst.get("timezone", "Europe/Rome"),
-        pok_base_dir=inst["pok_base_dir"],
+        pok_base_dir=inst.get("pok_base_dir"),
         instance_dir=inst["instance_dir"],
+        install_dir=inst.get("install_dir"),
+        service_name=inst.get("service_name"),
         mod_api=bool(inst.get("mod_api", False)),
         battleye=bool(inst.get("battleye", False)),
         update_server=bool(inst.get("update_server", True)),
@@ -144,6 +150,27 @@ def _derive_host_paths(
     ).rstrip("/")
     instance_dir = posixpath.join(base, f"Instance_{instance_name}")
     return base, instance_dir
+
+
+def _native_host_fields(*, machine: dict, instance_name: str) -> dict:
+    """
+    Compute the host-path columns for an instance on a native-Windows machine.
+
+    A native instance has no container, no image and no POK tree, so those
+    columns are explicitly NULLed rather than left carrying misleading
+    Docker defaults.  ``instance_dir`` is shared by both runtimes;
+    ``install_dir`` points at the SteamCMD tree the instance junctions into.
+    """
+    adapter = PlatformAdapter.from_machine(machine)
+    base = adapter.native_base_dir()
+    return {
+        "container_name": None,
+        "image":          None,
+        "pok_base_dir":   None,
+        "instance_dir":   win.instance_dir_for(base, instance_name),
+        "install_dir":    win.install_dir_for(base),
+        "service_name":   win.service_name_for(instance_name),
+    }
 
 
 async def _port_or_name_conflict(
@@ -240,12 +267,28 @@ async def create_instance(
     the compose spec before anything touches the remote Docker daemon.
     """
     machine = await _get_machine_or_404(db, data.machine_id)
-    container_name = f"asa_{data.name.lower()}"
-    base_dir, instance_dir = _derive_host_paths(
-        machine=machine,
-        instance_name=data.name,
-        pok_base_dir_override=data.pok_base_dir,
-    )
+    is_native = PlatformAdapter.from_machine(machine).is_native
+
+    if is_native:
+        host_fields = _native_host_fields(machine=machine, instance_name=data.name)
+        # Kept only for the conflict check below: a native instance has no
+        # container, but the name still has to be unique on the machine.
+        container_name = f"asa_{data.name.lower()}"
+    else:
+        container_name = f"asa_{data.name.lower()}"
+        base_dir, instance_dir = _derive_host_paths(
+            machine=machine,
+            instance_name=data.name,
+            pok_base_dir_override=data.pok_base_dir,
+        )
+        host_fields = {
+            "container_name": container_name,
+            "image":          data.image,
+            "pok_base_dir":   base_dir,
+            "instance_dir":   instance_dir,
+            "install_dir":    None,
+            "service_name":   None,
+        }
 
     conflict = await _port_or_name_conflict(
         db,
@@ -280,12 +323,9 @@ async def create_instance(
         "server_password_enc":  srv_pw_enc,
         "game_port":            data.game_port,
         "rcon_port":            data.rcon_port,
-        "container_name":       container_name,
-        "image":                data.image,
         "mem_limit_mb":         data.mem_limit_mb,
         "timezone":             data.timezone,
-        "pok_base_dir":         base_dir,
-        "instance_dir":         instance_dir,
+        **host_fields,
         "mod_api":              data.mod_api,
         "battleye":             data.battleye,
         "update_server":        data.update_server,
@@ -552,13 +592,33 @@ async def delete_instance_route(
     if purge_on_host:
         try:
             machine = await _get_machine_or_404(db, inst["machine_id"])
-            await exec_pok_lifecycle(
-                db,
-                action="stop",
-                instance=inst,
-                machine=machine,
-                user=user,
-            )
+            adapter = PlatformAdapter.from_machine(machine)
+            if adapter.is_native:
+                # Stopping is not enough natively: leaving the WinSW service
+                # registered would make a later instance of the same name
+                # collide, and the firewall rule would outlive the instance.
+                # The instance directory is kept -- purge=False -- so a delete
+                # never destroys a world save.
+                await run_action(
+                    db,
+                    action="delete",
+                    instance=inst,
+                    machine=machine,
+                    user=user,
+                    command=win.delete_cmd(
+                        inst,
+                        base_dir=adapter.native_base_dir(),
+                        purge=False,
+                    ),
+                )
+            else:
+                await exec_pok_lifecycle(
+                    db,
+                    action="stop",
+                    instance=inst,
+                    machine=machine,
+                    user=user,
+                )
         except HTTPException:
             # Machine already missing -- delete the row anyway.
             pass
@@ -568,6 +628,54 @@ async def delete_instance_route(
 
     await delete_instance_async(db, instance_id)
     await db.commit()
+
+
+@router.post("/{instance_id}/provision")
+async def provision_instance(
+    instance_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator),
+):
+    """
+    Create the instance on a native-Windows host.
+
+    Builds the per-instance directory, copies ``ShooterGame/Binaries`` out of
+    the shared installation, junctions ``Content`` and ``Engine`` into it,
+    writes the WinSW service definition, registers the service and opens the
+    firewall.  Idempotent: re-running it on a half-provisioned instance
+    finishes the job.
+
+    POK hosts have no equivalent step -- POK-manager materialises the
+    container itself on first start -- so this endpoint rejects them rather
+    than silently doing nothing.
+    """
+    inst = await _get_instance_or_404(db, instance_id)
+    machine = await _get_machine_or_404(db, inst["machine_id"])
+    adapter = PlatformAdapter.from_machine(machine)
+
+    if not adapter.is_native:
+        raise HTTPException(
+            status_code=400,
+            detail="Provisioning is only needed on machines with the native runtime; "
+                   "POK-manager creates the container on first start.",
+        )
+
+    result = await run_action(
+        db,
+        action="create",
+        instance=inst,
+        machine=machine,
+        user=user,
+        command=win.create_cmd(
+            inst,
+            base_dir=adapter.native_base_dir(),
+            cluster_dir=machine.get("cluster_dir"),
+        ),
+        # The generated command embeds the admin password in the WinSW XML,
+        # so it must never be echoed into the audit row.
+        meta="native provision",
+    )
+    return _action_result_response(inst, result)
 
 
 # ── Lifecycle actions ─────────────────────────────────────────────────────────
@@ -627,11 +735,59 @@ async def restart_instance(
     """
     inst = await _get_instance_or_404(db, instance_id)
     machine = await _get_machine_or_404(db, inst["machine_id"])
+
+    if PlatformAdapter.from_machine(machine).is_native and minutes > 0:
+        # POK runs its countdown inside the container and returns at once.
+        # Natively the panel owns the timer, so the wait moves to a
+        # background task and the request returns immediately -- otherwise
+        # the HTTP call would hang for up to an hour.  Each announcement and
+        # the restart itself write their own audit rows, so the UI follows
+        # progress through /actions exactly as it does for POK.
+        await schedule_native_restart(
+            instance=inst, machine=machine, user=user, minutes=minutes,
+        )
+        return {
+            "instance_id": inst["id"],
+            "instance_name": inst["name"],
+            "scheduled": True,
+            "minutes": minutes,
+            "detail": (
+                f"Restart scheduled in {minutes} minute(s); players are being "
+                f"warned. Call DELETE on this endpoint to cancel."
+            ),
+        }
+
     result = await exec_pok_lifecycle(
         db, action="restart", instance=inst, machine=machine, user=user,
         restart_minutes=minutes,
     )
     return _action_result_response(inst, result)
+
+
+@router.delete("/{instance_id}/restart")
+async def cancel_restart(
+    instance_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator),
+):
+    """
+    Cancel a countdown restart scheduled on a native host.
+
+    Only native restarts can be cancelled: POK's countdown lives inside the
+    container and the panel has no handle on it.
+    """
+    inst = await _get_instance_or_404(db, instance_id)
+    cancelled = cancel_native_restart(inst["id"])
+    return {
+        "instance_id": inst["id"],
+        "instance_name": inst["name"],
+        "cancelled": cancelled,
+        "detail": (
+            "Scheduled restart cancelled."
+            if cancelled else
+            "No scheduled restart was pending for this instance."
+        ),
+    }
 
 
 @router.post("/{instance_id}/update", dependencies=[Depends(require_operator)])
@@ -656,6 +812,39 @@ async def update_instance_binary(
     """
     inst = await _get_instance_or_404(db, instance_id)
     machine = await _get_machine_or_404(db, inst["machine_id"])
+    adapter = PlatformAdapter.from_machine(machine)
+
+    if adapter.is_native:
+        # SteamCMD rewrites the shared installation every instance junctions
+        # into.  On Linux a running process keeps its open file handles valid;
+        # on Windows the files are locked and SteamCMD fails halfway, leaving
+        # a partially updated tree.  Refuse up front with a message naming
+        # what has to be stopped.
+        siblings = await get_all_instances_async(
+            db, machine_id=machine["id"], active_only=True)
+        services = [
+            s.get("service_name") or win.service_name_for(s["name"])
+            for s in siblings
+        ]
+        probe = await run_action(
+            db,
+            action="prereqs_check",
+            instance=inst,
+            machine=machine,
+            user=user,
+            command=win.instances_running_cmd(services),
+            meta="pre-update running check",
+        )
+        running = [ln.strip() for ln in (probe.stdout or "").splitlines() if ln.strip()]
+        if running:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The installation is shared by every instance on this host. "
+                    "Stop these first: " + ", ".join(running)
+                ),
+            )
+
     result = await exec_pok_lifecycle(
         db, action="update", instance=inst, machine=machine, user=user,
     )

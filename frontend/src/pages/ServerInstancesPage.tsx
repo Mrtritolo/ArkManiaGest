@@ -24,6 +24,7 @@ import {
   RotateCw,
   Download,
   DownloadCloud,
+  Wrench,
   Activity,
   Pencil,
   Trash2,
@@ -258,7 +259,8 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   // -------------------------------------------------------------------------
 
   type LifecycleAction =
-    | "start" | "stop" | "restart" | "update" | "backup" | "probe";
+    | "start" | "stop" | "restart" | "update" | "backup" | "probe"
+    | "provision";
 
   async function runAction(id: number, action: LifecycleAction) {
     setBusyId({ id, action });
@@ -270,9 +272,20 @@ export default function ServerInstancesPage({ currentUser }: Props) {
         action === "restart" ? serverInstancesApi.restart(id) :
         action === "update"  ? serverInstancesApi.update_(id) :
         action === "backup"  ? serverInstancesApi.backup(id) :
+        // Native-Windows hosts only: builds the instance tree, junctions,
+        // WinSW service and firewall rule. POK hosts reject it (400) because
+        // POK-manager materialises the container on first start.
+        action === "provision" ? serverInstancesApi.provision(id) :
                                serverInstancesApi.status(id);
       const res = await call;
-      showActionFeedback(res.data);
+      if ("scheduled" in res.data) {
+        // Native countdown restart: nothing ran yet, the panel is holding a
+        // timer. The announcements and the restart write their own audit
+        // rows, so the log drawer picks them up as they happen.
+        setSuccess(res.data.detail);
+      } else {
+        showActionFeedback(res.data);
+      }
       await refreshOne(id);
       if (expandedId === id) await loadActionLog(id);
     } catch (e) {
@@ -337,7 +350,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       server_password: "",
       game_port: inst.game_port,
       rcon_port: inst.rcon_port,
-      image: inst.image,
+      image: inst.image ?? undefined,
       mem_limit_mb: inst.mem_limit_mb,
       timezone: inst.timezone,
       mod_api: inst.mod_api,
@@ -941,7 +954,9 @@ interface InstanceCardProps {
   machineLabel: string;
   statusBadgeClass: (s: InstanceStatus) => string;
   onToggle: () => void;
-  onAction: (a: "start" | "stop" | "restart" | "backup" | "probe") => void;
+  onAction: (
+    a: "start" | "stop" | "restart" | "backup" | "probe" | "provision",
+  ) => void;
   onUpdate: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -962,7 +977,7 @@ function InstanceCard(p: InstanceCardProps) {
             {inst.cluster_id && <span className="machine-card-tag">cluster: {inst.cluster_id}</span>}
           </h3>
           <p className="machine-card-host">
-            {p.machineLabel} &middot; {inst.container_name} &middot; {inst.game_port}/{inst.rcon_port}
+            {p.machineLabel} &middot; {inst.container_name || inst.service_name || inst.name} &middot; {inst.game_port}/{inst.rcon_port}
           </p>
           {inst.description && <p className="machine-card-desc">{inst.description}</p>}
         </div>
@@ -985,6 +1000,11 @@ function InstanceCard(p: InstanceCardProps) {
         <ActionBtn icon={<Activity size={14} />} label={t("instances.actions.probe")}   busy={busy && busyId?.action === "probe"}   disabled={!!busyId} onClick={() => p.onAction("probe")} />
         <ActionBtn icon={<Download size={14} />} label={t("instances.actions.backup")}  busy={busy && busyId?.action === "backup"}  disabled={!!busyId} onClick={() => p.onAction("backup")} />
         <ActionBtn icon={<DownloadCloud size={14} />} label={t("instances.actions.update")} busy={busy && busyId?.action === "update"} disabled={!!busyId} onClick={p.onUpdate} />
+        {/* Native instances only. service_name is NULL on every POK row, so
+            it doubles as the runtime marker without another API round-trip. */}
+        {inst.service_name && (
+          <ActionBtn icon={<Wrench size={14} />} label={t("instances.actions.provision")} busy={busy && busyId?.action === "provision"} disabled={!!busyId} onClick={() => p.onAction("provision")} />
+        )}
         <button className="btn btn-ghost btn-sm" onClick={p.onEdit} title={t("instances.actions.edit")}>
           <Pencil size={14} />
         </button>

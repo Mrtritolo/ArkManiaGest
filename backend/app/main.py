@@ -115,9 +115,16 @@ async def lifespan(app: FastAPI):
     from app.services.retention import retention_loop
     retention_task = _asyncio.create_task(retention_loop())
 
+    # 7. Memory watchdog for native-Windows instances.  Always started: it
+    #    logs threshold breaches even when NATIVE_WATCHDOG_ENABLED is off,
+    #    and no-ops entirely on installs with no native machines.
+    from app.services.native_watchdog import watchdog_loop
+    watchdog_task = _asyncio.create_task(watchdog_loop())
+
     yield
 
     # --- Shutdown ---
+    watchdog_task.cancel()
     retention_task.cancel()
     from app.db.session import close_engine, close_plugin_engine
     await close_plugin_engine()

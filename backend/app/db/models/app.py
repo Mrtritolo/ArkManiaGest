@@ -104,6 +104,33 @@ class SSHMachine(Base):
     # WSL distribution name to target on Windows hosts.  Ignored on Linux.
     wsl_distro          = Column(String(64), nullable=True, default="Ubuntu")
 
+    # Execution runtime used for the ARK instances hosted on this machine.
+    #   * "pok"    → POK-manager + Docker.  The ASA Windows binaries run
+    #                under Proton inside a Linux container, on a Linux host
+    #                directly or on a Windows host through WSL.
+    #   * "native" → ArkAscendedServer.exe supervised by WinSW straight on
+    #                Windows.  No Docker, no WSL, no Proton.  Only valid
+    #                together with ``os_type == "windows"``.
+    # Legacy rows default to "pok" so existing installs keep their behaviour.
+    runtime             = Column(String(16), nullable=False, default="pok",
+                                 server_default="pok")
+
+    # Root of the ARK cluster directory on this host — the parent that ARK
+    # appends ``clusters/<ClusterID>/`` to when given ``-ClusterDirOverride``.
+    # Required on native hosts; on POK hosts it is informational and only
+    # used by the cluster-sync health probe.
+    cluster_dir         = Column(String(512), nullable=True)
+
+    # How the cluster directory is kept in step with the other machines:
+    #   * "none"      → standalone host, no replication.
+    #   * "syncthing" → bidirectional replication by a Syncthing daemon.
+    #   * "smb"       → the directory is a UNC path served by another host,
+    #                   so there is a single authoritative copy.
+    # The panel never performs the replication itself; it provisions and
+    # monitors it (see the cluster-sync probe in app/ssh/cluster_sync.py).
+    cluster_sync_mode   = Column(String(16), nullable=False, default="none",
+                                 server_default="none")
+
     # Status fields
     is_active           = Column(Boolean, nullable=False, default=True)
     last_connection     = Column(DateTime, nullable=True)
@@ -215,17 +242,35 @@ class ARKMServerInstance(Base):
     game_port         = Column(Integer, nullable=False, default=7777)
     rcon_port         = Column(Integer, nullable=False, default=27020)
 
-    # --- Docker runtime ------------------------------------------------------
-    container_name    = Column(String(128), nullable=False)
+    # --- Docker runtime (machine.runtime == "pok" only) ----------------------
+    # NULL on native-Windows instances, which have no container at all.
+    container_name    = Column(String(128), nullable=True)
     image             = Column(
-        String(128), nullable=False, default="acekorneya/asa_server:2_1_latest"
+        String(128), nullable=True, default="acekorneya/asa_server:2_1_latest"
     )
+    # Enforced by the Docker cgroup on POK hosts.  Windows has no cgroup
+    # equivalent, so on native instances this is an advisory threshold used
+    # by the panel's memory watchdog, not a hard cap.
     mem_limit_mb      = Column(Integer, nullable=False, default=16384)
     timezone          = Column(String(64), nullable=False, default="Europe/Rome")
 
     # --- POK / host paths ----------------------------------------------------
-    pok_base_dir      = Column(String(512), nullable=False)
+    # ``pok_base_dir`` is NULL on native instances; ``instance_dir`` is used
+    # by both runtimes (POK: Instance_<name>/ ; native: the per-instance tree
+    # holding Saved/, Config/, the WinSW service definition and the junctions
+    # back into the shared install).
+    pok_base_dir      = Column(String(512), nullable=True)
     instance_dir      = Column(String(512), nullable=False)
+
+    # --- Native Windows runtime (machine.runtime == "native" only) ----------
+    # Shared ASA installation this instance junctions into.  One SteamCMD
+    # tree per host serves every instance: only ShooterGame/Binaries is
+    # copied per instance (AsaApi writes its logs and loads its plugins from
+    # there), while Content/ and Engine/ — the bulk of the ~20 GB — are
+    # directory junctions.
+    install_dir       = Column(String(512), nullable=True)
+    # Name of the WinSW-registered Windows service supervising this instance.
+    service_name      = Column(String(128), nullable=True)
 
     # --- Feature flags -------------------------------------------------------
     mod_api           = Column(Boolean, nullable=False, default=False)

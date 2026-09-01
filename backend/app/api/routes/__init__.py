@@ -32,6 +32,7 @@ from app.api.routes import (
     players,
     arkshop,
     blueprints,
+    cluster_sync,
     containers,
     arkmania_config,
     arkmania_bans,
@@ -79,6 +80,10 @@ router.include_router(
 router.include_router(
     serverforge.router,
     prefix="/sf", tags=["ServerForge"], dependencies=_viewer,
+)
+router.include_router(
+    cluster_sync.router,
+    prefix="/cluster-sync", tags=["Cluster Sync"], dependencies=_viewer,
 )
 router.include_router(
     players.router,
