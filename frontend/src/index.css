@@ -204,8 +204,8 @@
 [data-theme="light"] .card:hover         { border-color: rgba(69,112,36,0.30); }
 [data-theme="light"] .form-input:focus,
 [data-theme="light"] .pl-search-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(69,112,36,0.12);
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 /* Table row hover (PlayersPage / DecayPage / BlueprintsPage) — the
@@ -1634,28 +1634,22 @@ body::before {
 .input:focus,
 .pl-search-input:focus {
   border-color: var(--border-focus);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 0 0 3px var(--accent-glow);
+  box-shadow: var(--focus-ring);
 }
 
 /* Il pulsante primario resta pieno: e' l'azione, e un'azione non si nasconde
    dietro un materiale. Gli si aggiunge solo lo spigolo illuminato. */
 .btn-primary {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 12px var(--accent-glow);
+  box-shadow: none;
 }
 
 /* --- Sovrapposizioni -------------------------------------------------------
    Il dialogo e' vetro spesso; il velo dietro di lui sfoca la pagina, che e'
    esattamente il gesto del materiale. */
-.as-dialog-overlay {
-  backdrop-filter: blur(6px) saturate(120%);
-  -webkit-backdrop-filter: blur(6px) saturate(120%);
-}
 .as-dialog {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-lg), inset 0 1px 0 var(--glass-highlight);
+  background: var(--bg-popover);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
 }
 
 /* I menu a tendina restano OPACHI, deliberatamente. Sono l'unico posto dove
