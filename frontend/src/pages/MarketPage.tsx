@@ -665,7 +665,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 {SHOP_CATEGORY_ORDER.filter(c => shopCatCounts[c]).map(c => (
                   <CategoryChip key={c} active={shopCat === c}
                     onClick={() => setShopCat(shopCat === c ? "" : c)}
-                    label={t(`market.shop.cat.${c}`)} count={shopCatCounts[c]} />
+                    label={t(`market.shop.cat.${c}`, { defaultValue: c })} count={shopCatCounts[c]} />
                 ))}
               </div>
             )}
@@ -688,7 +688,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                     margin: "0 0 0.45rem", paddingBottom: "0.3rem",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {t(`market.shop.cat.${cat}`)}
+                    {t(`market.shop.cat.${cat}`, { defaultValue: cat })}
                     <span style={{ fontWeight: 500 }}>{items.length}</span>
                   </h3>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
