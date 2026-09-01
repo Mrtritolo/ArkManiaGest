@@ -125,6 +125,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   on Windows those files are locked, so the update would fail halfway
   and leave a partially rewritten tree.
 
+- **The frontend type-checks clean.** `tsc --noEmit` went from 126 errors to
+  zero, with no `any` and no `@ts-ignore`: every one was an API response left
+  untyped, and each fix is the shape the backend actually returns
+  (`BlueprintRow`, `ArkShopEntry`, `ArkShopGeneral`, `ArkShopMysql`,
+  `ArkShopMessages`, `PluginVersionRow`, `PluginPushSummary`,
+  `PluginDeployResult`, `ArkServerRow`, `SyncContainer`). `blueprintsApi.list`
+  alone, typed `unknown[]`, accounted for a third of them.
+- **Fixed: the ArkShop version table's Items and Kits columns were always
+  empty.** `GET /<plugin>/versions` never returned `shop_items` or `kits`;
+  the frontend typed those rows as a bag of unknowns, so nothing complained
+  and the cells just rendered blank. The endpoint now counts them from the
+  stored config, generically -- a plugin with no such section reports zero.
+- Removed the `backdrop-filter` declarations left inert by the restyle
+  (`--glass-blur` was 0): no visual effect, but each one still forced a
+  compositing layer.
+
 - **Accessibility pass over the whole panel.** Seven findings from a full
   review, all measured rather than eyeballed:
   - The 273 colour literals in the pages were theme-blind, so every status

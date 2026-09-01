@@ -602,6 +602,17 @@ export interface SyncNamesUnmatchedEntry {
   source:      string;
 }
 
+/** Un container idoneo alla sincronia nomi / copia personaggio. */
+export interface SyncContainer {
+  machine_id:      number;
+  machine_name:    string;
+  container_name:  string;
+  map_name:        string | null;
+  server_name:     string | null;
+  saved_arks_path: string;
+  profile_count:   number;
+}
+
 /** Full response of POST /players/sync-names. */
 export interface SyncNamesResponse {
   success:                   boolean;
@@ -786,7 +797,7 @@ export const playersApi = {
   },
 
   /** Return containers eligible for the name sync operation. */
-  syncContainers: () => api.get("/players/sync-containers"),
+  syncContainers: () => api.get<{ containers: SyncContainer[] }>("/players/sync-containers"),
 
   /**
    * Find all maps where a player's .arkprofile exists.
@@ -815,6 +826,28 @@ export const playersApi = {
 // ---------------------------------------------------------------------------
 // Blueprints
 // ---------------------------------------------------------------------------
+
+/**
+ * Una riga del catalogo blueprint.
+ *
+ * Rispecchia `_row_to_bp` in backend/app/api/routes/blueprints.py; `class` e'
+ * riservata in TS come nome di variabile ma va benissimo come chiave.
+ *
+ * Prima era `unknown[]`, e quell'unknown si propagava: da solo produceva 109
+ * dei 126 errori di tipo dell'intero frontend, quasi tutti in ArkShopPage.
+ */
+export interface BlueprintRow {
+  id:          number | string;
+  name:        string;
+  blueprint:   string;
+  category:    string | null;
+  type:        string | null;
+  gfi:         string | null;
+  source:      string | null;
+  class:       string | null;
+  description: string | null;
+  ext_id:      string | null;
+}
 
 export const blueprintsApi = {
   status: () =>
@@ -871,7 +904,7 @@ export const blueprintsApi = {
     scope?: "official_plus_s";
     limit?: number;
     offset?: number;
-  }) => api.get<{ items: unknown[]; total: number }>("/blueprints", { params }),
+  }) => api.get<{ items: BlueprintRow[]; total: number }>("/blueprints", { params }),
   categories: () =>
     api.get<{ categories: { name: string; count: number }[] }>("/blueprints/categories"),
   types: () =>
@@ -960,8 +993,142 @@ export const containersApi = {
 // ArkShop
 // ---------------------------------------------------------------------------
 
+/**
+ * Una voce della config ArkShop cosi' come la restituisce il pannello:
+ * la chiave del blocco piu' i suoi campi, che variano per tipo di voce
+ * (item, dino, beacon, command...) e non hanno una forma unica.
+ *
+ * `key` e' l'unico campo garantito. Tiparlo esplicitamente e' quello che
+ * serve: l'editor ArkShop lo passa a `updateShopItem(key, ...)`, e finche'
+ * l'intera riga era `{}` quel parametro arrivava non tipizzato.
+ */
+/** Una riga dentro `Items[]`: un oggetto da consegnare, oppure un comando. */
+export interface ArkShopLine extends Record<string, unknown> {
+  Blueprint?:      string;
+  Amount?:         number;
+  Quality?:        number;
+  ForceBlueprint?: boolean;
+  Command?:        string;
+  DisplayAs?:      string;
+  ExecuteAsAdmin?: boolean;
+}
+
+export interface ArkShopEntry extends Record<string, unknown> {
+  key:             string;
+  Title?:          string;
+  Description?:    string;
+  Type?:           string;
+  Price?:          number;
+  Permissions?:    string;
+  Items?:          ArkShopLine[];
+  // Voci dino: blueprint e livello stanno in cima, non dentro Items.
+  Blueprint?:      string;
+  Level?:          number;
+  Amount?:         number;
+  Quality?:        number;
+  ForceBlueprint?: boolean;
+  // Solo kit.
+  DefaultAmount?:  number;
+  MaxLevel?:       number;
+  OnlyFromSpawn?:  boolean;
+}
+
+/**
+ * Il blocco `General` della config ArkShop.
+ *
+ * Rispecchia BasePlugin/ArkShop/config.json. L'indice residuo copre le
+ * chiavi che ArkShop aggiunge fra una versione e l'altra: l'editor le
+ * mostra comunque, e senza indice ogni chiave nuova sarebbe un errore
+ * di compilazione al posto di una riga in piu' nel form.
+ */
+export interface ArkShopGeneral extends Record<string, unknown> {
+  CryoLimitedTime?:               boolean;
+  DbPathOverride?:                string;
+  DefaultKit?:                    string;
+  GiveDinosInCryopods?:           boolean;
+  ItemsPerPage?:                  number;
+  PreventUseCarried?:             boolean;
+  PreventUseHandcuffed?:          boolean;
+  PreventUseNoglin?:              boolean;
+  PreventUseUnconscious?:         boolean;
+  ShopDisplayTime?:               number;
+  ShopTextSize?:                  number;
+  UseOriginalTradeCommandWithUI?: boolean;
+  Discord?: {
+    Enabled?:    boolean;
+    SenderName?: string;
+    URL?:        string;
+  };
+  TimedPointsReward?: {
+    Enabled?:                 boolean;
+    Interval?:                number;
+    AlwaysSendNotifications?: boolean;
+    StackRewards?:            boolean;
+    Groups?:                  Record<string, unknown>;
+  };
+}
+
+/** Il blocco `Messages`: 56 chiavi, tutte stringhe. */
+export type ArkShopMessages = Record<string, string>;
+
+/** Una voce dello storico versioni di un plugin. */
+export interface PluginVersionRow {
+  id:         number;
+  label:      string;
+  created_at: string;
+  sections:   number;
+  source:     string | null;
+  shop_items: number;
+  kits:       number;
+}
+
+/** Un container ARK visto dal pannello, per il pull della config. */
+export interface ArkServerRow {
+  machine_id:     number;
+  machine_name:   string;
+  hostname:       string;
+  container_name: string;
+  server_name:    string;
+  map_name:       string;
+  config_path:    string | null;
+  plugin_folder:  string;
+}
+
+/** Esito del deploy della config su UN container. */
+export interface PluginDeployResult {
+  container:   string;
+  machine:     string;
+  map_name:    string;
+  success:     boolean;
+  message:     string;
+  status:      string;
+  backup_path: string | null;
+}
+
+/** Riepilogo del deploy su tutti i container. */
+export interface PluginPushSummary {
+  success:         boolean;
+  version:         string;
+  total:           number;
+  deployed:        number;
+  skipped_running: number;
+  failed:          number;
+  results:         PluginDeployResult[];
+}
+
+/** Il blocco `Mysql` della config ArkShop. */
+export interface ArkShopMysql extends Record<string, unknown> {
+  UseMysql?:   boolean;
+  MysqlHost?:  string;
+  MysqlPort?:  number;
+  MysqlDB?:    string;
+  MysqlUser?:  string;
+  MysqlPass?:  string;
+}
+
 export const arkshopApi = {
-  servers: () => api.get("/arkshop/servers"),
+  servers: () =>
+    api.get<{ servers: ArkServerRow[]; total: number }>("/arkshop/servers"),
   pull: (machineId: number, containerName: string) =>
     api.post("/arkshop/pull", null, {
       params: { machine_id: machineId, container_name: containerName },
@@ -978,9 +1145,10 @@ export const arkshopApi = {
     if (machineId != null) params.machine_id = machineId;
     if (containerName) params.container_name = containerName;
     if (force) params.force = true;
-    return api.post("/arkshop/deploy", null, { params, timeout: 120_000 });
+    return api.post<PluginPushSummary>("/arkshop/deploy", null, { params, timeout: 120_000 });
   },
-  listVersions: () => api.get("/arkshop/versions"),
+  listVersions: () =>
+    api.get<{ versions: PluginVersionRow[]; total: number }>("/arkshop/versions"),
   saveVersion: (label: string) => api.post("/arkshop/versions", { label }),
   restoreVersion: (id: number) => api.post(`/arkshop/versions/${id}/restore`),
   deleteVersion: (id: number) => api.delete(`/arkshop/versions/${id}`),
@@ -989,22 +1157,22 @@ export const arkshopApi = {
   uploadConfig: (config: unknown) => api.post("/arkshop/config", { config }),
   deleteConfig: () => api.delete("/arkshop/config"),
   exportConfig: () => api.get("/arkshop/config/export"),
-  getMysql: () => api.get("/arkshop/mysql"),
+  getMysql: () => api.get<ArkShopMysql>("/arkshop/mysql"),
   updateMysql: (mysql: unknown) => api.put("/arkshop/mysql", { mysql }),
-  getGeneral: () => api.get("/arkshop/general"),
+  getGeneral: () => api.get<ArkShopGeneral>("/arkshop/general"),
   updateGeneral: (general: unknown) => api.put("/arkshop/general", { general }),
-  listShopItems: () => api.get("/arkshop/shop-items"),
+  listShopItems: () => api.get<ArkShopEntry[]>("/arkshop/shop-items"),
   updateShopItem: (key: string, item: unknown) =>
     api.put("/arkshop/shop-items", { key, item }),
   deleteShopItem: (key: string) => api.delete(`/arkshop/shop-items/${key}`),
-  listKits: () => api.get("/arkshop/kits"),
+  listKits: () => api.get<ArkShopEntry[]>("/arkshop/kits"),
   updateKit: (key: string, kit: unknown) => api.put("/arkshop/kits", { key, kit }),
   deleteKit: (key: string) => api.delete(`/arkshop/kits/${key}`),
-  listSellItems: () => api.get("/arkshop/sell-items"),
+  listSellItems: () => api.get<ArkShopEntry[]>("/arkshop/sell-items"),
   updateSellItem: (key: string, item: unknown) =>
     api.put("/arkshop/sell-items", { key, item }),
   deleteSellItem: (key: string) => api.delete(`/arkshop/sell-items/${key}`),
-  getMessages: () => api.get("/arkshop/messages"),
+  getMessages: () => api.get<ArkShopMessages>("/arkshop/messages"),
   updateMessages: (messages: unknown) => api.put("/arkshop/messages", { messages }),
 };
 

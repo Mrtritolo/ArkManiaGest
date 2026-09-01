@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
-import { arkmaniaApi, blueprintsApi } from '../services/api'
+import { arkmaniaApi, blueprintsApi, type BlueprintRow } from '../services/api'
 import { copyText } from '../utils/clipboard'
 import {
   Settings, Save, Search, Server, RotateCcw, AlertCircle, Check, Download,
@@ -265,7 +265,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
         const params: Record<string, string | number> = { search: bpSearch, limit: 12 }
         if (typeFilter) params.type = typeFilter
         const res = await blueprintsApi.list(params)
-        setBpResults(res.data.items?.map((i: Record<string, string>) => ({
+        setBpResults(res.data.items?.map((i: BlueprintRow) => ({
           name: i.name, blueprint: i.blueprint,
           type: i.type || 'item', category: i.category || '',
         })) || [])
@@ -617,7 +617,7 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
     const timer = setTimeout(async () => {
       try {
         const res = await blueprintsApi.list({ search: bpQuery, type: 'structure', limit: 10 })
-        setBpResults(res.data.items?.map((i: Record<string, string>) => ({ name: i.name, blueprint: i.blueprint })) || [])
+        setBpResults(res.data.items?.map((i: BlueprintRow) => ({ name: i.name, blueprint: i.blueprint })) || [])
       } catch { setBpResults([]) }
       finally { setBpLoading(false) }
     }, 300)

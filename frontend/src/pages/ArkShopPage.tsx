@@ -10,7 +10,12 @@ import {
   DollarSign, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
   Server, CloudDownload, CloudUpload, RefreshCw, Archive, RotateCcw, Play, Square, Clock
 } from 'lucide-react'
-import { arkshopApi, blueprintsApi } from '../services/api'
+import {
+  arkshopApi, blueprintsApi,
+  type ArkShopEntry, type ArkShopGeneral, type ArkShopMessages,
+  type ArkServerRow, type PluginVersionRow, type PluginPushSummary,
+  type ArkShopMysql,
+} from '../services/api'
 
 type Tab = 'mysql' | 'general' | 'shop' | 'kits' | 'sell' | 'messages'
 
@@ -39,7 +44,10 @@ function BlueprintSearch({ value, onChange }: { value: string; onChange: (bp: st
     setLoading(true)
     try {
       const res = await blueprintsApi.list({ search: q, limit: 15 })
-      setResults(res.data.items)
+      setResults(res.data.items.map(b => ({
+        name: b.name, blueprint: b.blueprint, type: b.type ?? 'item',
+        category: b.category ?? undefined, gfi: b.gfi ?? undefined,
+      })))
     } catch {} finally { setLoading(false) }
   }, [])
 
@@ -165,12 +173,12 @@ export default function ArkShopPage() {
   const [success, setSuccess] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [mysql, setMysql] = useState<Record<string, unknown>>({})
-  const [general, setGeneral] = useState<Record<string, unknown>>({})
-  const [shopItems, setShopItems] = useState<Record<string, unknown>[]>([])
-  const [kits, setKits] = useState<Record<string, unknown>[]>([])
-  const [sellItems, setSellItems] = useState<Record<string, unknown>[]>([])
-  const [messages, setMessages] = useState<Record<string, unknown>>({})
+  const [mysql, setMysql] = useState<ArkShopMysql>({})
+  const [general, setGeneral] = useState<ArkShopGeneral>({})
+  const [shopItems, setShopItems] = useState<ArkShopEntry[]>([])
+  const [kits, setKits] = useState<ArkShopEntry[]>([])
+  const [sellItems, setSellItems] = useState<ArkShopEntry[]>([])
+  const [messages, setMessages] = useState<ArkShopMessages>({})
 
   const [shopSearch, setShopSearch] = useState('')
   const [shopTypeFilter, setShopTypeFilter] = useState('')
@@ -179,20 +187,20 @@ export default function ArkShopPage() {
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<'shop' | 'kit' | 'sell'>('shop')
-  const [dialogData, setDialogData] = useState<Record<string, unknown> | null>(null)
+  const [dialogData, setDialogData] = useState<ArkShopEntry | null>(null)
   const [dialogIsNew, setDialogIsNew] = useState(false)
 
   // Pull/Push/Deploy state
-  const [arkServers, setArkServers] = useState<Record<string, unknown>[]>([])
+  const [arkServers, setArkServers] = useState<ArkServerRow[]>([])
   const [loadingServers, setLoadingServers] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [pushing, setPushing] = useState(false)
   const [showDeploy, setShowDeploy] = useState(false)
-  const [pushResults, setPushResults] = useState<Record<string, unknown> | null>(null)
+  const [pushResults, setPushResults] = useState<PluginPushSummary | null>(null)
   const [configSource, setConfigSource] = useState<Record<string, unknown> | null>(null)
 
   // Versions
-  const [versions, setVersions] = useState<Record<string, unknown>[]>([])
+  const [versions, setVersions] = useState<PluginVersionRow[]>([])
   const [savingVersion, setSavingVersion] = useState(false)
   const [versionLabel, setVersionLabel] = useState('')
   const [showVersions, setShowVersions] = useState(false)
@@ -563,7 +571,7 @@ export default function ArkShopPage() {
                   <thead><tr><th>{t('arkshop.loadFromServer.columnContainer')}</th><th>{t('arkshop.loadFromServer.columnServer')}</th><th>{t('arkshop.loadFromServer.columnMap')}</th><th>{t('arkshop.loadFromServer.columnHost')}</th><th style={{ width: 130 }}></th></tr></thead>
                   <tbody>
                     {arkServers.map((s, i) => {
-                      const result = pushResults?.results?.find((r: any) => r.container === s.container_name && r.machine === s.machine_name)
+                      const result = pushResults?.results?.find(r => r.container === s.container_name && r.machine === s.machine_name)
                       return (
                         <tr key={i}>
                           <td><span className="pl-sync-mono">{s.container_name}</span></td>
@@ -652,9 +660,9 @@ export default function ArkShopPage() {
                 </div>
                 {expandedItem === item.key ? <ChevronUp size={14} className="as-list-chevron" /> : <ChevronDown size={14} className="as-list-chevron" />}
               </div>
-              {expandedItem === item.key && item.Items?.length > 0 && (
+              {expandedItem === item.key && (item.Items?.length ?? 0) > 0 && (
                 <div className="as-list-expand">
-                  {item.Items.map((it: any, idx: number) => (
+                  {(item.Items ?? []).map((it: any, idx: number) => (
                     <div key={idx} className="as-bp-row">
                       {it.Blueprint ? (<>
                         <span className="as-bp-amount">{it.Amount}x</span>
@@ -722,7 +730,7 @@ export default function ArkShopPage() {
                 <span className="as-list-title">{item.key}</span>
                 <span className="as-list-type">{item.Type || t('arkshop.shop.defaultType')}</span>
                 <span className="as-list-price"><DollarSign size={11} /> {t('arkshop.sell.pricePts', { price: item.Price })}</span>
-                <span className="as-list-count">{item.Amount}x {bpName(item.Blueprint)}</span>
+                <span className="as-list-count">{item.Amount}x {bpName(item.Blueprint ?? '')}</span>
                 <div className="as-list-actions">
                   <button onClick={() => openSellDialog(item)} className="btn btn-sm btn-ghost"><Edit3 size={13} /></button>
                   <button onClick={() => handleDelete('sell', item.key)} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
@@ -747,7 +755,7 @@ export default function ArkShopPage() {
           {[['GiveDinosInCryopods',t('arkshop.general.optGiveDinosInCryopods')],['CryoLimitedTime',t('arkshop.general.optCryoLimitedTime')],['PreventUseCarried',t('arkshop.general.optPreventUseCarried')],
             ['PreventUseHandcuffed',t('arkshop.general.optPreventUseHandcuffed')],['PreventUseNoglin',t('arkshop.general.optPreventUseNoglin')],['PreventUseUnconscious',t('arkshop.general.optPreventUseUnconscious')],
             ['UseOriginalTradeCommandWithUI',t('arkshop.general.optUseOriginalTradeCommandWithUI')]].map(([k,l])=>(
-            <div key={k} className="as-gen-check"><label><input type="checkbox" checked={general[k]??false} onChange={e=>setGeneral({...general,[k]:e.target.checked})} /> {l}</label></div>))}
+            <div key={k} className="as-gen-check"><label><input type="checkbox" checked={general[k] === true} onChange={e=>setGeneral({...general,[k]:e.target.checked})} /> {l}</label></div>))}
           <div className="as-gen-section">{t('arkshop.general.sectionDiscord')}</div>
           <div className="as-gen-check"><label><input type="checkbox" checked={general.Discord?.Enabled??false} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),Enabled:e.target.checked}})} /> {t('arkshop.general.discordEnabled')}</label></div>
           <div className="as-gen-field"><label>{t('arkshop.general.discordSenderName')}</label><input type="text" value={general.Discord?.SenderName??''} onChange={e=>setGeneral({...general,Discord:{...(general.Discord||{}),SenderName:e.target.value}})} /></div>
@@ -758,7 +766,7 @@ export default function ArkShopPage() {
           <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.AlwaysSendNotifications??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),AlwaysSendNotifications:e.target.checked}})} /> {t('arkshop.general.timedAlwaysSend')}</label></div>
           <div className="as-gen-check"><label><input type="checkbox" checked={general.TimedPointsReward?.StackRewards??false} onChange={e=>setGeneral({...general,TimedPointsReward:{...(general.TimedPointsReward||{}),StackRewards:e.target.checked}})} /> {t('arkshop.general.timedStack')}</label></div>
           {general.TimedPointsReward?.Groups && Object.entries(general.TimedPointsReward.Groups).map(([g,v]:any)=>(
-            <div key={g} className="as-gen-field"><label>{t('arkshop.general.timedGroupPoints', { group: g })}</label><input type="number" value={v.Amount??0} onChange={e=>setGeneral({...general,TimedPointsReward:{...general.TimedPointsReward,Groups:{...general.TimedPointsReward.Groups,[g]:{Amount:parseInt(e.target.value)||0}}}})} /></div>))}
+            <div key={g} className="as-gen-field"><label>{t('arkshop.general.timedGroupPoints', { group: g })}</label><input type="number" value={v.Amount??0} onChange={e=>setGeneral({...general,TimedPointsReward:{...general.TimedPointsReward,Groups:{...(general.TimedPointsReward?.Groups ?? {}),[g]:{Amount:parseInt(e.target.value)||0}}}})} /></div>))}
         </div>
         <button onClick={saveGeneral} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
       </div>)}

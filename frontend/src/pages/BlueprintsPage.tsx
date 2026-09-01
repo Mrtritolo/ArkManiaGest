@@ -11,6 +11,7 @@ import {
   AlertCircle, X, Copy, Box, Sword, Shield, Home, Utensils,
   Gem, Crown, Terminal, Package, Edit3, Check, Trash2
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { blueprintsApi } from '../services/api'
 import { arkItemThumbUrl } from '../utils/arkItem'
 import { fmtLocaleDateTime } from '../utils/format'
@@ -78,7 +79,7 @@ function BpThumb({ name, blueprint, type, size = 28 }: {
   )
 }
 
-const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
+const TYPE_ICONS: Record<string, LucideIcon> = {
   dino: Box, weapon: Sword, armor: Shield, structure: Home,
   consumable: Utensils, resource: Gem, cosmetic: Crown,
   artifact: Crown, command: Terminal, item: Package,

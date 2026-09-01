@@ -504,7 +504,15 @@ async def deploy_config(
 
 @router.get("/versions")
 async def list_versions():
-    """Return the saved version list (metadata only, no full config)."""
+    """
+    Return the saved version list (metadata only, no full config).
+
+    ``shop_items`` / ``kits`` are the two counts the ArkShop version table
+    shows next to each entry.  They were never returned, so those columns
+    rendered empty cells -- invisible because the frontend typed the rows as
+    a bag of unknowns.  Kept generic: a plugin whose config has no such
+    section simply reports zero.
+    """
     versions = _get_versions()
     return {
         "versions": [
@@ -514,6 +522,8 @@ async def list_versions():
                 "created_at": v["created_at"],
                 "sections":   len(v.get("config", {}).keys()),
                 "source":     v.get("source"),
+                "shop_items": len(v.get("config", {}).get("ShopItems", {}) or {}),
+                "kits":       len(v.get("config", {}).get("Kits", {}) or {}),
             }
             for v in versions
         ],

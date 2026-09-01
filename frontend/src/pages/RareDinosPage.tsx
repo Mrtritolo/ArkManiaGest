@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { useTranslation } from 'react-i18next'
-import { arkRareDinosApi, blueprintsApi } from '../services/api'
+import { arkRareDinosApi, blueprintsApi, type BlueprintRow } from '../services/api'
 import { copyText } from '../utils/clipboard'
 import {
   Eye, Plus, Trash2, Edit2, Save, X, AlertCircle, Search,
@@ -140,7 +140,7 @@ export default function RareDinosPage() {
       setBpLoading(true)
       try {
         const res = await blueprintsApi.list({ search: bpSearch, type: 'dino', scope: 'official_plus_s', limit: 10 })
-        setBpResults(res.data.items?.map((i: Record<string, string>) => ({ name: i.name, blueprint: i.blueprint, category: i.category })) || [])
+        setBpResults(res.data.items?.map((i: BlueprintRow) => ({ name: i.name, blueprint: i.blueprint, category: i.category ?? '' })) || [])
       } catch { setBpResults([]) }
       finally {
         setBpLoading(false)

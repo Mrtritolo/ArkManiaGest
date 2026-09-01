@@ -16,7 +16,7 @@ import {
   // minified).  Don't change this back to a bare `Map` import.
   Map as MapIcon, Copy, CheckCircle, ShieldOff
 } from 'lucide-react'
-import { playersApi, arkBansApi, discordApi } from '../services/api'
+import { playersApi, arkBansApi, discordApi, type SyncNamesResponse, type SyncContainer } from '../services/api'
 import { fmtDate, fmtLocaleDateTime } from '../utils/format'
 import type { DiscordAccount, SyncNamesAmbiguousEntry } from '../services/api'
 import type { PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
@@ -239,8 +239,8 @@ export default function PlayersPage() {
     return ['VIP', 'Dead', 'Decadimento']
   })
   const [alignApplying, setAlignApplying] = useState(false)
-  const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null)
-  const [syncContainers, setSyncContainers] = useState<Record<string, unknown>[]>([])
+  const [syncResult, setSyncResult] = useState<SyncNamesResponse | null>(null)
+  const [syncContainers, setSyncContainers] = useState<SyncContainer[]>([])
   const [showSyncPanel, setShowSyncPanel] = useState(false)
   const [sortCol, setSortCol] = useState<string>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -363,7 +363,7 @@ export default function PlayersPage() {
     if (!copySource || !copyDestContainer || !copyDestMap) return
     setCopying(true); setError('')
     // Find destination machine_id from syncContainers
-    const destC = syncContainers.find((c: Record<string, unknown>) => c.container_name === copyDestContainer)
+    const destC = syncContainers.find(c => c.container_name === copyDestContainer)
     if (!destC) { setError(t('players.errors.destContainerNotFound')); setCopying(false); return }
     try {
       const res = await playersApi.copyCharacter({
@@ -388,7 +388,7 @@ export default function PlayersPage() {
 
   // Get available maps for a destination container
   function getDestMaps(containerName: string): string[] {
-    const c = syncContainers.find((sc: Record<string, unknown>) => sc.container_name === containerName)
+    const c = syncContainers.find(sc => sc.container_name === containerName)
     if (!c) return []
     // Use map_name from the container as an option
     return c.map_name ? [c.map_name as string] : []
@@ -657,7 +657,7 @@ export default function PlayersPage() {
     setSyncing(true); setError(''); setSyncResult(null)
     try {
       const res = await playersApi.syncNames(machineId, containerName)
-      setSyncResult(res.data as unknown as Record<string, unknown>)
+      setSyncResult(res.data)
       if (res.data.updated > 0) {
         loadPlayers(); loadStats()
       }
