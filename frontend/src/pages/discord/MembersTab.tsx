@@ -18,6 +18,7 @@
  * the chosen page-size of 100 keeps the UI responsive on big guilds.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useModalA11y } from "../../hooks/useModalA11y";
 import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, CheckCircle, RefreshCw, Plus, X,
@@ -44,7 +45,7 @@ function avatarUrl(userId: string, hash: string | null): string | null {
  * Color 0 means "no override" -- caller should fall back to a neutral grey.
  */
 function roleColorHex(c: number): string {
-  if (!c) return "#8b9a7e";
+  if (!c) return "var(--text-muted)";
   return "#" + c.toString(16).padStart(6, "0");
 }
 
@@ -367,7 +368,7 @@ function MemberRow({
                 key={r.id}
                 className="pl-chip"
                 style={{
-                  background: `${c}1a`, color: c, borderColor: `${c}40`,
+                  background: `color-mix(in srgb, ${c} 10%, transparent)`, color: c, borderColor: `color-mix(in srgb, ${c} 25%, transparent)`,
                   cursor: "pointer",
                 }}
                 onClick={() => onRemoveRole(r.id)}
@@ -383,7 +384,7 @@ function MemberRow({
               className="btn btn-secondary btn-sm"
               style={{ padding: "0.15rem 0.35rem" }}
               onClick={onTogglePopover}
-              title={t("discord.members.action.assignRole")}
+              aria-label={t("discord.members.action.assignRole")} title={t("discord.members.action.assignRole")}
             >
               <Plus size={11} />
             </button>
@@ -418,7 +419,7 @@ function MemberRow({
                         display: "flex", alignItems: "center", gap: "0.4rem",
                         padding: "0.3rem 0.55rem", cursor: "pointer", fontSize: "0.82rem",
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-50, #5cb89a15)")}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-50, color-mix(in srgb, var(--cyan) 8%, transparent))")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <span
@@ -446,23 +447,23 @@ function MemberRow({
           <button
             className="btn btn-secondary btn-sm"
             style={{ padding: "0.2rem 0.4rem" }}
-            title={t("discord.members.action.dm")}
+            aria-label={t("discord.members.action.dm")} title={t("discord.members.action.dm")}
             onClick={onDm}
           >
             <MessageSquare size={12} />
           </button>
           <button
             className="btn btn-secondary btn-sm"
-            style={{ padding: "0.2rem 0.4rem", color: "#d9a061" }}
-            title={t("discord.members.action.kick")}
+            style={{ padding: "0.2rem 0.4rem", color: "var(--warning)" }}
+            aria-label={t("discord.members.action.kick")} title={t("discord.members.action.kick")}
             onClick={onKick}
           >
             <UserMinus size={12} />
           </button>
           <button
             className="btn btn-secondary btn-sm"
-            style={{ padding: "0.2rem 0.4rem", color: "#d1614a" }}
-            title={t("discord.members.action.ban")}
+            style={{ padding: "0.2rem 0.4rem", color: "var(--danger)" }}
+            aria-label={t("discord.members.action.ban")} title={t("discord.members.action.ban")}
             onClick={onBan}
           >
             <BanIcon size={12} />
@@ -519,7 +520,7 @@ function DmModal({
           style={{ resize: "vertical", minHeight: 120 }}
         />
         <div style={{
-          fontSize: "0.7rem", color: remaining < 100 ? "#d1614a" : "var(--text-secondary)",
+          fontSize: "0.7rem", color: remaining < 100 ? "var(--danger)" : "var(--text-secondary)",
           marginTop: 4, textAlign: "right",
         }}>
           {remaining} / 2000
@@ -608,7 +609,7 @@ function BanModal({
           onClick={ban}
           disabled={saving}
           className="btn btn-primary btn-sm"
-          style={{ background: "#d1614a", borderColor: "#d1614a" }}
+          style={{ background: "var(--danger)", borderColor: "var(--danger)" }}
         >
           {saving ? <Loader2 size={14} className="pl-spin" /> : <BanIcon size={14} />}
           {" "}{t("discord.members.modal.banConfirm")}
@@ -628,6 +629,8 @@ function ModalShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  // La modale monta solo quando e' aperta, quindi `open` e' sempre true qui.
+  const { panelProps } = useModalA11y(true, onClose);
   return (
     <div
       onClick={onClose}
@@ -638,10 +641,11 @@ function ModalShell({
       }}
     >
       <div
+        {...panelProps}
         onClick={e => e.stopPropagation()}
         style={{
           background: "var(--surface, #fff)", color: "var(--text)",
-          padding: "1rem 1.1rem", borderRadius: 8, minWidth: 420,
+          padding: "1rem 1.1rem", borderRadius: 4, minWidth: 420,
           maxWidth: 560, boxShadow: "0 10px 40px rgba(0,0,0,0.35)",
         }}
       >

@@ -42,7 +42,8 @@
     "logout": "Log out",
     "playerMap": "Player map",
     "clusterSync": "Cluster sync",
-    "hardening": "Hardening"
+    "hardening": "Hardening",
+    "skipToContent": "Skip to content"
   },
   "auth": {
     "login": {

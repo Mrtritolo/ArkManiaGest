@@ -460,7 +460,7 @@ export default function ArkShopPage() {
           <p className="page-subtitle">{t('arkshop.subtitleStats', { items: shopItems.length, kits: kits.length, sell: sellItems.length })}</p>
         </div>
         <div className="page-header-actions">
-          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: '#d1614a' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>
+          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: 'var(--danger)' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>
           <button onClick={handleUploadClick} className="btn btn-secondary btn-sm"><Upload size={14} /> {t('arkshop.actions.reload')}</button>
           <button onClick={handleExport} className="btn btn-secondary btn-sm"><Download size={14} /> {t('arkshop.actions.export')}</button>
           <button onClick={() => setShowDeploy(!showDeploy)} className="btn btn-primary btn-sm" disabled={pushing}>
@@ -478,7 +478,7 @@ export default function ArkShopPage() {
           <div className="pl-sync-header">
             <span className="pl-sync-title"><CloudUpload size={14} /> {t('arkshop.deploy.title')}</span>
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-              <button onClick={() => { loadArkServers(); setPushResults(null) }} className="pl-btn-icon" style={{ width: 22, height: 22 }} title={t('arkshop.deploy.refreshList')}>
+              <button onClick={() => { loadArkServers(); setPushResults(null) }} className="pl-btn-icon" style={{ width: 22, height: 22 }} aria-label={t('arkshop.deploy.refreshList')} title={t('arkshop.deploy.refreshList')}>
                 <RefreshCw size={12} />
               </button>
               <button onClick={() => setShowDeploy(false)} className="pl-btn-icon" style={{ width: 22, height: 22 }}><X size={12} /></button>
@@ -523,15 +523,15 @@ export default function ArkShopPage() {
                           <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
                             <button onClick={() => setDeployVersionId(deployVersionId === v.id ? null : v.id)}
                               className={`btn btn-sm ${deployVersionId === v.id ? 'btn-primary' : 'btn-secondary'}`}
-                              style={{ padding: '0.15rem 0.4rem' }} title={t('arkshop.deploy.selectForDeploy')}>
+                              style={{ padding: '0.15rem 0.4rem' }} aria-label={t('arkshop.deploy.selectForDeploy')} title={t('arkshop.deploy.selectForDeploy')}>
                               <Play size={10} />
                             </button>
                             <button onClick={() => handleRestoreVersion(v.id)}
-                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem' }} title={t('arkshop.deploy.restoreCurrent')}>
+                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem' }} aria-label={t('arkshop.deploy.restoreCurrent')} title={t('arkshop.deploy.restoreCurrent')}>
                               <RotateCcw size={10} />
                             </button>
                             <button onClick={() => handleDeleteVersion(v.id)}
-                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: '#d1614a' }} title={t('arkshop.deploy.deleteTitle')}>
+                              className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: 'var(--danger)' }} aria-label={t('arkshop.deploy.deleteTitle')} title={t('arkshop.deploy.deleteTitle')}>
                               <Trash2 size={10} />
                             </button>
                           </div>
@@ -575,7 +575,7 @@ export default function ArkShopPage() {
                               result.status === 'deployed'
                                 ? <span style={{ color: 'var(--success)', fontSize: '0.75rem' }}><CheckCircle size={11} /> {t('arkshop.deploy.deployed')}</span>
                                 : result.status === 'running'
-                                  ? <span style={{ color: '#d9a061', fontSize: '0.75rem' }}><Play size={11} /> {t('arkshop.deploy.active')}</span>
+                                  ? <span style={{ color: 'var(--warning)', fontSize: '0.75rem' }}><Play size={11} /> {t('arkshop.deploy.active')}</span>
                                   : <span style={{ color: 'var(--danger)', fontSize: '0.75rem' }} title={result.message}><AlertCircle size={11} /> {t('arkshop.deploy.errorStatus')}</span>
                             ) : (
                               <button onClick={() => handleDeploy(deployVersionId ?? undefined, s.machine_id, s.container_name)}
@@ -647,8 +647,8 @@ export default function ArkShopPage() {
                 </div>
                 <span className="as-list-count">{t('arkshop.shop.objectsShort', { count: item.Items?.length || 0 })}</span>
                 <div className="as-list-actions">
-                  <button onClick={e => { e.stopPropagation(); openShopDialog(item) }} className="btn btn-sm btn-ghost" title={t('arkshop.shop.editTooltip')}><Edit3 size={13} /></button>
-                  <button onClick={e => { e.stopPropagation(); handleDelete('shop', item.key) }} className="btn btn-sm btn-danger" title={t('arkshop.shop.deleteTooltip')}><Trash2 size={13} /></button>
+                  <button onClick={e => { e.stopPropagation(); openShopDialog(item) }} className="btn btn-sm btn-ghost" aria-label={t('arkshop.shop.editTooltip')} title={t('arkshop.shop.editTooltip')}><Edit3 size={13} /></button>
+                  <button onClick={e => { e.stopPropagation(); handleDelete('shop', item.key) }} className="btn btn-sm btn-danger" aria-label={t('arkshop.shop.deleteTooltip')} title={t('arkshop.shop.deleteTooltip')}><Trash2 size={13} /></button>
                 </div>
                 {expandedItem === item.key ? <ChevronUp size={14} className="as-list-chevron" /> : <ChevronDown size={14} className="as-list-chevron" />}
               </div>
@@ -662,9 +662,9 @@ export default function ArkShopPage() {
                         {it.Quality > 0 && <span className="as-bp-quality">Q{it.Quality}</span>}
                         {it.ForceBlueprint && <span className="as-bp-tag">{t('arkshop.sub.bp')}</span>}
                       </>) : (<>
-                        <span className="as-bp-amount" style={{ color: '#8b9a7e' }}>{t('arkshop.shop.bpCommandTag')}</span>
+                        <span className="as-bp-amount" style={{ color: 'var(--text-muted)' }}>{t('arkshop.shop.bpCommandTag')}</span>
                         <span className="as-bp-name">{it.Command || it.DisplayAs || '?'}</span>
-                        {it.ExecuteAsAdmin && <span className="as-bp-tag" style={{ background: 'rgba(220,38,38,0.08)', color: '#d1614a' }}>{t('arkshop.shop.bpAdminTag')}</span>}
+                        {it.ExecuteAsAdmin && <span className="as-bp-tag" style={{ background: 'rgba(220,38,38,0.08)', color: 'var(--danger)' }}>{t('arkshop.shop.bpAdminTag')}</span>}
                       </>)}
                     </div>
                   ))}

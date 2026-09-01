@@ -3,6 +3,7 @@
  * Add/edit modal with all stat parameters, filters, and blueprint search from DB.
  */
 import { useState, useEffect, useMemo } from 'react'
+import { useModalA11y } from '../hooks/useModalA11y'
 import { useTranslation } from 'react-i18next'
 import { arkRareDinosApi, blueprintsApi } from '../services/api'
 import { copyText } from '../utils/clipboard'
@@ -49,6 +50,7 @@ export default function RareDinosPage() {
 
   // Modal
   const [showModal, setShowModal] = useState(false)
+  const editModal = useModalA11y(showModal, () => setShowModal(false))
   const [editingDino, setEditingDino] = useState<RareDino | null>(null)
   const [form, setForm] = useState<Record<string, any>>({ dino_bp: '', map_name: '*', enabled: true, ...DEFAULT_STATS })
 
@@ -70,6 +72,7 @@ export default function RareDinosPage() {
 
   // Generator
   const [showGenerator, setShowGenerator] = useState(false)
+  const genModal = useModalA11y(showGenerator, () => setShowGenerator(false))
   const [genCount, setGenCount] = useState(10)
   const [genMap, setGenMap] = useState('*')
   const [genPreset, setGenPreset] = useState('balanced')
@@ -264,7 +267,7 @@ export default function RareDinosPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <button onClick={handleClearSpawnTable} disabled={clearingSpawns} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }} title={t('rareDinos.clearSpawnsTitle')}>
+          <button onClick={handleClearSpawnTable} disabled={clearingSpawns} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }} aria-label={t('rareDinos.clearSpawnsTitle')} title={t('rareDinos.clearSpawnsTitle')}>
             <Trash2 size={15} /> {clearingSpawns ? t('rareDinos.clearingSpawns') : t('rareDinos.clearSpawns')}
           </button>
           <button onClick={() => { setShowGenerator(true); setGenResults([]) }} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }}>
@@ -279,7 +282,7 @@ export default function RareDinosPage() {
       {/* Generator modal */}
       {showGenerator && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ width: 600, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--bg-root)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem' }}>
+          <div {...genModal.panelProps} style={{ width: 600, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--bg-root)', border: '1px solid var(--border)', borderRadius: 6, padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem' }}><Shuffle size={18} /> {t('rareDinos.generator.title')}</h3>
               <button onClick={() => setShowGenerator(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
@@ -332,7 +335,7 @@ export default function RareDinosPage() {
 
             {genResults.length > 0 && (
               <>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: '1rem', maxHeight: 300, overflowY: 'auto' }}>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', marginBottom: '1rem', maxHeight: 300, overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
@@ -477,13 +480,13 @@ export default function RareDinosPage() {
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'center' }}>
-                <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.edit')}>
+                <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} aria-label={t('rareDinos.tooltip.edit')} title={t('rareDinos.tooltip.edit')}>
                   <Edit2 size={14} />
                 </button>
-                <button onClick={() => { void copyText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} title={t('rareDinos.tooltip.copyBp')}>
+                <button onClick={() => { void copyText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} aria-label={t('rareDinos.tooltip.copyBp')} title={t('rareDinos.tooltip.copyBp')}>
                   <Copy size={14} />
                 </button>
-                <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} title={t('rareDinos.tooltip.delete')}>
+                <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} aria-label={t('rareDinos.tooltip.delete')} title={t('rareDinos.tooltip.delete')}>
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -496,7 +499,7 @@ export default function RareDinosPage() {
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(2px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div style={{ background: 'var(--bg-popover)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto' }}>
+          <div {...editModal.panelProps} style={{ background: 'var(--bg-popover)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto' }}>
             {/* Modal header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

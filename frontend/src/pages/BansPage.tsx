@@ -3,6 +3,7 @@
  * Design consistent with OnlinePlayersPage and RareDinosPage.
  */
 import { useState, useEffect } from 'react'
+import { useModalA11y } from '../hooks/useModalA11y'
 import { useTranslation } from 'react-i18next'
 import { arkBansApi } from '../services/api'
 import { fmtCompactDateTime } from '../utils/format'
@@ -29,6 +30,7 @@ export default function BansPage() {
 
   // Modal
   const [showModal, setShowModal] = useState(false)
+  const banModal = useModalA11y(showModal, () => setShowModal(false))
   const [form, setForm] = useState({ eos_id: '', player_name: '', reason: '', banned_by: 'Admin', expire_time: '', permanent: true })
   const [creating, setCreating] = useState(false)
 
@@ -107,7 +109,7 @@ export default function BansPage() {
       {/* Stats cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--danger-bg)', border: '1px solid var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--danger-bg)', border: '1px solid var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <UserX size={18} color="var(--danger)" />
           </div>
           <div>
@@ -116,7 +118,7 @@ export default function BansPage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg-card-muted)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--bg-card-muted)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Shield size={18} color="var(--text-muted)" />
           </div>
           <div>
@@ -125,7 +127,7 @@ export default function BansPage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--success-bg)', border: '1px solid var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--success-bg)', border: '1px solid var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <CheckCircle size={18} color="var(--success)" />
           </div>
           <div>
@@ -207,7 +209,7 @@ export default function BansPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <div style={{
                       width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                      background: ban.is_active ? '#d1614a' : '#94a3b8',
+                      background: ban.is_active ? 'var(--danger)' : 'var(--text-muted)',
                       boxShadow: ban.is_active ? '0 0 4px rgba(239,68,68,0.5)' : 'none',
                     }} />
                     <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -258,7 +260,7 @@ export default function BansPage() {
                     </button>
                   )}
                   <button onClick={e => { e.stopPropagation(); void copyText(ban.eos_id) }}
-                    className="btn btn-ghost" style={{ padding: '0.25rem 0.35rem' }} title={t('bans.copyEosTooltip')}>
+                    className="btn btn-ghost" style={{ padding: '0.25rem 0.35rem' }} aria-label={t('bans.copyEosTooltip')} title={t('bans.copyEosTooltip')}>
                     <Copy size={13} />
                   </button>
                 </div>
@@ -310,7 +312,7 @@ export default function BansPage() {
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(2px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div style={{ background: 'var(--bg-popover)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 520 }}>
+          <div {...banModal.panelProps} style={{ background: 'var(--bg-popover)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 520 }}>
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

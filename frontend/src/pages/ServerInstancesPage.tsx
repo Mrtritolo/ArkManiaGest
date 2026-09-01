@@ -1005,11 +1005,11 @@ function InstanceCard(p: InstanceCardProps) {
         {inst.service_name && (
           <ActionBtn icon={<Wrench size={14} />} label={t("instances.actions.provision")} busy={busy && busyId?.action === "provision"} disabled={!!busyId} onClick={() => p.onAction("provision")} />
         )}
-        <button className="btn btn-ghost btn-sm" onClick={p.onEdit} title={t("instances.actions.edit")}>
+        <button className="btn btn-ghost btn-sm" onClick={p.onEdit} aria-label={t("instances.actions.edit")} title={t("instances.actions.edit")}>
           <Pencil size={14} />
         </button>
         {isAdmin && (
-          <button className="btn btn-danger btn-sm" onClick={p.onDelete} title={t("instances.actions.delete")}>
+          <button className="btn btn-danger btn-sm" onClick={p.onDelete} aria-label={t("instances.actions.delete")} title={t("instances.actions.delete")}>
             <Trash2 size={14} />
           </button>
         )}
@@ -1112,7 +1112,7 @@ function ActionBtn({ icon, label, busy, disabled, onClick }: ActionBtnProps) {
       className="btn btn-ghost btn-sm"
       disabled={disabled}
       onClick={onClick}
-      title={label}
+      aria-label={label} title={label}
     >
       {busy ? <span style={{ fontSize: "0.7rem" }}>{t("instances.actions.running")}</span> : icon}
     </button>

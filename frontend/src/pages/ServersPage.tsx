@@ -138,7 +138,7 @@ export default function ServersPage() {
           <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
             <Plus size={14} /> {t('serversPage.newServer')}
           </button>
-          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }} title={t('serversPage.refresh')}>
+          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }} aria-label={t('serversPage.refresh')} title={t('serversPage.refresh')}>
             <RefreshCw size={14} />
           </button>
         </div>
@@ -152,7 +152,7 @@ export default function ServersPage() {
         </div>
       )}
       {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#8fce5a' }}>
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--success)' }}>
           <CheckCircle size={14} /> {success}
         </div>
       )}
@@ -160,35 +160,35 @@ export default function ServersPage() {
       {/* Stats cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(22,163,74,0.08)', border: '1px solid #8fce5a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wifi size={13} color="#8fce5a" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(22,163,74,0.08)', border: '1px solid var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Wifi size={13} color="var(--success)" />
           </div>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#8fce5a', lineHeight: 1 }}>{online}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1 }}>{online}</div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.online')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(220,38,38,0.08)', border: '1px solid #d1614a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <WifiOff size={13} color="#d1614a" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(220,38,38,0.08)', border: '1px solid var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <WifiOff size={13} color="var(--danger)" />
           </div>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#d1614a', lineHeight: 1 }}>{servers.length - online}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--danger)', lineHeight: 1 }}>{servers.length - online}</div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.offline')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(59,130,246,0.08)', border: '1px solid #5cb89a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Users size={13} color="#5cb89a" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(59,130,246,0.08)', border: '1px solid var(--cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Users size={13} color="var(--cyan)" />
           </div>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#5cb89a', lineHeight: 1 }}>{totalPlayers}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--cyan)', lineHeight: 1 }}>{totalPlayers}</div>
             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.players')}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(107,114,128,0.08)', border: '1px solid #8b9a7e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Server size={13} color="#8b9a7e" />
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(107,114,128,0.08)', border: '1px solid var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Server size={13} color="var(--text-muted)" />
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{servers.length}</div>
@@ -296,7 +296,7 @@ export default function ServersPage() {
                   gridTemplateColumns: '36px 1.2fr 1fr 0.7fr 0.7fr 0.8fr 70px 70px 80px',
                   padding: '0.5rem 1rem', alignItems: 'center',
                   borderBottom: '1px solid var(--border)',
-                  borderLeft: `3px solid ${s.is_online ? '#8fce5a' : '#d1614a'}`,
+                  borderLeft: `3px solid ${s.is_online ? 'var(--success)' : 'var(--danger)'}`,
                   transition: 'background 0.1s',
                 }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.04)')}
@@ -305,8 +305,8 @@ export default function ServersPage() {
                   {/* Status dot */}
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     {s.is_online
-                      ? <Wifi size={14} color="#8fce5a" />
-                      : <WifiOff size={14} color="#d1614a" />}
+                      ? <Wifi size={14} color="var(--success)" />
+                      : <WifiOff size={14} color="var(--danger)" />}
                   </div>
 
                   {/* Display name */}
@@ -344,8 +344,8 @@ export default function ServersPage() {
                       display: 'inline-flex', padding: '0.1rem 0.4rem', borderRadius: 4,
                       fontSize: '0.72rem', fontWeight: 700,
                       background: s.game_mode === 'PvP' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
-                      color: s.game_mode === 'PvP' ? '#d1614a' : '#8fce5a',
-                      border: `1px solid ${s.game_mode === 'PvP' ? '#d1614a20' : '#8fce5a20'}`,
+                      color: s.game_mode === 'PvP' ? 'var(--danger)' : 'var(--success)',
+                      border: `1px solid ${s.game_mode === 'PvP' ? 'color-mix(in srgb, var(--danger) 13%, transparent)' : 'color-mix(in srgb, var(--success) 13%, transparent)'}`,
                     }}>{s.game_mode}</span>
                   )}
 
@@ -377,7 +377,7 @@ export default function ServersPage() {
                       style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem', width: '100%' }} />
                   ) : (
                     <span style={{ fontSize: '0.82rem' }}>
-                      <span style={{ fontWeight: 700, color: s.player_count > 0 ? '#5cb89a' : 'var(--text-primary)' }}>
+                      <span style={{ fontWeight: 700, color: s.player_count > 0 ? 'var(--cyan)' : 'var(--text-primary)' }}>
                         {s.player_count}
                       </span>
                       <span style={{ color: 'var(--text-muted)' }}>/{s.max_players}</span>
@@ -393,13 +393,13 @@ export default function ServersPage() {
                   <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'flex-end' }}>
                     {isEditing ? (
                       <>
-                        <button onClick={saveEdit} title={t('serversPage.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
-                        <button onClick={() => setEditingKey(null)} title={t('serversPage.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
+                        <button onClick={saveEdit} aria-label={t('serversPage.tooltip.save')} title={t('serversPage.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
+                        <button onClick={() => setEditingKey(null)} aria-label={t('serversPage.tooltip.cancel')} title={t('serversPage.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startEdit(s)} title={t('serversPage.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(s.server_key, s.display_name)} title={t('serversPage.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
+                        <button onClick={() => startEdit(s)} aria-label={t('serversPage.tooltip.edit')} title={t('serversPage.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
+                        <button onClick={() => handleDelete(s.server_key, s.display_name)} aria-label={t('serversPage.tooltip.delete')} title={t('serversPage.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
                       </>
                     )}
                   </div>

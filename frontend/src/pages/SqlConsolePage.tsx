@@ -279,14 +279,14 @@ export default function SqlConsolePage() {
             <button
               className={`btn btn-sm ${database === "panel" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setDatabase("panel")}
-              title={t("sqlConsole.db.panelTitle")}
+              aria-label={t("sqlConsole.db.panelTitle")} title={t("sqlConsole.db.panelTitle")}
             >
               {t("sqlConsole.db.panel")}
             </button>
             <button
               className={`btn btn-sm ${database === "plugin" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setDatabase("plugin")}
-              title={t("sqlConsole.db.pluginTitle")}
+              aria-label={t("sqlConsole.db.pluginTitle")} title={t("sqlConsole.db.pluginTitle")}
             >
               {t("sqlConsole.db.plugin")}
             </button>
@@ -294,14 +294,14 @@ export default function SqlConsolePage() {
           <button
             className={`btn btn-sm ${browserOpen ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setBrowserOpen(!browserOpen)}
-            title={t("sqlConsole.toggle.tablesTitle")}
+            aria-label={t("sqlConsole.toggle.tablesTitle")} title={t("sqlConsole.toggle.tablesTitle")}
           >
             <Table2 size={14} /> {t("sqlConsole.toggle.tables")}
           </button>
           <button
             className={`btn btn-sm ${historyOpen ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setHistoryOpen(!historyOpen)}
-            title={t("sqlConsole.toggle.historyTitle")}
+            aria-label={t("sqlConsole.toggle.historyTitle")} title={t("sqlConsole.toggle.historyTitle")}
           >
             <Clock size={14} /> {t("sqlConsole.toggle.history", { count: history.length })}
           </button>
@@ -393,7 +393,7 @@ export default function SqlConsolePage() {
                   setResult(null);
                   textareaRef.current?.focus();
                 }}
-                title={t("sqlConsole.editor.clearTitle")}
+                aria-label={t("sqlConsole.editor.clearTitle")} title={t("sqlConsole.editor.clearTitle")}
               >
                 <Trash2 size={14} /> {t("sqlConsole.editor.clear")}
               </button>
@@ -766,7 +766,7 @@ export default function SqlConsolePage() {
                       className="btn btn-ghost btn-xs"
                       style={{ marginLeft: "auto" }}
                       onClick={() => setHistory([])}
-                      title={t("sqlConsole.history.clearTitle")}
+                      aria-label={t("sqlConsole.history.clearTitle")} title={t("sqlConsole.history.clearTitle")}
                     >
                       <Trash2 size={11} />
                     </button>

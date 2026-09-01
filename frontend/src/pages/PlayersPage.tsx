@@ -3,6 +3,7 @@
  * Modern design with Lucide icons, solid table, inline detail view.
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useModalA11y } from '../hooks/useModalA11y'
 import { useTranslation } from 'react-i18next'
 import {
   Search, Users, Star, Shield, ChevronRight, X, Plus, Minus,
@@ -34,7 +35,7 @@ function FilterIcon(p: FilterIconProps) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); p.onToggle(!p.open) }}
-      title={p.active ? `Filter active (${p.colKey})` : `Filter ${p.colKey}`}
+      aria-label={p.active ? `Filter active (${p.colKey})` : `Filter ${p.colKey}`} title={p.active ? `Filter active (${p.colKey})` : `Filter ${p.colKey}`}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 18, height: 18, marginLeft: 4, padding: 0,
@@ -639,6 +640,19 @@ export default function PlayersPage() {
   const [wipeLoading, setWipeLoading] = useState(false)
   const [wiping, setWiping]           = useState(false)
 
+  // Semantica di finestra, Escape, cattura e ripristino del focus per le sei
+  // modali della pagina. Raggruppate qui perche' devono stare dopo tutte le
+  // dichiarazioni di stato che leggono, e prima del markup che le usa.
+  const bulkModal        = useModalA11y(bulkModalOpen, () => setBulkModalOpen(false))
+  const alignModal       = useModalA11y(alignModalOpen, () => setAlignModalOpen(false))
+  const ambigModal       = useModalA11y(!!ambiguousList && ambiguousList.length > 0,
+                                        () => { if (!applyingAmbig) { setAmbiguousList(null); setChosenNames({}) } })
+  const discordChipModal = useModalA11y(!!discordChipFor, () => setDiscordChipFor(null))
+  const importModal      = useModalA11y(importModalOpen, () => setImportModalOpen(false))
+  const wipeModal        = useModalA11y(wipeOpen,
+                                        () => { if (!wiping) { setWipeOpen(false); setWipePreview(null) } })
+
+
   async function handleSyncNames(machineId?: number, containerName?: string) {
     setSyncing(true); setError(''); setSyncResult(null)
     try {
@@ -974,7 +988,11 @@ export default function PlayersPage() {
             onClick={openBulkModal}
             disabled={selectedIds.size === 0 || bulkApplying}
             className="btn btn-secondary btn-sm"
-            title={
+            aria-label={
+              selectedIds.size === 0
+                ? t('players.bulkPerm.headerTitleDisabled')
+                : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
+            } title={
               selectedIds.size === 0
                 ? t('players.bulkPerm.headerTitleDisabled')
                 : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
@@ -987,7 +1005,11 @@ export default function PlayersPage() {
             onClick={openAlignModal}
             disabled={selectedIds.size === 0 || alignApplying}
             className="btn btn-secondary btn-sm"
-            title={
+            aria-label={
+              selectedIds.size === 0
+                ? t('players.bulkAlign.headerTitleDisabled')
+                : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
+            } title={
               selectedIds.size === 0
                 ? t('players.bulkAlign.headerTitleDisabled')
                 : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
@@ -1000,16 +1022,16 @@ export default function PlayersPage() {
             onClick={handleSyncTribes}
             disabled={syncing || syncingTribes}
             className="btn btn-secondary btn-sm"
-            title={t('players.tribeSync.title')}
+            aria-label={t('players.tribeSync.title')} title={t('players.tribeSync.title')}
           >
             {syncingTribes
               ? <><Loader2 size={14} className="pl-spin" /> {t('players.tribeSync.running')}</>
               : <><Download size={14} /> {t('players.tribeSync.button')}</>}
           </button>
-          <button onClick={() => setShowSyncPanel(!showSyncPanel)} disabled={syncing || syncingTribes} className="btn btn-primary btn-sm" title={t('players.syncNamesTitle')}>
+          <button onClick={() => setShowSyncPanel(!showSyncPanel)} disabled={syncing || syncingTribes} className="btn btn-primary btn-sm" aria-label={t('players.syncNamesTitle')} title={t('players.syncNamesTitle')}>
             {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('players.syncing')}</> : <><Download size={14} /> {t('players.syncNamesButton')}</>}
           </button>
-          <button onClick={() => { loadPlayers(); loadStats() }} className="pl-btn-icon" title={t('players.refreshTooltip')}>
+          <button onClick={() => { loadPlayers(); loadStats() }} className="pl-btn-icon" aria-label={t('players.refreshTooltip')} title={t('players.refreshTooltip')}>
             <RefreshCw size={16} />
           </button>
         </div>
@@ -1331,7 +1353,7 @@ export default function PlayersPage() {
                               cursor: 'pointer', padding: '0.1rem 0.4rem',
                               marginLeft: '0.4rem',
                             }}
-                            title={t('players.discord.chipTitle')}
+                            aria-label={t('players.discord.chipTitle')} title={t('players.discord.chipTitle')}
                           >
                             <DiscordIcon size={9} />
                             <span style={{ fontSize: '0.7rem' }}>
@@ -1390,11 +1412,11 @@ export default function PlayersPage() {
                 <h3 className="pl-detail-name">{selectedPlayer.name || t('players.unknownPlayer')}</h3>
                 <p className="pl-detail-eos">{selectedPlayer.eos_id}</p>
               </div>
-              <button onClick={() => setShowBanDialog(true)} className="pl-btn-icon" title={t('players.detail.banTooltip')} style={{ color: 'var(--danger)' }}><ShieldOff size={16} /></button>
+              <button onClick={() => setShowBanDialog(true)} className="pl-btn-icon" aria-label={t('players.detail.banTooltip')} title={t('players.detail.banTooltip')} style={{ color: 'var(--danger)' }}><ShieldOff size={16} /></button>
               <button
                 onClick={openWipeModal}
                 className="pl-btn-icon"
-                title={t('players.detail.wipeTooltip')}
+                aria-label={t('players.detail.wipeTooltip')} title={t('players.detail.wipeTooltip')}
                 style={{ color: 'var(--danger)' }}
               >
                 <Skull size={16} />
@@ -1411,7 +1433,7 @@ export default function PlayersPage() {
 
             {/* Ban Dialog */}
             {showBanDialog && (
-              <div className="pl-section" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '0.75rem' }}>
+              <div className="pl-section" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 4, padding: '0.75rem' }}>
                 <h4 className="pl-section-title" style={{ color: 'var(--danger)' }}><ShieldOff size={14} /> {t('players.ban.sectionTitle')}</h4>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}
                    dangerouslySetInnerHTML={{ __html: t('players.ban.intro', { name: selectedPlayer.name || selectedPlayer.eos_id }) }} />
@@ -1447,7 +1469,7 @@ export default function PlayersPage() {
                     <button onClick={handleBanPlayer} disabled={banning}
                       style={{
                         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-                        padding: '0.45rem', borderRadius: 7, fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                        padding: '0.45rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
                         background: 'var(--danger)', color: '#fff', border: 'none',
                         opacity: banning ? 0.6 : 1,
                       }}>
@@ -1455,7 +1477,7 @@ export default function PlayersPage() {
                     </button>
                     <button onClick={() => setShowBanDialog(false)}
                       style={{
-                        padding: '0.45rem 0.75rem', borderRadius: 7, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
+                        padding: '0.45rem 0.75rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
                         background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)',
                       }}>
                       {t('players.ban.cancel')}
@@ -1586,7 +1608,7 @@ export default function PlayersPage() {
                     <details style={{ marginBottom: '0.5rem' }}>
                       <summary style={{ fontSize: '0.72rem', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '0.3rem' }}>{t('players.maps.debugInfo', { count: mapsDebug.length })}</summary>
                       <pre style={{
-                        fontSize: '0.65rem', background: '#1b2116', color: '#dcd8c8',
+                        fontSize: '0.65rem', background: 'var(--bg-input)', color: 'var(--text-secondary)',
                         padding: '0.5rem', borderRadius: '6px', maxHeight: '250px',
                         overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
                       }}>{JSON.stringify(mapsDebug, null, 2)}</pre>
@@ -1617,7 +1639,7 @@ export default function PlayersPage() {
                       <button
                         onClick={() => setCopySource(copySource?.profile_path === m.profile_path ? null : m)}
                         className={`pl-btn-xs ${copySource?.profile_path === m.profile_path ? 'pl-btn-del' : 'pl-btn-add'}`}
-                        title={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')}
+                        aria-label={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')} title={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')}
                       >
                         {copySource?.profile_path === m.profile_path ? <X size={10} /> : <Copy size={10} />}
                         {copySource?.profile_path === m.profile_path ? t('players.maps.sourceCancelLabel') : t('players.maps.sourceSelectLabel')}
@@ -1686,6 +1708,7 @@ export default function PlayersPage() {
           }}
         >
           <div
+            {...bulkModal.panelProps}
             onClick={e => e.stopPropagation()}
             className="card"
             style={{ width: 480, maxWidth: '92vw', padding: '1.25rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}
@@ -1807,6 +1830,7 @@ export default function PlayersPage() {
           }}
         >
           <div
+            {...alignModal.panelProps}
             onClick={e => e.stopPropagation()}
             className="card"
             style={{ width: 520, maxWidth: '92vw', padding: '1.25rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}
@@ -1939,12 +1963,13 @@ export default function PlayersPage() {
           }}
         >
           <div
+            {...ambigModal.panelProps}
             onClick={e => e.stopPropagation()}
             style={{
               background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)',
               padding: '1rem 1.1rem',
-              borderRadius: 8,
+              borderRadius: 4,
               minWidth: 'min(640px, 95vw)',
               maxWidth: 'min(720px, 95vw)',
               maxHeight: '85vh',
@@ -1959,7 +1984,7 @@ export default function PlayersPage() {
               paddingBottom: '0.5rem',
             }}>
               <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <AlertCircle size={16} color="#d9a061" />
+                <AlertCircle size={16} color="var(--warning)" />
                 {t('players.ambiguous.title', {
                   n: ambiguousList.length,
                 })}
@@ -1985,7 +2010,7 @@ export default function PlayersPage() {
                   padding: '0.55rem 0.7rem',
                   border: '1px solid var(--border)',
                   borderRadius: 6,
-                  background: 'var(--bg-card-muted, #f5f5f7)',
+                  background: 'var(--bg-card-muted, var(--bg-card-muted))',
                 }}>
                   <div style={{ marginBottom: '0.35rem', fontSize: '0.82rem' }}>
                     <strong>EOS:</strong>{' '}
@@ -2006,10 +2031,10 @@ export default function PlayersPage() {
                           style={{
                             display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
                             padding: '0.3rem 0.45rem',
-                            border: checked ? '2px solid var(--accent, #5cb89a)' : '1px solid var(--border)',
+                            border: checked ? '2px solid var(--accent, var(--cyan))' : '1px solid var(--border)',
                             borderRadius: 4,
                             cursor: applyingAmbig ? 'not-allowed' : 'pointer',
-                            background: checked ? 'var(--accent-50, #5cb89a15)' : 'var(--surface, #fff)',
+                            background: checked ? 'var(--accent-50, color-mix(in srgb, var(--cyan) 8%, transparent))' : 'var(--surface, #fff)',
                           }}
                         >
                           <input
@@ -2096,11 +2121,12 @@ export default function PlayersPage() {
           }}
         >
           <div
+            {...discordChipModal.panelProps}
             onClick={e => e.stopPropagation()}
             style={{
               background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)', padding: '1rem 1.1rem',
-              borderRadius: 8, minWidth: 420, maxWidth: 520,
+              borderRadius: 4, minWidth: 420, maxWidth: 520,
               boxShadow: '0 10px 40px rgba(0,0,0,0.35)',
             }}
           >
@@ -2148,7 +2174,7 @@ export default function PlayersPage() {
               />
               <div style={{
                 fontSize: '0.7rem',
-                color: 2000 - dmContent.length < 100 ? '#d1614a' : 'var(--text-secondary)',
+                color: 2000 - dmContent.length < 100 ? 'var(--danger)' : 'var(--text-secondary)',
                 marginTop: 4, textAlign: 'right',
               }}>
                 {2000 - dmContent.length} / 2000
@@ -2209,11 +2235,12 @@ export default function PlayersPage() {
           }}
         >
           <div
+            {...importModal.panelProps}
             onClick={e => e.stopPropagation()}
             style={{
               background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)', padding: '1rem 1.1rem',
-              borderRadius: 8, minWidth: 'min(640px, 95vw)',
+              borderRadius: 4, minWidth: 'min(640px, 95vw)',
               maxWidth: 'min(720px, 95vw)', maxHeight: '85vh',
               boxShadow: '0 12px 50px rgba(0,0,0,0.4)',
               display: 'flex', flexDirection: 'column',
@@ -2279,7 +2306,7 @@ export default function PlayersPage() {
                     display: 'flex', alignItems: 'center', gap: '0.5rem',
                     padding: '0.3rem 0.55rem',
                     cursor: importing ? 'not-allowed' : 'pointer',
-                    background: checked ? 'var(--accent-50, #5cb89a12)' : 'transparent',
+                    background: checked ? 'var(--accent-50, color-mix(in srgb, var(--cyan) 7%, transparent))' : 'transparent',
                     borderBottom: '1px solid var(--border)',
                   }}>
                     <input
@@ -2341,11 +2368,12 @@ export default function PlayersPage() {
           }}
         >
           <div
+            {...wipeModal.panelProps}
             onClick={e => e.stopPropagation()}
             style={{
               background: 'var(--surface, var(--bg-popover, #fff))',
               color: 'var(--text)', padding: '1rem 1.1rem',
-              borderRadius: 8, minWidth: 'min(560px, 95vw)',
+              borderRadius: 4, minWidth: 'min(560px, 95vw)',
               maxWidth: 'min(680px, 95vw)', maxHeight: '85vh',
               boxShadow: '0 12px 50px rgba(0,0,0,0.4)',
               display: 'flex', flexDirection: 'column',
@@ -2353,10 +2381,10 @@ export default function PlayersPage() {
           >
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              marginBottom: '0.6rem', borderBottom: '1px solid #d1614a40',
+              marginBottom: '0.6rem', borderBottom: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
               paddingBottom: '0.5rem',
             }}>
-              <span style={{ fontWeight: 600, color: '#d1614a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontWeight: 600, color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Skull size={16} />
                 {t('players.wipe.title')}
               </span>
@@ -2388,7 +2416,7 @@ export default function PlayersPage() {
               flex: 1, overflowY: 'auto',
               border: '1px solid var(--border)', borderRadius: 6,
               padding: '0.5rem 0.6rem', minHeight: 100,
-              background: 'var(--bg-card-muted, #f5f5f7)',
+              background: 'var(--bg-card-muted, var(--bg-card-muted))',
               fontSize: '0.78rem',
             }}>
               {wipeLoading || !wipePreview ? (
@@ -2417,7 +2445,7 @@ export default function PlayersPage() {
                     </div>
                   ))}
                   {wipePreview.errors?.length > 0 && (
-                    <div style={{ marginTop: '0.4rem', color: '#d1614a' }}>
+                    <div style={{ marginTop: '0.4rem', color: 'var(--danger)' }}>
                       {wipePreview.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
                     </div>
                   )}
@@ -2437,7 +2465,7 @@ export default function PlayersPage() {
                 onClick={confirmWipe}
                 disabled={wiping || wipeLoading || !wipePreview || wipePreview.total_files === 0}
                 className="btn btn-primary btn-sm"
-                style={{ background: '#d1614a', borderColor: '#d1614a' }}
+                style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
               >
                 {wiping
                   ? <><Loader2 size={12} className="pl-spin" /> {t('players.wipe.deleting')}</>

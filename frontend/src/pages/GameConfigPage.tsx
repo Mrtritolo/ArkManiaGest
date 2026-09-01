@@ -242,7 +242,7 @@ export default function GameConfigPage() {
           <div className="gc-ctrl-head"><span className="gc-ctrl-label">{label}</span>{dirty && <span className="gc-ctrl-dot" />}</div>
           <div className="gc-input-row">
             <input type="number" className="gc-input gc-input-num" value={value || ''} min={def.min} max={def.max} step={def.step || (def.type === 'int' ? 1 : 0.1)} onChange={e => updateValue(gid, key, e.target.value)} />
-            {def.default !== undefined && <button className="gc-reset" title={t('gameConfig.defaultTitle', { value: String(def.default) })} onClick={() => resetValue(gid, key)}><Undo2 size={12} /></button>}
+            {def.default !== undefined && <button className="gc-reset" aria-label={t('gameConfig.defaultTitle', { value: String(def.default) })} title={t('gameConfig.defaultTitle', { value: String(def.default) })} onClick={() => resetValue(gid, key)}><Undo2 size={12} /></button>}
           </div>
           {def.default !== undefined && <div className="gc-ctrl-default">{t('gameConfig.defaultPrefix', { value: String(def.default) })}</div>}
         </div>
@@ -531,7 +531,7 @@ export default function GameConfigPage() {
           {sel && <span className="gc-topbar-chip">{sel.map_name || sel.name}</span>}
         </div>
         <div className="gc-topbar-actions">
-          {sel && <button className="gc-btn gc-btn-ghost" onClick={() => loadConfig(sel)} title={t('gameConfig.reloadTooltip')}><RefreshCw size={14} /></button>}
+          {sel && <button className="gc-btn gc-btn-ghost" onClick={() => loadConfig(sel)} aria-label={t('gameConfig.reloadTooltip')} title={t('gameConfig.reloadTooltip')}><RefreshCw size={14} /></button>}
           {hasChanges && <button className="gc-btn" onClick={() => { setHasChanges(false); if (sel) loadConfig(sel) }}><Undo2 size={14} /> {t('gameConfig.discard')}</button>}
           <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={!hasChanges || saving || !sel}>
             {saving ? <><Loader2 size={14} className="spin" /> {t('gameConfig.saving')}</> : <><Save size={14} /> {t('gameConfig.save')}</>}

@@ -125,6 +125,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   on Windows those files are locked, so the update would fail halfway
   and leave a partially rewritten tree.
 
+- **Accessibility pass over the whole panel.** Seven findings from a full
+  review, all measured rather than eyeballed:
+  - The 273 colour literals in the pages were theme-blind, so every status
+    colour failed contrast on the light theme (1.79-3.45:1 against 4.5:1 AA).
+    They are now tokens, and the tints they build are `color-mix()` instead
+    of an alpha suffix concatenated onto a hex string -- which is what forced
+    the hex-to-hex mapping in the first place. Dark rust also moved
+    #d1614a -> #dd7460, which was 4.27:1 on its own tint.
+  - Fourteen hand-rolled modals had no `role="dialog"`, no `aria-modal`, no
+    focus trap, no focus restore and no Escape (handled once in the whole
+    app). New `useModalA11y` hook, applied to all of them.
+  - `<html lang>` was pinned to `it` on a bilingual app; it now follows the
+    active language.
+  - The focus ring was `--accent-glow` at 10% alpha: 1.17:1 against the
+    background, where WCAG 1.4.11 asks 3:1. New `--focus-ring` token, plus a
+    global `:focus-visible` rule -- the stylesheet removed the outline on 17
+    field selectors and defined no replacement for buttons or links.
+  - 105 icon-only buttons carry `aria-label` (was 7). `title` does supply an
+    accessible name, but it is not announced reliably, never appears on
+    touch, and lags behind on hover.
+  - 31 inline border radii were still above the 4/6px scale the restyle set
+    in CSS only.
+  - Added a skip link: every page change meant tabbing the whole sidebar
+    before reaching content.
+
 - **Restyle: OrcaCtl's structure, ARK's colours.** The layout language is
   taken from orcactl.io -- solid panels instead of frosted glass, 4/6px
   corners instead of 11/18, one type family (Archivo + JetBrains Mono)

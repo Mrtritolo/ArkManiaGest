@@ -43,15 +43,15 @@ interface ServerItem {
 // Visual styling only — labels are resolved via i18n using the key
 // `eventLog.types.<EVENT_TYPE>` (see locales/*.json).
 const EVENT_STYLES: Record<string, { color: string; bg: string; icon: LucideIcon }> = {
-  LOGIN:        { color: '#5cb89a', bg: 'rgba(59,130,246,0.08)',   icon: LogIn },
-  RARE_SPAWN:   { color: '#9d7cc0', bg: 'rgba(139,92,246,0.08)',   icon: Sparkles },
-  RARE_DESPAWN: { color: '#8b9a7e', bg: 'rgba(107,114,128,0.08)',  icon: Eye },
-  RARE_KILLED:  { color: '#d1614a', bg: 'rgba(220,38,38,0.08)',    icon: Skull },
-  RARE_TAMED:   { color: '#8fce5a', bg: 'rgba(22,163,74,0.08)',    icon: Heart },
-  DECAY_SCAN:   { color: '#d9a061', bg: 'rgba(202,138,4,0.08)',    icon: Timer },
+  LOGIN:        { color: 'var(--cyan)', bg: 'rgba(59,130,246,0.08)',   icon: LogIn },
+  RARE_SPAWN:   { color: 'var(--violet)', bg: 'rgba(139,92,246,0.08)',   icon: Sparkles },
+  RARE_DESPAWN: { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)',  icon: Eye },
+  RARE_KILLED:  { color: 'var(--danger)', bg: 'rgba(220,38,38,0.08)',    icon: Skull },
+  RARE_TAMED:   { color: 'var(--success)', bg: 'rgba(22,163,74,0.08)',    icon: Heart },
+  DECAY_SCAN:   { color: 'var(--warning)', bg: 'rgba(202,138,4,0.08)',    icon: Timer },
 }
 
-const DEFAULT_STYLE = { color: '#8b9a7e', bg: 'rgba(107,114,128,0.08)', icon: ScrollText }
+const DEFAULT_STYLE = { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)', icon: ScrollText }
 
 function getStyle(type: string) {
   return EVENT_STYLES[type] || DEFAULT_STYLE
@@ -200,15 +200,15 @@ export default function EventLogPage() {
 
       {/* Success message */}
       {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#8fce5a' }}>
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--success)' }}>
           <CheckCircle size={14} /> {success}
         </div>
       )}
 
       {/* Purge panel */}
       {showPurge && (
-        <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid #d1614a' }}>
-          <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: '#d1614a' }}>
+        <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid var(--danger)' }}>
+          <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--danger)' }}>
             <Trash2 size={14} style={{ verticalAlign: -2 }} /> {t('eventLog.purgeTitle')}
           </h3>
           <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
@@ -235,7 +235,7 @@ export default function EventLogPage() {
               </select>
             </div>
             <button onClick={handlePurge} disabled={purging} className="btn btn-primary"
-              style={{ fontSize: '0.82rem', background: '#d1614a', borderColor: '#d1614a' }}>
+              style={{ fontSize: '0.82rem', background: 'var(--danger)', borderColor: 'var(--danger)' }}>
               {purging ? t('eventLog.purging') : t('eventLog.purgeGo')}
             </button>
             <button onClick={() => setShowPurge(false)} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('common.cancel')}</button>
@@ -352,7 +352,7 @@ export default function EventLogPage() {
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                     padding: '0.12rem 0.45rem', borderRadius: 4, fontSize: '0.68rem', fontWeight: 700,
-                    background: st.bg, color: st.color, border: `1px solid ${st.color}20`,
+                    background: st.bg, color: st.color, border: `1px solid color-mix(in srgb, ${st.color} 13%, transparent)`,
                     whiteSpace: 'nowrap',
                   }}>
                     <Icon size={11} /> {eventLabel(ev.event_type)}

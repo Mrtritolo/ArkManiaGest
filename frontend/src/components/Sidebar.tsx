@@ -301,7 +301,7 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
             <button
               onClick={onLogout}
               className="sidebar-lock-btn"
-              title={t("auth.logout")}
+              aria-label={t("auth.logout")} title={t("auth.logout")}
             >
               <LogOut size={14} /> {t("auth.logout")}
             </button>

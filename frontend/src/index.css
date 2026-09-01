@@ -47,6 +47,8 @@
   --accent: #8fce5a;
   --accent-bright: #b6e084;
   --accent-glow: rgba(143,206,90,0.10);
+  /* Anello di focus: deve leggersi, non accennare. */
+  --focus-ring: 0 0 0 3px rgba(143,206,90,0.55);
   --accent-light: rgba(143,206,90,0.16);
 
   /* Il secondo colore della coppia: corteccia e ambra. Non e' un "grigio
@@ -57,9 +59,11 @@
 
   --green: #8fce5a;
   --cyan: #5cb89a;
+  --violet: #9d7cc0;
+  --pink: #c2739e;
   --orange: #d9a061;
-  --danger: #d1614a;
-  --danger-bg: rgba(209,97,74,0.12);
+  --danger: #dd7460;
+  --danger-bg: rgba(221,116,96,0.12);
   --warning: #d9a061;
   --warning-bg: rgba(217,160,97,0.12);
   --success: #8fce5a;
@@ -133,6 +137,7 @@
   --accent:         #457024;
   --accent-bright:  #6a9f3d;
   --accent-glow:    rgba(69,112,36,0.10);
+  --focus-ring:     0 0 0 3px rgba(69,112,36,0.45);
   --accent-light:   rgba(69,112,36,0.14);
 
   --brown:          #8a5a2b;
@@ -140,6 +145,8 @@
 
   --green:          #457024;
   --cyan:           #2f7d68;
+  --violet:         #6b4d94;
+  --pink:           #9c3f6d;
   --orange:         #b5791f;
   --danger:         #a8412a;
   --danger-bg:      rgba(168,65,42,0.09);
@@ -411,7 +418,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--g
   font-family: var(--font-body); color: var(--text-primary);
   transition: border-color 0.15s, box-shadow 0.15s; outline: none;
 }
-.form-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-glow); }
+.form-input:focus { border-color: var(--border-focus); box-shadow: var(--focus-ring); }
 .form-input::placeholder { color: var(--text-muted); font-family: var(--font-body); }
 
 /* Generic .input class used by plugin config editors */
@@ -455,6 +462,38 @@ select.form-input {
 .form-message { font-size: 0.82rem; font-weight: 500; }
 .form-message-success { color: var(--success); }
 .form-message-error   { color: var(--danger); }
+
+/* --- Skip link -------------------------------------------------------------
+   Fuori schermo finche' non riceve il focus: il primo Tab della pagina porta
+   al contenuto invece che alla prima delle ~20 voci di menu. */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 10000;
+  background: var(--bg-popover); color: var(--text-primary);
+  border: 1px solid var(--border-focus); border-radius: var(--radius);
+  padding: 0.6rem 1rem; font-size: 0.9rem; font-weight: 600;
+}
+.skip-link:focus {
+  left: 0.75rem; top: 0.75rem;
+  box-shadow: var(--focus-ring);
+}
+
+/* --- Focus da tastiera ------------------------------------------------------
+   Il foglio toglie l'outline su 17 selettori di campo e non ne definiva
+   nessuno per bottoni, link e controlli custom: chi naviga da tastiera si
+   affidava all'anello di default del browser dove per caso era sopravvissuto.
+   :focus-visible e non :focus, cosi' il clic col mouse non lo accende. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
 
 /* --- Buttons --- */
 .btn {
@@ -840,7 +879,7 @@ select.form-input {
   color: var(--text-primary); outline: none; font-family: var(--font-body); transition: all 0.15s;
   box-shadow: var(--shadow-sm);
 }
-.pl-search-input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(143,206,90,0.1); }
+.pl-search-input:focus { border-color: var(--border-focus); box-shadow: var(--focus-ring); }
 .pl-search-input::placeholder { color: var(--text-muted); }
 .pl-search-filter-wrap { position: relative; width: 180px; }
 .pl-search-filter-icon { position: absolute; left: 0.6rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
@@ -1288,7 +1327,7 @@ th.pl-th-sort {
   border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.88rem;
   color: var(--text-primary); font-family: var(--font-mono); outline: none; width: 100%;
 }
-.as-dlg-field input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-glow); }
+.as-dlg-field input:focus { border-color: var(--border-focus); box-shadow: var(--focus-ring); }
 .as-dlg-field input:disabled { opacity: 0.45; }
 .as-dlg-section {
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase;

@@ -31,8 +31,8 @@ interface LbStats {
 }
 
 const EVENT_COLORS: Record<number, string> = {
-  1: '#d1614a', 2: '#d9a061', 3: '#d1614a',
-  4: '#8fce5a', 5: '#5cb89a', 6: '#9d7cc0', 7: '#8b9a7e',
+  1: 'var(--danger)', 2: 'var(--warning)', 3: 'var(--danger)',
+  4: 'var(--success)', 5: 'var(--cyan)', 6: 'var(--violet)', 7: 'var(--text-muted)',
 }
 const EVENT_ICONS: Record<number, string> = {
   1: '🗡️', 2: '⚔️', 3: '☠️', 4: '🦎', 5: '🔨', 6: '💥', 7: '💀',
@@ -125,9 +125,9 @@ export default function LeaderboardPage() {
   }
 
   function getRankStyle(rank: number) {
-    if (rank === 1) return { background: 'linear-gradient(135deg, #d9a061, #d9a061)', color: '#000', fontWeight: 900 }
-    if (rank === 2) return { background: 'linear-gradient(135deg, #dcd8c8, #8b9a7e)', color: '#000', fontWeight: 800 }
-    if (rank === 3) return { background: 'linear-gradient(135deg, #d9a061, #d9a061)', color: '#fff', fontWeight: 800 }
+    if (rank === 1) return { background: 'linear-gradient(135deg, var(--warning), var(--warning))', color: '#000', fontWeight: 900 }
+    if (rank === 2) return { background: 'linear-gradient(135deg, var(--border), var(--text-muted))', color: '#000', fontWeight: 800 }
+    if (rank === 3) return { background: 'linear-gradient(135deg, var(--warning), var(--warning))', color: '#fff', fontWeight: 800 }
     return { background: 'var(--bg-card-muted)', color: 'var(--text-muted)', fontWeight: 600 }
   }
 
@@ -153,7 +153,7 @@ export default function LeaderboardPage() {
             disabled={clearing !== null}
             className="btn btn-ghost"
             style={{ borderColor: 'var(--border)', padding: '0.4rem 0.7rem' }}
-            title={t('leaderboard.clearPveTitle')}
+            aria-label={t('leaderboard.clearPveTitle')} title={t('leaderboard.clearPveTitle')}
           >
             <Trash2 size={14} /> {clearing === 'PvE' ? t('leaderboard.clearing') : t('leaderboard.clearPve')}
           </button>
@@ -162,7 +162,7 @@ export default function LeaderboardPage() {
             disabled={clearing !== null}
             className="btn btn-ghost"
             style={{ borderColor: 'var(--border)', padding: '0.4rem 0.7rem' }}
-            title={t('leaderboard.clearPvpTitle')}
+            aria-label={t('leaderboard.clearPvpTitle')} title={t('leaderboard.clearPvpTitle')}
           >
             <Trash2 size={14} /> {clearing === 'PvP' ? t('leaderboard.clearing') : t('leaderboard.clearPvp')}
           </button>
@@ -184,11 +184,11 @@ export default function LeaderboardPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
           {[
             { label: t('leaderboard.stats.players'), value: stats.total_players, icon: Users, color: 'var(--accent)' },
-            { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy, color: '#d9a061' },
-            { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair, color: '#d1614a' },
-            { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart, color: '#8fce5a' },
-            { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer, color: '#5cb89a' },
-            { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull, color: '#8b9a7e' },
+            { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy, color: 'var(--warning)' },
+            { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair, color: 'var(--danger)' },
+            { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart, color: 'var(--success)' },
+            { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer, color: 'var(--cyan)' },
+            { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull, color: 'var(--text-muted)' },
           ].map(s => (
             <div key={s.label} style={{
               display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem',
@@ -291,13 +291,13 @@ export default function LeaderboardPage() {
                       <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{s.server_type}</div>
                     </div>
                     {/* Stats */}
-                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: '#d9a061', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString(undefined)}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_wild > 0 ? '#d1614a' : 'var(--text-muted)' }}>{s.kills_wild}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_player > 0 ? '#d1614a' : 'var(--text-muted)' }}>{s.kills_player}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.tames > 0 ? '#8fce5a' : 'var(--text-muted)' }}>{s.tames}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.crafts > 0 ? '#5cb89a' : 'var(--text-muted)' }}>{s.crafts}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.structs_destroyed > 0 ? '#9d7cc0' : 'var(--text-muted)' }}>{s.structs_destroyed}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.deaths > 0 ? '#8b9a7e' : 'var(--text-muted)' }}>{s.deaths}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: 'var(--warning)', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString(undefined)}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_wild > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{s.kills_wild}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_player > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{s.kills_player}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.tames > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{s.tames}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.crafts > 0 ? 'var(--cyan)' : 'var(--text-muted)' }}>{s.crafts}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.structs_destroyed > 0 ? 'var(--violet)' : 'var(--text-muted)' }}>{s.structs_destroyed}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.deaths > 0 ? 'var(--text-muted)' : 'var(--text-muted)' }}>{s.deaths}</span>
                     <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(s.last_event)}</span>
                   </div>
                 ))}
@@ -351,7 +351,7 @@ export default function LeaderboardPage() {
                       <span>{EVENT_ICONS[ev.event_type] || '?'}</span>
                       <span style={{ color: EVENT_COLORS[ev.event_type] || '#888', fontWeight: 600 }}>{ev.event_label}</span>
                     </span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#d9a061' }}>+{ev.points}</span>
+                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--warning)' }}>+{ev.points}</span>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ev.target_name || '—'}
                     </span>

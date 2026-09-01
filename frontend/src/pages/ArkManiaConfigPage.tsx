@@ -295,13 +295,13 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
 
   function getTypeBadge(type: string) {
     const map: Record<string, { bg: string; color: string; labelKey: string }> = {
-      dino:      { bg: 'rgba(34,197,94,0.12)', color: '#8fce5a', labelKey: 'arkmaniaConfig.typeBadge.dino' },
-      armor:     { bg: 'rgba(37,99,235,0.1)', color: '#5cb89a', labelKey: 'arkmaniaConfig.typeBadge.armor' },
-      weapon:    { bg: 'rgba(239,68,68,0.1)', color: '#d1614a', labelKey: 'arkmaniaConfig.typeBadge.weapon' },
-      resource:  { bg: 'rgba(217,119,6,0.1)', color: '#d9a061', labelKey: 'arkmaniaConfig.typeBadge.resource' },
-      consumable:{ bg: 'rgba(168,85,247,0.1)', color: '#9d7cc0', labelKey: 'arkmaniaConfig.typeBadge.consumable' },
-      structure: { bg: 'rgba(107,114,128,0.12)', color: '#8b9a7e', labelKey: 'arkmaniaConfig.typeBadge.structure' },
-      item:      { bg: 'rgba(107,114,128,0.08)', color: '#8b9a7e', labelKey: 'arkmaniaConfig.typeBadge.item' },
+      dino:      { bg: 'rgba(34,197,94,0.12)', color: 'var(--success)', labelKey: 'arkmaniaConfig.typeBadge.dino' },
+      armor:     { bg: 'rgba(37,99,235,0.1)', color: 'var(--cyan)', labelKey: 'arkmaniaConfig.typeBadge.armor' },
+      weapon:    { bg: 'rgba(239,68,68,0.1)', color: 'var(--danger)', labelKey: 'arkmaniaConfig.typeBadge.weapon' },
+      resource:  { bg: 'rgba(217,119,6,0.1)', color: 'var(--warning)', labelKey: 'arkmaniaConfig.typeBadge.resource' },
+      consumable:{ bg: 'rgba(168,85,247,0.1)', color: 'var(--violet)', labelKey: 'arkmaniaConfig.typeBadge.consumable' },
+      structure: { bg: 'rgba(107,114,128,0.12)', color: 'var(--text-muted)', labelKey: 'arkmaniaConfig.typeBadge.structure' },
+      item:      { bg: 'rgba(107,114,128,0.08)', color: 'var(--text-muted)', labelKey: 'arkmaniaConfig.typeBadge.item' },
     }
     const m = map[type] || map.item
     return (
@@ -335,7 +335,7 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
             <span style={{ fontSize: '0.58rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }} title={bp}>
               {bp.split('/').pop()?.replace("'", '')}
             </span>
-            <button onClick={() => copyBp(bp)} title={t('arkmaniaConfig.editors.copyBp')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
+            <button onClick={() => copyBp(bp)} aria-label={t('arkmaniaConfig.editors.copyBp')} title={t('arkmaniaConfig.editors.copyBp')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
               <Search size={11} />
             </button>
             <button onClick={() => removeBp(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2, flexShrink: 0 }}>
@@ -637,7 +637,7 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
         const groupNames = Object.keys(rule.Groups)
         const bpShort = rule.Blueprint ? rule.Blueprint.split('/').pop()?.replace("'", '') : t('arkmaniaConfig.editors.noBlueprintTag')
         return (
-          <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-card-muted)', overflow: 'hidden' }}>
+          <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-card-muted)', overflow: 'hidden' }}>
             {/* Header row (always visible) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.6rem', cursor: 'pointer' }} onClick={() => setExpandedIdx(isOpen ? null : i)}>
               <Hammer size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
@@ -906,7 +906,7 @@ export default function ArkManiaConfigPage() {
               {servers.map(s => <option key={s.server_key} value={s.server_key}>{s.is_online ? t('arkmaniaConfig.server.onlinePrefix') : t('arkmaniaConfig.server.offlinePrefix')}{s.display_name}</option>)}
             </select>
           </div>
-          <button onClick={handleExportJSON} className="btn btn-ghost" style={{ fontSize: '0.8rem' }} title={t('arkmaniaConfig.actions.exportTooltip')}>
+          <button onClick={handleExportJSON} className="btn btn-ghost" style={{ fontSize: '0.8rem' }} aria-label={t('arkmaniaConfig.actions.exportTooltip')} title={t('arkmaniaConfig.actions.exportTooltip')}>
             <Download size={14} /> {t('arkmaniaConfig.actions.export')}
           </button>
           {hasChanges && (
@@ -1009,8 +1009,8 @@ export default function ArkManiaConfigPage() {
                               borderBottom: '1px solid var(--border)', transition: 'background 0.15s',
                             }}>
                             <div style={{
-                              width: 36, height: 20, borderRadius: 10, flexShrink: 0, position: 'relative',
-                              background: isOn ? 'var(--green)' : '#1c261a', transition: 'background 0.2s',
+                              width: 36, height: 20, borderRadius: 6, flexShrink: 0, position: 'relative',
+                              background: isOn ? 'var(--green)' : 'var(--bg-hover)', transition: 'background 0.2s',
                             }}>
                               <div style={{
                                 width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute',

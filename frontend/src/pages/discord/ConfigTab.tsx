@@ -175,8 +175,8 @@ export default function ConfigTab() {
               <div style={{
                 display: "flex", alignItems: "center", gap: "0.55rem",
                 padding: "0.55rem 0.7rem", borderRadius: 6,
-                background: "var(--accent-50, #8fce5a15)",
-                border: "1px solid #8fce5a40",
+                background: "var(--accent-50, color-mix(in srgb, var(--success) 8%, transparent))",
+                border: "1px solid color-mix(in srgb, var(--success) 25%, transparent)",
               }}>
                 {guild.icon && (
                   <img
@@ -329,17 +329,17 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
         <div style={{
           marginTop: "0.5rem",
           padding: "0.55rem 0.7rem",
-          background: "var(--bg-card-muted, #f5f5f7)",
+          background: "var(--bg-card-muted, var(--bg-card-muted))",
           borderRadius: 6,
           fontSize: "0.8rem",
           display: "flex", flexDirection: "column", gap: "0.3rem",
         }}>
           <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
-            <Metric value={report.assigned_count} label="assegnati" color="#8fce5a" />
-            <Metric value={report.removed_count}  label="rimossi"   color="#d9a061" />
-            <Metric value={report.noop_count}     label="no-op"     color="#8b9a7e" />
-            <Metric value={report.error_count}    label="errori"    color={report.error_count > 0 ? "#d1614a" : "#8b9a7e"} />
-            <Metric value={report.unmapped_with_vip.length} label="stranger VIP" color="#8b9a7e" />
+            <Metric value={report.assigned_count} label="assegnati" color="var(--success)" />
+            <Metric value={report.removed_count}  label="rimossi"   color="var(--warning)" />
+            <Metric value={report.noop_count}     label="no-op"     color="var(--text-muted)" />
+            <Metric value={report.error_count}    label="errori"    color={report.error_count > 0 ? "var(--danger)" : "var(--text-muted)"} />
+            <Metric value={report.unmapped_with_vip.length} label="stranger VIP" color="var(--text-muted)" />
           </div>
 
           {report.unmapped_with_vip.length > 0 && (
@@ -440,22 +440,22 @@ function Metric({ value, label, color }: { value: number; label: string; color: 
 }
 
 function actionBg(a: string): string {
-  if (a === "assigned") return "#8fce5a15";
-  if (a === "removed")  return "#d9a06115";
-  if (a === "error")    return "#d1614a15";
-  return "#8b9a7e15";
+  if (a === "assigned") return "color-mix(in srgb, var(--success) 8%, transparent)";
+  if (a === "removed")  return "color-mix(in srgb, var(--warning) 8%, transparent)";
+  if (a === "error")    return "color-mix(in srgb, var(--danger) 8%, transparent)";
+  return "color-mix(in srgb, var(--text-muted) 8%, transparent)";
 }
 function actionColor(a: string): string {
-  if (a === "assigned") return "#8fce5a";
-  if (a === "removed")  return "#d9a061";
-  if (a === "error")    return "#d1614a";
-  return "#8b9a7e";
+  if (a === "assigned") return "var(--success)";
+  if (a === "removed")  return "var(--warning)";
+  if (a === "error")    return "var(--danger)";
+  return "var(--text-muted)";
 }
 function actionBorder(a: string): string {
-  if (a === "assigned") return "#8fce5a40";
-  if (a === "removed")  return "#d9a06140";
-  if (a === "error")    return "#d1614a40";
-  return "#8b9a7e40";
+  if (a === "assigned") return "color-mix(in srgb, var(--success) 25%, transparent)";
+  if (a === "removed")  return "color-mix(in srgb, var(--warning) 25%, transparent)";
+  if (a === "error")    return "color-mix(in srgb, var(--danger) 25%, transparent)";
+  return "color-mix(in srgb, var(--text-muted) 25%, transparent)";
 }
 
 // ── Layout helpers ───────────────────────────────────────────────────────────
@@ -479,9 +479,9 @@ function Section({
         <span
           className="pl-chip"
           style={{
-            background: ready ? "#8fce5a15" : "#d1614a15",
-            color:      ready ? "#8fce5a"   : "#d1614a",
-            borderColor: ready ? "#8fce5a40" : "#d1614a40",
+            background: ready ? "color-mix(in srgb, var(--success) 8%, transparent)" : "color-mix(in srgb, var(--danger) 8%, transparent)",
+            color:      ready ? "var(--success)"   : "var(--danger)",
+            borderColor: ready ? "color-mix(in srgb, var(--success) 25%, transparent)" : "color-mix(in srgb, var(--danger) 25%, transparent)",
           }}
         >
           {ready ? <ShieldCheck size={9} /> : <ShieldAlert size={9} />}
@@ -524,9 +524,9 @@ function KV({
             onClick={onCopy}
             className="btn btn-secondary btn-sm"
             style={{ padding: "0.15rem 0.35rem" }}
-            title="Copy"
+            aria-label="Copy" title="Copy"
           >
-            {copied ? <CheckCircle size={11} color="#8fce5a" /> : <Copy size={11} />}
+            {copied ? <CheckCircle size={11} color="var(--success)" /> : <Copy size={11} />}
           </button>
         )}
       </div>
@@ -545,13 +545,13 @@ function MissingHint({ keys }: { keys: string[] }) {
       style={{
         marginTop: "0.4rem",
         padding: "0.45rem 0.6rem",
-        background: "#d1614a10",
-        border: "1px solid #d1614a40",
+        background: "color-mix(in srgb, var(--danger) 6%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--danger) 25%, transparent)",
         borderRadius: 6,
         fontSize: "0.78rem",
       }}
     >
-      <div style={{ fontWeight: 600, color: "#d1614a", marginBottom: "0.2rem" }}>
+      <div style={{ fontWeight: 600, color: "var(--danger)", marginBottom: "0.2rem" }}>
         Missing .env keys:
       </div>
       <code style={{ fontFamily: "monospace", fontSize: "0.78rem" }}>

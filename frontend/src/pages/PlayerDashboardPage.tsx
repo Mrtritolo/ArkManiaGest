@@ -258,7 +258,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
     : ({ children }: { children: React.ReactNode }) => (
         <div style={{
           minHeight: "100vh",
-          background: "var(--bg, #f5f5f7)",
+          background: "var(--bg, var(--bg-card-muted))",
           // Mobile: less side padding so cards can breathe.  clamp scales
           // smoothly between 12px and 24px based on viewport width.
           padding: "clamp(0.75rem, 3vw, 1.5rem)",
@@ -338,7 +338,7 @@ function PageHeader({
       background: "linear-gradient(135deg, #5865F2 0%, #4752C4 100%)",
       color: "#fff",
       border: "1px solid #4752C4",
-      borderRadius: 12,
+      borderRadius: 6,
       boxShadow: "0 4px 12px rgba(88, 101, 242, 0.25)",
       // Let the action buttons wrap onto a second row on very narrow
       // viewports instead of squeezing the greeting block.
@@ -350,14 +350,14 @@ function PageHeader({
       }}>
         {av ? (
           <img src={av} alt=""
-            style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "3px solid #ffffff66", flexShrink: 0 }}
+            style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "3px solid rgba(255,255,255,0.4)", flexShrink: 0 }}
           />
         ) : (
           <div style={{
             width: 56, height: 56, borderRadius: "50%",
-            background: "#ffffff22", color: "#fff",
+            background: "rgba(255,255,255,0.13)", color: "#fff",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "1.6rem", fontWeight: 700, border: "3px solid #ffffff66",
+            fontSize: "1.6rem", fontWeight: 700, border: "3px solid rgba(255,255,255,0.4)",
             flexShrink: 0,
           }}>
             {name[0]?.toUpperCase() ?? "?"}
@@ -380,7 +380,7 @@ function PageHeader({
             </span>
             {presence?.online_now ? (
               <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                <Wifi size={11} color="#16fc77" />
+                <Wifi size={11} color="var(--success)" />
                 {t("dashboard.header.onlineOn", {
                   s: presence.server_name || presence.server_key || "?",
                   m: fmtMinutes(presence.duration_minutes),
@@ -407,19 +407,19 @@ function PageHeader({
       <div style={{ display: "flex", gap: "0.4rem" }}>
         <button onClick={onRefresh}
           style={{
-            background: "#ffffff22", color: "#fff", border: "1px solid #ffffff44",
+            background: "rgba(255,255,255,0.13)", color: "#fff", border: "1px solid rgba(255,255,255,0.27)",
             padding: "0.45rem 0.6rem", borderRadius: 6, cursor: "pointer",
           }}
-          title={t("common.refresh")}
+          aria-label={t("common.refresh")} title={t("common.refresh")}
         >
           <RefreshCw size={14} />
         </button>
         <button onClick={onLogout}
           style={{
-            background: "#ffffff22", color: "#fff", border: "1px solid #ffffff44",
+            background: "rgba(255,255,255,0.13)", color: "#fff", border: "1px solid rgba(255,255,255,0.27)",
             padding: "0.45rem 0.6rem", borderRadius: 6, cursor: "pointer",
           }}
-          title={t("nav.logout")}
+          aria-label={t("nav.logout")} title={t("nav.logout")}
         >
           <LogOut size={14} />
         </button>
@@ -484,15 +484,15 @@ function CharacterHero({
       <div style={{
         padding: "1rem 1.2rem",
         background: isVip
-          ? "linear-gradient(135deg, #d9a06120 0%, transparent 60%)"
+          ? "linear-gradient(135deg, color-mix(in srgb, var(--warning) 13%, transparent) 0%, transparent 60%)"
           : "transparent",
         display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap",
       }}>
         <div style={{
           width: 60, height: 60, borderRadius: "50%",
           background: isVip
-            ? "linear-gradient(135deg, #d9a061, #d9a061)"
-            : "linear-gradient(135deg, #8b9a7e, #4b5563)",
+            ? "linear-gradient(135deg, var(--warning), var(--warning))"
+            : "linear-gradient(135deg, var(--text-muted), var(--text-secondary))",
           color: "#fff",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "1.6rem", fontWeight: 700,
@@ -509,8 +509,8 @@ function CharacterHero({
             </span>
             {isVip && (
               <span className="pl-chip" style={{
-                background: "linear-gradient(90deg, #d9a061, #d9a061)",
-                color: "#fff", borderColor: "#d9a061",
+                background: "linear-gradient(90deg, var(--warning), var(--warning))",
+                color: "#fff", borderColor: "var(--warning)",
                 fontSize: "0.78rem", padding: "0.15rem 0.55rem",
               }}>
                 <Crown size={11} /> VIP
@@ -523,7 +523,7 @@ function CharacterHero({
             )}
             {presence.online_now && (
               <span className="pl-chip" style={{
-                background: "#8fce5a15", color: "#8fce5a", borderColor: "#8fce5a40",
+                background: "color-mix(in srgb, var(--success) 8%, transparent)", color: "var(--success)", borderColor: "color-mix(in srgb, var(--success) 25%, transparent)",
               }}>
                 <Wifi size={9} /> {t("dashboard.online")}
               </span>
@@ -580,7 +580,7 @@ function CharacterHero({
           </span>
           {activeTimed.map((g, i) => (
             <span key={`${g.group}-${i}`} className="pl-chip" style={{
-              background: "#8fce5a10", color: "#8fce5a", borderColor: "#8fce5a40",
+              background: "color-mix(in srgb, var(--success) 6%, transparent)", color: "var(--success)", borderColor: "color-mix(in srgb, var(--success) 25%, transparent)",
             }}>
               <Clock size={9} /> {g.group} · {t("dashboard.character.expires", { r: fmtRelative(g.expires_at_iso, t) })}
             </span>
@@ -598,8 +598,8 @@ function ShopCard({ data }: { data: DashboardShop }) {
   return (
     <Card icon={<ShoppingBag size={14} />} title={t("dashboard.shop.title")}>
       <div style={{ display: "flex", justifyContent: "space-around", gap: "0.5rem" }}>
-        <BigStat value={data.points.toLocaleString()} label={t("dashboard.shop.points")} color="#8fce5a" />
-        <BigStat value={data.total_spent.toLocaleString()} label={t("dashboard.shop.totalSpent")} color="#8b9a7e" />
+        <BigStat value={data.points.toLocaleString()} label={t("dashboard.shop.points")} color="var(--success)" />
+        <BigStat value={data.total_spent.toLocaleString()} label={t("dashboard.shop.totalSpent")} color="var(--text-muted)" />
       </div>
       {data.kits_raw && (
         <details style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
@@ -607,7 +607,7 @@ function ShopCard({ data }: { data: DashboardShop }) {
             {t("dashboard.shop.kitsRawToggle")}
           </summary>
           <pre style={{
-            background: "var(--bg-card-muted, #f5f5f7)",
+            background: "var(--bg-card-muted, var(--bg-card-muted))",
             padding: "0.4rem 0.55rem", borderRadius: 4,
             fontSize: "0.7rem", overflowX: "auto",
             marginTop: "0.3rem", maxHeight: 160,
@@ -661,13 +661,13 @@ function LeaderboardScoreBlock({ score }: { score: DashboardLeaderboardScoreRow 
       </div>
       {rankPct !== null && (
         <div style={{
-          height: 6, background: "var(--bg-card-muted, #dcd8c8)", borderRadius: 3,
+          height: 6, background: "var(--bg-card-muted, var(--border))", borderRadius: 3,
           marginTop: 4, marginBottom: 8, overflow: "hidden",
         }}>
           <div style={{
             height: "100%",
             width: `${Math.max(2, rankPct)}%`,
-            background: rankPct > 75 ? "#8fce5a" : rankPct > 25 ? "#d9a061" : "#d1614a",
+            background: rankPct > 75 ? "var(--success)" : rankPct > 25 ? "var(--warning)" : "var(--danger)",
             transition: "width 0.4s",
           }} />
         </div>
@@ -736,9 +736,9 @@ function DecayCard({ data }: { data: DashboardDecay }) {
 function DecayMapBlock({ m }: { m: DashboardDecayMap }) {
   const { t } = useTranslation();
   const statusColor =
-    m.status === "expired"  ? "#d1614a" :
-    m.status === "expiring" ? "#d9a061" :
-    m.status === "safe"     ? "#8fce5a" : "#8b9a7e";
+    m.status === "expired"  ? "var(--danger)" :
+    m.status === "expiring" ? "var(--warning)" :
+    m.status === "safe"     ? "var(--success)" : "var(--text-muted)";
   const StatusIcon =
     m.status === "expired"  ? AlertTriangle :
     m.status === "expiring" ? AlertCircle   :
@@ -752,7 +752,7 @@ function DecayMapBlock({ m }: { m: DashboardDecayMap }) {
   return (
     <div style={{
       padding: "0.5rem 0.65rem", borderRadius: 6,
-      background: `${statusColor}12`, border: `1px solid ${statusColor}38`,
+      background: `color-mix(in srgb, ${statusColor} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${statusColor} 22%, transparent)`,
     }}>
       {/* Map + tribe: which base this timer is about.  The tribe name is
           per map, so it belongs here and not in the page header. */}
@@ -793,8 +793,8 @@ function DecayMapBlock({ m }: { m: DashboardDecayMap }) {
       {m.scheduled_for_purge && (
         <div style={{
           marginTop: "0.4rem", padding: "0.35rem 0.5rem",
-          background: "#d1614a15", border: "1px solid #d1614a40",
-          borderRadius: 5, fontSize: "0.75rem", color: "#d1614a",
+          background: "color-mix(in srgb, var(--danger) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--danger) 25%, transparent)",
+          borderRadius: 5, fontSize: "0.75rem", color: "var(--danger)",
         }}>
           <AlertTriangle size={11} style={{ verticalAlign: "middle" }} />{" "}
           {t("dashboard.decay.scheduledPurge")}
@@ -832,12 +832,12 @@ function TribeCard({ data }: { data: DashboardTribe }) {
           <div key={m.eos_id} style={{
             display: "flex", alignItems: "center", gap: "0.5rem",
             padding: "0.3rem 0.4rem", borderRadius: 4,
-            background: m.is_self ? "var(--accent-50, #5cb89a15)" : "transparent",
+            background: m.is_self ? "var(--accent-50, color-mix(in srgb, var(--cyan) 8%, transparent))" : "transparent",
           }}>
             <span style={{
               width: 10, height: 10, borderRadius: "50%",
-              background: m.online_now ? "#8fce5a" : "#8b9a7e",
-              boxShadow: m.online_now ? "0 0 6px #8fce5a" : "none",
+              background: m.online_now ? "var(--success)" : "var(--text-muted)",
+              boxShadow: m.online_now ? "0 0 6px var(--success)" : "none",
               flexShrink: 0,
             }} />
             <span style={{ flex: 1, fontSize: "0.85rem", fontWeight: m.is_self ? 600 : 400 }}>
@@ -863,8 +863,8 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
   return (
     <Card icon={<Skull size={14} />} title={t("dashboard.rare.title")}>
       <div style={{ display: "flex", justifyContent: "space-around", marginBottom: "0.5rem" }}>
-        <BigStat value={String(data.kills_30d)} label={t("dashboard.rare.kills")} color="#d1614a" />
-        <BigStat value={String(data.tames_30d)} label={t("dashboard.rare.tames")} color="#8fce5a" />
+        <BigStat value={String(data.kills_30d)} label={t("dashboard.rare.kills")} color="var(--danger)" />
+        <BigStat value={String(data.tames_30d)} label={t("dashboard.rare.tames")} color="var(--success)" />
       </div>
       {data.recent.length === 0 ? (
         <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
@@ -876,14 +876,14 @@ function RareDinosCard({ data }: { data: DashboardRareDinos }) {
             <div key={e.id} style={{
               display: "flex", justifyContent: "space-between",
               padding: "0.25rem 0.4rem", borderRadius: 3,
-              background: "var(--bg-card-muted, #f5f5f7)",
+              background: "var(--bg-card-muted, var(--bg-card-muted))",
               fontSize: "0.78rem",
             }}>
               <span>
                 <span style={{
-                  fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: 8,
-                  background: e.event_type === "KILLED" ? "#d1614a15" : "#8fce5a15",
-                  color: e.event_type === "KILLED" ? "#d1614a" : "#8fce5a",
+                  fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: 4,
+                  background: e.event_type === "KILLED" ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "color-mix(in srgb, var(--success) 8%, transparent)",
+                  color: e.event_type === "KILLED" ? "var(--danger)" : "var(--success)",
                   marginRight: 6, fontWeight: 600,
                 }}>
                   {e.event_type}
@@ -992,7 +992,7 @@ function HomeMapCard({ group, overridesRaw, onChanged }: {
             display: "flex", alignItems: "center", justifyContent: "space-between",
             gap: "0.5rem",
             padding: "0.35rem 0.45rem", borderRadius: 4,
-            background: "var(--bg-card-muted, #f5f5f7)",
+            background: "var(--bg-card-muted, var(--bg-card-muted))",
             fontSize: "0.78rem",
           }}>
             <div style={{ minWidth: 0 }}>
@@ -1018,7 +1018,7 @@ function HomeMapCard({ group, overridesRaw, onChanged }: {
               onClick={() => handleDelete(h)}
               disabled={busyId !== null}
               className="btn btn-danger btn-sm"
-              title={t("dashboard.homes.deleteButton")}
+              aria-label={t("dashboard.homes.deleteButton")} title={t("dashboard.homes.deleteButton")}
             >
               <Trash2 size={12} />
             </button>
@@ -1038,11 +1038,11 @@ function HomeMapCard({ group, overridesRaw, onChanged }: {
 // ── Character tools card (self-service kick / rename) ───────────────────────
 
 const REQUEST_STATUS_COLOR: Record<string, string> = {
-  pending:    "#d9a061",
-  done:       "#8fce5a",
-  rejected:   "#d1614a",
-  expired:    "#8b9a7e",
-  superseded: "#8b9a7e",
+  pending:    "var(--warning)",
+  done:       "var(--success)",
+  rejected:   "var(--danger)",
+  expired:    "var(--text-muted)",
+  superseded: "var(--text-muted)",
 };
 
 function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
@@ -1118,7 +1118,7 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
               onClick={handleRename}
               disabled={busy || newName.trim().length < 2}
               className="btn btn-primary btn-sm"
-              title={t("dashboard.tools.renameButton")}
+              aria-label={t("dashboard.tools.renameButton")} title={t("dashboard.tools.renameButton")}
             >
               <PenLine size={12} /> {t("dashboard.tools.renameButton")}
             </button>
@@ -1134,7 +1134,9 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
             onClick={handleKick}
             disabled={busy || !presence.online_now}
             className="btn btn-danger btn-sm"
-            title={presence.online_now
+            aria-label={presence.online_now
+              ? t("dashboard.tools.kickButton")
+              : t("dashboard.tools.kickOffline")} title={presence.online_now
               ? t("dashboard.tools.kickButton")
               : t("dashboard.tools.kickOffline")}
           >
@@ -1157,7 +1159,7 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
               <div key={r.id} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 gap: "0.5rem", padding: "0.3rem 0.4rem", borderRadius: 3,
-                background: "var(--bg-card-muted, #f5f5f7)", fontSize: "0.75rem",
+                background: "var(--bg-card-muted, var(--bg-card-muted))", fontSize: "0.75rem",
               }}>
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {r.action === "kick"
@@ -1169,9 +1171,9 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
                 <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", whiteSpace: "nowrap" }}>
                   <span style={{
                     fontSize: "0.65rem", fontWeight: 600, padding: "0.1rem 0.35rem",
-                    borderRadius: 8,
-                    color: REQUEST_STATUS_COLOR[r.status] ?? "#8b9a7e",
-                    background: `${REQUEST_STATUS_COLOR[r.status] ?? "#8b9a7e"}15`,
+                    borderRadius: 4,
+                    color: REQUEST_STATUS_COLOR[r.status] ?? "var(--text-muted)",
+                    background: `${REQUEST_STATUS_COLOR[r.status] ?? "var(--text-muted)"}15`,
                   }}>
                     {t(`dashboard.tools.status.${r.status}`, r.status)}
                   </span>
@@ -1208,19 +1210,19 @@ function ActivityCard({ data }: { data: DashboardActivity }) {
           <div key={i} style={{
             display: "flex", justifyContent: "space-between", gap: "0.5rem",
             padding: "0.3rem 0.4rem", borderRadius: 3,
-            background: e.source === "lb_event" ? "var(--accent-50, #5cb89a12)" : "var(--bg-card-muted, #f5f5f7)",
+            background: e.source === "lb_event" ? "var(--accent-50, color-mix(in srgb, var(--cyan) 7%, transparent))" : "var(--bg-card-muted, var(--bg-card-muted))",
             fontSize: "0.78rem",
           }}>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{
-                fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: 8,
-                background: e.source === "lb_event" ? "#5cb89a15" : "#8b9a7e15",
-                color: e.source === "lb_event" ? "#5cb89a" : "#8b9a7e",
+                fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: 4,
+                background: e.source === "lb_event" ? "color-mix(in srgb, var(--cyan) 8%, transparent)" : "color-mix(in srgb, var(--text-muted) 8%, transparent)",
+                color: e.source === "lb_event" ? "var(--cyan)" : "var(--text-muted)",
                 marginRight: 6, fontWeight: 600,
               }}>
                 {e.kind}
               </span>
-              {e.points !== null && <strong style={{ color: "#8fce5a" }}>+{e.points} </strong>}
+              {e.points !== null && <strong style={{ color: "var(--success)" }}>+{e.points} </strong>}
               {e.detail && (
                 <span style={{ color: "var(--text-secondary)" }}>{e.detail}</span>
               )}

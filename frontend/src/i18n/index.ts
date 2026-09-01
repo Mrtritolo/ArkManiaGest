@@ -76,4 +76,20 @@ export function getCurrentLanguage(): SupportedLanguage {
     : 'en') as SupportedLanguage
 }
 
+/**
+ * Keep `<html lang>` in step with the active language.
+ *
+ * index.html hardcodes `lang="it"`, so with English selected a screen
+ * reader pronounced English copy with Italian phonetics -- and the same
+ * attribute drives hyphenation and the browser's translation prompt.
+ * Bound to the i18next event rather than to setLanguage() so a change from
+ * anywhere (detector on first load included) is covered.
+ */
+function syncDocumentLang(lang: string): void {
+  const code = lang.split('-')[0].toLowerCase()
+  if (typeof document !== 'undefined') document.documentElement.lang = code
+}
+syncDocumentLang(i18n.resolvedLanguage ?? i18n.language ?? 'en')
+i18n.on('languageChanged', syncDocumentLang)
+
 export default i18n

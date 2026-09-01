@@ -132,7 +132,7 @@ export default function OnlinePlayersPage() {
             cursor: 'pointer', boxShadow: 'var(--shadow-sm)', textAlign: 'left',
           }}
         >
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--accent)',
+          <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--accent)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Globe size={18} color="#fff" />
           </div>
@@ -156,7 +156,7 @@ export default function OnlinePlayersPage() {
             }}
           >
             <div style={{
-              width: 32, height: 32, borderRadius: 7,
+              width: 32, height: 32, borderRadius: 4,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: srv.session_count > 0 ? 'var(--success-bg)' : 'var(--bg-card-muted)',
               border: `1px solid ${srv.session_count > 0 ? 'var(--success)' : 'var(--border)'}`,
@@ -213,7 +213,7 @@ export default function OnlinePlayersPage() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                background: '#8fce5a', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
+                                background: 'var(--success)', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
                   <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)',
                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.player_name || t('onlinePlayers.unknownPlayer')}

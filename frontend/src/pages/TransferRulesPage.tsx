@@ -21,10 +21,10 @@ interface ServerItem {
 }
 
 const TRANSFER_LEVEL_META = [
-  { value: 0, color: '#8fce5a', bg: 'rgba(22,163,74,0.08)', tkey: 'full' },
-  { value: 1, color: '#d9a061', bg: 'rgba(202,138,4,0.08)', tkey: 'survivorInv' },
-  { value: 2, color: '#d9a061', bg: 'rgba(234,88,12,0.08)', tkey: 'survivorOnly' },
-  { value: 3, color: '#d1614a', bg: 'rgba(220,38,38,0.08)', tkey: 'blocked' },
+  { value: 0, color: 'var(--success)', bg: 'rgba(22,163,74,0.08)', tkey: 'full' },
+  { value: 1, color: 'var(--warning)', bg: 'rgba(202,138,4,0.08)', tkey: 'survivorInv' },
+  { value: 2, color: 'var(--warning)', bg: 'rgba(234,88,12,0.08)', tkey: 'survivorOnly' },
+  { value: 3, color: 'var(--danger)', bg: 'rgba(220,38,38,0.08)', tkey: 'blocked' },
 ]
 
 export default function TransferRulesPage() {
@@ -151,7 +151,7 @@ export default function TransferRulesPage() {
         </div>
       )}
       {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: '#8fce5a' }}>
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--success)' }}>
           <CheckCircle size={14} /> {success}
         </div>
       )}
@@ -261,7 +261,7 @@ export default function TransferRulesPage() {
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                         padding: '0.12rem 0.5rem', borderRadius: 4, fontSize: '0.72rem', fontWeight: 700,
-                        background: lvl.bg, color: lvl.color, border: `1px solid ${lvl.color}20`,
+                        background: lvl.bg, color: lvl.color, border: `1px solid color-mix(in srgb, ${lvl.color} 13%, transparent)`,
                       }}>
                         {lvl.label}
                       </span>
@@ -279,13 +279,13 @@ export default function TransferRulesPage() {
                   <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'flex-end' }}>
                     {isEditing ? (
                       <>
-                        <button onClick={saveEdit} title={t('transferRules.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
-                        <button onClick={() => setEditingId(null)} title={t('transferRules.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
+                        <button onClick={saveEdit} aria-label={t('transferRules.tooltip.save')} title={t('transferRules.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
+                        <button onClick={() => setEditingId(null)} aria-label={t('transferRules.tooltip.cancel')} title={t('transferRules.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startEdit(rule)} title={t('transferRules.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(rule.id)} title={t('transferRules.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
+                        <button onClick={() => startEdit(rule)} aria-label={t('transferRules.tooltip.edit')} title={t('transferRules.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
+                        <button onClick={() => handleDelete(rule.id)} aria-label={t('transferRules.tooltip.delete')} title={t('transferRules.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
                       </>
                     )}
                   </div>

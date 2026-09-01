@@ -219,7 +219,7 @@ export default function SettingsTab() {
               {t("discord.settings.restartHint")}
             </span>
             <code style={{
-              background: "var(--bg-card-muted, #f5f5f7)",
+              background: "var(--bg-card-muted, var(--bg-card-muted))",
               padding: "0.15rem 0.4rem", borderRadius: 4,
               fontFamily: "monospace",
             }}>
@@ -229,7 +229,7 @@ export default function SettingsTab() {
               onClick={() => copyText(success.hint)}
               className="btn btn-secondary btn-sm"
               style={{ padding: "0.15rem 0.35rem" }}
-              title={t("discord.config.toast.copied")}
+              aria-label={t("discord.config.toast.copied")} title={t("discord.config.toast.copied")}
             >
               <Copy size={11} />
             </button>
@@ -337,7 +337,9 @@ export default function SettingsTab() {
             onClick={save}
             disabled={!hasChanges || saving}
             className="btn btn-primary btn-sm"
-            title={!hasChanges
+            aria-label={!hasChanges
+              ? t("discord.settings.saveDisabledNoChanges")
+              : t("discord.settings.save")} title={!hasChanges
               ? t("discord.settings.saveDisabledNoChanges")
               : t("discord.settings.save")}
           >
@@ -571,8 +573,8 @@ function RoleMappingSection() {
                 <button
                   onClick={() => del(m.id)}
                   className="btn btn-secondary btn-sm"
-                  style={{ padding: "0.2rem 0.4rem", color: "#d1614a" }}
-                  title={t("discord.roleMap.delete")}
+                  style={{ padding: "0.2rem 0.4rem", color: "var(--danger)" }}
+                  aria-label={t("discord.roleMap.delete")} title={t("discord.roleMap.delete")}
                 >
                   <Trash2 size={12} />
                 </button>
@@ -592,7 +594,7 @@ function RoleMappingSection() {
         gridTemplateColumns: "minmax(120px, 1fr) 24px minmax(100px, 1fr) auto",
         gap: "0.4rem", alignItems: "center",
         padding: "0.35rem 0.45rem",
-        background: "var(--bg-card-muted, #f5f5f7)",
+        background: "var(--bg-card-muted, var(--bg-card-muted))",
         borderRadius: 6,
       }}>
         <select
@@ -666,17 +668,17 @@ function RoleMappingSection() {
                 padding: "0.25rem 0.45rem",
                 borderBottom: "1px solid var(--border)",
                 display: "flex", justifyContent: "space-between",
-                color: a.error ? "#d1614a" : "var(--text)",
+                color: a.error ? "var(--danger)" : "var(--text)",
               }}>
                 <span>
                   {a.player_name || a.eos_id.slice(0, 8) + "…"}
                   {a.groups_added.length > 0 && (
-                    <span style={{ color: "#8fce5a", marginLeft: 6 }}>
+                    <span style={{ color: "var(--success)", marginLeft: 6 }}>
                       +{a.groups_added.join(",")}
                     </span>
                   )}
                   {a.groups_removed.length > 0 && (
-                    <span style={{ color: "#d9a061", marginLeft: 6 }}>
+                    <span style={{ color: "var(--warning)", marginLeft: 6 }}>
                       -{a.groups_removed.join(",")}
                     </span>
                   )}
@@ -738,7 +740,7 @@ function SecretField({
           className="btn btn-secondary btn-sm"
           style={{ padding: "0 0.5rem" }}
           type="button"
-          title={show ? "Hide" : "Show"}
+          aria-label={show ? "Hide" : "Show"} title={show ? "Hide" : "Show"}
           disabled={isCleared}
         >
           {show ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -757,8 +759,8 @@ function SecretField({
               onClick={() => onModeChange("clear")}
               className="btn btn-secondary btn-sm"
               type="button"
-              style={{ color: "#d1614a" }}
-              title={t("discord.settings.secret.clearTitle")}
+              style={{ color: "var(--danger)" }}
+              aria-label={t("discord.settings.secret.clearTitle")} title={t("discord.settings.secret.clearTitle")}
             >
               {t("discord.settings.secret.clear")}
             </button>

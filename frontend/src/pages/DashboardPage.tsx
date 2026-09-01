@@ -101,14 +101,16 @@ export default function DashboardPage() {
       <div style={{
         display: 'flex', alignItems: 'center', gap: '1rem',
         padding: '1rem 1.25rem', marginBottom: '1.25rem',
-        background: 'linear-gradient(135deg, #1b2116 0%, #1e3a5f 50%, #1b2116 100%)',
-        borderRadius: 'var(--radius-lg)', border: '1px solid rgba(59,130,246,0.15)',
+        // Banner con testo bianco sopra: resta scuro in entrambi i temi,
+        // quindi i colori sono letterali per scelta e non token.
+        background: 'linear-gradient(135deg, #16210f 0%, #2c3d1c 50%, #16210f 100%)',
+        borderRadius: 'var(--radius-lg)', border: '1px solid rgba(143,206,90,0.18)',
         boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
         position: 'relative', overflow: 'hidden',
       }}>
         <div style={{
           position: 'absolute', top: -40, right: -40, width: 160, height: 160,
-          background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(143,206,90,0.16) 0%, transparent 70%)',
           pointerEvents: 'none',
         }} />
         <img
@@ -119,7 +121,7 @@ export default function DashboardPage() {
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff',
                        letterSpacing: '-0.02em', lineHeight: 1.2, margin: 0 }}>
-            ArkMania<span style={{ color: '#60a5fa', fontWeight: 600 }}>Gest</span>
+            ArkMania<span style={{ color: '#b6e084', fontWeight: 600 }}>Gest</span>
           </h1>
           <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.55)', margin: '0.15rem 0 0' }}>
             {t('dashboard.subtitle')}
@@ -153,7 +155,7 @@ export default function DashboardPage() {
             }}
           >
             <div style={{
-              width: 38, height: 38, borderRadius: 8, flexShrink: 0,
+              width: 38, height: 38, borderRadius: 4, flexShrink: 0,
               background: `color-mix(in srgb, ${s.color} 12%, transparent)`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
@@ -203,7 +205,7 @@ export default function DashboardPage() {
                 padding: '0.45rem 1rem', borderBottom: '1px solid var(--border)',
               }}>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                              background: '#8fce5a', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
+                              background: 'var(--success)', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
                 <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)',
                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.player_name || t('dashboard.card.unknown')}

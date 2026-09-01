@@ -19,7 +19,7 @@ export default function PrivacyPage() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "var(--bg, #f5f5f7)",
+      background: "var(--bg, var(--bg-card-muted))",
       padding: "clamp(0.75rem, 3vw, 1.5rem)",
     }}>
       <div style={{ maxWidth: 820, margin: "0 auto" }}>

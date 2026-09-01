@@ -26,6 +26,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   settingsApi,
   authApi,
@@ -92,6 +93,7 @@ type AuthState = "loading" | "setup" | "login" | "ready" | "player" | "error";
 // ---------------------------------------------------------------------------
 
 function App() {
+  const { t } = useTranslation();
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -294,9 +296,15 @@ function App() {
 
       {authState === "ready" && (
         <div className="app-layout">
+          {/* Primo elemento focalizzabile della pagina: salta le ~20 voci
+              della sidebar, che altrimenti vanno tabulate a ogni cambio
+              pagina prima di arrivare al contenuto. */}
+          <a href="#main-content" className="skip-link">
+            {t("nav.skipToContent")}
+          </a>
           <Sidebar currentUser={currentUser} onLogout={handleLogout} />
 
-          <main className="app-main">
+          <main className="app-main" id="main-content" tabIndex={-1}>
             <Routes>
               {/* Main navigation */}
               <Route path="/" element={<DashboardPage />} />

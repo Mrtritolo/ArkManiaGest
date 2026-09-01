@@ -221,7 +221,7 @@ export default function ClusterSyncPage() {
                       {m.syncthing.device_id && (
                         <button
                           onClick={() => copyId(m.syncthing!.device_id)}
-                          title={t('clusterSync.syncthing.copyId')}
+                          aria-label={t('clusterSync.syncthing.copyId')} title={t('clusterSync.syncthing.copyId')}
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
                             color: 'var(--text-muted)', padding: 0, flexShrink: 0,

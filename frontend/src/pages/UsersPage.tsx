@@ -17,9 +17,9 @@ import type { AuthUser, UserRole } from '../types'
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  admin:    '#d1614a',
-  operator: '#5cb89a',
-  viewer:   '#8b9a7e',
+  admin:    'var(--danger)',
+  operator: 'var(--cyan)',
+  viewer:   'var(--text-muted)',
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ export default function UsersPage() {
                     <div className="pl-cell-player">
                       <div
                         className="pl-avatar"
-                        style={u.role === 'admin' ? { background: 'linear-gradient(135deg, #d1614a, #d9a061)' } : {}}
+                        style={u.role === 'admin' ? { background: 'linear-gradient(135deg, var(--danger), var(--warning))' } : {}}
                       >
                         {u.display_name[0].toUpperCase()}
                       </div>
@@ -259,15 +259,15 @@ export default function UsersPage() {
                   <td>
                     <span
                       className="pl-chip"
-                      style={{ background: `${color}15`, color, borderColor: `${color}30` }}
+                      style={{ background: `color-mix(in srgb, ${color} 8%, transparent)`, color, borderColor: `color-mix(in srgb, ${color} 19%, transparent)` }}
                     >
                       <Shield size={9} /> {roleLabel}
                     </span>
                   </td>
                   <td>
                     {u.active
-                      ? <span style={{ color: '#8fce5a', fontSize: '0.78rem' }}><UserCheck size={12} /> {t('users.status.active')}</span>
-                      : <span style={{ color: '#d1614a', fontSize: '0.78rem' }}><UserX size={12} /> {t('users.status.disabled')}</span>
+                      ? <span style={{ color: 'var(--success)', fontSize: '0.78rem' }}><UserCheck size={12} /> {t('users.status.active')}</span>
+                      : <span style={{ color: 'var(--danger)', fontSize: '0.78rem' }}><UserX size={12} /> {t('users.status.disabled')}</span>
                     }
                   </td>
                   <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{fmtDateTime(u.last_login, t('users.lastLoginNever'))}</td>
@@ -278,7 +278,7 @@ export default function UsersPage() {
                         onClick={() => openEdit(u)}
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '0.2rem 0.4rem' }}
-                        title={t('users.action.edit')}
+                        aria-label={t('users.action.edit')} title={t('users.action.edit')}
                       >
                         <Pencil size={12} />
                       </button>
@@ -286,15 +286,15 @@ export default function UsersPage() {
                         onClick={() => handleToggleActive(u)}
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '0.2rem 0.4rem' }}
-                        title={u.active ? t('users.status.disable') : t('users.status.enable')}
+                        aria-label={u.active ? t('users.status.disable') : t('users.status.enable')} title={u.active ? t('users.status.disable') : t('users.status.enable')}
                       >
                         {u.active ? <UserX size={12} /> : <UserCheck size={12} />}
                       </button>
                       <button
                         onClick={() => handleDelete(u)}
                         className="btn btn-secondary btn-sm"
-                        style={{ padding: '0.2rem 0.4rem', color: '#d1614a' }}
-                        title={t('users.action.delete')}
+                        style={{ padding: '0.2rem 0.4rem', color: 'var(--danger)' }}
+                        aria-label={t('users.action.delete')} title={t('users.action.delete')}
                       >
                         <Trash2 size={12} />
                       </button>

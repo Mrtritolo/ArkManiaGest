@@ -4,6 +4,7 @@
  * JSON import/export, bulk category edit, copy blueprint to clipboard.
  */
 import { useState, useEffect, useRef } from 'react'
+import { useModalA11y } from "../hooks/useModalA11y";
 import { useTranslation } from 'react-i18next'
 import {
   Database, Download, Upload, Search, RefreshCw, Loader2, CheckCircle,
@@ -83,9 +84,9 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: st
   artifact: Crown, command: Terminal, item: Package,
 }
 const TYPE_COLORS: Record<string, string> = {
-  dino: '#8fce5a', weapon: '#d1614a', armor: '#5cb89a', structure: '#d9a061',
-  consumable: '#9d7cc0', resource: '#d9a061', cosmetic: '#c2739e',
-  artifact: '#d9a061', command: '#8b9a7e', item: '#475569',
+  dino: 'var(--success)', weapon: 'var(--danger)', armor: 'var(--cyan)', structure: 'var(--warning)',
+  consumable: 'var(--violet)', resource: 'var(--warning)', cosmetic: 'var(--pink)',
+  artifact: 'var(--warning)', command: 'var(--text-muted)', item: 'var(--text-secondary)',
 }
 
 export default function BlueprintsPage() {
@@ -133,6 +134,7 @@ export default function BlueprintsPage() {
   const beaconInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
   const [importPreview, setImportPreview] = useState<{ data: unknown[]; filename: string } | null>(null)
+  const importModal = useModalA11y(importPreview !== null, () => setImportPreview(null))
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
 
   // Effects
@@ -450,7 +452,7 @@ export default function BlueprintsPage() {
     if (!importPreview) return null
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-        <div className="card" style={{ width: 440, maxWidth: '90vw', padding: '1.5rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}>
+        <div {...importModal.panelProps} className="card" style={{ width: 440, maxWidth: '90vw', padding: '1.5rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}>
           <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}><Upload size={18} /> {t('blueprints.importDialog.title')}</h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}
              dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.fileLine', { name: importPreview.filename, count: importPreview.data.length }) }} />
@@ -487,9 +489,9 @@ export default function BlueprintsPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleExport} className="btn btn-ghost btn-sm" title={t('blueprints.actions.exportTitle')}><Download size={14} /> {t('blueprints.actions.export')}</button>
-          <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost btn-sm" title={t('blueprints.actions.importTitle')}><Upload size={14} /> {t('blueprints.actions.import')}</button>
-          <button onClick={() => beaconInputRef.current?.click()} disabled={syncing} className="btn btn-secondary btn-sm" title={t('blueprints.beacon.importTitle')}>
+          <button onClick={handleExport} className="btn btn-ghost btn-sm" aria-label={t('blueprints.actions.exportTitle')} title={t('blueprints.actions.exportTitle')}><Download size={14} /> {t('blueprints.actions.export')}</button>
+          <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost btn-sm" aria-label={t('blueprints.actions.importTitle')} title={t('blueprints.actions.importTitle')}><Upload size={14} /> {t('blueprints.actions.import')}</button>
+          <button onClick={() => beaconInputRef.current?.click()} disabled={syncing} className="btn btn-secondary btn-sm" aria-label={t('blueprints.beacon.importTitle')} title={t('blueprints.beacon.importTitle')}>
             <Upload size={14} /> {t('blueprints.beacon.importShort')}
           </button>
           <button onClick={handleSync} disabled={syncing} className="btn btn-primary btn-sm">
@@ -550,13 +552,13 @@ export default function BlueprintsPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', marginBottom: '0.6rem' }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginRight: 4 }}>Sources:</span>
           {sourcesList.map(s => (
-            <span key={s.name || '_none'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0.2rem 0.5rem', borderRadius: 12, border: '1px solid var(--border)', fontSize: '0.74rem', background: 'var(--bg-card-muted)' }}>
+            <span key={s.name || '_none'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0.2rem 0.5rem', borderRadius: 6, border: '1px solid var(--border)', fontSize: '0.74rem', background: 'var(--bg-card-muted)' }}>
               <strong>{s.name || '(none)'}</strong>
               <span style={{ color: 'var(--text-muted)' }}>{s.count}</span>
               {s.name && (
                 <button onClick={() => handleDeleteSource(s.name)} disabled={deleting}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0, lineHeight: 1 }}
-                  title={`Delete every blueprint from "${s.name}"`}>
+                  aria-label={`Delete every blueprint from "${s.name}"`} title={`Delete every blueprint from "${s.name}"`}>
                   <Trash2 size={11} />
                 </button>
               )}
@@ -565,11 +567,11 @@ export default function BlueprintsPage() {
           <span style={{ flex: 1 }} />
           <button onClick={handleDeleteFiltered} disabled={deleting || total === 0}
             className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
-            title="Delete every blueprint matching the current filter">
+            aria-label="Delete every blueprint matching the current filter" title="Delete every blueprint matching the current filter">
             <Trash2 size={13} /> Delete filtered ({total})
           </button>
           <button onClick={handlePruneNonOfficial} disabled={deleting}
-            className="btn btn-ghost btn-sm" title="Drop every entry that is NOT vanilla/DLC/ASA">
+            className="btn btn-ghost btn-sm" aria-label="Drop every entry that is NOT vanilla/DLC/ASA" title="Drop every entry that is NOT vanilla/DLC/ASA">
             <Trash2 size={13} /> Prune non-official
           </button>
         </div>
@@ -660,7 +662,7 @@ export default function BlueprintsPage() {
                   <td>
                     <div className="bp-cell-bp-wrap">
                       <span className="bp-cell-bp">{item.blueprint}</span>
-                      <button onClick={() => copyBp(item.blueprint)} className="bp-copy-btn" title={t('blueprints.table.copyTip')}>
+                      <button onClick={() => copyBp(item.blueprint)} className="bp-copy-btn" aria-label={t('blueprints.table.copyTip')} title={t('blueprints.table.copyTip')}>
                         {copied === item.blueprint ? <CheckCircle size={13} style={{ color: 'var(--success)' }} /> : <Copy size={13} />}
                       </button>
                     </div>
@@ -668,7 +670,7 @@ export default function BlueprintsPage() {
                   <td>
                     <button onClick={() => handleDeleteOne(item.id, item.name)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2 }}
-                      title="Delete this blueprint">
+                      aria-label="Delete this blueprint" title="Delete this blueprint">
                       <Trash2 size={13} />
                     </button>
                   </td>

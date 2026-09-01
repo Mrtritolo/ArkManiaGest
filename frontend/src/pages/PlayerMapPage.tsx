@@ -39,11 +39,11 @@ interface ScanRow {
 // interior.
 const DOT: Record<string, { r: number; fill: string }> = {
   structure: { r: 3, fill: '#00e5ff' },   // cyan
-  dino:      { r: 5, fill: '#9d7cc0' },   // magenta
-  player:    { r: 7, fill: '#d1614a' },   // hot pink/red
+  dino:      { r: 5, fill: 'var(--violet)' },   // magenta
+  player:    { r: 7, fill: 'var(--danger)' },   // hot pink/red
 }
 const DOT_HALO = 'rgba(0, 0, 0, 0.75)'
-const OFFLINE_FILL = '#d9a061'            // acid yellow: offline character
+const OFFLINE_FILL = 'var(--warning)'            // acid yellow: offline character
 
 export default function PlayerMapPage() {
   const { t } = useTranslation()
@@ -403,7 +403,7 @@ export default function PlayerMapPage() {
             <button key={k} className="btn btn-secondary btn-sm"
               onClick={() => runScan(k)}
               disabled={scanning || !eosId || instanceId === ''}
-              title={t('playerMap.scanLayerHint')}>
+              aria-label={t('playerMap.scanLayerHint')} title={t('playerMap.scanLayerHint')}>
               {t(`playerMap.${lbl}`)}
             </button>
           ))}
@@ -429,7 +429,7 @@ export default function PlayerMapPage() {
             <button key={k} onClick={() => toggleLayer(k)}
               className={layers[k] ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
               style={layers[k] ? undefined : { opacity: 0.55 }}
-              title={t('playerMap.toggleLayer')}>
+              aria-label={t('playerMap.toggleLayer')} title={t('playerMap.toggleLayer')}>
               {layers[k] ? <Eye size={11} /> : <EyeOff size={11} />} {label} ({n})
             </button>
           ))}
@@ -459,7 +459,7 @@ export default function PlayerMapPage() {
               <span style={{ opacity: layers.structure ? 1 : 0.35 }}>
                 <Building size={11} /> {nStruct} {t('playerMap.structures')}
               </span>
-              <span style={{ color: '#9d7cc0', opacity: layers.dino ? 1 : 0.35 }}>
+              <span style={{ color: 'var(--violet)', opacity: layers.dino ? 1 : 0.35 }}>
                 ● {nDino} {t('playerMap.dinos')}
               </span>
               <span style={{ color: 'var(--danger)', opacity: layers.player ? 1 : 0.35 }}>
@@ -492,7 +492,7 @@ export default function PlayerMapPage() {
                 setDragging(null)
                 e.currentTarget.releasePointerCapture(e.pointerId)
               }}
-              style={{ background: 'var(--bg-card-muted)', borderRadius: 8, border: '1px solid var(--border)', display: 'block', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}>
+              style={{ background: 'var(--bg-card-muted)', borderRadius: 4, border: '1px solid var(--border)', display: 'block', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}>
               {/* Topographic background: only meaningful when calibrated,
                   because only then does the square correspond to the whole
                   map. Uncalibrated maps keep the plain auto-fit view -- an
@@ -542,13 +542,13 @@ export default function PlayerMapPage() {
             </svg>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => zoomAt(1 / 1.4)}
-                disabled={zoom <= 1} title={t('playerMap.zoomOut')}><ZoomOut size={12} /></button>
+                disabled={zoom <= 1} aria-label={t('playerMap.zoomOut')} title={t('playerMap.zoomOut')}><ZoomOut size={12} /></button>
               <button className="btn btn-ghost btn-sm" onClick={() => zoomAt(1.4)}
-                disabled={zoom >= 8} title={t('playerMap.zoomIn')}><ZoomIn size={12} /></button>
+                disabled={zoom >= 8} aria-label={t('playerMap.zoomIn')} title={t('playerMap.zoomIn')}><ZoomIn size={12} /></button>
               <button className="btn btn-ghost btn-sm"
                 onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}
                 disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
-                title={t('playerMap.zoomReset')}><Maximize2 size={12} /></button>
+                aria-label={t('playerMap.zoomReset')} title={t('playerMap.zoomReset')}><Maximize2 size={12} /></button>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                 {zoom.toFixed(1)}x
               </span>
@@ -558,7 +558,7 @@ export default function PlayerMapPage() {
               {' '}{t('playerMap.zoomHint')}
             </div>
             {view && !view.calibrated && (
-              <div style={{ fontSize: '0.68rem', color: '#d9a061', marginTop: 4 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--warning)', marginTop: 4 }}>
                 {t('playerMap.noCalibration', { map: mapName })}
               </div>
             )}
@@ -580,7 +580,7 @@ export default function PlayerMapPage() {
                         </span>
                       )}
                     </span>
-                    <button className="btn btn-ghost btn-sm" onClick={() => copyTp(sel)} title="cheat TPCoords"><Copy size={10} /> TP</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => copyTp(sel)} aria-label="cheat TPCoords" title="cheat TPCoords"><Copy size={10} /> TP</button>
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <label style={{ fontSize: '0.75rem' }}>{t('playerMap.radius')}</label>
@@ -598,7 +598,7 @@ export default function PlayerMapPage() {
                     {sel.actor_name && sel.actor_type !== 'player' && (
                       <button className="btn btn-danger btn-sm" disabled={acting}
                         onClick={() => doDestroyOne(sel)}
-                        title={sel.actor_name}>
+                        aria-label={sel.actor_name} title={sel.actor_name}>
                         <Crosshair size={11} /> {t('playerMap.destroyThis')}
                       </button>
                     )}
@@ -609,7 +609,7 @@ export default function PlayerMapPage() {
               )}
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 <button className="btn btn-danger btn-sm" disabled={acting || !anyOnline} onClick={doKillPlayer}
-                  title={anyOnline ? '' : t('playerMap.killOfflineHint')}>
+                  aria-label={anyOnline ? '' : t('playerMap.killOfflineHint')} title={anyOnline ? '' : t('playerMap.killOfflineHint')}>
                   <Skull size={11} /> {t('playerMap.killPlayer')}
                 </button>
                 {!anyOnline && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 8 }}>{t('playerMap.killOfflineHint')}</span>}
@@ -627,7 +627,7 @@ export default function PlayerMapPage() {
                   borderBottom: '1px solid var(--border)',
                   background: i === selected ? 'var(--bg-card-muted)' : 'transparent',
                 }}>
-                  <span style={{ fontWeight: 600, color: r.actor_type === 'dino' ? '#9d7cc0' : r.actor_type === 'player' ? (r.is_online ? 'var(--danger)' : '#d9a061') : 'var(--text-secondary)' }}>
+                  <span style={{ fontWeight: 600, color: r.actor_type === 'dino' ? 'var(--violet)' : r.actor_type === 'player' ? (r.is_online ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)' }}>
                     {r.actor_type === 'player' ? (r.is_online ? t('playerMap.online') : t('playerMap.offline')) : r.actor_type}
                   </span>
                   <span title={r.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.custom_name || r.display_name || r.class_name}</span>

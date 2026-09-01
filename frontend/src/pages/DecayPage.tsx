@@ -338,7 +338,7 @@ export default function DecayPage() {
             onClick={handleRunPurge}
             disabled={running}
             className="btn btn-danger btn-sm"
-            title={t('decay.runPurgeTitle')}
+            aria-label={t('decay.runPurgeTitle')} title={t('decay.runPurgeTitle')}
           >
             <Trash2 size={14} />
             {running ? t('decay.runningPurge') : t('decay.runPurgeButton')}
@@ -394,11 +394,11 @@ export default function DecayPage() {
           { label: t('decay.stats.expired'), value: stats.expired, icon: XCircle, color: 'var(--danger)', bg: 'var(--danger-bg)' },
           { label: t('decay.stats.expiring'), value: stats.expiring_soon, icon: AlertTriangle, color: 'var(--warning)', bg: 'var(--warning-bg)' },
           { label: t('decay.stats.safe'), value: stats.safe, icon: CheckCircle, color: 'var(--success)', bg: 'var(--success-bg)' },
-          { label: t('decay.stats.pending'), value: stats.pending, icon: Clock, color: '#9d7cc0', bg: 'rgba(139,92,246,0.08)' },
+          { label: t('decay.stats.pending'), value: stats.pending, icon: Clock, color: 'var(--violet)', bg: 'rgba(139,92,246,0.08)' },
           { label: t('decay.stats.purged7d'), value: stats.purged_last_7d, icon: Trash2, color: 'var(--text-muted)', bg: 'var(--bg-card-muted)' },
         ].map(s => (
           <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.85rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 7, background: s.bg, border: `1px solid ${s.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 4, background: s.bg, border: `1px solid ${s.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <s.icon size={16} color={s.color} />
             </div>
             <div>
@@ -492,7 +492,7 @@ export default function DecayPage() {
                         onClick={() => handleSchedulePurge(tr)}
                         disabled={acting !== null || running}
                         className="btn btn-ghost btn-sm"
-                        title={t('decay.scheduleTitle')}
+                        aria-label={t('decay.scheduleTitle')} title={t('decay.scheduleTitle')}
                         style={{ padding: '0.2rem 0.4rem' }}
                       >
                         <Clock size={12} />
@@ -501,7 +501,7 @@ export default function DecayPage() {
                         onClick={() => handlePurgeTribeNow(tr)}
                         disabled={acting !== null || running}
                         className="btn btn-danger btn-sm"
-                        title={t('decay.purgeNowTitle')}
+                        aria-label={t('decay.purgeNowTitle')} title={t('decay.purgeNowTitle')}
                         style={{ padding: '0.2rem 0.4rem' }}
                       >
                         {acting === tr.targeting_team
@@ -541,7 +541,7 @@ export default function DecayPage() {
                   <span style={{ fontSize: '0.82rem' }}>{p.server_name || p.server_key.split('_')[0]}</span>
                   <span style={{
                     fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase',
-                    color: p.reason === 'orphaned' ? '#9d7cc0' : 'var(--danger)',
+                    color: p.reason === 'orphaned' ? 'var(--violet)' : 'var(--danger)',
                   }}>{p.reason === 'orphaned' ? t('decay.reason.orphaned') : p.reason === 'expired' ? t('decay.reason.expired') : p.reason}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: p.structure_count > 500 ? 700 : 400, color: p.structure_count > 500 ? 'var(--danger)' : 'var(--text-secondary)' }}>{p.structure_count.toLocaleString(undefined)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{p.dino_count}</span>
@@ -566,7 +566,7 @@ export default function DecayPage() {
                     <button
                       onClick={() => toggleDetail(p)}
                       className={dOpen ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                      title={t('decay.detail.title')}
+                      aria-label={t('decay.detail.title')} title={t('decay.detail.title')}
                     >
                       <MapPin size={12} />
                       {dOpen ? t('decay.detail.hide') : t('decay.detail.show')}
@@ -575,7 +575,7 @@ export default function DecayPage() {
                       onClick={() => handleCancelPurge(p)}
                       disabled={acting !== null}
                       className="btn btn-ghost btn-sm"
-                      title={t('decay.cancelTitle')}
+                      aria-label={t('decay.cancelTitle')} title={t('decay.cancelTitle')}
                     >
                       {acting === p.targeting_team
                         ? <Loader2 size={12} className="pl-spin" />
@@ -584,7 +584,7 @@ export default function DecayPage() {
                     <span style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 3px' }} />
                     <button className="btn btn-ghost btn-sm"
                       disabled={!tgt || cmdBusy !== null}
-                      title={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                      aria-label={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
                       onClick={() => {
                         if (!tgt) return
                         const raw = window.prompt(t('decay.cmd.grantPrompt'), '30')
@@ -598,7 +598,7 @@ export default function DecayPage() {
                     <button className="btn btn-ghost btn-sm"
                       disabled={!tgt || cmdBusy !== null}
                       style={{ color: 'var(--danger)' }}
-                      title={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                      aria-label={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
                       onClick={() => tgt && runCmd(`str-${p.targeting_team}`,
                         () => arkDecayApi.removeStructures(tgt.id, p.targeting_team),
                         t('decay.cmd.confirmStructs', { team: p.targeting_team, server: tgtName }))}>
@@ -607,7 +607,7 @@ export default function DecayPage() {
                     <button className="btn btn-ghost btn-sm"
                       disabled={!tgt || cmdBusy !== null}
                       style={{ color: 'var(--danger)' }}
-                      title={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                      aria-label={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
                       onClick={() => tgt && runCmd(`din-${p.targeting_team}`,
                         () => arkDecayApi.removeDinos(tgt.id, p.targeting_team),
                         t('decay.cmd.confirmDinos', { team: p.targeting_team, server: tgtName }))}>
@@ -629,7 +629,7 @@ export default function DecayPage() {
                             the toolbar to work out which server this row is on. */}
                         <button className="btn btn-secondary btn-sm"
                           disabled={!tgt || cmdBusy !== null}
-                          title={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')}
+                          aria-label={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')} title={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')}
                           onClick={() => tgt && runCmd(`scan-${p.targeting_team}`,
                             async () => {
                               const res = await arkDecayApi.scanInstance(tgt.id)
@@ -644,7 +644,7 @@ export default function DecayPage() {
                     ) : (
                       <>
                       {detailTruncated && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem', fontWeight: 600, color: '#d9a061', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 6, padding: '0.4rem 0.7rem', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem', fontWeight: 600, color: 'var(--warning)', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 6, padding: '0.4rem 0.7rem', marginBottom: 6 }}>
                           <AlertTriangle size={13} /> {t('decay.detail.truncated')}
                         </div>
                       )}
@@ -672,19 +672,19 @@ export default function DecayPage() {
                         </div>
                         {detailVisible.map(({ r: row, i: idx }) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
-                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? '#9d7cc0' : 'var(--text-secondary)' }}>{row.actor_type}</span>
+                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? 'var(--violet)' : 'var(--text-secondary)' }}>{row.actor_type}</span>
                             <span title={row.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.custom_name || row.display_name || row.class_name}</span>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{row.owner_name || '—'}</span>
                             <span style={{ fontFamily: 'var(--font-mono)' }}>{row.actor_type === 'dino' && row.dino_level > 0 ? row.dino_level : '—'}</span>
                             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{Math.round(row.pos_x)} {Math.round(row.pos_y)} {Math.round(row.pos_z)}</span>
                             <span style={{ display: 'flex', gap: 4 }}>
-                              <button onClick={() => copyTp(row, idx)} className="btn btn-ghost btn-sm" title={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`}>
+                              <button onClick={() => copyTp(row, idx)} className="btn btn-ghost btn-sm" aria-label={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`} title={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`}>
                                 <Copy size={10} /> {copiedIdx === idx ? t('decay.detail.copied') : t('decay.detail.copyTp')}
                               </button>
                               {row.actor_name && (
                                 <button className="btn btn-danger btn-sm"
                                   disabled={cmdInstance === '' || cmdBusy !== null}
-                                  title={row.actor_name}
+                                  aria-label={row.actor_name} title={row.actor_name}
                                   onClick={() => destroyOne(row, idx)}>
                                   <Crosshair size={10} />
                                 </button>

@@ -19,6 +19,7 @@
  * UI stays consistent with the database after every action.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useModalA11y } from "../../hooks/useModalA11y";
 import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, CheckCircle, Link2, Link2Off,
@@ -43,9 +44,9 @@ function avatarUrl(userId: string, hash: string | null): string | null {
 }
 
 const ROLE_COLORS: Record<string, string> = {
-  admin:    "#d1614a",
-  operator: "#5cb89a",
-  viewer:   "#8b9a7e",
+  admin:    "var(--danger)",
+  operator: "var(--cyan)",
+  viewer:   "var(--text-muted)",
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -151,7 +152,7 @@ export default function AccountsTab() {
               const display = acc.discord_global_name || acc.discord_username || acc.discord_user_id;
               const roleColor = acc.app_user_role
                 ? ROLE_COLORS[acc.app_user_role] ?? ROLE_COLORS.viewer
-                : "#8b9a7e";
+                : "var(--text-muted)";
               return (
                 <tr key={acc.discord_user_id}>
                   {/* Discord identity */}
@@ -187,9 +188,9 @@ export default function AccountsTab() {
                         <span
                           className="pl-chip"
                           style={{
-                            background: `${roleColor}15`,
+                            background: `color-mix(in srgb, ${roleColor} 8%, transparent)`,
                             color: roleColor,
-                            borderColor: `${roleColor}30`,
+                            borderColor: `color-mix(in srgb, ${roleColor} 19%, transparent)`,
                           }}
                         >
                           <UserCog size={9} /> {acc.app_user_username}
@@ -198,7 +199,7 @@ export default function AccountsTab() {
                         <button
                           className="btn btn-secondary btn-sm"
                           style={{ padding: "0.15rem 0.35rem" }}
-                          title={t("discord.accounts.action.unlinkAppUser")}
+                          aria-label={t("discord.accounts.action.unlinkAppUser")} title={t("discord.accounts.action.unlinkAppUser")}
                           onClick={() => handleUnlinkAppUser(acc)}
                         >
                           <Link2Off size={12} />
@@ -221,14 +222,14 @@ export default function AccountsTab() {
                         <span
                           className="pl-chip"
                           title={acc.eos_id}
-                          style={{ background: "#8fce5a15", color: "#8fce5a", borderColor: "#8fce5a30" }}
+                          style={{ background: "color-mix(in srgb, var(--success) 8%, transparent)", color: "var(--success)", borderColor: "color-mix(in srgb, var(--success) 19%, transparent)" }}
                         >
                           <Database size={9} /> {acc.eos_id.slice(0, 8)}…
                         </span>
                         <button
                           className="btn btn-secondary btn-sm"
                           style={{ padding: "0.15rem 0.35rem" }}
-                          title={t("discord.accounts.action.unlinkEos")}
+                          aria-label={t("discord.accounts.action.unlinkEos")} title={t("discord.accounts.action.unlinkEos")}
                           onClick={() => handleUnlinkEos(acc)}
                         >
                           <Link2Off size={12} />
@@ -377,8 +378,8 @@ function LinkAppUserModal({
               style={{
                 display: "flex", alignItems: "center", gap: "0.5rem",
                 padding: "0.4rem 0.55rem", cursor: "pointer",
-                background: active ? "var(--accent-50, #5cb89a22)" : "transparent",
-                borderLeft: active ? "3px solid var(--accent, #5cb89a)" : "3px solid transparent",
+                background: active ? "var(--accent-50, color-mix(in srgb, var(--cyan) 13%, transparent))" : "transparent",
+                borderLeft: active ? "3px solid var(--accent, var(--cyan))" : "3px solid transparent",
               }}
             >
               <div className="pl-avatar" style={{ width: 26, height: 26, fontSize: 11 }}>
@@ -390,7 +391,7 @@ function LinkAppUserModal({
               </div>
               <span
                 className="pl-chip"
-                style={{ background: `${color}15`, color, borderColor: `${color}30` }}
+                style={{ background: `color-mix(in srgb, ${color} 8%, transparent)`, color, borderColor: `color-mix(in srgb, ${color} 19%, transparent)` }}
               >
                 {u.role}
               </span>
@@ -514,8 +515,8 @@ function LinkEosModal({
               style={{
                 display: "flex", alignItems: "center", gap: "0.5rem",
                 padding: "0.4rem 0.55rem", cursor: "pointer",
-                background: active ? "var(--accent-50, #5cb89a22)" : "transparent",
-                borderLeft: active ? "3px solid var(--accent, #5cb89a)" : "3px solid transparent",
+                background: active ? "var(--accent-50, color-mix(in srgb, var(--cyan) 13%, transparent))" : "transparent",
+                borderLeft: active ? "3px solid var(--accent, var(--cyan))" : "3px solid transparent",
               }}
             >
               <div style={{ flex: 1 }}>
@@ -554,6 +555,8 @@ function ModalShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  // La modale monta solo quando e' aperta, quindi `open` e' sempre true qui.
+  const { panelProps } = useModalA11y(true, onClose);
   return (
     <div
       onClick={onClose}
@@ -564,10 +567,11 @@ function ModalShell({
       }}
     >
       <div
+        {...panelProps}
         onClick={e => e.stopPropagation()}
         style={{
           background: "var(--surface, #fff)", color: "var(--text)",
-          padding: "1rem 1.1rem", borderRadius: 8, minWidth: 420,
+          padding: "1rem 1.1rem", borderRadius: 4, minWidth: 420,
           maxWidth: 560, boxShadow: "0 10px 40px rgba(0,0,0,0.35)",
         }}
       >

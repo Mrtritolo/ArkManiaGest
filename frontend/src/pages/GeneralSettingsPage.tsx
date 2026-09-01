@@ -298,7 +298,7 @@ export default function GeneralSettingsPage() {
               style={{
                 fontSize: '1rem',
                 fontWeight: 700,
-                color: versionInfo?.update_available ? 'var(--warning, #d9a061)' : 'var(--success, #8fce5a)',
+                color: versionInfo?.update_available ? 'var(--warning, var(--warning))' : 'var(--success, var(--success))',
               }}
             >
               {versionInfo?.latest || (versionInfo?.error ? '—' : '…')}
@@ -326,7 +326,9 @@ export default function GeneralSettingsPage() {
                 onClick={handleInstallUpdate}
                 disabled={installing || !preflight?.can_self_update}
                 className="btn btn-primary"
-                title={preflight?.can_self_update
+                aria-label={preflight?.can_self_update
+                  ? ''
+                  : preflight?.hint || t('generalSettings.updates.installDisabled')} title={preflight?.can_self_update
                   ? ''
                   : preflight?.hint || t('generalSettings.updates.installDisabled')}
               >
@@ -352,17 +354,17 @@ export default function GeneralSettingsPage() {
         {/* Status line */}
         <div style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
           {versionInfo?.error ? (
-            <span style={{ color: 'var(--danger, #d1614a)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{ color: 'var(--danger, var(--danger))', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
               <AlertCircle size={14} />
               {t('generalSettings.updates.error', { message: versionInfo.error })}
             </span>
           ) : versionInfo?.update_available && versionInfo.latest ? (
-            <span style={{ color: 'var(--warning, #d9a061)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{ color: 'var(--warning, var(--warning))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
               <Download size={14} />
               {t('generalSettings.updates.updateAvailable', { version: versionInfo.latest })}
             </span>
           ) : versionInfo?.latest ? (
-            <span style={{ color: 'var(--success, #8fce5a)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{ color: 'var(--success, var(--success))', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
               <CheckCircle size={14} /> {t('generalSettings.updates.upToDate')}
             </span>
           ) : null}
@@ -379,15 +381,15 @@ export default function GeneralSettingsPage() {
               marginTop: '0.75rem',
               padding: '0.6rem 0.85rem',
               borderRadius: 'var(--radius-sm, 4px)',
-              border: '1px solid var(--warning, #d9a061)',
-              background: 'color-mix(in srgb, var(--warning, #d9a061) 10%, transparent)',
+              border: '1px solid var(--warning, var(--warning))',
+              background: 'color-mix(in srgb, var(--warning, var(--warning)) 10%, transparent)',
               display: 'flex',
               alignItems: 'flex-start',
               gap: '0.5rem',
               fontSize: '0.82rem',
             }}
           >
-            <AlertTriangle size={15} style={{ marginTop: 2, color: 'var(--warning, #d9a061)', flexShrink: 0 }} />
+            <AlertTriangle size={15} style={{ marginTop: 2, color: 'var(--warning, var(--warning))', flexShrink: 0 }} />
             <div>
               <strong>{t('generalSettings.updates.inUpdaterUnavailable')}</strong>
               <div style={{ marginTop: '0.2rem', color: 'var(--text-muted)' }}>
@@ -404,9 +406,9 @@ export default function GeneralSettingsPage() {
               marginTop: '0.75rem',
               padding: '0.6rem 0.85rem',
               borderRadius: 'var(--radius-sm, 4px)',
-              border: '1px solid var(--danger, #d1614a)',
-              background: 'color-mix(in srgb, var(--danger, #d1614a) 10%, transparent)',
-              color: 'var(--danger, #d1614a)',
+              border: '1px solid var(--danger, var(--danger))',
+              background: 'color-mix(in srgb, var(--danger, var(--danger)) 10%, transparent)',
+              color: 'var(--danger, var(--danger))',
               fontSize: '0.82rem',
             }}
           >
@@ -427,8 +429,8 @@ export default function GeneralSettingsPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-              {updateStatus.state === 'success' && <CheckCircle size={14} style={{ color: 'var(--success, #8fce5a)' }} />}
-              {updateStatus.state === 'failed'  && <AlertCircle size={14} style={{ color: 'var(--danger, #d1614a)' }} />}
+              {updateStatus.state === 'success' && <CheckCircle size={14} style={{ color: 'var(--success, var(--success))' }} />}
+              {updateStatus.state === 'failed'  && <AlertCircle size={14} style={{ color: 'var(--danger, var(--danger))' }} />}
               {(updateStatus.state === 'downloading' || updateStatus.state === 'running' || updateStatus.state === 'verifying') && (
                 <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
               )}
