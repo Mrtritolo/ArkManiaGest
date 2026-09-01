@@ -48,7 +48,7 @@
   --accent-bright: #b6e084;
   --accent-glow: rgba(143,206,90,0.10);
   /* Anello di focus: deve leggersi, non accennare. */
-  --focus-ring: 0 0 0 3px rgba(143,206,90,0.55);
+  --focus-ring: 0 0 0 3px rgba(143,206,90,0.7);
   --accent-light: rgba(143,206,90,0.16);
 
   /* Il secondo colore della coppia: corteccia e ambra. Non e' un "grigio
@@ -137,7 +137,9 @@
   --accent:         #457024;
   --accent-bright:  #6a9f3d;
   --accent-glow:    rgba(69,112,36,0.10);
-  --focus-ring:     0 0 0 3px rgba(69,112,36,0.45);
+  /* 0.85 e non meno: su pergamena un verde scuro traslucido schiarisce
+     poco, e sotto questo valore l'anello scende sotto il 3:1. */
+  --focus-ring:     0 0 0 3px rgba(69,112,36,0.85);
   --accent-light:   rgba(69,112,36,0.14);
 
   --brown:          #8a5a2b;
