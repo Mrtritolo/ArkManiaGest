@@ -220,6 +220,10 @@ reference/              # POK-manager checkout — gitignored, used as a templat
   consumed by the release tooling, then deleted. The canonical record is
   CHANGELOG.md.
 
+### Git conventions
+- **Never add a `Co-Authored-By:` trailer to a commit** (maintainer's
+  preference, and it holds across every repo of this project).
+
 ### Language conventions
 - **Code, comments, docstrings, commit messages, PR descriptions: English.**
 - **User-facing UI strings: localised via i18n (IT + EN).**
