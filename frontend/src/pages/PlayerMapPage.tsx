@@ -45,8 +45,16 @@ const DOT: Record<string, { r: number; fill: string }> = {
 const DOT_HALO = 'rgba(0, 0, 0, 0.75)'
 const OFFLINE_FILL = 'var(--warning)'            // acid yellow: offline character
 
-export default function PlayerMapPage() {
+interface Props {
+  currentUser?: { role?: string } | null
+}
+
+export default function PlayerMapPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Every command on this page goes through an admin-only endpoint -- even
+  // the scan, which fires RCON. Showing the controls to an operator who can
+  // only ever get a 403 back is a trap, so they are hidden outright.
+  const isAdmin = currentUser?.role === 'admin'
 
   const [players, setPlayers] = useState<PlayerListItem[]>([])
   const [instances, setInstances] = useState<ServerInstance[]>([])
@@ -392,22 +400,30 @@ export default function PlayerMapPage() {
             ))}
           </select>
         </div>
-        <button className="btn btn-primary" onClick={() => runScan('all')} disabled={scanning || !eosId || instanceId === ''}>
-          {scanning ? <><Loader2 size={14} className="pl-spin" /> {t('playerMap.scanning')}</> : <><RefreshCw size={14} /> {t('playerMap.scan')}</>}
-        </button>
-        {/* Per-layer re-scan: same command, one layer. The plugin wipes only
-            that layer's snapshot, so the others stay on the map. */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {([['structures', 'scanStructures'], ['dinos', 'scanDinos'],
-             ['players', 'scanPlayers']] as [ScanKind, string][]).map(([k, lbl]) => (
-            <button key={k} className="btn btn-secondary btn-sm"
-              onClick={() => runScan(k)}
-              disabled={scanning || !eosId || instanceId === ''}
-              aria-label={t('playerMap.scanLayerHint')} title={t('playerMap.scanLayerHint')}>
-              {t(`playerMap.${lbl}`)}
+        {isAdmin ? (
+          <>
+            <button className="btn btn-primary" onClick={() => runScan('all')} disabled={scanning || !eosId || instanceId === ''}>
+              {scanning ? <><Loader2 size={14} className="pl-spin" /> {t('playerMap.scanning')}</> : <><RefreshCw size={14} /> {t('playerMap.scan')}</>}
             </button>
-          ))}
-        </div>
+            {/* Per-layer re-scan: same command, one layer. The plugin wipes only
+                that layer's snapshot, so the others stay on the map. */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {([['structures', 'scanStructures'], ['dinos', 'scanDinos'],
+                 ['players', 'scanPlayers']] as [ScanKind, string][]).map(([k, lbl]) => (
+                <button key={k} className="btn btn-secondary btn-sm"
+                  onClick={() => runScan(k)}
+                  disabled={scanning || !eosId || instanceId === ''}
+                  aria-label={t('playerMap.scanLayerHint')} title={t('playerMap.scanLayerHint')}>
+                  {t(`playerMap.${lbl}`)}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {t('playerMap.adminOnly')}
+          </span>
+        )}
         {scanReply && <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flexBasis: '100%' }}>{scanReply}</span>}
 
         {rows.length > 0 && (
@@ -566,55 +582,58 @@ export default function PlayerMapPage() {
 
           {/* Pannello azioni + lista */}
           <div style={{ flex: 1, minWidth: 340, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="card" style={{ padding: '0.8rem 1rem' }}>
-              <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 8 }}><MapPin size={13} /> {t('playerMap.actionsTitle')}</div>
-              {sel ? (
-                <>
-                  <div style={{ fontSize: '0.8rem', marginBottom: 8 }}>
-                    <b>{sel.custom_name || sel.display_name || sel.class_name}</b>
-                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginLeft: 8 }}>
-                      <span style={{ color: 'var(--accent)' }}>{coordLabel(sel)}</span>
-                      {gpsLabel(sel) && (
-                        <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                          ({Math.round(sel.pos_x)} {Math.round(sel.pos_y)} {Math.round(sel.pos_z)})
-                        </span>
-                      )}
-                    </span>
-                    <button className="btn btn-ghost btn-sm" onClick={() => copyTp(sel)} aria-label="cheat TPCoords" title="cheat TPCoords"><Copy size={10} /> TP</button>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: '0.75rem' }}>{t('playerMap.radius')}</label>
-                    <input type="number" className="input" style={{ width: 80 }} min={1} max={2000}
-                      value={radius} onChange={e => setRadius(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))} />
-                    <button className="btn btn-danger btn-sm" disabled={acting} onClick={() => doDestroy('structures', sel, radius)}>
-                      <Building size={11} /> {t('playerMap.actions.structures')}
-                    </button>
-                    <button className="btn btn-danger btn-sm" disabled={acting} onClick={() => doDestroy('dinos', sel, radius)}>
-                      <Skull size={11} /> {t('playerMap.actions.dinos')}
-                    </button>
-                    <button className="btn btn-danger btn-sm" disabled={acting} onClick={() => doDestroy('all', sel, radius)}>
-                      {t('playerMap.actions.all')}
-                    </button>
-                    {sel.actor_name && sel.actor_type !== 'player' && (
-                      <button className="btn btn-danger btn-sm" disabled={acting}
-                        onClick={() => doDestroyOne(sel)}
-                        aria-label={sel.actor_name} title={sel.actor_name}>
-                        <Crosshair size={11} /> {t('playerMap.destroyThis')}
+            {/* Destroy / kill: admin-only server side, so hidden here too. */}
+            {isAdmin && (
+              <div className="card" style={{ padding: '0.8rem 1rem' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 8 }}><MapPin size={13} /> {t('playerMap.actionsTitle')}</div>
+                {sel ? (
+                  <>
+                    <div style={{ fontSize: '0.8rem', marginBottom: 8 }}>
+                      <b>{sel.custom_name || sel.display_name || sel.class_name}</b>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginLeft: 8 }}>
+                        <span style={{ color: 'var(--accent)' }}>{coordLabel(sel)}</span>
+                        {gpsLabel(sel) && (
+                          <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                            ({Math.round(sel.pos_x)} {Math.round(sel.pos_y)} {Math.round(sel.pos_z)})
+                          </span>
+                        )}
+                      </span>
+                      <button className="btn btn-ghost btn-sm" onClick={() => copyTp(sel)} aria-label="cheat TPCoords" title="cheat TPCoords"><Copy size={10} /> TP</button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <label style={{ fontSize: '0.75rem' }}>{t('playerMap.radius')}</label>
+                      <input type="number" className="input" style={{ width: 80 }} min={1} max={2000}
+                        value={radius} onChange={e => setRadius(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))} />
+                      <button className="btn btn-danger btn-sm" disabled={acting} onClick={() => doDestroy('structures', sel, radius)}>
+                        <Building size={11} /> {t('playerMap.actions.structures')}
                       </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t('playerMap.selectHint')}</div>
-              )}
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <button className="btn btn-danger btn-sm" disabled={acting || !anyOnline} onClick={doKillPlayer}
-                  aria-label={anyOnline ? '' : t('playerMap.killOfflineHint')} title={anyOnline ? '' : t('playerMap.killOfflineHint')}>
-                  <Skull size={11} /> {t('playerMap.killPlayer')}
-                </button>
-                {!anyOnline && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 8 }}>{t('playerMap.killOfflineHint')}</span>}
+                      <button className="btn btn-danger btn-sm" disabled={acting} onClick={() => doDestroy('dinos', sel, radius)}>
+                        <Skull size={11} /> {t('playerMap.actions.dinos')}
+                      </button>
+                      <button className="btn btn-danger btn-sm" disabled={acting} onClick={() => doDestroy('all', sel, radius)}>
+                        {t('playerMap.actions.all')}
+                      </button>
+                      {sel.actor_name && sel.actor_type !== 'player' && (
+                        <button className="btn btn-danger btn-sm" disabled={acting}
+                          onClick={() => doDestroyOne(sel)}
+                          aria-label={sel.actor_name} title={sel.actor_name}>
+                          <Crosshair size={11} /> {t('playerMap.destroyThis')}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t('playerMap.selectHint')}</div>
+                )}
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                  <button className="btn btn-danger btn-sm" disabled={acting || !anyOnline} onClick={doKillPlayer}
+                    aria-label={anyOnline ? '' : t('playerMap.killOfflineHint')} title={anyOnline ? '' : t('playerMap.killOfflineHint')}>
+                    <Skull size={11} /> {t('playerMap.killPlayer')}
+                  </button>
+                  {!anyOnline && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 8 }}>{t('playerMap.killOfflineHint')}</span>}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="card" style={{ padding: 0, maxHeight: 420, overflowY: 'auto' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 60px 190px', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', padding: '0.35rem 0.8rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>

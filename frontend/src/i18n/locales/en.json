@@ -648,6 +648,7 @@
     "defaultReason": "No reason"
   },
   "decay": {
+    "adminOnly": "In-game actions (purge, per-map commands, expiry, single-object destroy) require an administrator account. Browsing and the purge queue stay open to every operator.",
     "heading": "Decay Manager",
     "subtitle": "Tribe decay management — {{count}} tribes monitored",
     "hoursLeft": {
@@ -2467,6 +2468,7 @@
     }
   },
   "playerMap": {
+    "adminOnly": "Scanning and the map actions require an administrator account.",
     "title": "Player map",
     "subtitle": "Scan a player on one map: see where they are, their structures and dinos, then act surgically.",
     "player": "Player",

@@ -53,8 +53,17 @@ function daysSince(iso: string | null): number | null {
 
 type TabType = 'tribes' | 'pending' | 'log'
 
-export default function DecayPage() {
+interface Props {
+  currentUser?: { role?: string } | null
+}
+
+export default function DecayPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Everything that reaches the plugin over RCON -- purge, per-map commands,
+  // set-expiry, single-object destroy -- is Depends(require_admin) on the
+  // backend. Staging a tribe in ARKM_decay_pending (schedule / cancel) is
+  // deliberately not, so those two stay available to every operator.
+  const isAdmin = currentUser?.role === 'admin'
 
   function formatHoursLeft(h: number) {
     if (h < 0) return t('decay.hoursLeft.expired', { h: Math.abs(h) })
@@ -334,51 +343,60 @@ export default function DecayPage() {
           <p className="page-subtitle">{t('decay.subtitle', { count: stats.total })}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          <button
-            onClick={handleRunPurge}
-            disabled={running}
-            className="btn btn-danger btn-sm"
-            aria-label={t('decay.runPurgeTitle')} title={t('decay.runPurgeTitle')}
-          >
-            <Trash2 size={14} />
-            {running ? t('decay.runningPurge') : t('decay.runPurgeButton')}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleRunPurge}
+              disabled={running}
+              className="btn btn-danger btn-sm"
+              aria-label={t('decay.runPurgeTitle')} title={t('decay.runPurgeTitle')}
+            >
+              <Trash2 size={14} />
+              {running ? t('decay.runningPurge') : t('decay.runPurgeButton')}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Per-map command bar: every plugin command is scoped to one server,
           so the operator says WHICH map instead of firing at the cluster. */}
-      <div className="card" style={{ padding: '0.7rem 0.9rem', marginBottom: '0.75rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Server size={14} style={{ opacity: 0.6 }} />
-        <select className="input" value={cmdInstance} style={{ minWidth: 210 }}
-          onChange={e => setCmdInstance(e.target.value === '' ? '' : Number(e.target.value))}>
-          <option value="">{t('decay.cmd.pickServer')}</option>
-          {instances.map(i => (
-            <option key={i.id} value={i.id}>{i.display_name || i.name} ({i.map_name})</option>
-          ))}
-        </select>
-        <button className="btn btn-secondary btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-          onClick={() => runCmd('scan', () => arkDecayApi.scanInstance(cmdInstance as number))}>
-          {cmdBusy === 'scan' ? <Loader2 size={12} className="pl-spin" /> : <RefreshCw size={12} />} {t('decay.cmd.scan')}
-        </button>
-        <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-          onClick={() => runCmd('purge', () => arkDecayApi.purgeInstance(cmdInstance as number), t('decay.cmd.confirmPurge'))}>
-          {cmdBusy === 'purge' ? <Loader2 size={12} className="pl-spin" /> : <Trash2 size={12} />} {t('decay.cmd.purgeMap')}
-        </button>
-        <button className="btn btn-secondary btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-          onClick={() => runCmd('unclaimed', () => arkDecayApi.cleanupUnclaimed(cmdInstance as number), t('decay.cmd.confirmUnclaimed'))}>
-          {cmdBusy === 'unclaimed' ? <Loader2 size={12} className="pl-spin" /> : <Skull size={12} />} {t('decay.cmd.unclaimed')}
-        </button>
-        <button className="btn btn-ghost btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
-          onClick={() => runCmd('reload', () => arkDecayApi.reloadInstance(cmdInstance as number))}>
-          {cmdBusy === 'reload' ? <Loader2 size={12} className="pl-spin" /> : <RotateCw size={12} />} {t('decay.cmd.reload')}
-        </button>
-        {cmdReply && (
-          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', flexBasis: '100%', fontFamily: 'var(--font-mono)' }}>
-            {cmdReply}
-          </span>
-        )}
-      </div>
+      {isAdmin ? (
+        <div className="card" style={{ padding: '0.7rem 0.9rem', marginBottom: '0.75rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Server size={14} style={{ opacity: 0.6 }} />
+          <select className="input" value={cmdInstance} style={{ minWidth: 210 }}
+            onChange={e => setCmdInstance(e.target.value === '' ? '' : Number(e.target.value))}>
+            <option value="">{t('decay.cmd.pickServer')}</option>
+            {instances.map(i => (
+              <option key={i.id} value={i.id}>{i.display_name || i.name} ({i.map_name})</option>
+            ))}
+          </select>
+          <button className="btn btn-secondary btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+            onClick={() => runCmd('scan', () => arkDecayApi.scanInstance(cmdInstance as number))}>
+            {cmdBusy === 'scan' ? <Loader2 size={12} className="pl-spin" /> : <RefreshCw size={12} />} {t('decay.cmd.scan')}
+          </button>
+          <button className="btn btn-danger btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+            onClick={() => runCmd('purge', () => arkDecayApi.purgeInstance(cmdInstance as number), t('decay.cmd.confirmPurge'))}>
+            {cmdBusy === 'purge' ? <Loader2 size={12} className="pl-spin" /> : <Trash2 size={12} />} {t('decay.cmd.purgeMap')}
+          </button>
+          <button className="btn btn-secondary btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+            onClick={() => runCmd('unclaimed', () => arkDecayApi.cleanupUnclaimed(cmdInstance as number), t('decay.cmd.confirmUnclaimed'))}>
+            {cmdBusy === 'unclaimed' ? <Loader2 size={12} className="pl-spin" /> : <Skull size={12} />} {t('decay.cmd.unclaimed')}
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={cmdInstance === '' || cmdBusy !== null}
+            onClick={() => runCmd('reload', () => arkDecayApi.reloadInstance(cmdInstance as number))}>
+            {cmdBusy === 'reload' ? <Loader2 size={12} className="pl-spin" /> : <RotateCw size={12} />} {t('decay.cmd.reload')}
+          </button>
+          {cmdReply && (
+            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', flexBasis: '100%', fontFamily: 'var(--font-mono)' }}>
+              {cmdReply}
+            </span>
+          )}
+        </div>
+      ) : (
+        <p className="card" style={{ padding: '0.6rem 0.9rem', marginBottom: '0.75rem',
+                                     fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {t('decay.adminOnly')}
+        </p>
+      )}
 
       {error && (
         <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
@@ -497,17 +515,19 @@ export default function DecayPage() {
                       >
                         <Clock size={12} />
                       </button>
-                      <button
-                        onClick={() => handlePurgeTribeNow(tr)}
-                        disabled={acting !== null || running}
-                        className="btn btn-danger btn-sm"
-                        aria-label={t('decay.purgeNowTitle')} title={t('decay.purgeNowTitle')}
-                        style={{ padding: '0.2rem 0.4rem' }}
-                      >
-                        {acting === tr.targeting_team
-                          ? <span style={{ fontSize: '0.65rem' }}>…</span>
-                          : <><Trash2 size={11} /> {t('decay.purgeNowButton')}</>}
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handlePurgeTribeNow(tr)}
+                          disabled={acting !== null || running}
+                          className="btn btn-danger btn-sm"
+                          aria-label={t('decay.purgeNowTitle')} title={t('decay.purgeNowTitle')}
+                          style={{ padding: '0.2rem 0.4rem' }}
+                        >
+                          {acting === tr.targeting_team
+                            ? <span style={{ fontSize: '0.65rem' }}>…</span>
+                            : <><Trash2 size={11} /> {t('decay.purgeNowButton')}</>}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -581,38 +601,40 @@ export default function DecayPage() {
                         ? <Loader2 size={12} className="pl-spin" />
                         : <XCircle size={12} />}
                     </button>
-                    <span style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 3px' }} />
-                    <button className="btn btn-ghost btn-sm"
-                      disabled={!tgt || cmdBusy !== null}
-                      aria-label={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
-                      onClick={() => {
-                        if (!tgt) return
-                        const raw = window.prompt(t('decay.cmd.grantPrompt'), '30')
-                        const days = Number(raw)
-                        if (!raw || !Number.isFinite(days) || days < 0 || days > 3650) return
-                        runCmd(`exp-${p.targeting_team}`, () => arkDecayApi.setExpiry(
-                          tgt.id, p.targeting_team, days))
-                      }}>
-                      <CalendarPlus size={12} />
-                    </button>
-                    <button className="btn btn-ghost btn-sm"
-                      disabled={!tgt || cmdBusy !== null}
-                      style={{ color: 'var(--danger)' }}
-                      aria-label={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
-                      onClick={() => tgt && runCmd(`str-${p.targeting_team}`,
-                        () => arkDecayApi.removeStructures(tgt.id, p.targeting_team),
-                        t('decay.cmd.confirmStructs', { team: p.targeting_team, server: tgtName }))}>
-                      <Building size={12} />
-                    </button>
-                    <button className="btn btn-ghost btn-sm"
-                      disabled={!tgt || cmdBusy !== null}
-                      style={{ color: 'var(--danger)' }}
-                      aria-label={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
-                      onClick={() => tgt && runCmd(`din-${p.targeting_team}`,
-                        () => arkDecayApi.removeDinos(tgt.id, p.targeting_team),
-                        t('decay.cmd.confirmDinos', { team: p.targeting_team, server: tgtName }))}>
-                      <Skull size={12} />
-                    </button>
+                    {isAdmin && (<>
+                      <span style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 3px' }} />
+                      <button className="btn btn-ghost btn-sm"
+                        disabled={!tgt || cmdBusy !== null}
+                        aria-label={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.grantTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                        onClick={() => {
+                          if (!tgt) return
+                          const raw = window.prompt(t('decay.cmd.grantPrompt'), '30')
+                          const days = Number(raw)
+                          if (!raw || !Number.isFinite(days) || days < 0 || days > 3650) return
+                          runCmd(`exp-${p.targeting_team}`, () => arkDecayApi.setExpiry(
+                            tgt.id, p.targeting_team, days))
+                        }}>
+                        <CalendarPlus size={12} />
+                      </button>
+                      <button className="btn btn-ghost btn-sm"
+                        disabled={!tgt || cmdBusy !== null}
+                        style={{ color: 'var(--danger)' }}
+                        aria-label={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.structsTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                        onClick={() => tgt && runCmd(`str-${p.targeting_team}`,
+                          () => arkDecayApi.removeStructures(tgt.id, p.targeting_team),
+                          t('decay.cmd.confirmStructs', { team: p.targeting_team, server: tgtName }))}>
+                        <Building size={12} />
+                      </button>
+                      <button className="btn btn-ghost btn-sm"
+                        disabled={!tgt || cmdBusy !== null}
+                        style={{ color: 'var(--danger)' }}
+                        aria-label={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${t('decay.cmd.dinosTitle')} — ${tgtName}` : t('decay.cmd.noTarget')}
+                        onClick={() => tgt && runCmd(`din-${p.targeting_team}`,
+                          () => arkDecayApi.removeDinos(tgt.id, p.targeting_team),
+                          t('decay.cmd.confirmDinos', { team: p.targeting_team, server: tgtName }))}>
+                        <Skull size={12} />
+                      </button>
+                    </>)}
                   </div>
                 </div>
                 {dOpen && (
@@ -627,19 +649,21 @@ export default function DecayPage() {
                         {/* The snapshot only exists after a scan, so offer the
                             scan right here instead of sending the operator to
                             the toolbar to work out which server this row is on. */}
-                        <button className="btn btn-secondary btn-sm"
-                          disabled={!tgt || cmdBusy !== null}
-                          aria-label={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')} title={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')}
-                          onClick={() => tgt && runCmd(`scan-${p.targeting_team}`,
-                            async () => {
-                              const res = await arkDecayApi.scanInstance(tgt.id)
-                              await openDetail(p)
-                              return res
-                            })}>
-                          {cmdBusy === `scan-${p.targeting_team}`
-                            ? <Loader2 size={12} className="pl-spin" />
-                            : <RefreshCw size={12} />} {t('decay.detail.scanHere')}
-                        </button>
+                        {isAdmin && (
+                          <button className="btn btn-secondary btn-sm"
+                            disabled={!tgt || cmdBusy !== null}
+                            aria-label={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')} title={tgt ? t('decay.detail.scanHereTitle', { server: tgtName }) : t('decay.cmd.noTarget')}
+                            onClick={() => tgt && runCmd(`scan-${p.targeting_team}`,
+                              async () => {
+                                const res = await arkDecayApi.scanInstance(tgt.id)
+                                await openDetail(p)
+                                return res
+                              })}>
+                            {cmdBusy === `scan-${p.targeting_team}`
+                              ? <Loader2 size={12} className="pl-spin" />
+                              : <RefreshCw size={12} />} {t('decay.detail.scanHere')}
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <>
@@ -681,7 +705,7 @@ export default function DecayPage() {
                               <button onClick={() => copyTp(row, idx)} className="btn btn-ghost btn-sm" aria-label={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`} title={`cheat TPCoords ${Math.round(row.pos_x)} ${Math.round(row.pos_y)} ${Math.round(row.pos_z)}`}>
                                 <Copy size={10} /> {copiedIdx === idx ? t('decay.detail.copied') : t('decay.detail.copyTp')}
                               </button>
-                              {row.actor_name && (
+                              {isAdmin && row.actor_name && (
                                 <button className="btn btn-danger btn-sm"
                                   disabled={cmdInstance === '' || cmdBusy !== null}
                                   aria-label={row.actor_name} title={row.actor_name}

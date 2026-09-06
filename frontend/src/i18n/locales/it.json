@@ -648,6 +648,7 @@
     "defaultReason": "Nessun motivo"
   },
   "decay": {
+    "adminOnly": "Le azioni sul gioco (purge, comandi per mappa, scadenze, distruzione di un singolo oggetto) richiedono un account amministratore. La consultazione e la coda di purge restano aperte a tutti gli operatori.",
     "heading": "Decay Manager",
     "subtitle": "Gestione decadimento tribù — {{count}} tribù monitorate",
     "hoursLeft": {
@@ -2467,6 +2468,7 @@
     }
   },
   "playerMap": {
+    "adminOnly": "La scansione e le azioni sulla mappa richiedono un account amministratore.",
     "title": "Mappa giocatore",
     "subtitle": "Scansiona un giocatore su una mappa: vedi dov'è, le sue strutture e i suoi dini, poi agisci in modo chirurgico.",
     "player": "Giocatore",

@@ -350,8 +350,11 @@ function App() {
                 path="/plugins/transfer-rules"
                 element={<TransferRulesPage />}
               />
-              <Route path="/plugins/decay" element={<DecayPage />} />
-              <Route path="/plugins/player-map" element={<PlayerMapPage />} />
+              <Route path="/plugins/decay" element={<DecayPage currentUser={currentUser} />} />
+              <Route
+                path="/plugins/player-map"
+                element={<PlayerMapPage currentUser={currentUser} />}
+              />
               <Route
                 path="/plugins/leaderboard"
                 element={<LeaderboardPage />}
