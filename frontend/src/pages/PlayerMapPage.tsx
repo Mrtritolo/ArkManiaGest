@@ -42,6 +42,8 @@ const DOT: Record<string, { r: number; fill: string }> = {
   dino:      { r: 5, fill: 'var(--violet)' },   // magenta
   player:    { r: 7, fill: 'var(--danger)' },   // hot pink/red
 }
+type SortKey = 'type' | 'name' | 'level' | 'lat' | 'lon'
+
 const DOT_HALO = 'rgba(0, 0, 0, 0.75)'
 const OFFLINE_FILL = 'var(--warning)'            // acid yellow: offline character
 
@@ -74,6 +76,7 @@ export default function PlayerMapPage({ currentUser }: Props) {
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<number | null>(null)   // index into rows
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null)
   const [radius, setRadius] = useState(30)
   const [acting, setActing] = useState(false)
   const [actionMsg, setActionMsg] = useState('')
@@ -283,9 +286,31 @@ export default function PlayerMapPage({ currentUser }: Props) {
   // auto-fit around the objects (relative positions only, no GPS meaning).
   // Rows the map and table actually show, each paired with its index in
   // `rows` so selection keeps pointing at the master list.
-  const visible = useMemo(
-    () => rows.map((r, i) => ({ r, i })).filter(({ r }) => layers[r.actor_type]),
-    [rows, layers])
+  const visible = useMemo(() => {
+    const out = rows.map((r, i) => ({ r, i })).filter(({ r }) => layers[r.actor_type])
+    if (!sort) return out          // no sort = scan order, the plugin's own
+    // Sort on the number the operator reads, not on the raw coordinate: the
+    // calibration divisors are per-map and nothing guarantees their sign, so
+    // ordering by pos_y would silently invert Lat on a map that flips it.
+    const key = (r: ScanRow): string | number => {
+      switch (sort.key) {
+        case 'type':  return r.actor_type
+        case 'name':  return (r.custom_name || r.display_name || r.class_name).toLowerCase()
+        case 'level': return r.dino_level
+        case 'lat':   return calib ? gpsOf(calib, r.pos_x, r.pos_y).lat : r.pos_y
+        case 'lon':   return calib ? gpsOf(calib, r.pos_x, r.pos_y).lon : r.pos_x
+      }
+    }
+    return out.sort((a, b) => {
+      const ka = key(a.r), kb = key(b.r)
+      return ka < kb ? -sort.dir : ka > kb ? sort.dir : 0
+    })
+  }, [rows, layers, sort, calib])
+
+  /** asc -> desc -> back to scan order. */
+  function toggleSort(k: SortKey) {
+    setSort(s => s?.key !== k ? { key: k, dir: 1 } : s.dir === 1 ? { key: k, dir: -1 } : null)
+  }
 
   const view = useMemo(() => {
     if (visible.length === 0) return null
@@ -491,9 +516,14 @@ export default function PlayerMapPage({ currentUser }: Props) {
                   e.clientX - b.left, e.clientY - b.top)
               }}
               onPointerDown={e => {
-                // Left button only, and never start a drag from a dot:
-                // the dot's own click must still select it.
+                // Left button only, and never start a drag from a dot: the
+                // dot's own click must still select it. This guard is the
+                // whole point -- setPointerCapture retargets every later
+                // pointer event to the <svg>, so a capture started on a dot
+                // makes the browser fire the click on the svg and the dot's
+                // onClick never runs.
                 if (e.button !== 0) return
+                if ((e.target as Element).hasAttribute?.('data-dot')) return
                 setDragging({ x: e.clientX, y: e.clientY })
                 e.currentTarget.setPointerCapture(e.pointerId)
               }}
@@ -538,13 +568,14 @@ export default function PlayerMapPage({ currentUser }: Props) {
               {sel && view && (
                 <circle cx={px(sel)} cy={py(sel)} r={(radius * 100 / view.span) * SIZE}
                   fill="var(--danger)" opacity={0.10} stroke="var(--danger)"
+                  style={{ pointerEvents: 'none' }}
                   strokeDasharray={`${4 * k} ${3 * k}`} strokeWidth={1 * k} />
               )}
               {visible.map(({ r, i }) => {
                 const d = DOT[r.actor_type] || DOT.structure
                 const isSel = i === selected
                 return (
-                  <circle key={i} cx={px(r)} cy={py(r)}
+                  <circle key={i} data-dot="" cx={px(r)} cy={py(r)}
                     r={(isSel ? d.r + 3 : d.r) * k}
                     fill={r.actor_type === 'player' && !r.is_online ? OFFLINE_FILL : d.fill}
                     stroke={isSel ? 'var(--accent)' : DOT_HALO}
@@ -636,12 +667,24 @@ export default function PlayerMapPage({ currentUser }: Props) {
             )}
 
             <div className="card" style={{ padding: 0, maxHeight: 420, overflowY: 'auto' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 60px 190px', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', padding: '0.35rem 0.8rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
-                <span>{t('decay.detail.type')}</span><span>{t('decay.detail.name')}</span><span>{t('decay.detail.level')}</span><span>{t('decay.detail.coords')}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 52px 74px 74px', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', padding: '0.35rem 0.8rem', position: 'sticky', top: 0, background: 'var(--bg-card-muted)', borderBottom: '1px solid var(--border)' }}>
+                {([['type', t('decay.detail.type')], ['name', t('decay.detail.name')],
+                   ['level', t('decay.detail.level')], ['lat', t('playerMap.lat')],
+                   ['lon', t('playerMap.lon')]] as [SortKey, string][]).map(([col, label]) => (
+                  <button key={col} type="button" onClick={() => toggleSort(col)}
+                    title={t('playerMap.sortHint')} aria-label={`${label} — ${t('playerMap.sortHint')}`}
+                    style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer',
+                             fontSize: 'inherit', fontWeight: 'inherit', fontFamily: 'inherit',
+                             color: sort?.key === col ? 'var(--accent)' : 'inherit',
+                             textAlign: 'left', display: 'flex', gap: 3, alignItems: 'center' }}>
+                    {label}
+                    {sort?.key === col && <span aria-hidden>{sort.dir === 1 ? '▲' : '▼'}</span>}
+                  </button>
+                ))}
               </div>
               {visible.map(({ r, i }) => (
                 <div key={i} onClick={() => setSelected(i)} style={{
-                  display: 'grid', gridTemplateColumns: '80px 1fr 60px 190px', alignItems: 'center',
+                  display: 'grid', gridTemplateColumns: '80px 1fr 52px 74px 74px', alignItems: 'center',
                   fontSize: '0.76rem', padding: '0.24rem 0.8rem', cursor: 'pointer',
                   borderBottom: '1px solid var(--border)',
                   background: i === selected ? 'var(--bg-card-muted)' : 'transparent',
@@ -651,10 +694,16 @@ export default function PlayerMapPage({ currentUser }: Props) {
                   </span>
                   <span title={r.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.custom_name || r.display_name || r.class_name}</span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>{r.actor_type === 'dino' && r.dino_level > 0 ? r.dino_level : '—'}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}
-                    title={`${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}>
-                    {coordLabel(r)}
-                  </span>
+                  {/* Lat and Lon are separate cells only so each header can
+                      sort on its own axis; the UU triplet stays in the title. */}
+                  {([calib ? gpsOf(calib, r.pos_x, r.pos_y).lat.toFixed(1) : Math.round(r.pos_y),
+                     calib ? gpsOf(calib, r.pos_x, r.pos_y).lon.toFixed(1) : Math.round(r.pos_x)]
+                  ).map((v, axis) => (
+                    <span key={axis} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}
+                      title={`${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}>
+                      {v}
+                    </span>
+                  ))}
                 </div>
               ))}
             </div>

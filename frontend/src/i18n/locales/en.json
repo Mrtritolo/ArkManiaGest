@@ -2468,6 +2468,9 @@
     }
   },
   "playerMap": {
+    "lat": "Lat",
+    "lon": "Lon",
+    "sortHint": "Click to sort (ascending, descending, scan order)",
     "adminOnly": "Scanning and the map actions require an administrator account.",
     "title": "Player map",
     "subtitle": "Scan a player on one map: see where they are, their structures and dinos, then act surgically.",

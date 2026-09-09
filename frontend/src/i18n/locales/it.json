@@ -2468,6 +2468,9 @@
     }
   },
   "playerMap": {
+    "lat": "Lat",
+    "lon": "Lon",
+    "sortHint": "Clicca per ordinare (crescente, decrescente, ordine di scansione)",
     "adminOnly": "La scansione e le azioni sulla mappa richiedono un account amministratore.",
     "title": "Mappa giocatore",
     "subtitle": "Scansiona un giocatore su una mappa: vedi dov'è, le sue strutture e i suoi dini, poi agisci in modo chirurgico.",
