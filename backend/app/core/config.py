@@ -9,6 +9,9 @@ import secrets
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
+from urllib.parse import quote
+
+from app.core.env_writer import get_env_file_path, update_env_file
 
 # Single source of truth for the backend version string.  It used to be
 # duplicated as a literal in main.py (twice) and as the fallback of the
@@ -42,7 +45,9 @@ class ServerSettings(BaseSettings):
     API_PORT: int = 8000
     # Default is False (safe for production).  Set DEBUG=True in .env for dev.
     DEBUG: bool = False
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "https://arkmania.it", "http://arkmania.it"]
+    # The installers write the real panel origin; never default to a
+    # specific deployment's domain here.
+    CORS_ORIGINS: List[str] = ["http://localhost:5173"]
 
     # --- Panel database (required — from .env) ---
     # Stores ArkManiaGest's own data: users, SSH machines, settings, server
@@ -83,8 +88,8 @@ class ServerSettings(BaseSettings):
     PUBLIC_API_KEY: str = ""
     CRON_SECRET: str = ""
     # Comma-separated origins allowed to call /api/v1/public/* endpoints.
-    # Empty string disables origin checking (only API key + rate limit apply).
-    PUBLIC_ALLOWED_ORIGINS: str = "https://arkmania.it,http://arkmania.it"
+    # When empty, only localhost origins and PUBLIC_SERVER_IPS are accepted.
+    PUBLIC_ALLOWED_ORIGINS: str = ""
     # Comma-separated server IPs allowed to make unauthenticated server-side
     # requests (e.g. cron jobs).  Localhost is always included.
     PUBLIC_SERVER_IPS: str = ""
@@ -173,7 +178,10 @@ class ServerSettings(BaseSettings):
     DISCORD_VIP_ROLE_ID:       str = ""
 
     class Config:
-        env_file = ".env"
+        # Absolute path, the same file ensure_secrets() and env_writer write
+        # to.  A CWD-relative ".env" loaded nothing when the process started
+        # outside backend/, and ensure_secrets() then replaced the real keys.
+        env_file = str(get_env_file_path())
         env_file_encoding = "utf-8"
         case_sensitive = True
 
@@ -207,11 +215,15 @@ class ServerSettings(BaseSettings):
             return False
         return v
 
+    # Credentials are percent-encoded: a raw '@', '/', ':' or '%' in a
+    # password breaks the URL.  quote, not quote_plus: SQLAlchemy decodes
+    # them with unquote, which would keep a '+' from quote_plus as a space.
+
     @property
     def database_url(self) -> str:
         """Async SQLAlchemy connection string for the panel DB (aiomysql driver)."""
         return (
-            f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"mysql+aiomysql://{quote(self.DB_USER, safe='')}:{quote(self.DB_PASSWORD, safe='')}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
@@ -219,7 +231,7 @@ class ServerSettings(BaseSettings):
     def database_url_sync(self) -> str:
         """Synchronous SQLAlchemy connection string for the panel DB (pymysql driver)."""
         return (
-            f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"mysql+pymysql://{quote(self.DB_USER, safe='')}:{quote(self.DB_PASSWORD, safe='')}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
@@ -257,7 +269,8 @@ class ServerSettings(BaseSettings):
     def plugin_database_url(self) -> str:
         """Async SQLAlchemy connection string for the plugin DB."""
         return (
-            f"mysql+aiomysql://{self.plugin_db_user}:{self.plugin_db_password}"
+            f"mysql+aiomysql://{quote(self.plugin_db_user, safe='')}"
+            f":{quote(self.plugin_db_password, safe='')}"
             f"@{self.plugin_db_host}:{self.plugin_db_port}/{self.plugin_db_name}"
         )
 
@@ -269,65 +282,59 @@ class ServerSettings(BaseSettings):
         Returns:
             True if .env was modified, False if every secret already existed.
         """
-        import os
-        changed = False
+        generated: list[str] = []
 
         if not self.JWT_SECRET:
             self.JWT_SECRET = secrets.token_hex(32)
-            changed = True
+            generated.append("JWT_SECRET")
 
         if not self.FIELD_ENCRYPTION_KEY:
             self.FIELD_ENCRYPTION_KEY = secrets.token_hex(32)
-            changed = True
+            generated.append("FIELD_ENCRYPTION_KEY")
 
         if not self.PUBLIC_API_KEY:
             self.PUBLIC_API_KEY = "ark_pub_" + secrets.token_hex(16)
-            changed = True
+            generated.append("PUBLIC_API_KEY")
 
         if not self.CRON_SECRET:
             self.CRON_SECRET = "ark_cron_" + secrets.token_hex(16)
-            changed = True
+            generated.append("CRON_SECRET")
 
-        if changed:
-            self._write_secrets_to_env()
+        if generated:
+            self._write_secrets_to_env(generated)
 
-        return changed
+        return bool(generated)
 
-    # Keys persisted by `_write_secrets_to_env` on first boot.
-    _GENERATED_SECRET_KEYS = (
-        "JWT_SECRET", "FIELD_ENCRYPTION_KEY",
-        "PUBLIC_API_KEY", "CRON_SECRET",
-    )
-
-    def _write_secrets_to_env(self):
+    def _write_secrets_to_env(self, keys: list[str]) -> None:
         """
-        Write (or update) generated secrets in .env.
+        Persist the freshly generated *keys* to .env.
 
-        Existing lines for those keys are replaced; all other lines are kept.
+        Only missing or empty lines are filled in.  A key that already has a
+        value in the file was not loaded (an empty environment variable
+        shadows it, or the process read another file), and overwriting it
+        would destroy the real FIELD_ENCRYPTION_KEY and with it every
+        ``*_enc`` column, so refuse to start instead.
         """
-        import os
+        env_path = get_env_file_path()
+        updates = {key: getattr(self, key) for key in keys}
 
-        env_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-        )
+        if not env_path.exists():
+            env_path.write_text(
+                "".join(f"{k}={v}\n" for k, v in updates.items()),
+                encoding="utf-8",
+            )
+            env_path.chmod(0o600)
+            return
 
-        lines: list[str] = []
-        if os.path.exists(env_path):
-            with open(env_path, "r") as fh:
-                for line in fh:
-                    key = line.split("=")[0].strip() if "=" in line else ""
-                    # Drop old values for these keys; re-added below.
-                    if key in self._GENERATED_SECRET_KEYS:
-                        continue
-                    lines.append(line)
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() in updates and value.strip().strip("\"'"):
+                raise RuntimeError(
+                    f"{key.strip()} is set in {env_path} but was not loaded; "
+                    "refusing to replace it with a newly generated value."
+                )
 
-        for key in self._GENERATED_SECRET_KEYS:
-            value = getattr(self, key, "")
-            if value:
-                lines.append(f"{key}={value}\n")
-
-        with open(env_path, "w") as fh:
-            fh.writelines(lines)
+        update_env_file(updates, path=env_path)
 
 
 # Module-level singleton — imported everywhere

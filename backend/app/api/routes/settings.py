@@ -12,9 +12,9 @@ Protected endpoints:
     POST /settings/database/test        — Test a custom DB connection
     POST /settings/database/test-current — Test the active DB connection
 """
+import asyncio
 import json
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,7 +39,6 @@ from app.core.store import (
 )
 from app.core.config import APP_VERSION, server_settings
 from app.schemas.settings import (
-    AppStatus,
     SetupRequest,
     AppSettingsRead,
     AppSettingsUpdate,
@@ -52,6 +51,11 @@ from app.schemas.settings import (
 log = logging.getLogger("arkmaniagest.settings")
 
 router = APIRouter()
+
+# Serialises first-run setup so two concurrent calls cannot both see an
+# empty users table and both create an admin.  In-process is enough: the
+# panel runs a single uvicorn worker (the rate limiter assumes it too).
+_SETUP_LOCK = asyncio.Lock()
 
 
 # ── Application status (public) ───────────────────────────────────────────────
@@ -82,32 +86,34 @@ async def initial_setup(req: SetupRequest, request: Request, db: AsyncSession = 
     Only succeeds when the ``arkmaniagest_users`` table is empty.  Subsequent
     calls return HTTP 409 to prevent accidental re-initialisation.
     """
-    existing_users = await get_all_users(db)
-    if existing_users:
-        raise HTTPException(
-            status_code=409,
-            detail="Setup already completed. Users exist in the database.",
+    async with _SETUP_LOCK:
+        existing_users = await get_all_users(db)
+        if existing_users:
+            raise HTTPException(
+                status_code=409,
+                detail="Setup already completed. Users exist in the database.",
+            )
+
+        user_data = {
+            "username":      req.admin_username.lower().strip(),
+            "password_hash": await asyncio.to_thread(hash_password, req.admin_password),
+            "display_name":  req.admin_display_name.strip(),
+            "role":          "admin",
+            "active":        True,
+            "created_at":    datetime.now(timezone.utc),
+        }
+        await create_user(db, user_data)
+
+        await set_setting_async(
+            db, "app_name", req.app_name or "ArkManiaGest",
+            description="Application name",
         )
-
-    user_data = {
-        "username":      req.admin_username.lower().strip(),
-        "password_hash": hash_password(req.admin_password),
-        "display_name":  req.admin_display_name.strip(),
-        "role":          "admin",
-        "active":        True,
-        "created_at":    datetime.now(timezone.utc),
-    }
-    await create_user(db, user_data)
-
-    await set_setting_async(
-        db, "app_name", req.app_name or "ArkManiaGest",
-        description="Application name",
-    )
-    await set_setting_async(db, "app_version", "4.1.0", description="Application version")
-    await set_setting_async(
-        db, "log_level", req.log_level or "INFO",
-        description="Log level",
-    )
+        await set_setting_async(
+            db, "log_level", req.log_level or "INFO",
+            description="Log level",
+        )
+        # Commit before releasing the lock so the next caller sees the admin.
+        await db.commit()
 
     await audit_event(db, action="settings.setup",
                       username=req.admin_username.lower().strip(),
@@ -131,7 +137,7 @@ async def get_app_settings(
     """Read general application settings from the database."""
     return AppSettingsRead(
         app_name=await get_setting_async(db, "app_name") or "ArkManiaGest",
-        version=await get_setting_async(db, "app_version") or APP_VERSION,
+        version=APP_VERSION,
         log_level=await get_setting_async(db, "log_level") or "INFO",
         auto_backup=(await get_setting_async(db, "auto_backup") or "true") == "true",
         backup_interval_hours=int(
@@ -308,7 +314,9 @@ def _local_version_info() -> tuple[str, Optional[str], Optional[str]]:
     for candidate in _VERSION_MANIFEST_CANDIDATES:
         try:
             if candidate.is_file():
-                data = json.loads(candidate.read_text(encoding="utf-8"))
+                # utf-8-sig: package-release.ps1 writes the file from
+                # Windows PowerShell 5.1, whose UTF-8 output starts with a BOM.
+                data = json.loads(candidate.read_text(encoding="utf-8-sig"))
                 return (
                     str(data.get("version", "")),
                     data.get("commit"),

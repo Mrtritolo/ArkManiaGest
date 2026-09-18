@@ -97,30 +97,3 @@ def decrypt_value(encrypted: str) -> str:
     ct = raw[_NONCE_SIZE_BYTES:]
     aesgcm = AESGCM(_key)          # type: ignore[arg-type]
     return aesgcm.decrypt(nonce, ct, None).decode("utf-8")
-
-
-def is_encrypted(value: str) -> bool:
-    """
-    Heuristic check: return True if *value* looks like an encrypted blob.
-
-    The check is intentionally lenient — it only validates that the string is
-    valid base64 and long enough to contain at least a nonce.
-
-    Args:
-        value: String to inspect.
-
-    Returns:
-        True if *value* is likely encrypted, False otherwise.
-    """
-    if not value or len(value) < 30:
-        return False
-    try:
-        raw = base64.b64decode(value)
-        return len(raw) > _NONCE_SIZE_BYTES
-    except Exception:
-        return False
-
-
-def generate_key() -> str:
-    """Generate a new random AES-256 key as a 64-character hex string."""
-    return os.urandom(32).hex()

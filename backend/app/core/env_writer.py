@@ -33,11 +33,9 @@ def get_env_file_path() -> Path:
     """
     Resolve the absolute path of the backend's `.env` file.
 
-    Pydantic's relative ``env_file = ".env"`` resolves against the
-    process CWD; for production deployments that's
-    ``/opt/arkmaniagest/backend``.  For dev / tests it can be anywhere.
-    We anchor to the package directory so writes always hit the same
-    file Pydantic read at boot.
+    Anchored to the package directory rather than the process CWD, and
+    also used as ``env_file`` by :class:`app.core.config.ServerSettings`,
+    so writes always hit the same file Pydantic read at boot.
 
     Override path via the ``ARKM_ENV_FILE`` environment variable for
     container / test scenarios.
@@ -91,8 +89,17 @@ def update_env_file(
     only the keys that reach this function get touched.
 
     Raises ``ValueError`` when the file does not yet exist (we never
-    create a fresh .env -- that's the installer's job).
+    create a fresh .env -- that's the installer's job), or when a value
+    contains a non-printable character.
     """
+    # A line break inside a value would add a second KEY=value binding, and
+    # python-dotenv and splitlines() below break on \r, \x85, U+2028 and
+    # more, not only on \n.  Callers validate their input; this is the
+    # backstop.  The message names the key only: values can be secrets.
+    for key, value in updates.items():
+        if not value.isprintable():
+            raise ValueError(f"{key}: value contains a non-printable character.")
+
     target = (path or get_env_file_path())
     if not target.exists():
         raise ValueError(f".env file not found at {target}")

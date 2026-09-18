@@ -22,7 +22,9 @@ log = logging.getLogger("arkmaniagest")
 # without grepping journalctl.  The lifespan handler intentionally swallows
 # create_app_tables / create_marketplace_tables failures (so /health keeps
 # answering and the UI is reachable), which used to make the failure mode
-# invisible until the first request hit a missing column.
+# invisible until the first request hit a missing column.  /health is
+# public, so only the component and exception class are kept here; the
+# message (DB host, user, SQL) goes to the log only.
 _SCHEMA_INIT_ERRORS: list[str] = []
 
 
@@ -78,7 +80,7 @@ async def lifespan(app: FastAPI):
                 "Panel DB schema init failed (continuing in limited mode): %s",
                 exc,
             )
-            _SCHEMA_INIT_ERRORS.append(f"panel: {type(exc).__name__}: {exc}")
+            _SCHEMA_INIT_ERRORS.append(f"panel: {type(exc).__name__}")
 
         # 5. Initialise the plugin DB engine (falls back to panel DSN when
         #    no PLUGIN_DB_* variables are configured in .env)
@@ -104,7 +106,7 @@ async def lifespan(app: FastAPI):
             log.info("ARKM_market_* marketplace tables verified / created")
         except Exception as exc:  # noqa: BLE001
             log.warning("Marketplace table init failed (non-fatal): %s", exc)
-            _SCHEMA_INIT_ERRORS.append(f"marketplace: {type(exc).__name__}: {exc}")
+            _SCHEMA_INIT_ERRORS.append(f"marketplace: {type(exc).__name__}")
     else:
         log.warning(
             "DB_PASSWORD not set in .env — backend running in limited mode"

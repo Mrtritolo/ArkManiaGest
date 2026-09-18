@@ -18,7 +18,7 @@ import time
 from collections import defaultdict
 from typing import Optional, Set
 
-from fastapi import Request, Response, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -58,6 +58,7 @@ class RateLimitStore:
     def __init__(self):
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._blocked:  dict[str, float]       = {}  # ip -> unblock timestamp
+        self._last_sweep = time.time()
 
     def is_blocked(self, ip: str) -> bool:
         """Return True if *ip* is currently in the blocklist."""
@@ -93,6 +94,14 @@ class RateLimitStore:
         """
         now = time.time()
         cutoff = now - window
+        # Drop idle keys once per window: every client IP ever seen would
+        # otherwise stay in memory for the life of the process.
+        if now - self._last_sweep > window:
+            for key in [k for k, ts in self._requests.items() if not ts or ts[-1] <= cutoff]:
+                del self._requests[key]
+            for key in [k for k, until in self._blocked.items() if until <= now]:
+                del self._blocked[key]
+            self._last_sweep = now
         self._requests[ip] = [t for t in self._requests[ip] if t > cutoff]
         self._requests[ip].append(now)
         return len(self._requests[ip])
@@ -236,8 +245,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'none'; frame-ancestors 'none'"
         )
 
-        # Prevent caching of API responses that may contain sensitive data
-        if "/api/" in request.url.path:
+        # Prevent caching of API responses that may contain sensitive data.
+        # A route that sets its own Cache-Control (the immutable item
+        # thumbnails) has opted in to caching and keeps its header.
+        if "/api/" in request.url.path and "cache-control" not in response.headers:
             response.headers["Cache-Control"] = (
                 "no-store, no-cache, must-revalidate, private"
             )
@@ -287,42 +298,45 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     Reject requests whose ``Content-Length`` exceeds ``max_size`` bytes.
 
     A handful of upload endpoints (Beacon blueprint imports, JSON
-    blueprint dumps, etc.) legitimately need larger request bodies and
-    enforce their own per-route cap.  Those paths are listed in
-    :attr:`LARGE_UPLOAD_PATHS` and bypass the global limit so the
-    global default can stay tight.
+    blueprint dumps, etc.) legitimately need larger request bodies.
+    Those paths are listed in :attr:`LARGE_UPLOAD_PATHS` and get the
+    larger :attr:`LARGE_UPLOAD_MAX_SIZE` so the global default can stay
+    tight.
 
     Args:
         max_size: Maximum allowed request body size in bytes (default: 10 MB).
     """
 
-    # Endpoints that handle file uploads bigger than the global cap.
-    # The endpoints themselves enforce a tighter, route-specific limit
-    # (see e.g. _BEACON_MAX_UPLOAD_BYTES in routes/blueprints.py) so a
-    # malicious client can't push 4 GB of garbage at us.
+    # Endpoints that handle uploads bigger than the global cap.  They still
+    # need a finite cap here: /import has no limit of its own (FastAPI parses
+    # the whole JSON body before the handler runs), and Starlette has already
+    # spooled a multipart body before import-beacondata checks
+    # _BEACON_MAX_UPLOAD_BYTES (50 MB) in routes/blueprints.py.
     LARGE_UPLOAD_PATHS: tuple[str, ...] = (
         "/api/v1/blueprints/import-beacondata",
         "/api/v1/blueprints/import",
     )
+    # Just above _BEACON_MAX_UPLOAD_BYTES, leaving room for multipart framing.
+    LARGE_UPLOAD_MAX_SIZE: int = 60 * 1024 * 1024
 
     def __init__(self, app, max_size: int = 10 * 1024 * 1024):
         super().__init__(app)
         self.max_size = max_size
 
     async def dispatch(self, request: Request, call_next):
-        # Skip the size check entirely for whitelisted upload endpoints --
-        # they enforce their own per-route cap before the body is read.
-        if request.url.path in self.LARGE_UPLOAD_PATHS:
-            return await call_next(request)
-
+        max_size = (
+            self.LARGE_UPLOAD_MAX_SIZE
+            if request.url.path in self.LARGE_UPLOAD_PATHS
+            else self.max_size
+        )
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > self.max_size:
+        if content_length and int(content_length) > max_size:
             return JSONResponse(
                 status_code=413,
                 content={
                     "detail": (
                         f"Request too large. "
-                        f"Max: {self.max_size // 1024 // 1024}MB"
+                        f"Max: {max_size // 1024 // 1024}MB"
                     )
                 },
             )
@@ -357,7 +371,15 @@ def _extract_client_ip(request: Request) -> str:
     if direct_ip in _TRUSTED_PROXY_IPS:
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            # Each proxy appends the address it received the request from,
+            # so the left-most entry is whatever the client sent.  Walk from
+            # the right and return the first hop that is not our own proxy.
+            hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+            for hop in reversed(hops):
+                if hop not in _TRUSTED_PROXY_IPS:
+                    return hop
+            if hops:
+                return hops[0]
         real_ip = request.headers.get("X-Real-IP")
         if real_ip:
             return real_ip.strip()

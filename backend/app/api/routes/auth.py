@@ -12,6 +12,7 @@ Admin-only endpoints:
     PUT    /users/{id}       — Update a user account
     DELETE /users/{id}       — Delete a user account
 """
+import asyncio
 from datetime import datetime, timezone
 from typing import List
 
@@ -45,6 +46,11 @@ from app.schemas.auth import (
 )
 
 router = APIRouter()
+
+# bcrypt hash (cost 12, same as gensalt()) of a random string nobody knows.
+# Login checks it when the username does not exist, so an unknown username
+# takes as long to reject as a wrong password.
+_DUMMY_PASSWORD_HASH = "$2b$12$Hg7W7tkUmRNp87mhoVJivuk5IxNbomCRiicgpv3/qlDoa8aq1mBdK"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -80,9 +86,15 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
     Authenticate a user and return a signed JWT.
 
     Both "user not found" and "wrong password" cases return HTTP 401 with the
-    same generic message to prevent username enumeration attacks.
+    same generic message, after the same bcrypt work, to prevent username
+    enumeration attacks.  A disabled account is only reported as such to a
+    caller who supplied its correct password.
     """
     user = await get_user_by_username(db, req.username)
+
+    # bcrypt takes ~250 ms: run it off the event loop.
+    stored_hash = user.get("password_hash", "") if user else _DUMMY_PASSWORD_HASH
+    password_ok = await asyncio.to_thread(verify_password, req.password, stored_hash)
 
     if not user:
         # Attempted username is NOT recorded (it may be a typo'd password
@@ -91,17 +103,17 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
                           detail="unknown username", request=request)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
+    if not password_ok:
+        await audit_event(db, action="auth.login_failed",
+                          username=user["username"],
+                          detail="wrong password", request=request)
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
+
     if not user.get("active", True):
         await audit_event(db, action="auth.login_failed",
                           username=user["username"],
                           detail="account disabled", request=request)
         raise HTTPException(status_code=401, detail="Account is disabled.")
-
-    if not verify_password(req.password, user.get("password_hash", "")):
-        await audit_event(db, action="auth.login_failed",
-                          username=user["username"],
-                          detail="wrong password", request=request)
-        raise HTTPException(status_code=401, detail="Invalid credentials.")
 
     now = datetime.now(timezone.utc)
     await update_user(db, user["id"], {"last_login": now})
@@ -148,10 +160,14 @@ async def change_own_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    if not verify_password(req.old_password, user.get("password_hash", "")):
-        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+    if not await asyncio.to_thread(
+        verify_password, req.old_password, user.get("password_hash", ""),
+    ):
+        # 400, not 401: the session is valid, and a 401 logs the SPA out.
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
 
-    await update_user(db, user["id"], {"password_hash": hash_password(req.new_password)})
+    new_hash = await asyncio.to_thread(hash_password, req.new_password)
+    await update_user(db, user["id"], {"password_hash": new_hash})
     await audit_event(db, action="auth.password_change",
                       username=user["username"], request=request)
     return {"success": True, "message": "Password updated."}
@@ -192,7 +208,7 @@ async def create_user_route(
 
     user_data = {
         "username":      normalised_username,
-        "password_hash": hash_password(req.password),
+        "password_hash": await asyncio.to_thread(hash_password, req.password),
         "display_name":  req.display_name.strip(),
         "role":          req.role,
         "active":        True,
@@ -268,7 +284,9 @@ async def update_user_route(
 
     # Hash the new password before passing it to the store layer
     if "password" in updates:
-        updates["password_hash"] = hash_password(updates.pop("password"))
+        updates["password_hash"] = await asyncio.to_thread(
+            hash_password, updates.pop("password"),
+        )
 
     updated = await update_user(db, user_id, updates)
     if not updated:
@@ -303,10 +321,15 @@ async def delete_user_route(
     if user["username"] == admin["sub"]:
         raise HTTPException(status_code=400, detail="You cannot delete your own account.")
 
-    # Protect the last admin
+    # Protect the last admin: block only when the target is an active admin
+    # and no other active admin would remain.  A deactivated admin can
+    # always be removed.
     all_users = await get_all_users(db)
-    active_admins = [u for u in all_users if u["role"] == "admin" and u.get("active", True)]
-    if user["role"] == "admin" and len(active_admins) <= 1:
+    other_active_admins = [
+        u for u in all_users
+        if u["id"] != user_id and u["role"] == "admin" and u.get("active", True)
+    ]
+    if user["role"] == "admin" and user.get("active", True) and not other_active_admins:
         raise HTTPException(
             status_code=400,
             detail="Cannot delete the last admin account.",

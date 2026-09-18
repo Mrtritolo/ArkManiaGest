@@ -10,9 +10,8 @@ from typing import Optional
 
 import jwt
 import bcrypt
-from fastapi import Request, HTTPException, Depends
+from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import server_settings
 
@@ -44,9 +43,13 @@ def verify_password(password: str, hashed: str) -> bool:
     Check whether *password* matches the stored *hashed* value.
 
     Returns False on any exception (e.g. malformed hash) rather than raising.
+
+    Only the first 72 bytes are compared: bcrypt never used more, bcrypt < 5
+    truncated silently, and bcrypt 5 raises instead, which would lock out an
+    account whose long password was set before the upgrade.
     """
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(password.encode("utf-8")[:72], hashed.encode("utf-8"))
     except Exception:
         return False
 
@@ -124,11 +127,6 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token.")
 
 
-def generate_jwt_secret() -> str:
-    """Generate a cryptographically random JWT secret (64 hex chars)."""
-    return secrets.token_hex(32)
-
-
 # =============================================
 #  FastAPI dependencies
 # =============================================
@@ -139,14 +137,17 @@ async def get_current_user(
     """
     FastAPI dependency: extract and validate the current user from the JWT.
 
-    Also verifies that the user still exists and is active in the database.
+    Also verifies that the user still exists and is active in the database,
+    and replaces the token's ``role`` claim with the stored role, so a
+    demotion takes effect on the next request instead of when the token
+    expires.
 
     Returns:
         The decoded JWT payload: ``{"sub": username, "role": ..., ...}``
 
     Raises:
         HTTPException 401: Missing/invalid token or deactivated user.
-        HTTPException 500: Database unavailable.
+        HTTPException 503: Database unavailable.
     """
     if credentials is None:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -156,7 +157,7 @@ async def get_current_user(
     # Verify the user still exists and has not been deactivated
     from app.db.session import _async_session
     if _async_session is None:
-        raise HTTPException(status_code=500, detail="Database unavailable.")
+        raise HTTPException(status_code=503, detail="Database unavailable.")
 
     from app.core.store import get_user_by_username
     async with _async_session() as db:
@@ -164,6 +165,7 @@ async def get_current_user(
         if not user or not user.get("active", True):
             raise HTTPException(status_code=401, detail="User disabled or not found.")
 
+    payload["role"] = user["role"]
     return payload
 
 

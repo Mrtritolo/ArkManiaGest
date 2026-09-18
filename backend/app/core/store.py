@@ -63,33 +63,6 @@ def _sync_db_connection():
         conn.close()
 
 
-@contextmanager
-def _sync_plugin_db_connection():
-    """
-    Context manager that yields a synchronous PyMySQL connection to the
-    **plugin** database.
-
-    Falls back to the panel DSN when ``PLUGIN_DB_*`` is empty in .env, so
-    legacy single-database installations keep working.
-
-    Yields:
-        A ``pymysql.connections.Connection`` object.
-    """
-    s = server_settings
-    conn = pymysql.connect(
-        host=s.plugin_db_host,
-        port=s.plugin_db_port,
-        user=s.plugin_db_user,
-        password=s.plugin_db_password,
-        database=s.plugin_db_name,
-        charset="utf8mb4",
-    )
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
 def _row_to_machine_dict(row: dict) -> dict:
     """
     Convert a raw database row for a machine into a normalised dict.
@@ -232,6 +205,35 @@ def set_setting_sync(
         conn.commit()
 
 
+def encrypt_setting_in_place_sync(key: str) -> None:
+    """
+    Encrypt a setting row that an older release stored in plaintext (sync).
+
+    No-op when the row is missing or already encrypted.  The UPDATE only
+    matches the exact plaintext value that was read, so a save landing in
+    between is never overwritten with the older value.
+
+    Args:
+        key: Setting key.
+    """
+    with _sync_db_connection() as conn:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(
+            "SELECT `value` FROM arkmaniagest_settings "
+            "WHERE `key` = %s AND `encrypted` = 0",
+            (key,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return
+        cursor.execute(
+            "UPDATE arkmaniagest_settings SET `value` = %s, `encrypted` = 1 "
+            "WHERE `key` = %s AND `encrypted` = 0 AND BINARY `value` = %s",
+            (encrypt_value(row["value"]), key, row["value"]),
+        )
+        conn.commit()
+
+
 # =============================================
 #  Plugin config — synchronous
 # =============================================
@@ -255,18 +257,25 @@ def get_plugin_config_sync(plugin_name: str) -> Optional[dict]:
     return None
 
 
-def save_plugin_config_sync(plugin_name: str, config: dict) -> None:
+def save_plugin_config_sync(
+    plugin_name: str,
+    config: dict,
+    encrypted: bool = False,
+) -> None:
     """
     Persist a plugin's JSON configuration in the settings table (sync).
 
     Args:
         plugin_name: Plugin identifier.
         config:      Config dict to serialise and store.
+        encrypted:   Encrypt the whole JSON blob (AES-256-GCM), for a config
+                     that carries a credential.  :func:`get_plugin_config_sync`
+                     decrypts it transparently.
     """
     set_setting_sync(
         f"plugin.{plugin_name}",
         json.dumps(config, ensure_ascii=False),
-        encrypted=False,
+        encrypted=encrypted,
         description=f"Config plugin: {plugin_name}",
     )
 
