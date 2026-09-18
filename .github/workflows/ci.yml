@@ -82,6 +82,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `vite build` is esbuild: it strips the types without checking them,
+      # so nothing else in this workflow would catch a type error.
+      - name: Type check
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 
@@ -102,3 +107,30 @@ jobs:
             echo "Checking $f"
             bash -n "$f"
           done
+
+  powershell:
+    name: PowerShell scripts syntax
+    # windows-latest with `shell: powershell` is Windows PowerShell 5.1 --
+    # the version the installer scripts target, and the one whose parser
+    # rejects PS 7-only syntax.  pwsh would accept a superset.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse deploy scripts
+        shell: powershell
+        run: |
+          # Not $errors: PowerShell is case-insensitive, so that name is the
+          # automatic $Error collection.
+          $bad = 0
+          foreach ($f in (Get-ChildItem -Path deploy -Recurse -Filter *.ps1)) {
+              Write-Host "Checking $($f.FullName)"
+              $parseErrors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                  $f.FullName, [ref]$null, [ref]$parseErrors) | Out-Null
+              if ($parseErrors -and $parseErrors.Count -gt 0) {
+                  $bad += $parseErrors.Count
+                  foreach ($e in $parseErrors) { Write-Host "  $($e.Message)" }
+              }
+          }
+          if ($bad -gt 0) { exit 1 }

@@ -66,14 +66,18 @@ echo ""
 # and with a random name per run nothing else would ever reclaim its source
 # tree and npm cache.  Sweep what earlier runs left behind: `rm -rf` unlinks
 # a planted symlink instead of following it.
-rm -rf /tmp/arkmaniagest-update.?????? 2>/dev/null || true
+# NOTE: the glob must not be able to match the uploaded tarball
+# (/tmp/arkmaniagest-update.tar.gz): '.??????' matches '.tar.gz'
+# exactly, which deleted the archive right before we untar it.
+# Hence the distinct -src prefix below.
+rm -rf /tmp/arkmaniagest-update-src.?????? 2>/dev/null || true
 
 # Extract.  Root untars here and rsyncs --delete from here into $APP, so the
 # directory gets an unpredictable name: with a fixed /tmp path any local
 # user could plant a symlink between an `rm -rf` and a `mkdir -p`.  0755
 # (mktemp creates 0700) keeps $TMP/npm-cache reachable for $USR, and rsync
 # -a copies this mode onto $APP when a dev tarball has files at its root.
-TMP=$(mktemp -d /tmp/arkmaniagest-update.XXXXXX)
+TMP=$(mktemp -d /tmp/arkmaniagest-update-src.XXXXXX)
 chmod 0755 "$TMP"
 # Every run gets its own directory now, so a failed run must not leave one.
 trap 'rm -rf "$TMP"' EXIT
@@ -153,6 +157,19 @@ if [ -d /etc/letsencrypt ] && [ ! -x "$HOOK" ]; then
         && chmod 755 "$HOOK"; } 2>/dev/null \
         || echo "  certbot renewal hook not installed (read-only /etc/letsencrypt): an update-panel.{sh,ps1} run installs it"
 fi
+
+# Re-seat /etc/cron.d/arkmaniagest.  Only setup-cron.sh writes it and only
+# full-deploy.sh calls that, so a code update left the previous release's
+# entries running -- including the health check that restarts the panel
+# while restore.sh has it deliberately stopped.  The script is idempotent
+# and needs no deploy.conf.  Only reseat a block that is already installed,
+# so a host where the operator removed it keeps it removed.  Best effort:
+# /etc/cron.d is read-only inside the unit's ProtectSystem=strict namespace
+# (in-UI updater), and that must not fail the update.
+if [ -f /etc/cron.d/arkmaniagest ]; then
+    bash "$APP/deploy/setup-cron.sh" >/dev/null 2>&1 \
+        || echo "  cron entries not refreshed (read-only /etc/cron.d): run deploy/setup-cron.sh by hand"
+fi
 echo "  OK"
 
 # Backend
@@ -193,14 +210,14 @@ if [ "$MODE" != "BACKEND" ]; then
 
     # Same for package-lock.json: AUTO used to skip npm ci as soon as
     # node_modules existed, so a release adding a frontend package failed
-    # its build.  A node_modules from before this marker existed is taken
-    # to match the current lock once, as the old check assumed.
+    # its build.  A node_modules from before this marker existed reads as
+    # an empty hash, which is a mismatch, so npm ci runs once on the first
+    # upgrade that carries the marker: stamping the CURRENT hash there
+    # instead skipped the install on exactly the release that added a
+    # package, on the retry too, because the stamp already matched.
     LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
-    if [ -d "node_modules" ] && [ ! -f "node_modules/.deps_installed" ]; then
-        echo "$LOCK_HASH" > node_modules/.deps_installed
-    fi
     if [ "$DEPS" = "FORCE" ] || [ ! -d "node_modules" ] \
-        || { [ "$DEPS" = "AUTO" ] && [ "$(cat node_modules/.deps_installed)" != "$LOCK_HASH" ]; }; then
+        || { [ "$DEPS" = "AUTO" ] && [ "$(cat node_modules/.deps_installed 2>/dev/null)" != "$LOCK_HASH" ]; }; then
         echo "  npm ci..."
         # The in-UI updater runs inside the unit's ProtectSystem=strict
         # namespace, where the home directory holding npm's default cache

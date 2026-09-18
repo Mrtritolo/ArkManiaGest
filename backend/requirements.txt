@@ -3,6 +3,10 @@
 # Versioni flessibili per compatibilita con Python 3.12-3.14
 
 # --- Framework ---
+# 0.121 is the first release with Depends(..., scope="function"), which
+# app/db/session.py needs to commit before the response is sent.  Lowering
+# this floor below 0.121 silently restores the 0.118-0.120 ordering (commit
+# after the response) -- see _before_response() there.
 fastapi>=0.121
 uvicorn[standard]>=0.34
 pydantic>=2.10

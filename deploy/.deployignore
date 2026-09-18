@@ -1,8 +1,15 @@
 # =============================================================================
 # .deployignore - Shared exclusion list for ArkManiaGest deployment archives
 # =============================================================================
-# Used by: install-panel.ps1, update-panel.ps1 (tar --exclude-from)
-# Also mirrored in: full-deploy.sh, server-update.sh (rsync --exclude-from)
+# Used by: install-panel.{sh,ps1}, update-panel.{sh,ps1} (tar --exclude-from)
+#
+# NOT read by full-deploy.sh or server-update.sh: their rsync calls each carry
+# an independent, hardcoded --exclude list (full-deploy.sh "PHASE 3", and the
+# "[1/4] Sync file" block of server-update.sh).  An entry added here only keeps
+# a file out of the ARCHIVE -- which is enough to remove it from an existing
+# host, since rsync --delete drops what the archive no longer carries -- but a
+# path that must also survive on the server has to be added to those two lists
+# by hand.
 #
 # NOTE: This file uses tar/rsync exclusion syntax.  Patterns are relative to
 # the archive root (the project directory).
@@ -42,6 +49,11 @@ tests
 reference
 # Maintainer-only tooling (release automation) — not shipped to end users.
 deploy/maintainer
+# Dev-only UI-kit harness.  vite builds a single entry (index.html), so this
+# page is never emitted into dist/ and nginx (root = frontend/dist) can never
+# serve it; keep its source off the production host anyway.
+frontend/uikit.html
+frontend/src/uikit
 
 # --- Windows-only scripts (never needed on the Linux server) ---
 # No *.ps1 here: the backend reads deploy/windows-native/harden.ps1 at

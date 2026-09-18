@@ -519,8 +519,19 @@ def _before_response(dependency):
     200 before COMMIT ran: a failed commit was lost after the client had
     been told it succeeded, and the UI's immediate refresh could read the
     old row.  ``scope="function"`` (FastAPI 0.121+) restores the ordering.
-    Older FastAPI has no scopes; up to 0.117 it already ends the dependency
-    before the response.
+
+    Older FastAPI rejects the keyword and the fallback below keeps that
+    version's own default, so the guarantee is only as strong as the
+    installed version:
+
+    * up to 0.117  -- the dependency already ended before the response;
+    * 0.118-0.120  -- no ``scope`` yet, so the fallback SILENTLY keeps the
+      after-response ordering this function exists to undo;
+    * 0.121+       -- ``scope="function"``, the intended behaviour.
+
+    requirements.txt therefore floors FastAPI at 0.121.  An upgrade that
+    skips the dependency step (``server-update.sh ... SKIP``) leaves the
+    weaker guarantee in place without any error.
     """
     try:
         return Depends(dependency, scope="function")

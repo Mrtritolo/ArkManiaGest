@@ -316,13 +316,38 @@ OK "Remote update finished"
 
 Section "Verification"
 
-$healthRc = Invoke-SSH-Quiet ($sshCommonArgs + @($sshTarget, "curl -sf http://127.0.0.1:8000/health >/dev/null"))
-if ($healthRc -eq 0) {
-    OK "Backend /health responded"
-    Invoke-SSH ($sshCommonArgs + @($sshTarget, "curl -sf http://127.0.0.1:8000/health")) | Out-Null
-} else {
-    Warn "Backend not answering /health yet.  Check: sudo systemctl status arkmaniagest"
-}
+# Poll rather than probe once: systemd has just restarted the unit and the
+# backend runs the in-place migrations before it binds.  A boot that RAISES
+# (db/session.py "In-place migrations failed", config.py ensure_secrets
+# refusing to overwrite a secret) leaves the unit dead, and a warning with a
+# zero exit status reported that as a successful update.  One ssh, loop on
+# the remote side.
+$healthProbe = @'
+for i in $(seq 1 15); do
+    curl -sf http://127.0.0.1:8000/health && exit 0
+    sleep 2
+done
+exit 1
+'@ -replace "`r`n", "`n"
 
+# Same sudo -n shape as the update call above: a non-root ssh user gets an
+# empty journal (exit 0) rather than an error, so asking sudo first is the
+# only way the logs actually come back.
+$journalCmd = @'
+if command -v sudo >/dev/null 2>&1 && [ "$(id -un)" != "root" ]; then
+    sudo -n journalctl -u arkmaniagest -n 30 --no-pager \
+        || journalctl -u arkmaniagest -n 30 --no-pager
+else
+    journalctl -u arkmaniagest -n 30 --no-pager
+fi
+'@ -replace "`r`n", "`n"
+
+$healthRc = Invoke-SSH ($sshCommonArgs + @($sshTarget, $healthProbe))
 Remove-Item -Force $ARCHIVE -ErrorAction SilentlyContinue
+if ($healthRc -ne 0) {
+    Warn "Backend never answered /health (30s).  Last log lines:"
+    Invoke-SSH ($sshCommonArgs + @($sshTarget, $journalCmd)) | Out-Null
+    Fail "Update applied but the panel did not come back up.  Check: sudo systemctl status arkmaniagest"
+}
+OK "Backend /health responded"
 Section "Done"

@@ -129,25 +129,37 @@ echo ""
 # =============================================
 echo "=== PHASE 3/9: Copy project files ==="
 
-# --delete removes files on the server that no longer exist in the source,
-# keeping the production directory clean from leftovers of old deploys.
-# Runtime directories (venv, node_modules, dist, data) and secrets (.env)
-# are protected via --exclude so they are never touched.
-rsync -a --delete \
-    --exclude='node_modules' \
-    --exclude='venv' \
-    --exclude='__pycache__' \
-    --exclude='.git' \
-    --exclude='data/' \
-    --exclude='*.vault' \
-    --exclude='.env' \
-    --exclude='frontend/dist' \
-    --exclude='Specifiche/' \
-    --exclude='_deprecated/' \
-    --exclude='config/' \
-    --exclude='tests/' \
-    --exclude='reference/' \
-    "${DEPLOY_SRC}/" "$APP_DIR/"
+# This phase lands a freshly uploaded tree, which install-panel.{sh,ps1}
+# extracts to $DEPLOY_SRC immediately before launching this script.  Re-running
+# full-deploy.sh from the INSTALLED tree is a different situation -- README.md
+# sends operators here to re-render the nginx vhost after an update -- and
+# there is nothing to copy then: $DEPLOY_SRC is either gone (/tmp is cleaned)
+# or still holds the tree of whatever version was installed back then, and
+# `rsync --delete` from that would silently revert the panel to it and delete
+# every file added since.  Tell the two apart by where this script runs from.
+if [ "$SCRIPT_DIR" = "${APP_DIR%/}/deploy" ]; then
+    echo "  Running from the installed tree -- nothing to copy, skipping sync"
+else
+    # --delete removes files on the server that no longer exist in the source,
+    # keeping the production directory clean from leftovers of old deploys.
+    # Runtime directories (venv, node_modules, dist, data) and secrets (.env)
+    # are protected via --exclude so they are never touched.
+    rsync -a --delete \
+        --exclude='node_modules' \
+        --exclude='venv' \
+        --exclude='__pycache__' \
+        --exclude='.git' \
+        --exclude='data/' \
+        --exclude='*.vault' \
+        --exclude='.env' \
+        --exclude='frontend/dist' \
+        --exclude='Specifiche/' \
+        --exclude='_deprecated/' \
+        --exclude='config/' \
+        --exclude='tests/' \
+        --exclude='reference/' \
+        "${DEPLOY_SRC}/" "$APP_DIR/"
+fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chown -R "$APP_USER:$APP_USER" "$LOG_DIR"

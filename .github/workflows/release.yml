@@ -160,11 +160,15 @@ jobs:
           # Pull the section for this version from CHANGELOG.md.  Matches the
           # heading "## [X.Y.Z]" and captures everything until the next "## "
           # heading or end of file.
+          # index(), not a dynamic regex: awk turns the "\\[" v "\\]" string
+          # into the bracket expression [X.Y.Z], which matches any heading
+          # containing one of those characters -- releasing 4.14.0 published
+          # the 4.15.0 section, and an absent section never fell back.
           if [ -f CHANGELOG.md ]; then
             awk -v v="$VERSION" '
               /^## \[/ {
                 if (printing) exit
-                if ($0 ~ "\\[" v "\\]") { printing=1; print; next }
+                if (index($0, "[" v "]")) { printing=1; print; next }
               }
               printing { print }
             ' CHANGELOG.md > release-build/BODY.md

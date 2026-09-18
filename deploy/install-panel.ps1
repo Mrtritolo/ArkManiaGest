@@ -234,7 +234,18 @@ Write-Host ""
 Write-Host "-- Admin user --" -ForegroundColor Cyan
 $admin_user    = Ask "Admin username (web UI)" "admin"
 $admin_display = Ask "Admin display name" "Administrator"
-$admin_pass    = Ask "Admin password (min 12 chars, at least one letter and one digit)" -secret -required
+# Validate here, like the DB password above.  The backend enforces the same
+# rule (schemas/settings.py admin_password min_length=12 +
+# validate_password_strength in schemas/auth.py, which also caps bcrypt's
+# 72-byte input), but only at the very last step of the install: a weak
+# value used to run apt, MariaDB, certbot, nginx and the frontend build to
+# completion and then fail the setup call with a 422.
+while ($true) {
+    $admin_pass = Ask "Admin password (min 12 chars, at least one letter and one digit)" -secret -required
+    if ($admin_pass -match '^(?=.*[A-Za-z])(?=.*\d).{12,}$' -and
+        [System.Text.Encoding]::UTF8.GetByteCount($admin_pass) -le 72) { break }
+    Write-Host "  At least 12 characters (max 72 bytes), with at least one letter and one digit." -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "-- Confirm --" -ForegroundColor Cyan
