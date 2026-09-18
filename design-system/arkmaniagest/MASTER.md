@@ -1,10 +1,10 @@
 # ArkManiaGest design system: MASTER
 
 Source of truth for every UI change in `frontend/`: the admin panel, the
-player dashboard and the market. The page-group agents read this before
-touching a page. When this file and a page disagree, the page is wrong.
-When this file and the code of the foundation disagree, fix one of them in
-the same change.
+player dashboard and the market. Read it before touching a page. When this
+file and a page disagree, the page is wrong. When this file and the code of
+the foundation disagree, fix one of them in the same change — this is a
+living reference, not a record of how the UI was built.
 
 - Candidate: **A "Ops Console"**, with the defects the two judges found
   fixed (see "Deviations from candidate A").
@@ -48,28 +48,36 @@ the same change.
 
 | File | Layer | Content |
 |---|---|---|
-| `frontend/src/styles/index.css` | (statement) | `@layer reset, legacy, base, ui, page, utilities;` plus imports of the files below. Imported FIRST in `main.tsx`. |
+| `frontend/src/styles/index.css` | (statement) | `@layer reset, base, ui, page, utilities;` plus imports of the files below. Imported FIRST in `main.tsx`. |
 | `frontend/src/styles/tokens.css` | `base` | Colour tokens per theme, scales, layout, z-index, player scope, touch sizes. |
-| `frontend/src/styles/base.css` | `reset` + `base` | Element defaults (reset, below legacy) and global guarantees (base, above legacy): 16px root, focus ring, selection, scrollbars, `[hidden]`, scroll lock, skip link, reduced motion, forced colours. |
-| `frontend/src/styles/legacy-aliases.css` | `base` (+ a small `legacy` block) | TEMPORARY. Every legacy custom property mapped onto the new tokens, the stacking overrides that keep new overlays above legacy ones, the legacy type sizes of unmigrated pages, the legacy `.spin` bridge, and the retired background blobs switched off. Deleted at the end of the migration (section 14 has the check). |
+| `frontend/src/styles/base.css` | `reset` + `base` | Element defaults (reset) and global guarantees (base): 16px root, focus ring, selection, scrollbars, `[hidden]`, scroll lock, skip link, forced colours. |
 | `frontend/src/styles/content.css` | `ui` | Classes for styled semantic HTML: `.ui-dl`, `.ui-code`, `.ui-log`, `.ui-details`, `.ui-fieldset`, `.ui-actionbar`, `.ui-count`, `.ui-thumb`, `.ui-nav-item`, `.ui-auth`, `.ui-bold-stable`. |
 | `frontend/src/styles/utilities.css` | `utilities` | `l-*` layout and `u-*` helpers. |
 | `frontend/src/components/ui/*.tsx` + co-located `*.css` | `ui` | The primitives. Each imports its own stylesheet. Barrel: `components/ui/index.ts`. |
 | `PageName.module.css` next to a page | `page` | Page-only layout, tokens only. |
-| `frontend/src/index.css`, `pages/GameConfigPage.css` | `legacy` | The old system, wrapped in `@layer legacy { … }` at integration, deleted after the migration. |
 
-Layer order: `reset < legacy < base < ui < page < utilities`. A later layer
-always wins regardless of selector specificity or bundle order, so new rules
-beat every legacy rule (including the late "glass" overrides) and utilities
-beat component defaults. `reset` sits below `legacy` so every legacy rule
-beats the element defaults (`h1`, `a`, `body`). They still apply where the
-legacy sheet sets nothing, which is exactly legacy body text and unclassed
-headings; see "Type during the migration" in section 4.1.
+Those seven entries are the whole stylesheet inventory: there is no global
+sheet outside `src/styles/`, and no page-level `.css` that is not a CSS
+module. The three sheets of the old system (`src/index.css`,
+`src/styles/legacy-aliases.css`, `pages/GameConfigPage.css`) and the
+`legacy` layer they lived in were deleted when the last page group landed;
+section 14 keeps the greps that hold that line.
 
-Every new stylesheet repeats the layer statement on its first line, so the
-order is fixed whichever file the bundler emits first. `@layer`, `inert`
-and `:has()` together need Chromium 105 / Firefox 121 / Safari 16.4 or newer
-(Discord's in-app webview is Chromium).
+Layer order: `reset < base < ui < page < utilities`. A later layer always
+wins regardless of selector specificity or bundle order: a page module
+overrides a primitive without `!important`, and a utility overrides both.
+`reset` is lowest so an element default (`h1`, `a`, `body`) never has to be
+fought.
+
+Every stylesheet repeats the layer statement verbatim on its first line, so
+the order holds whichever file the bundler emits first. **Copy it exactly.**
+A repeat that lists a different set of names (an extra name, a different
+order) re-orders the layers for the whole bundle, and the symptom — a
+primitive suddenly beating the page module that customises it — does not
+point back at the file that caused it. Verification is in section 14.
+
+`@layer`, `inert` and `:has()` together need Chromium 105 / Firefox 121 /
+Safari 16.4 or newer (Discord's in-app webview is Chromium).
 
 Theme contract (`src/theme.ts`, unchanged): `data-theme="dark|light"` on
 `<html>`. Dark tokens live on `:root, [data-theme="dark"]`, so a missing
@@ -232,19 +240,18 @@ headings, selected and pressed. Never 700 to 900 (not loaded). Titles use
 `font-variant-numeric: tabular-nums` (on by default in `table`, `time`,
 `data`, `output`).
 
-**Type during the migration.** The legacy sheet sized everything from
-`html { font-size: 17px }`; base.css pins the root at 100% (16px), so
-rem-based legacy sizes shrink by 1/17 (about 6%). Legacy body text and
-unclassed legacy headings would otherwise take the reset values (14px body,
-the compact heading scale), so the `legacy` block of `legacy-aliases.css`
-keeps them at their old size until the page migrates: `body` 1.0625rem
-(17px) and user-agent heading sizes and weight, both at zero specificity so
-every legacy class rule still wins. Migrated roots set their own size and are
-excluded from the heading rule: `.l-page` and `.ui-auth` set
-`font-size: var(--text-body)` and `line-height: var(--leading-normal)`;
-dialogs and toasts size their own text; `.ui-scope-player` on `<body>` wins
-from `@layer base`. A migrated root that is none of these (the shell) sets
-`font-size: var(--text-body)` itself.
+**Where the size comes from.** `base.css` leaves the root at `100%`, i.e.
+the user's own default (normally 16px), and every `--text-*` token is a rem
+against it: never pin `html { font-size: <n>px }`, that silently rescales
+the whole system and breaks browser zoom expectations. The `reset` layer
+gives `body` `var(--text-body)` and `--leading-normal` as the floor; a page
+root then states its own density rather than inheriting the shell's.
+`.l-page` and `.ui-auth` set `font-size: var(--text-body)` and
+`line-height: var(--leading-normal)` for exactly that reason; dialogs and
+toasts size their own text; `.ui-scope-player` on `<body>` re-points
+`--text-body` / `--text-control` from `@layer base`, so the primitives
+inside it grow without a single variant prop. A page root that is neither
+`.l-page` nor `.ui-auth` sets `font-size: var(--text-body)` itself.
 
 ### 4.2 Spacing (4px grid)
 
@@ -292,18 +299,42 @@ only keep 36px.
 | `--ease-exit` | `cubic-bezier(0.4,0,1,1)` | departures |
 | `--ease-standard` | `cubic-bezier(0.2,0,0,1)` | state changes |
 
+**Motion is opt-in, and there is no safety net.** Every `@keyframes` use and
+every `transition` in the bundle sits inside
+`@media (prefers-reduced-motion: no-preference)`, and the two smooth
+`scrollIntoView` calls read `matchMedia('(prefers-reduced-motion: reduce)')`
+before asking for `behavior: 'smooth'`. `base.css` used to carry a
+`* { animation-duration: 0.01ms !important }` net under
+`(prefers-reduced-motion: reduce)` to tame the legacy sheet's unguarded
+animations; with that sheet gone nothing needed it, so it was removed rather
+than left as a comfort blanket. The consequence: **a rule that animates
+outside a `no-preference` query is a bug that nothing will catch for you.**
+Declare motion only inside the query, transform/opacity/colour only.
+
 ### 4.6 Stacking
 
 `--z-base` 0, `--z-sticky` 20 (action bar, sticky headers), `--z-dropdown`
 30, `--z-drawer` 40, `--z-modal` 50, `--z-toast` 60 (above dialogs),
 `--z-skip` 70. No other z-index values.
 
-During the migration legacy overlays still use literal values up to 9999
-(`.auth-overlay`; `.as-dialog-overlay` and inline overlays at 1000 to 1100).
-`legacy-aliases.css` raises `--z-drawer` 11000, `--z-modal` 12000,
-`--z-toast` 12100 and `--z-skip` 12200, so a toast or a confirm raised while
-a legacy overlay is open renders above it. The override goes away with the
-file.
+The scale is small on purpose: every surface that raises itself reads one of
+these tokens (Modal `--z-modal`, Toast `--z-toast`, the shell drawer
+`--z-drawer`, sticky headers and `.ui-actionbar` `--z-sticky`, the skip link
+`--z-skip`). The inflated values `legacy-aliases.css` used to set (11000 to
+12200, to clear hand-built overlays at 1000 to 9999) went with that file;
+nothing stacks outside the tokens any more.
+
+`--z-dropdown` is currently reserved and unused: the Combobox popup sets no
+`position` and no `z-index`, it renders in normal flow under the input
+(`Combobox.tsx`), which is what keeps it from being clipped inside a modal
+or a table cell. Its stacking is flow order, not a token. Give it
+`--z-dropdown` only together with a `position`, and only if a real overlap
+appears — a raised popup is a clipping bug waiting to happen.
+
+A z-index literal in a page is a defect: it means the page built its own
+overlay instead of using `Modal`. The single exception in the codebase is
+`z-index: 1` on a sticky table header inside `Table`'s own scroll container,
+which is a local stacking context, not a page-level surface.
 
 ### 4.7 Layout and breakpoints
 
@@ -392,11 +423,12 @@ No request leaves for Google Fonts (GDPR, see `docs/COMPLIANCE.md`).
   the optical-size axis is ever wanted, replace the first import with
   `opsz.css`; no CSS change is needed (`font-optical-sizing` is `auto` by
   default).
-- Delete the `@import url('https://fonts.googleapis.com/…')` line from the
-  legacy `src/index.css` (it must go anyway: an `@import` cannot live inside
-  the `@layer legacy { }` wrapper), and remove `https://fonts.googleapis.com`
-  (style-src) and `https://fonts.gstatic.com` (font-src) from the
-  Content-Security-Policy in `deploy/nginx-production.conf`.
+- No font ever comes from a CDN. The old `@import url('https://fonts.
+  googleapis.com/…')` went with `src/index.css`, and
+  `https://fonts.googleapis.com` (style-src) / `https://fonts.gstatic.com`
+  (font-src) are no longer in the Content-Security-Policy of
+  `deploy/nginx-production.conf`. Adding a font host back to either place is
+  a GDPR regression, not a convenience.
 - Families (tokens.css): `--font-sans: "Inter Variable", "Inter", ui-sans-serif,
   system-ui, …`; `--font-mono: "JetBrains Mono Variable", "JetBrains Mono",
   ui-monospace, "Cascadia Mono", Consolas, …`. Fontsource CSS uses
@@ -569,7 +601,7 @@ Built on `hooks/useDialogFocus`, which builds on `hooks/useModalA11y`.
 
 **useConfirm / ConfirmProvider** `confirm({ title, description?,
 confirmLabel, cancelLabel?, tone?: 'danger'|'default', confirmText? })`
-resolves `true` or `false`. Migration is one line:
+resolves `true` or `false`. It replaces `window.confirm` in one line:
 `if (!(await confirm({ … }))) return`. Initial focus is Cancel, or the typed
 input when `confirmText` is set (Confirm stays `aria-disabled` until the
 text matches exactly). Requests queue; one dialog at a time; can open from
@@ -934,7 +966,7 @@ Adapted from ui-ux-pro-max `pro-rules.md` (pre-delivery checklist) and
 `quick-reference.md` §1 to §3 for a web admin panel.
 
 Process
-- [ ] `npx tsc --noEmit -p .` passes; the migration greps (section 14) are clean.
+- [ ] `npx tsc --noEmit -p .` passes; the acceptance greps (section 14) are clean.
 - [ ] Checked at 1440px and 375px in **both** themes: no page-level
       horizontal scroll, nothing hidden behind the sticky bar or the mobile top bar.
 - [ ] Checked with reduced motion on and at 200% browser zoom (no clipped
@@ -989,65 +1021,102 @@ Pointer and motion
 
 ---
 
-## 14. Migration rules for page agents
+## 14. Rules for page work, and the checks that hold them
 
-1. Work only in your group's files (plus new files in your page folders and
-   page CSS modules). Never edit `components/ui/*`, `styles/*`, `hooks/*`,
-   `main.tsx`, `services/api.ts`, `types/index.ts`, `utils/*`. A missing
-   variant or API method is reported to the integrator.
-2. Split oversized pages first in a no-behaviour-change commit (per
-   split-plans), keeping each page's default export and import path; remove
-   the old `.tsx` in the same commit. Bug fixes get their own commits.
-3. **No inline colours** (hex, rgba, `color + '33'`), no px font sizes, no
+The migration is done: there is no legacy sheet, no bridge and no `legacy`
+layer left to work around. What follows is the standing contract for a new
+page, a new tab, or any change to an existing one.
+
+**Ownership.** A page change stays inside its page folder and its CSS
+module. `components/ui/*`, `styles/*`, `hooks/*`, `main.tsx`,
+`services/api.ts`, `types/index.ts` and `utils/*` are shared foundation: a
+missing variant, a missing API method or a missing token is a deliberate
+change to the foundation, made with this file updated in the same commit —
+never worked around locally with a one-off style or a local `fetch`.
+
+1. **Build from the primitives.** Every control, surface, message, overlay
+   and table comes from `components/ui`; every layout from an `l-*` class or
+   the page's own CSS module. A page that needs a primitive to do something
+   new asks for the variant; it does not restyle the primitive from outside.
+2. **No inline colours** (hex, `rgba`, `color + '33'`), no px font sizes, no
    fixed `gridTemplateColumns`, no `e.currentTarget.style` hover mutations,
-   no injected `<style>` tags, no z-index literals.
-4. **No `window.confirm`, `confirm(`, `window.alert`, `window.prompt`**:
-   useConfirm, toasts, or a small Modal with a Field.
-5. **All strings through `t()`**, added to en.json **and** it.json in the
-   same commit, under your own namespaces. No hardcoded Italian or English.
+   no injected `<style>` tags, no z-index literals. Tokens only, in CSS.
+3. **A page CSS module is layout only** — grid, flow and sizes, expressed in
+   tokens. It repeats `@layer reset, base, ui, page, utilities;` verbatim on
+   its first line and wraps its rules in `@layer page { … }`. Colour, type
+   and state belong to the primitives, which is why the `page` layer sits
+   above `ui`: a module can position a primitive, not repaint it.
+4. **No `window.confirm`, bare `confirm(`, `window.alert`, `window.prompt`:**
+   `useConfirm`, a toast, or a small Modal with a Field. Pages never call
+   `hooks/useModalA11y` directly either — it is Modal's internal.
+5. **All strings through `t()`**, added to `en.json` **and** `it.json` in the
+   same commit, under the page's own namespace. No hardcoded Italian and no
+   hardcoded English.
 6. **Role gating via `currentUser`** (the prop App passes to every page):
    `const isAdmin = currentUser?.role === 'admin'`,
    `const canOperate = isAdmin || currentUser?.role === 'operator'`. Hide
    controls a role can never use; show temporarily unavailable ones
    `disabled` with a visible reason. Pass `isAdmin`/`canOperate` explicitly
    into extracted components (no default `true`). The backend stays the
-   authority.
+   authority: the UI hides what a role cannot do, it never grants it.
 7. All HTTP through `services/api.ts`; errors through `utils/errors`
    (`extractError`), never `err.message` directly.
 8. No `dangerouslySetInnerHTML`; use `<Trans>` or interpolation.
-9. Destructive = `danger` + `useConfirm`; irreversible mass actions add
-   `confirmText`.
-10. Delete a page's legacy CSS classes as you migrate it; don't restyle
-    legacy classes in place.
-11. **Overlays first.** A page migrates a legacy overlay (hand-built
-    `position: fixed` + `useModalA11y`, `.as-dialog`) to `Modal` BEFORE it
-    calls `useConfirm` or opens a `Modal` from inside that overlay. The legacy
-    overlay's Escape listener has no dialog stack, so one Escape would close
-    both. Toasts and CopyButton inside a legacy overlay are fine: the
-    stacking overrides in `legacy-aliases.css` keep them above it.
+9. Destructive actions are `danger` + `useConfirm`; irreversible mass
+   actions add `confirmText`.
+10. **Overlays are `Modal`.** A hand-built `position: fixed` panel has no
+    dialog stack, so one Escape closes two things and a toast raised from
+    inside it lands underneath. There is no stacking override to lean on any
+    more (section 4.6).
+11. Split a page before it stops fitting in one head: page folder,
+    `index.tsx` as the default export at the original import path,
+    `components/` and `hooks/` beside it. Split in a no-behaviour-change
+    commit; bug fixes get their own.
 
-Acceptance grep over the group's files returns nothing for:
-`window.confirm`, `window.alert`, `window.prompt`, `confirm(` (bare),
-`useModalA11y`, `dangerouslySetInnerHTML`, legacy classes (`btn`, `pl-`,
-`card`, `alert`, `form-input`, `input`, `badge`, `sf-`, `gc-`, `as-`, `bp-`,
-`page-header`, `page-container`, `machine-card`), legacy variables (build the
-exact list from `legacy-aliases.css` with the command in its header, run
-over the group's files), hex/rgba literals in style props,
-`gridTemplateColumns`, `onMouseEnter` style mutations, `<style>`.
+### Verification
 
-Legacy to primitive map (short): `.btn*`, `.pl-btn-*`, `.gc-btn*`,
-`.sf-btn-*` → Button / IconButton; `.form-group/.form-label/.form-hint/.form-error`
-→ Field; `.form-input`, `.input`, `.gc-input*` → Input / Select / Textarea;
-`.gc-toggle`, div toggles, Yes/No selects → Switch; inline segmented pills →
-SegmentedControl; `.sf-tabs`, TabBtn → Tabs; `.alert*`, `.pl-alert*`,
-`.gc-alert` → Alert (page load) or toast (action result); `.card*`,
-`.pl-sync-panel*` → Card; `.page-header*`, `.pl-header*` → PageHeader;
-`.pl-stat*` and inline tiles → StatTile; `.pl-chip`, per-page tone maps →
-Badge; `.badge*`, `.sf-status-*`, `components/StatusBadge.tsx` → StatusBadge;
-`.pl-empty*`, `.gc-empty*` → EmptyState; `.pl-loading`, `.pl-spin`, `.spin`,
-inline `spin` → Spinner; `.pl-table`, `.bp-table`, CSS-grid pseudo-tables →
-Table; hand-built overlays, `.as-dialog` → Modal; native dialogs →
-useConfirm / toast.
+```sh
+cd frontend
+npx tsc --noEmit -p .
+
+# The cascade-layer statement is identical in every sheet that declares one.
+# Expect exactly one line: "@layer reset, base, ui, page, utilities;"
+grep -rhE '^@layer [a-z, ]+;' src | sort -u
+# NOT CLEAN YET: on this branch it also returns the stale
+# "@layer reset, legacy, base, ui, page, utilities;" from 22 page and shell
+# modules still being converted, and 2 modules declare no statement at all
+# (pages/LeaderboardPage.module.css, pages/PlayerMapPage/PlayerMapPage.module.css
+# — they work only because index.css is imported first in main.tsx). Harmless
+# at runtime: the unknown `legacy` name is appended after `utilities` and
+# stays empty. Clear it in one pass when the page work lands (and add the
+# statement to the 2 that lack one), then delete this note:
+#   grep -rl '^@layer reset, legacy,' src | xargs \
+#     sed -i 's/^@layer reset, legacy, /@layer reset, /'
+
+# No stylesheet outside styles/ and components/ui/ that is not a CSS module.
+# Expect nothing.
+find src -name '*.css' ! -name '*.module.css' \
+  ! -path 'src/styles/*' ! -path 'src/components/ui/*'
+
+# Every custom property a rule reads is defined somewhere. Expect nothing:
+# this is what catches a token renamed in tokens.css but not in a page.
+grep -rhoE 'var\(--[a-z0-9-]+' src --include='*.css' --include='*.tsx' \
+  | sed 's/var(//' | sort -u > /tmp/used
+grep -rhoE '\-\-[a-z0-9-]+ *:' src --include='*.css' | sed 's/ *:$//' \
+  | sort -u > /tmp/defined
+comm -23 /tmp/used /tmp/defined
+
+# The deleted system does not come back. Expect nothing.
+grep -rn 'legacy-aliases\|@layer legacy' src
+```
+
+Over the files a change touches, expect nothing for: `window.confirm`,
+`window.alert`, `window.prompt`, bare `confirm(`, `useModalA11y`,
+`dangerouslySetInnerHTML`, `<style>`, `gridTemplateColumns`, `onMouseEnter`
+style mutations, hex/`rgba` literals inside `style` props, and the class
+names of the deleted sheet (`btn`, `pl-`, `sf-`, `gc-`, `as-`, `bp-`,
+`form-input`, `page-header`, `page-container`, `machine-card`) — each of
+those had a primitive, and the primitives are section 7.
 
 ---
 
@@ -1064,7 +1133,7 @@ useConfirm / toast.
 | Market rarity on series-1/series-4 (inverted) | Dedicated `--color-quality-*` on ASA tiers + tier name | Judge defect; quality never borrows status, accent or series. |
 | "/" focuses search | No single-key shortcut, no global search | WCAG 2.1.4. Search, if added, binds Ctrl/Cmd+K. |
 | Dialog footer `column-reverse` below 600px | `column` in DOM order | Visual order = tab order. |
-| Reduced motion via override (lost on specificity) | Motion declared only under `no-preference` (+ a base safety net) | Nothing to override, nothing to lose. |
+| Reduced motion via override (lost on specificity) | Motion declared only under `no-preference`, no global override at all | Nothing to override, nothing to lose. The `!important` net in `base.css` existed for the legacy sheet's unguarded animations and went with it (section 4.5). |
 | Sticky header in an `overflow-x` wrapper (never stuck) | Sticky only with Table `maxHeight` (vertical scroller) | Only promise what works. |
 | `aria-selected` on `<tr>`; `aria-label` on span/div | `tr[data-selected]` + checkbox; sr-only text | ARIA misuse. |
 | Rows declared 36/44, rendered 52 | 4px padding + 28px line box + inset separators: 36/44 measured | Judge measurement. |
@@ -1095,25 +1164,68 @@ useConfirm / toast.
 
 ---
 
-## 17. UI-kit harness (temporary)
+## 17. UI-kit harness (permanent, dev-only)
 
 `frontend/uikit.html` + `frontend/src/uikit/main.tsx` render every primitive
 in every variant and state, with theme, language and player-density toggles
-(the density toggle puts `ui-scope-player` on `<body>`, like the player
-pages) and live row-height measurements. Run `npx vite` in `frontend/` and open
-`/uikit.html`. It is not referenced by the app and not a build input
-(`vite build` bundles `index.html` only). Delete both at the end of the
-migration.
+(the density toggle puts `ui-scope-player` on `<body>`, exactly like the
+player pages) and live row-height measurements. Run `npx vite` in
+`frontend/` and open `/uikit.html`.
+
+**It is kept.** It is the only way to see the whole kit — every variant,
+both themes, both densities, both locales, coarse pointer, reduced motion,
+forced colours — without a backend, a database or a logged-in session. It
+is where a new variant is proved before a page depends on it, and where a
+token change is checked against everything it touches at once.
+
+It stays out of production by construction, not by discipline: `vite build`
+takes `index.html` as its only input, so nothing under `src/uikit/` is
+reachable from the app's entry graph and nothing of it is emitted into
+`dist/`. `uikit.html` also carries `<meta name="robots" content="noindex">`.
+It uses the real `src/i18n` bundles and the real `components/ui` barrel, so
+a primitive whose API changes breaks the harness at `tsc` time — which is
+the point. Keep it compiling: it is covered by `npx tsc --noEmit -p .`.
 
 ---
 
-## 18. Open questions for the maintainer
+## 18. Decisions the code now records
 
-1. Mapping of the integer item `quality` (market, ArkShop) to the six ASA
-   tiers. Until confirmed, pages show a neutral "Q{n}" Badge.
-2. The neutral white/black focus ring (and the darker dark-theme accent fill
-   it requires). Confirm, or choose a different accent.
-3. Italian tier names in `ui.quality.*`: confirm they match the game's
-   Italian localisation, or keep the English tier names in both locales.
-4. Sidebar footer controls (language, theme, logout) stay in the sidebar and
-   the drawer; no account menu is added.
+What the four open questions of the migration became. Read this before
+re-opening one of them.
+
+1. **Integer item `quality` → ASA tier: still unmapped, and the UI says so
+   honestly.** The Market renders a neutral `Badge` reading `Q{n}`, hidden
+   entirely when `quality` is 0. Three call sites, and they are not the same
+   shape:
+
+   - `MarketPage/components/ItemCard.tsx:96` — a `<Badge>`.
+   - `MarketPage/tabs/ShopTab.tsx:189` — a `<Badge>`.
+   - `MarketPage/tabs/MyItemsTab.tsx:82` — **not** a badge: the quality is
+     interpolated into a text line (`` ` · ${t("market.card.quality")}` ``).
+     It needs restructuring into an element, not a prop swap.
+
+   ArkShop shows no quality at all; its only mention is the `Field` label in
+   `ArkShopPage/components/EntryDialog.tsx:58`, which is an input, not a
+   display. The `QualityBadge` primitive and the six `--color-quality-*`
+   tokens exist and are exercised by the UI-kit harness, waiting for the
+   mapping. When the plugin's integer range is confirmed, the change is one
+   helper returning a `QualityTier`, swapped in at the two `Badge` sites —
+   no token and no primitive work. Do not guess the ranges: a wrong tier is
+   worse than `Q{n}`.
+2. **Neutral focus ring: shipped and load-bearing.** `--color-focus-ring` is
+   `#FFFFFF` in dark and `#000000` in light, drawn by one rule in `base.css`
+   (`:focus-visible { outline: 2px solid …; outline-offset: 2px }`) that
+   components only ever adjust by `outline-offset`. The dark accent fill was
+   darkened to `#737ADF` so the white ring keeps 3:1 beside it (section 3.2,
+   section 15). The ring, the fill and that contrast figure move together:
+   changing the accent means re-measuring the ring, not just picking a hue.
+3. **Italian tier names: defined, and they are Italian.** `ui.quality.*` in
+   `frontend/src/i18n/locales/it.json` is Primitivo / Scadente / Apprendista
+   / Esperto / Maestro / Ascendente, against Primitive / Ramshackle /
+   Apprentice / Journeyman / Mastercraft / Ascendant in `en.json`. Both
+   locales carry all six plus `ui.quality.label`, so `QualityBadge` always
+   writes the tier name — which is the accessibility requirement behind it
+   (section 3.4), not a nicety. If the game's Italian localisation ever
+   disagrees, change `it.json` only.
+4. **Sidebar footer: no account menu.** Language, theme and logout stay
+   visible in the sidebar and in the drawer, one tap each.

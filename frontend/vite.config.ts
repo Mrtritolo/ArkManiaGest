@@ -29,6 +29,11 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    // No `rollupOptions.input`: the single entry stays the default
+    // index.html.  That is what keeps the dev-only UI-kit harness
+    // (uikit.html + src/uikit/) out of the shipped bundle -- it is
+    // unreachable from index.html, so nothing of it is emitted into dist/.
+    // Adding a second input here would ship it.
     outDir: 'dist',
     sourcemap: false,
     minify: 'esbuild',

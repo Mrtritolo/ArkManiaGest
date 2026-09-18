@@ -74,8 +74,15 @@ See the **Quick setup** section in [README.md](README.md#quick-setup-development
   with the `--color-*` / `--space-*` tokens; the rules live in
   `design-system/arkmaniagest/MASTER.md`. No Tailwind utility classes, and
   no raw hex or px in a page.
-- `src/index.css` and `pages/GameConfigPage.css` are the legacy sheet
-  (`@layer legacy`) and shrink as pages migrate.
+- CSS lives in three places and nowhere else: `src/styles/` (tokens, base,
+  content, utilities), a stylesheet beside each primitive in
+  `src/components/ui/`, and a `PageName.module.css` beside each page for
+  layout only. Every one of them repeats
+  `@layer reset, base, ui, page, utilities;` verbatim on its first line and
+  wraps its rules in the single layer it owns.
+- To see the primitives without running the backend: `npx vite` in
+  `frontend/`, then `/uikit.html`. That harness is dev-only — `vite build`
+  takes `index.html` as its only input, so it never ships.
 - Fonts are self-hosted via `@fontsource-variable/*`: never add a font CDN.
 - All UI text comes from `useTranslation()` (react-i18next).
 - API calls go through `services/api.ts`; do not call `axios` directly

@@ -1,31 +1,35 @@
 /**
- * TEMPORARY dev-only UI-kit harness -- delete with /uikit.html after the
- * migration. It is not imported by the app and is not a production build
- * input (vite build only bundles index.html).
+ * Dev-only UI-kit harness -- permanent, and deliberately outside the app.
  *
- * Renders every primitive in every variant and state, with theme, language
- * and player-density toggles, so the kit can be checked visually with
- * `npx vite` at /uikit.html.
+ * Renders every primitive of components/ui in every variant and state, with
+ * theme, language and player-density toggles and live row-height
+ * measurements, so the whole kit can be reviewed in both themes, both
+ * densities and both locales without a backend, a database or a session.
+ * Run `npx vite` in frontend/ and open /uikit.html.
  *
- * Fonts: @fontsource-variable/inter and @fontsource-variable/jetbrains-mono
- * were NOT in node_modules when this harness was written, so the page renders
- * with the system fallbacks of --font-sans / --font-mono (Segoe UI / Consolas
- * on Windows). Once the packages are installed, add here (and in main.tsx)
- * the two default entries only -- not "@fontsource-variable/inter/opsz.css",
- * which registers the same "Inter Variable" family and would download Inter
- * a second time:
- *   import "@fontsource-variable/inter";
- *   import "@fontsource-variable/jetbrains-mono";
+ * It never reaches production: `vite build` takes index.html as its only
+ * input, so this module is outside the app's entry graph and nothing of it
+ * is emitted into dist/. Nothing in src/ may import from here.
  *
- * The ui.* strings below mirror the i18n additions proposed for en.json and
- * it.json; they are merged at runtime only because this harness must not
- * edit the locale files.
+ * It does import the real things on purpose -- the components/ui barrel, the
+ * real hooks, the real src/i18n bundles and the real styles/index.css -- so
+ * a primitive whose props change, or a ui.* key that disappears from
+ * en.json / it.json, breaks the harness at `npx tsc --noEmit -p .` instead
+ * of rotting quietly. Keep it compiling when you change a primitive.
+ *
+ * Fonts are the same self-hosted @fontsource-variable packages main.tsx
+ * loads, so the type here is the type the app ships. Import the default
+ * entries only: "@fontsource-variable/inter/opsz.css" registers the same
+ * "Inter Variable" family and would download Inter twice.
+ *
+ * See design-system/arkmaniagest/MASTER.md section 17.
  */
 import { StrictMode, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import i18n from "i18next";
 import { useTranslation } from "react-i18next";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import {
   Activity,
   Ban,
@@ -93,83 +97,12 @@ import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { usePending } from "../hooks/usePending";
 import { useSelection } from "../hooks/useSelection";
 
-// ------------------------------------------------ proposed i18n additions
-const UI_EN = {
-  ui: {
-    dismiss: "Dismiss",
-    dismissNotification: "Dismiss notification",
-    notifications: "Notifications",
-    copied: "Copied",
-    copyFailed: "Could not copy to the clipboard",
-    showPassword: "Show password",
-    notAvailable: "Not available",
-    noResults: "No results",
-    typeToConfirm: "Type {{text}} to confirm",
-    selectedCount_one: "{{count}} selected",
-    selectedCount_other: "{{count}} selected",
-    noneSelected: "None selected",
-    pagination: { previous: "Previous", next: "Next", pageOf: "Page {{page}} of {{total}}" },
-    tone: { info: "Information:", success: "Success:", warning: "Warning:", error: "Error:" },
-    status: {
-      online: "Online",
-      offline: "Offline",
-      updating: "Updating",
-      crashed: "Crashed",
-      error: "Error",
-      degraded: "Degraded",
-      testing: "Testing",
-      unknown: "Unknown",
-    },
-    quality: {
-      label: "Quality:",
-      primitive: "Primitive",
-      ramshackle: "Ramshackle",
-      apprentice: "Apprentice",
-      journeyman: "Journeyman",
-      mastercraft: "Mastercraft",
-      ascendant: "Ascendant",
-    },
-  },
-};
-const UI_IT = {
-  ui: {
-    dismiss: "Chiudi",
-    dismissNotification: "Chiudi notifica",
-    notifications: "Notifiche",
-    copied: "Copiato",
-    copyFailed: "Impossibile copiare negli appunti",
-    showPassword: "Mostra password",
-    notAvailable: "Non disponibile",
-    noResults: "Nessun risultato",
-    typeToConfirm: "Digita {{text}} per confermare",
-    selectedCount_one: "{{count}} selezionato",
-    selectedCount_other: "{{count}} selezionati",
-    noneSelected: "Nessuna selezione",
-    pagination: { previous: "Precedente", next: "Successiva", pageOf: "Pagina {{page}} di {{total}}" },
-    tone: { info: "Informazione:", success: "Operazione riuscita:", warning: "Attenzione:", error: "Errore:" },
-    status: {
-      online: "Online",
-      offline: "Offline",
-      updating: "In aggiornamento",
-      crashed: "Arresto anomalo",
-      error: "Errore",
-      degraded: "Degradato",
-      testing: "Test in corso",
-      unknown: "Sconosciuto",
-    },
-    quality: {
-      label: "Qualità:",
-      primitive: "Primitivo",
-      ramshackle: "Scadente",
-      apprentice: "Apprendista",
-      journeyman: "Esperto",
-      mastercraft: "Maestro",
-      ascendant: "Ascendente",
-    },
-  },
-};
-i18n.addResourceBundle("en", "translation", UI_EN, true, false);
-i18n.addResourceBundle("it", "translation", UI_IT, true, false);
+// The ui.* namespace the primitives read (ui.dismiss, ui.tone.*,
+// ui.status.*, ui.quality.*, ui.pagination.*, ui.selectedCount) lives in
+// the real locale files and reaches this page through `import "../i18n"`
+// above. The harness must NOT patch it at runtime: showing exactly what
+// en.json and it.json say is the point -- a missing or drifted key has to
+// be visible here.
 
 // ------------------------------------------------------------- fixtures
 interface Instance {
@@ -1120,8 +1053,8 @@ function Harness() {
       </a>
       <main id="main-content" tabIndex={-1} className="l-page">
         <PageHeader
-          title="UI kit (temporary harness)"
-          description="Every primitive in every state. Not part of the app or the production build."
+          title="UI kit (dev harness)"
+          description="Every primitive of components/ui in every state, on the real tokens and the real locale files. Dev-only: never part of the app or of a production build."
           actions={
             <>
               <Button icon={theme === "dark" ? Sun : Moon} onClick={() => setThemeState(nextTheme)}>

@@ -102,10 +102,14 @@ backend/app/
 └── main.py             # FastAPI app entry, lifespan, middleware, global exception handler
 frontend/src/
 ├── App.tsx             # Auth state machine + router
-├── pages/              # One TSX file per page; admin pages + PlayerDashboard + Market
-├── components/         # Sidebar, StatusBadge, DiscordIcon
+├── pages/              # One folder (or TSX file) per page + its PageName.module.css
+├── components/ui/      # The design-system primitives + their CSS; barrel in index.ts
+├── components/         # Shell pieces: Sidebar, DiscordIcon
+├── styles/             # index.css (layer order + imports), tokens, base, content, utilities
+├── hooks/              # useModalA11y, useDialogFocus, useSelection, usePending, useDebouncedValue
 ├── services/api.ts     # The ONLY axios client — domain-grouped objects (authApi, machinesApi, …)
 ├── i18n/               # react-i18next bootstrap + en.json / it.json bundled inline
+├── uikit/              # Dev-only primitive harness for /uikit.html; never built into dist/
 ├── types/index.ts      # Shared TypeScript types
 └── theme.ts            # Light/dark theme switcher (data-theme on <html>)
 deploy/
@@ -182,14 +186,22 @@ reference/              # POK-manager checkout — gitignored, used as a templat
   Field, Modal, Table, Toast, …) and style them with the `--color-*` /
   `--space-*` tokens. The rules are in
   [design-system/arkmaniagest/MASTER.md](design-system/arkmaniagest/MASTER.md).
-- Styles live in `src/styles/` (tokens, base, content, utilities) plus a CSS
-  file next to each primitive. No Tailwind utility classes in components, and
-  no raw hex or px in a page. Floating surfaces use `--color-surface-raised`
-  with a `--color-border-strong` edge, or the Modal / Combobox / Toast
-  primitives — never a translucent card background.
-- `src/index.css` and `pages/GameConfigPage.css` are the **legacy** sheet,
-  wrapped in `@layer legacy`; they shrink as pages migrate and are deleted at
-  the end, together with `src/styles/legacy-aliases.css`.
+- Styles live in exactly three places: `src/styles/` (tokens, base, content,
+  utilities), a CSS file next to each primitive in `components/ui/`, and a
+  `PageName.module.css` next to each page. There is no global sheet and no
+  page `.css` that isn't a module. No Tailwind utility classes in components,
+  and no raw hex or px in a page. Floating surfaces use
+  `--color-surface-raised` with a `--color-border-strong` edge, or the Modal /
+  Combobox / Toast primitives — never a translucent card background.
+- **Every stylesheet repeats `@layer reset, base, ui, page, utilities;`
+  verbatim on its first line**, then wraps its rules in the one layer it owns
+  (`ui` for a primitive, `page` for a page module). Copy the statement
+  exactly: a repeat that lists a different set of names silently re-orders
+  the layers for the whole bundle.
+- **Motion is opt-in and unguarded motion is a bug.** Declare every
+  transition and animation inside
+  `@media (prefers-reduced-motion: no-preference)`; there is no global
+  `!important` net in `base.css` any more to undo it for you.
 - Fonts are self-hosted (`@fontsource-variable/*`): no request to a font CDN,
   and the nginx CSP has no font host in it.
 - Light/dark theme is driven by `[data-theme]` on `<html>`; persisted in
@@ -255,9 +267,12 @@ reference/              # POK-manager checkout — gitignored, used as a templat
   when the operator hasn't split the databases yet.
 - **Don't hardcode the panel address / domain / admin IP** anywhere — the
   operator-supplied values flow through `.env` and `deploy.conf`.
-- **Don't reach for a legacy `--bg-*` / `--text-*` variable in new code.** They
-  only still resolve because `styles/legacy-aliases.css` re-points them at the
-  new tokens, and that file goes away at the end of the migration.
+- **Don't invent a CSS custom property.** The old `--bg-*` / `--border-*`
+  aliases are gone: every name a rule reads must be defined in
+  `styles/tokens.css` (or locally in the same rule, like Alert's
+  `--ui-tone` or Badge's `--ui-quality`). An undefined `var()` falls back to nothing and the element
+  renders transparent instead of failing loudly — the grep that catches it
+  is in MASTER.md § 14.
 - **Don't add a role check only in the UI.** The backend is the authority:
   viewer is read-only, operator runs game operations, admin owns
   infrastructure, credentials and irreversible wipes (see
@@ -281,6 +296,7 @@ reference/              # POK-manager checkout — gitignored, used as a templat
 | Available API client methods? | [frontend/src/services/api.ts](frontend/src/services/api.ts) |
 | What are the design rules? | [design-system/arkmaniagest/MASTER.md](design-system/arkmaniagest/MASTER.md) |
 | Which UI primitives exist? | [frontend/src/components/ui/index.ts](frontend/src/components/ui/index.ts) |
+| How does a primitive actually look? | `npx vite` in `frontend/`, then `/uikit.html` (dev-only harness, never built) |
 | How to deploy / update an install? | [deploy/](deploy/), [docs/INSTALL.en.md](docs/INSTALL.en.md) |
 | Marketplace ownership matrix? | [docs/MARKETPLACE_API_CONTRACT.md](docs/MARKETPLACE_API_CONTRACT.md) |
 | Discord rollout plan? | [docs/DISCORD_INTEGRATION.md](docs/DISCORD_INTEGRATION.md) |

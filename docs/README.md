@@ -16,8 +16,13 @@ files are shipped inside every release bundle.
 ## Design system
 
 - **[../design-system/arkmaniagest/MASTER.md](../design-system/arkmaniagest/MASTER.md)**
-  — tokens, primitives, layout, density, accessibility contract and the
-  migration rules for the panel UI.
+  — the living reference for the panel UI: colour and type tokens with
+  their measured contrast, the cascade-layer contract, every primitive's
+  API, layout and density, the accessibility checklist, and the rules (plus
+  greps) any new page has to satisfy.  Read it before touching
+  `frontend/`; when it and a page disagree, the page is wrong.
+  To see the primitives rendered, run `npx vite` in `frontend/` and open
+  `/uikit.html` — a dev-only harness that is never part of a build.
 
 ## External API references (for contributors)
 

@@ -1,16 +1,25 @@
 <!DOCTYPE html>
 <!--
-  TEMPORARY dev-only UI-kit harness. Not referenced by the app and not a
-  build input (vite build only bundles index.html). Open it with
-  `npx vite` at http://localhost:5173/uikit.html. Delete this file and
-  src/uikit/ once every page group has migrated.
+  Dev-only UI-kit harness -- permanent, deliberately not part of the app.
+
+  It renders every primitive of components/ui in every variant and state,
+  with theme, language and player-density toggles, so the kit can be
+  reviewed without a backend, a database or a session. Open it with
+  `npx vite` in frontend/ at http://localhost:5173/uikit.html.
+
+  It never reaches production: `vite build` takes index.html as its only
+  input, so this page and src/uikit/ are outside the app's entry graph and
+  nothing of them is emitted into dist/. Do not add it to
+  build.rollupOptions.input, and do not import src/uikit/ from the app.
+
+  See design-system/arkmaniagest/MASTER.md section 17.
 -->
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
-    <title>UI kit (temporary)</title>
+    <title>UI kit (dev harness)</title>
   </head>
   <body>
     <div id="root"></div>
