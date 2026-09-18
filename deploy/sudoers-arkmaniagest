@@ -7,8 +7,13 @@
 #
 # We deliberately whitelist a single command path (the literal location of
 # server-update.sh under the install prefix) and only with `bash` as the
-# interpreter, so even if an attacker gained code execution as `arkmania`
-# they cannot use this entry to run anything else as root.
+# interpreter.  This is NOT a privilege boundary: server-update.sh installs
+# and runs, as root, the tarball `arkmania` drops in /tmp, and the script
+# itself lives in a tree `arkmania` owns.  Code execution as `arkmania`
+# therefore means root while this file is installed; remove it to turn
+# the in-UI self-update off.  Removing it does not make `arkmania` a
+# boundary on its own: root's cron jobs (setup-cron.sh) run backup.sh and
+# cron-sync-names.sh from that same tree.
 #
 # Drop this file under /etc/sudoers.d/arkmaniagest with mode 0440:
 #

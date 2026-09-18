@@ -25,14 +25,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # The write token must not sit in .git/config while `npm ci` runs
+          # third-party install scripts; the publish step gets it as an input.
+          persist-credentials: false
 
       - name: Resolve version
         id: ver
+        env:
+          # Through env, not ${{ }} inside the script: the input is free text
+          # and would otherwise be spliced into the shell source.
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
           else
             VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          # [[ =~ ]] anchors on the whole string; grep would accept a
+          # multi-line input whose first line looks like a version.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::The version to release is not X.Y.Z or X.Y.Z-tag"
+            exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
@@ -58,7 +71,7 @@ jobs:
           set -euo pipefail
           # Shared base that both artefacts copy from.  We deliberately DO NOT
           # apply the Windows-only script excludes here: the Windows zip needs
-          # .ps1/.bat so deploy-remote.ps1 works.  The Linux tarball step
+          # .ps1/.bat so install-panel.ps1 works.  The Linux tarball step
           # prunes those files right before tar-ing.
           BASE="release-build/_stage"
           rm -rf release-build
@@ -110,8 +123,11 @@ jobs:
           DIR_NAME="arkmaniagest-v${VERSION}"
           cd release-build
           cp -r _stage "$DIR_NAME"
-          # Linux servers don't need the Windows deploy helpers.
-          find "$DIR_NAME" -type f \( -name '*.ps1' -o -name '*.bat' -o -name '*.vbs' \) -delete
+          # Linux servers don't need the Windows deploy helpers, except
+          # deploy/windows-native: the panel reads harden.ps1 at runtime to
+          # harden Windows game hosts.
+          find "$DIR_NAME" -type f \( -name '*.ps1' -o -name '*.bat' -o -name '*.vbs' \) \
+            -not -path "$DIR_NAME/deploy/windows-native/*" -delete
           tar -czf "${DIR_NAME}-linux.tar.gz" "$DIR_NAME"
           rm -rf "$DIR_NAME"
 
@@ -123,7 +139,7 @@ jobs:
           DIR_NAME="arkmaniagest-v${VERSION}"
           cd release-build
           cp -r _stage "$DIR_NAME"
-          # Full tree including .ps1/.bat helpers for deploy-remote.ps1 etc.
+          # Full tree including .ps1/.bat helpers for install-panel.ps1 etc.
           zip -rq "${DIR_NAME}-windows.zip" "$DIR_NAME"
           rm -rf "$DIR_NAME"
 
@@ -167,7 +183,7 @@ jobs:
             echo "| Platform | File | Deploy command |"
             echo "|---|---|---|"
             echo "| Linux server | \`arkmaniagest-v${VERSION}-linux.tar.gz\` | \`tar -xzf … && sudo bash deploy/full-deploy.sh\` |"
-            echo "| Windows dev PC | \`arkmaniagest-v${VERSION}-windows.zip\` | Unzip, then run \`deploy\\deploy-remote.ps1\` |"
+            echo "| Windows dev PC | \`arkmaniagest-v${VERSION}-windows.zip\` | Unzip, then run \`deploy\\install-panel.ps1\` |"
             echo ""
             echo "Verify with \`SHA256SUMS.txt\`."
             echo ""
@@ -178,7 +194,9 @@ jobs:
           } >> release-build/BODY.md
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        # Pinned to a commit: this third-party action runs with the
+        # contents: write token, and a tag can be moved under us.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ArkManiaGest ${{ steps.ver.outputs.tag }}

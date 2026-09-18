@@ -53,7 +53,7 @@ Seguila se vuoi fare il deploy del pannello sul tuo VPS Linux.
 | Piattaforma | Requisiti |
 |-------------|-----------|
 | Windows 10/11 | PowerShell 5.1+ (incluso), OpenSSH client (incluso da Win10 1809) |
-| Linux | `bash`, `ssh`, `scp`, `tar`, `curl`, `openssl`, `base64` (standard) |
+| Linux | `bash`, `ssh`, `scp`, `tar`, `curl`, `openssl` (standard) |
 
 Nient'altro.  Nessun Python / Node / Docker sul client.
 
@@ -140,7 +140,8 @@ Lo script è interattivo.  Richiede:
    - Nome database, user, password.  Lascia la password vuota per
      generarne una casuale (viene salvata nel `.env` del server).
 7. **User / nome visualizzato / password** dell'amministratore del
-   pannello web.
+   pannello web.  La password deve avere almeno 12 caratteri, con
+   almeno una lettera e una cifra.
 
 Dopo la conferma, l'installer:
 
@@ -192,11 +193,23 @@ sarà pronto.
 
 ## Aggiornamento a una release più recente
 
-Rilancia lo stesso installer — è idempotente.  `backend/.env` viene
-preservato e `deploy/migrate-env.sh` aggiunge le nuove chiavi
+**Non** rilanciare l'installer su un pannello già installato: scrive un
+`backend/.env` appena generato con una nuova `FIELD_ENCRYPTION_KEY`, e
+tutte le credenziali già salvate nel database diventano illeggibili.
+L'installer rileva un pannello esistente e chiede conferma prima di
+farlo.
+
+Aggiorna invece in uno di questi modi.  Entrambi preservano
+`backend/.env`, e `deploy/migrate-env.sh` aggiunge le nuove chiavi
 introdotte dalla release più recente.
 
-Alternativa (incrementale, senza reinstallare i pacchetti):
+- **Dal pannello**: **Impostazioni → Generali → Aggiornamenti → Verifica
+  ora** mostra la versione in esecuzione e se è disponibile una release
+  più recente; **Installa aggiornamento** la applica.  L'installazione
+  con un clic richiede lo snippet sudoers di
+  `deploy/sudoers-arkmaniagest` sull'host del pannello.
+- **Dal tuo PC**: estrai la release più recente e lancia da lì lo
+  script di aggiornamento.
 
 ```powershell
 .\deploy\update-panel.ps1                  # sync completo
@@ -204,9 +217,32 @@ Alternativa (incrementale, senza reinstallare i pacchetti):
 .\deploy\update-panel.ps1 -FrontendOnly
 ```
 
-Dal pannello stesso puoi controllare la versione in esecuzione e se è
-disponibile una release più recente: **Impostazioni → Generali →
-Aggiornamenti → Verifica ora**.
+```bash
+./deploy/update-panel.sh                   # sync completo
+./deploy/update-panel.sh --backend-only
+./deploy/update-panel.sh --frontend-only
+```
+
+### Passo una tantum per questa release: il vhost nginx
+
+Questa release alza `proxy_read_timeout` nel blocco `/api/` di
+`deploy/nginx-production.conf` da 120s a 1800s: avviare, fermare o
+aggiornare un server richiede legittimamente diversi minuti e nginx
+rispondeva 504 mentre l'host stava ancora lavorando.
+
+Né l'aggiornamento dal pannello né `update-panel.{sh,ps1}` rigenerano il
+vhost installato — lo fa solo `full-deploy.sh`.  Su un pannello
+installato prima di questa release, applicalo una volta:
+
+```bash
+# Rigenera il vhost dal template
+sudo bash /opt/arkmaniagest/deploy/full-deploy.sh
+
+# In alternativa: modificalo a mano -- alza proxy_read_timeout dentro `location /api/ {`
+# (lascia a 120s quello in `location /api/v1/public/ {`)
+sudo nano /etc/nginx/sites-available/arkmaniagest
+sudo nginx -t && sudo systemctl reload nginx
+```
 
 ---
 

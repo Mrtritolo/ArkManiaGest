@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Read-only token: nothing here writes to the repo, and `npm ci` / `pip
+# install` run third-party code that would otherwise inherit the repository's
+# default (possibly read-write) token permissions.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend (Python ${{ matrix.python-version }})

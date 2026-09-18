@@ -51,7 +51,7 @@ you want to deploy the panel yourself on your own Linux VPS.
 | Platform | Requirements |
 |----------|--------------|
 | Windows 10/11 | PowerShell 5.1+ (bundled), OpenSSH client (bundled since Win10 1809) |
-| Linux | `bash`, `ssh`, `scp`, `tar`, `curl`, `openssl`, `base64`  (all standard) |
+| Linux | `bash`, `ssh`, `scp`, `tar`, `curl`, `openssl`  (all standard) |
 
 No other packages are needed.  No Python / Node / Docker on the client.
 
@@ -137,6 +137,8 @@ The installer is interactive.  It prompts for:
      auto-generate a random one (it is saved into the server's
      `.env` file).
 7. **Admin user / display name / password** for the panel web UI.
+   The password needs at least 12 characters, including at least one
+   letter and one digit.
 
 After you confirm, the installer:
 
@@ -187,11 +189,22 @@ administer players via RCON once the bootstrap endpoint lands.
 
 ## Updating to a newer release
 
-Re-run the same installer — it is idempotent.  `backend/.env` is
-preserved, and `deploy/migrate-env.sh` backfills any new keys added by
-the newer release.
+Do **not** re-run the installer on a panel that is already installed:
+it writes a freshly generated `backend/.env` with a new
+`FIELD_ENCRYPTION_KEY`, and every credential already stored in the
+database becomes unreadable.  The installer detects an existing panel
+and asks before doing so.
 
-Alternative (incremental, no package reinstall):
+Update with one of these instead.  Both keep `backend/.env`, and
+`deploy/migrate-env.sh` backfills any new keys added by the newer
+release.
+
+- **From the panel**: **Settings → General → Updates → Check now**
+  shows the running version and whether a newer release is available;
+  **Install update** applies it.  One-click install needs the sudoers
+  snippet from `deploy/sudoers-arkmaniagest` on the panel host.
+- **From your PC**: extract the newer release and run the update
+  script from it.
 
 ```powershell
 .\deploy\update-panel.ps1                  # full sync
@@ -199,9 +212,32 @@ Alternative (incremental, no package reinstall):
 .\deploy\update-panel.ps1 -FrontendOnly
 ```
 
-You can also see which version is running **and** whether a newer
-release is available from the panel itself: **Settings → General →
-Updates → Check now**.
+```bash
+./deploy/update-panel.sh                   # full sync
+./deploy/update-panel.sh --backend-only
+./deploy/update-panel.sh --frontend-only
+```
+
+### One-off step for this release: the nginx vhost
+
+This release raises `proxy_read_timeout` in the `/api/` block of
+`deploy/nginx-production.conf` from 120s to 1800s, because starting,
+stopping or updating a server legitimately takes minutes and nginx was
+answering 504 while the host kept working.
+
+Neither an update from the panel nor `update-panel.{sh,ps1}` re-renders
+the installed vhost — only `full-deploy.sh` does.  On a panel installed
+before this release, apply it once:
+
+```bash
+# Either: re-render the vhost from the template
+sudo bash /opt/arkmaniagest/deploy/full-deploy.sh
+
+# Or: edit it by hand -- raise proxy_read_timeout inside `location /api/ {`
+# (leave the one in `location /api/v1/public/ {` at 120s)
+sudo nano /etc/nginx/sites-available/arkmaniagest
+sudo nginx -t && sudo systemctl reload nginx
+```
 
 ---
 

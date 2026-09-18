@@ -28,11 +28,13 @@ fi
 
 # URL-encode the secret so a value containing &, +, # or whitespace
 # (e.g. operator-supplied base64) doesn't truncate or get mis-decoded
-# server-side as a different secret.
-CRON_SECRET_ENC=$(python3 -c '
+# server-side as a different secret.  The secret goes through stdin here and
+# below: as an argument of python3 / curl any local user could read it in ps
+# for as long as the sync ran.
+CRON_SECRET_ENC=$(printf '%s' "$CRON_SECRET" | python3 -c '
 import sys, urllib.parse
-print(urllib.parse.quote(sys.argv[1], safe=""))
-' "$CRON_SECRET")
+print(urllib.parse.quote(sys.stdin.read(), safe=""))
+')
 API_URL="http://127.0.0.1:8000/api/v1/public/cron/sync-names?secret=${CRON_SECRET_ENC}"
 LOG_FILE="${LOG_DIR:-/var/log/arkmaniagest}/sync-names.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
@@ -48,7 +50,7 @@ if ! curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
 fi
 
 # Execute the sync
-RESPONSE=$(curl -sf -X POST "$API_URL" \
+RESPONSE=$(printf 'url = "%s"\n' "$API_URL" | curl -sf -X POST -K - \
     -H "Content-Type: application/json" \
     --max-time 300 \
     2>&1) || {

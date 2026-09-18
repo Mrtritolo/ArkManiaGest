@@ -18,11 +18,21 @@ node_modules
 venv
 __pycache__
 frontend/dist
+# package-release.ps1 output: every earlier version's .tar.gz/.zip
+release-build
 
 # --- Secrets & environment ---
 .env
+.env.local
+.env.*.local
 *.vault
 data/arkmaniagest.vault
+# Local deploy config (real server IPs, admin IP whitelist, cron secret; see
+# .gitignore).  The installers upload a generated one on their own, and
+# server-update.sh never syncs it, so it only ever leaked through archives
+# built from a working tree -- release bundles included.
+deploy/deploy.conf
+deploy/deploy.local.conf
 
 # --- Development-only directories ---
 Specifiche
@@ -34,7 +44,10 @@ reference
 deploy/maintainer
 
 # --- Windows-only scripts (never needed on the Linux server) ---
-*.ps1
+# No *.ps1 here: the backend reads deploy/windows-native/harden.ps1 at
+# runtime to harden Windows game hosts, and excluding it broke that feature
+# on every Linux panel ("Hardening script not found").  The two dev-PC .ps1
+# scripts shipping along is harmless.
 *.bat
 *.vbs
 

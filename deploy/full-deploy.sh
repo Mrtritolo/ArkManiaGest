@@ -230,7 +230,10 @@ systemctl daemon-reload
 systemctl enable arkmaniagest 2>/dev/null
 echo "  Systemd installato"
 
-# Logrotate
+# Logrotate.  copytruncate, not create: systemd opens backend.log /
+# backend-error.log once (StandardOutput=append:) and never reopens them,
+# so after a rename uvicorn kept writing into the rotated file and, once
+# that was compressed, into a deleted inode until the next restart.
 cat > /etc/logrotate.d/arkmaniagest << 'EOF'
 /var/log/arkmaniagest/*.log {
     daily
@@ -239,7 +242,7 @@ cat > /etc/logrotate.d/arkmaniagest << 'EOF'
     compress
     delaycompress
     notifempty
-    create 0640 arkmania arkmania
+    copytruncate
 }
 EOF
 
@@ -289,6 +292,15 @@ fi
 # SSL
 echo "  Richiesta certificato SSL..."
 mkdir -p /var/www/certbot
+# certonly --webroot installs nothing into nginx, so the certbot timer's
+# renewals were never loaded: nginx kept serving the old certificate until
+# something else happened to reload it, and HTTPS broke once that expired.
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/arkmaniagest-reload-nginx << 'HOOK'
+#!/bin/sh
+nginx -t && systemctl reload nginx
+HOOK
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/arkmaniagest-reload-nginx
 certbot certonly \
     --webroot \
     --webroot-path /var/www/certbot \
@@ -354,7 +366,10 @@ fi
 
 # Installa config Nginx production
 if [ "$SSL_OK" = "1" ]; then
-    if [ "$GEOIP_OK" = "1" ] && [ "$HAS_GEOIP_MOD" = "1" ]; then
+    # An empty GEOIP_ALLOWED_COUNTRIES means "no geo-blocking"
+    # (deploy.conf.example).  Feeding it to the map below instead would
+    # leave `default 0` as the only entry and 403 every non-whitelisted IP.
+    if [ "$GEOIP_OK" = "1" ] && [ "$HAS_GEOIP_MOD" = "1" ] && [[ "${GEOIP_ALLOWED_COUNTRIES:-}" =~ [^[:space:]] ]]; then
         # Full config: SSL + GeoIP.
         #
         # We generate /etc/nginx/conf.d/geoip2.conf directly (no template
@@ -400,99 +415,42 @@ if [ "$SSL_OK" = "1" ]; then
             echo "    default 0;"
             echo "}"
         } > /etc/nginx/conf.d/geoip2.conf
-
-        # Single-line substitutions on the main server config stay on sed
-        # (no newlines in the replacement values, so no escaping issues).
-        # PUBLIC_SITE_ORIGIN may list several origins (space- or
-        # comma-separated, e.g. apex + www); each becomes one map entry on
-        # a single line so the sed replacement below stays newline-free.
-        PUBLIC_CORS_MAP=""
-        for _origin in $(echo "${PUBLIC_SITE_ORIGIN:-}" | tr ',' ' '); do
-            PUBLIC_CORS_MAP="${PUBLIC_CORS_MAP}\"${_origin}\" \"${_origin}\"; "
-        done
-        sed -e "s|__DOMAIN__|${DOMAIN}|g" \
-            -e "s|__APP_DIR__|${APP_DIR}|g" \
-            -e "s|__PUBLIC_ORIGIN_MAP__|${PUBLIC_CORS_MAP}|g" \
-            deploy/nginx-production.conf > /etc/nginx/sites-available/arkmaniagest
         echo "  Config: SSL + GeoIP + IP whitelist"
     else
-        # SSL senza GeoIP -- creo config a mano
-        echo "  GeoIP module not available, generating SSL config without geo-blocking"
-        cat > /etc/nginx/sites-available/arkmaniagest << NGINX_SSL
-limit_req_zone \$binary_remote_addr zone=api:10m rate=30r/s;
-limit_req_zone \$binary_remote_addr zone=auth:10m rate=3r/s;
-
-server {
-    listen 80;
-    server_name ${DOMAIN};
-    server_tokens off;
-    location /.well-known/acme-challenge/ { root /var/www/certbot; allow all; }
-    location / { return 301 https://\$host\$request_uri; }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name ${DOMAIN};
-    server_tokens off;
-
-    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    resolver 8.8.8.8 8.8.4.4 valid=300s;
-
-    client_max_body_size 100M;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
-
-    location / {
-        root ${APP_DIR}/frontend/dist;
-        try_files \$uri \$uri/ /index.html;
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
-            expires 30d;
-            add_header Cache-Control "public, immutable";
-        }
-    }
-    location /api/ {
-        limit_req zone=api burst=50 nodelay;
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 120s;
-        proxy_buffering off;
-    }
-    location ~ ^/api/v1/(auth/login|settings/setup) {
-        limit_req zone=auth burst=5 nodelay;
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-    location /health { proxy_pass http://127.0.0.1:8000; access_log off; }
-    location ~ /\. { deny all; }
-    location ~ \.(vault|env|key|pem|py|cjs|sh)$ { deny all; }
-}
-NGINX_SSL
+        # No geo-blocking.  The production vhost still reads
+        # $geoip_block_access, so pin it to "never block" rather than
+        # hand-writing a second vhost: that copy had drifted (no CSP, no
+        # CORS for /api/v1/public/, no Permissions-Policy).
+        echo "  GeoIP disabled or not available, SSL config without geo-blocking"
+        {
+            echo "# /etc/nginx/conf.d/geoip2.conf"
+            echo "# Generated by full-deploy.sh on $(date -u +'%Y-%m-%dT%H:%M:%SZ'): geo-blocking disabled"
+            echo "map \$remote_addr \$geoip_block_access {"
+            echo "    default 0;"
+            echo "}"
+        } > /etc/nginx/conf.d/geoip2.conf
     fi
+
+    # Single-line substitutions on the main server config stay on sed
+    # (no newlines in the replacement values, so no escaping issues).
+    # PUBLIC_SITE_ORIGIN may list several origins (space- or
+    # comma-separated, e.g. apex + www); each becomes one map entry on
+    # a single line so the sed replacement below stays newline-free.
+    PUBLIC_CORS_MAP=""
+    for _origin in $(echo "${PUBLIC_SITE_ORIGIN:-}" | tr ',' ' '); do
+        PUBLIC_CORS_MAP="${PUBLIC_CORS_MAP}\"${_origin}\" \"${_origin}\"; "
+    done
+    sed -e "s|__DOMAIN__|${DOMAIN}|g" \
+        -e "s|__APP_DIR__|${APP_DIR}|g" \
+        -e "s|__PUBLIC_ORIGIN_MAP__|${PUBLIC_CORS_MAP}|g" \
+        deploy/nginx-production.conf > /etc/nginx/sites-available/arkmaniagest
 
     if nginx -t 2>&1; then
         systemctl reload nginx
         echo "  Nginx production RUNNING"
     else
         echo "  Nginx error! Restoring HTTP config..."
-        cp deploy/nginx-initial.conf /etc/nginx/sites-available/arkmaniagest
+        sed -e "s|__DOMAIN__|${DOMAIN}|g" deploy/nginx-initial.conf > /etc/nginx/sites-available/arkmaniagest
         rm -f /etc/nginx/conf.d/geoip2.conf
         nginx -t && systemctl reload nginx
     fi
@@ -523,15 +481,27 @@ echo "=== PHASE 9/9: Security ==="
 # is inactive).  On reruns we just ensure ssh + Nginx Full are allowed
 # without wiping any operator-added rules (custom monitoring ports,
 # extra ARK ports, IP allowlists, …).
+#
+# `ufw allow ssh` only opens 22/tcp.  Also open the port(s) sshd is really
+# configured on: install-panel.sh accepts a custom SSH port, and enabling
+# UFW without it locks the operator out, along with every ssh call the
+# installer still makes after this script.
+SSHD_PORTS=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2}')
 if ufw status 2>/dev/null | grep -qi '^Status: active'; then
     echo "  UFW already active -- ensuring required rules"
     ufw allow ssh >/dev/null 2>&1 || true
+    for _port in $SSHD_PORTS; do
+        ufw allow "${_port}/tcp" >/dev/null 2>&1 || true
+    done
     ufw allow 'Nginx Full' >/dev/null 2>&1 || true
 else
     ufw --force reset >/dev/null 2>&1
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow ssh
+    for _port in $SSHD_PORTS; do
+        ufw allow "${_port}/tcp"
+    done
     ufw allow 'Nginx Full'
     ufw --force enable
 fi
@@ -539,24 +509,28 @@ echo "  UFW attivo"
 
 # Fail2ban
 cp "$APP_DIR/deploy/fail2ban-jail.conf" /etc/fail2ban/jail.d/arkmaniagest.conf 2>/dev/null || true
-cp "$APP_DIR/deploy/fail2ban-filter.conf" /etc/fail2ban/filter.d/arkmaniagest-vault.conf 2>/dev/null || true
+# The file name must match `filter = arkmaniagest-auth` in the jail, or
+# fail2ban skips the jail as "Unable to read the filter".
+cp "$APP_DIR/deploy/fail2ban-filter.conf" /etc/fail2ban/filter.d/arkmaniagest-auth.conf 2>/dev/null || true
 systemctl enable fail2ban 2>/dev/null
 systemctl restart fail2ban 2>/dev/null
 echo "  Fail2ban attivo"
 
-# Cron backup + health
-cat > /etc/cron.d/arkmaniagest << 'CRONS'
-# Daily backup (vault removed in v2.2.0 -- backs up .env + nginx config)
-0 3 * * * root bash /opt/arkmaniagest/deploy/backup.sh >> /var/log/arkmaniagest/backup-cron.log 2>&1
-# Health watchdog: restart backend if /health stops responding
-*/5 * * * * root curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 || systemctl restart arkmaniagest
-CRONS
-echo "  Cron backup + health OK"
+# Cron backup + health + name sync.  setup-cron.sh owns
+# /etc/cron.d/arkmaniagest: writing a shorter copy here meant every rerun
+# of this script silently dropped the daily player-name sync.
+if bash "$APP_DIR/deploy/setup-cron.sh" >/dev/null; then
+    echo "  Cron backup + health + name sync OK"
+else
+    echo "  WARNING: setup-cron.sh failed -- run it by hand"
+fi
 
 # Sudoers entry that lets the panel itself trigger the in-UI self-update
 # (POST /system-update/install).  The snippet whitelists ONLY the literal
-# server-update.sh path under bash, so even a panel compromise cannot
-# escalate to arbitrary root code via this entry.
+# server-update.sh path under bash, but that script installs as root
+# whatever tarball the panel user hands it, and the install tree it runs
+# from is owned by that user: with this entry in place, code execution as
+# the panel user is root-equivalent.
 if [ -f "$APP_DIR/deploy/sudoers-arkmaniagest" ]; then
     install -m 0440 "$APP_DIR/deploy/sudoers-arkmaniagest" \
         /etc/sudoers.d/arkmaniagest
@@ -589,7 +563,7 @@ check() {
 
 check "Backend" "systemctl is-active --quiet arkmaniagest"
 check "Nginx" "systemctl is-active --quiet nginx"
-check "UFW" "ufw status | grep -q active"
+check "UFW" "ufw status | grep -q '^Status: active'"
 check "Fail2ban" "systemctl is-active --quiet fail2ban"
 check "Health API" "curl -sf http://127.0.0.1:8000/health >/dev/null"
 check "Frontend dist" "[ -d $APP_DIR/frontend/dist/assets ]"

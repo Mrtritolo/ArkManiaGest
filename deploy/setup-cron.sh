@@ -27,8 +27,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Daily backup at 03:00
 0 3 * * * root /bin/bash ${APP_DIR}/deploy/backup.sh >> /var/log/arkmaniagest/backup-cron.log 2>&1
 
-# Health check every 5 minutes -- restart panel if /health is down
-*/5 * * * * root curl -sf http://127.0.0.1:8000/health > /dev/null || systemctl restart arkmaniagest
+# Health check every 5 minutes -- restart panel if /health is down.
+# --max-time: a hung backend used to hang curl too, so it was never
+# restarted.  is-active: leave a deliberately stopped panel alone (restore.sh
+# stops it while it replaces .env and the databases).
+*/5 * * * * root systemctl is-active --quiet arkmaniagest && ! curl -sf --max-time 10 http://127.0.0.1:8000/health > /dev/null && systemctl restart arkmaniagest
 
 # Sync player names from .arkprofile -- daily at 04:30
 30 4 * * * root /bin/bash ${APP_DIR}/deploy/cron-sync-names.sh
@@ -43,7 +46,9 @@ chown root:root "$CRON_FILE"
 # /etc/cron.d).  Idempotent: a no-op when no such entries exist.
 if crontab -l 2>/dev/null | grep -q arkmaniagest; then
     echo "  [INFO] removing legacy entries from root user crontab"
-    (crontab -l 2>/dev/null | grep -v arkmaniagest) | crontab -
+    # grep -v exits 1 when every line matched; under pipefail that aborted
+    # the script after the crontab had been emptied.
+    (crontab -l 2>/dev/null | grep -v arkmaniagest || true) | crontab -
 fi
 
 echo "  [OK] Daily backup:        03:00"

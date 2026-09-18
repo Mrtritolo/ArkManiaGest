@@ -86,7 +86,9 @@ function AskYesNo([string]$question, [bool]$default = $true) {
     while ($true) {
         $ans = (Read-Host -Prompt "$question $hint").Trim().ToLower()
         if (-not $ans) { return $default }
-        if ($ans -in @('y','yes','s','si','sì')) { return $true }
+        # [char]0xEC, not a literal: PS 5.1 reads this BOM-less file as ANSI,
+        # so a literal accented "si" would never match what the user types.
+        if ($ans -in @('y','yes','s','si',"s$([char]0xEC)")) { return $true }
         if ($ans -in @('n','no'))                 { return $false }
     }
 }
@@ -131,7 +133,6 @@ $ssh_user    = Ask "SSH user (must have sudo access)" "root"
 $ssh_port    = Ask "SSH port" "22"
 
 $ssh_key_path = ""
-$ssh_password = ""
 
 # Try SSH with no explicit auth first -- this succeeds when the user
 # already has ssh-agent running OR a default key at ~/.ssh/id_*.  In
@@ -184,7 +185,10 @@ if ($probe_ok) {
     $auth_method = Ask "SSH auth method [key/password]" "key"
 
     if ($auth_method -eq "password") {
-        $ssh_password = Ask "SSH password" -secret -required
+        # ssh.exe / scp.exe cannot be handed a password by a script: they
+        # prompt on the console themselves, once per connection.
+        Write-Host "  ssh/scp will ask for the password at every connection below (a dozen times or more)." -ForegroundColor Yellow
+        Write-Host "  A key avoids that: ssh-keygen, then add the .pub to ~/.ssh/authorized_keys on the server." -ForegroundColor Yellow
     } else {
         $default_key = Join-Path $env:USERPROFILE ".ssh\id_ed25519"
         if (-not (Test-Path $default_key)) {
@@ -207,9 +211,20 @@ Write-Host "-- MariaDB --" -ForegroundColor Cyan
 $db_install = AskYesNo "Install MariaDB on the target server too?" $true
 $db_host = "localhost"
 $db_port = 3306
+# These three reach a remote shell command line, a SQL statement, .env and the
+# SQLAlchemy URL, and none of those steps escapes them: a quote, @ or # would
+# leave MariaDB and the backend with different credentials.  Keep them to
+# characters that are literal everywhere.
 $db_name = Ask "Panel database name" "arkmaniagest"
 $db_user = Ask "Panel database user" "arkmania"
-$db_pass = Ask "Panel database password (leave empty to auto-generate)" -secret
+if ($db_name -notmatch '^[A-Za-z0-9_]+$' -or $db_user -notmatch '^[A-Za-z0-9_]+$') {
+    Fail "Database name and user may only contain letters, digits and underscores."
+}
+while ($true) {
+    $db_pass = Ask "Panel database password (letters, digits, _ . ~ -; leave empty to auto-generate)" -secret
+    if ($db_pass -match '^[A-Za-z0-9_.~-]*$') { break }
+    Write-Host "  Only letters, digits and _ . ~ - are allowed here." -ForegroundColor Yellow
+}
 if (-not $db_pass) {
     $db_pass = New-RandomSecret 16
     Write-Host "  Auto-generated panel DB password (saved in .env): $db_pass" -ForegroundColor Yellow
@@ -219,7 +234,7 @@ Write-Host ""
 Write-Host "-- Admin user --" -ForegroundColor Cyan
 $admin_user    = Ask "Admin username (web UI)" "admin"
 $admin_display = Ask "Admin display name" "Administrator"
-$admin_pass    = Ask "Admin password (min 6 chars)" -secret -required
+$admin_pass    = Ask "Admin password (min 12 chars, at least one letter and one digit)" -secret -required
 
 Write-Host ""
 Write-Host "-- Confirm --" -ForegroundColor Cyan
@@ -296,6 +311,18 @@ $sudo_rc = Invoke-SSH-Quiet @("sudo", "-n", "true")
 if ($sudo_rc -ne 0) {
     Write-Host "  WARNING: the user '$ssh_user' cannot run sudo without a password." -ForegroundColor Yellow
     Write-Host "           The remote install step may prompt for a password interactively." -ForegroundColor Yellow
+}
+
+# Step 7b replaces backend/.env with freshly generated JWT_SECRET and
+# FIELD_ENCRYPTION_KEY.  On a panel that is already running, that makes
+# every encrypted credential in its database undecryptable.
+if ((Invoke-SSH-Quiet @("test", "-f", "/opt/arkmaniagest/backend/.env")) -eq 0) {
+    Write-Host "  WARNING: a panel is already installed on this server (/opt/arkmaniagest/backend/.env exists)." -ForegroundColor Yellow
+    Write-Host "           Reinstalling generates a new FIELD_ENCRYPTION_KEY: every encrypted credential already stored becomes unreadable." -ForegroundColor Yellow
+    Write-Host "           To upgrade an existing panel use deploy\update-panel.ps1 instead." -ForegroundColor Yellow
+    if (-not (AskYesNo "Reinstall anyway?" $false)) {
+        Fail "Aborted: existing install left untouched."
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -438,10 +465,10 @@ if ($rc -ne 0) { Fail "remote tar extraction failed (exit $rc)" }
 if ((Invoke-SCP (Join-Path $staging "deploy.conf") "/tmp/arkmaniagest-deploy/deploy/deploy.conf") -ne 0) {
     Fail "scp of deploy.conf failed"
 }
-Invoke-SSH @("mkdir", "-p", "/tmp/arkmaniagest-deploy/backend") | Out-Null
-if ((Invoke-SCP (Join-Path $staging ".env") "/tmp/arkmaniagest-deploy/backend/.env") -ne 0) {
-    Fail "scp of .env failed"
-}
+# The generated .env is NOT uploaded here: full-deploy.sh's rsync excludes
+# .env, so a copy in this world-readable /tmp tree would never be used and
+# would sit on the server with the DB password and encryption keys.  Step 7b
+# installs it straight into place.
 Write-Host "  [OK] config files uploaded"
 
 # Strip possible CRLF line endings in shell scripts (tar on Windows may have injected them).
@@ -473,37 +500,45 @@ if ($db_install) {
     Write-Host ""
     Write-Host "-- Installing MariaDB on the target --" -ForegroundColor Cyan
 
-    # The install script body uses BASH positional args ($1/$2/$3) — we pass
-    # db_name/user/pass when invoking it on the remote.  Using a *literal*
-    # (single-quoted) PowerShell here-string means PS does no variable
-    # expansion and no backtick escape gymnastics: what we send is exactly
-    # what bash sees.
+    # The install script reads db_name, db_user and db_pass one per line
+    # from stdin, as install-panel.sh does.  As arguments (to sudo, and to
+    # mysql --execute) the password showed up in ps and in sudo's command
+    # log.  Using a *literal* (single-quoted) PowerShell here-string means
+    # PS does no variable expansion and no backtick escape gymnastics: what
+    # we send is exactly what bash sees.
     $sql = @'
 #!/usr/bin/env bash
 set -euo pipefail
 
-DB_NAME="$1"
-DB_USER="$2"
-DB_PASS="$3"
+# Windows PowerShell ends every line it pipes to ssh.exe with CRLF, and
+# with a UTF-8 console or $OutputEncoding it prefixes one or two UTF-8 BOMs.
+# A valid value never contains a BOM, so everything up to the last one goes.
+IFS= read -r DB_NAME || true; DB_NAME=${DB_NAME##*$'\357\273\277'}; DB_NAME=${DB_NAME%$'\r'}
+IFS= read -r DB_USER || true; DB_USER=${DB_USER%$'\r'}
+IFS= read -r DB_PASS || true; DB_PASS=${DB_PASS%$'\r'}
 
 if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
-    echo "ERROR: MariaDB install script requires 3 args: db_name db_user db_pass" >&2
+    echo "ERROR: MariaDB install script expects db_name, db_user, db_pass on stdin" >&2
     exit 2
 fi
+# Same character sets the installer enforces: any other encoding surprise
+# must fail here, not create a database under a different name.
+case "$DB_NAME$DB_USER" in *[!A-Za-z0-9_]*) echo "ERROR: invalid db_name/db_user received on stdin" >&2; exit 2;; esac
+case "$DB_PASS" in *[!A-Za-z0-9_.~-]*) echo "ERROR: invalid db_pass received on stdin" >&2; exit 2;; esac
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq mariadb-server
 systemctl enable --now mariadb
 
-# Backticks around the identifier are emitted as literal backticks because
-# they are inside a bash double-quoted string where `\`` is a literal `.
-mysql --user=root --execute="
-  CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
-  GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
-  FLUSH PRIVILEGES;
-"
+# The three values were checked against [A-Za-z0-9_.~-] above, so they need
+# no SQL escaping.
+mysql --user=root <<SQL
+CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
+FLUSH PRIVILEGES;
+SQL
 '@
 
     $remote_script_path = "/tmp/arkmaniagest-install-mariadb.sh"
@@ -511,11 +546,10 @@ mysql --user=root --execute="
     if ($scp_rc -ne 0) {
         Fail "scp of MariaDB install script failed (rc=$scp_rc)"
     }
-    # Shell-escape the three arguments once (single quotes + replace any ' with '\'').
-    $sq_name = "'" + ($db_name -replace "'", "'\\''") + "'"
-    $sq_user = "'" + ($db_user -replace "'", "'\\''") + "'"
-    $sq_pass = "'" + ($db_pass -replace "'", "'\\''") + "'"
-    $rc = Invoke-SSH @("sudo -n bash $remote_script_path $sq_name $sq_user $sq_pass && rm -f $remote_script_path")
+    # Same call as Invoke-SSH, with the three values piped to ssh.exe's stdin.
+    $ssh_args = $ssh_common_args + @("${ssh_user}@${target_host}", "sudo -n bash $remote_script_path && rm -f $remote_script_path")
+    @($db_name, $db_user, $db_pass) | & ssh.exe @ssh_args | Out-Host
+    $rc = $LASTEXITCODE
     if ($rc -ne 0) {
         Write-Host "  WARNING: MariaDB install returned non-zero ($rc)." -ForegroundColor Yellow
         Write-Host "           You may need to install and grant privileges manually before re-running." -ForegroundColor Yellow
@@ -562,12 +596,21 @@ Write-Host ""
 Write-Host "-- Installing the real backend/.env and restarting the service --" -ForegroundColor Cyan
 
 # Stage the .env under /tmp first (scp can't write /opt/... as a non-root user),
-# then sudo-move it into place.
-$scp_rc = Invoke-SCP (Join-Path $staging ".env") "/tmp/arkmaniagest-panel.env"
+# then sudo-move it into place.  The file scp creates is world-readable, so it
+# goes into a fresh 0700 directory (plain mkdir: fails if the name is taken),
+# which is removed whether or not the install succeeds -- a failed install
+# used to leave the DB password and encryption keys readable in
+# /tmp/arkmaniagest-panel.env, which is cleared here too (best effort: a copy
+# left by another SSH user cannot be removed and must not abort the install).
+$rc = Invoke-SSH @("rm -rf /tmp/arkmaniagest-panel.env; rm -rf /tmp/arkmaniagest-panel-env && mkdir -m 700 /tmp/arkmaniagest-panel-env")
+if ($rc -ne 0) {
+    Fail "Could not create the private staging directory /tmp/arkmaniagest-panel-env (rc=$rc)."
+}
+$scp_rc = Invoke-SCP (Join-Path $staging ".env") "/tmp/arkmaniagest-panel-env/.env"
 if ($scp_rc -ne 0) {
     Fail "scp of backend/.env failed"
 }
-$install_env = "sudo -n install -o arkmania -g arkmania -m 600 /tmp/arkmaniagest-panel.env /opt/arkmaniagest/backend/.env && sudo -n rm -f /tmp/arkmaniagest-panel.env && sudo -n systemctl restart arkmaniagest"
+$install_env = "sudo -n install -o arkmania -g arkmania -m 600 /tmp/arkmaniagest-panel-env/.env /opt/arkmaniagest/backend/.env; rc=`$?; rm -rf /tmp/arkmaniagest-panel-env; [ `$rc -eq 0 ] && sudo -n systemctl restart arkmaniagest"
 $rc = Invoke-SSH @($install_env)
 if ($rc -ne 0) {
     Fail "Could not install backend/.env or restart the service (rc=$rc).  Run: sudo systemctl status arkmaniagest on the server."
@@ -619,23 +662,32 @@ if (-not $health_ok) {
 Write-Host ""
 Write-Host "-- Creating the initial admin user --" -ForegroundColor Cyan
 
-$escaped_admin_user = $admin_user.Replace("'", "'\\''")
-$escaped_admin_pass = $admin_pass.Replace("'", "'\\''")
-$escaped_admin_disp = $admin_display.Replace("'", "'\\''")
-$admin_body = @"
-{
-  `"admin_username`": `"$escaped_admin_user`",
-  `"admin_password`": `"$escaped_admin_pass`",
-  `"admin_display_name`": `"$escaped_admin_disp`",
-  `"app_name`": `"ArkManiaGest`"
-}
-"@
+# ConvertTo-Json does the JSON escaping.  The payload travels base64-encoded,
+# so no shell escaping applies: the old '\'' rewrite corrupted any password
+# with a quote, and a " or \ produced invalid JSON.
+$admin_body = @{
+    admin_username     = $admin_user
+    admin_password     = $admin_pass
+    admin_display_name = $admin_display
+    app_name           = "ArkManiaGest"
+} | ConvertTo-Json -Compress
 $payload_b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($admin_body))
-$setup_cmd = "echo $payload_b64 | base64 -d | curl -sS -o /tmp/arkmaniagest-setup.out -w '%{http_code}' -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup; echo; cat /tmp/arkmaniagest-setup.out; rm -f /tmp/arkmaniagest-setup.out"
+# The payload goes on ssh.exe's stdin, as install-panel.sh does: as an
+# argument the admin password was readable through ps on both ends.  It stays
+# base64 because PS 5.1 re-encodes what it pipes to a native command (non-ASCII
+# becomes '?' under the default $OutputEncoding) and can add CRLF and one or
+# two UTF-8 BOMs; `base64 -d -i` skips every byte outside the base64 alphabet.
+# curl without -f exits 0 on a 4xx/5xx, so the remote command ends on the
+# HTTP status: a rejected password (422) or an existing user (409) must not
+# report "[OK] admin user created".  No double quotes: PS 5.1 does not
+# escape them when passing an argument to ssh.exe.
+$setup_cmd = "code=`$(base64 -d -i | curl -sS -o /tmp/arkmaniagest-setup.out -w '%{http_code}' -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup); echo HTTP `$code; cat /tmp/arkmaniagest-setup.out; echo; rm -f /tmp/arkmaniagest-setup.out; case `$code in 2??) true ;; *) false ;; esac"
 
-$setup_rc = Invoke-SSH @($setup_cmd)
+$ssh_args = $ssh_common_args + @("${ssh_user}@${target_host}", $setup_cmd)
+$payload_b64 | & ssh.exe @ssh_args | Out-Host
+$setup_rc = $LASTEXITCODE
 if ($setup_rc -ne 0) {
-    Write-Host "  WARNING: setup endpoint returned non-zero.  You may need to open" -ForegroundColor Yellow
+    Write-Host "  WARNING: the setup endpoint rejected the request (see the response above).  Open" -ForegroundColor Yellow
     Write-Host "           https://$domain and complete the setup wizard manually." -ForegroundColor Yellow
 } else {
     Write-Host "  [OK] admin user created" -ForegroundColor Green

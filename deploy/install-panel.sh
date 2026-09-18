@@ -80,15 +80,18 @@ ask() {
         if [[ -n "$default" ]]; then prompt="${prompt} [${default}]"; fi
         prompt="${prompt}: "
         local answer=""
+        # Callers capture stdout with $(ask ...), so everything but the
+        # answer goes to stderr: the newline after a secret used to prefix
+        # every password, and the warning ended up inside the value.
         if [[ $secret -eq 1 ]]; then
             read -r -s -p "$prompt" answer </dev/tty
-            echo
+            echo >&2
         else
             read -r -p "$prompt" answer </dev/tty
         fi
         if [[ -z "$answer" ]]; then answer="$default"; fi
         if [[ $required -eq 1 && -z "$answer" ]]; then
-            warn "This value is required."
+            warn "This value is required." >&2
             continue
         fi
         printf '%s' "$answer"
@@ -141,7 +144,7 @@ echo "${C_CY}  ArkManiaGest - Panel installer${C_RS}"
 echo "${C_CY}  Target: remote Linux server over SSH${C_RS}"
 echo "${C_CY}=================================================${C_RS}"
 
-for tool in ssh scp tar curl base64; do
+for tool in ssh scp tar curl; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required tool '$tool' is not available on this client."
 done
 
@@ -236,7 +239,17 @@ fi
 section "Admin user"
 ADMIN_USER=$(ask "Admin username (web UI)" "admin")
 ADMIN_DISPLAY=$(ask "Admin display name" "Administrator")
-ADMIN_PASS=$(ask "Admin password (min 6 chars)" --secret --required)
+# Same rule as the setup endpoint (12+ chars, at most 72 bytes for bcrypt,
+# a letter and a digit): a password it rejects only shows up after the whole
+# remote deploy.
+while :; do
+    ADMIN_PASS=$(ask "Admin password (12+ chars, max 72 bytes, at least one letter and one digit)" --secret --required)
+    if [[ ${#ADMIN_PASS} -ge 12 && $(printf '%s' "$ADMIN_PASS" | wc -c) -le 72 \
+          && "$ADMIN_PASS" =~ [[:alpha:]] && "$ADMIN_PASS" =~ [[:digit:]] ]]; then
+        break
+    fi
+    warn "Use 12 to 72 bytes (fewer characters if accented), including a letter and a digit."
+done
 
 section "Confirm"
 echo "  Target     : ${SSH_USER}@${TARGET_HOST}:${SSH_PORT}"
@@ -263,9 +276,11 @@ if [[ -n "$SSH_KEY" ]]; then
     SCP_COMMON+=(-i "$SSH_KEY")
 fi
 
+# sshpass -e reads SSHPASS from the environment: with -p the SSH password
+# sat in sshpass's argv, readable by every local user through ps.
 run_ssh() {
     if [[ -n "$SSH_PASSWORD" ]]; then
-        sshpass -p "$SSH_PASSWORD" ssh "${SSH_COMMON[@]}" "${SSH_USER}@${TARGET_HOST}" "$@"
+        SSHPASS="$SSH_PASSWORD" sshpass -e ssh "${SSH_COMMON[@]}" "${SSH_USER}@${TARGET_HOST}" "$@"
     else
         ssh "${SSH_COMMON[@]}" "${SSH_USER}@${TARGET_HOST}" "$@"
     fi
@@ -273,7 +288,7 @@ run_ssh() {
 run_scp() {
     local src="$1" dst="$2"
     if [[ -n "$SSH_PASSWORD" ]]; then
-        sshpass -p "$SSH_PASSWORD" scp "${SCP_COMMON[@]}" "$src" "${SSH_USER}@${TARGET_HOST}:${dst}"
+        SSHPASS="$SSH_PASSWORD" sshpass -e scp "${SCP_COMMON[@]}" "$src" "${SSH_USER}@${TARGET_HOST}:${dst}"
     else
         scp "${SCP_COMMON[@]}" "$src" "${SSH_USER}@${TARGET_HOST}:${dst}"
     fi
@@ -287,6 +302,16 @@ ok "SSH reachable"
 
 if ! run_ssh sudo -n true >/dev/null 2>&1; then
     warn "'$SSH_USER' cannot run sudo without a password.  The remote install step may prompt interactively."
+fi
+
+# Step 7b replaces backend/.env with freshly generated JWT_SECRET and
+# FIELD_ENCRYPTION_KEY.  On a panel that is already running, that makes
+# every encrypted credential in its database undecryptable.
+if run_ssh "test -f /opt/arkmaniagest/backend/.env" >/dev/null 2>&1; then
+    warn "A panel is already installed on this server (/opt/arkmaniagest/backend/.env exists)."
+    warn "Reinstalling generates a new FIELD_ENCRYPTION_KEY: every encrypted credential already stored becomes unreadable."
+    warn "To upgrade an existing panel use deploy/update-panel.sh instead."
+    yesno "Reinstall anyway?" "n" || fail "Aborted: existing install left untouched."
 fi
 
 # ---------------------------------------------------------------------------
@@ -359,14 +384,16 @@ section "Packaging the release tree"
 
 ARCHIVE="${STAGING}/arkmaniagest-deploy.tar.gz"
 DEPLOYIGNORE="deploy/.deployignore"
+# A failing tar still leaves an archive, minus the files it could not read,
+# and full-deploy.sh syncs it with rsync --delete: stop here instead.
 if [[ -f "$DEPLOYIGNORE" ]]; then
-    tar -czf "$ARCHIVE" --exclude-from="$DEPLOYIGNORE" .
+    tar -czf "$ARCHIVE" --exclude-from="$DEPLOYIGNORE" . || fail "tar failed"
 else
     tar -czf "$ARCHIVE" \
         --exclude='.git' --exclude='node_modules' --exclude='venv' --exclude='.venv' \
         --exclude='__pycache__' --exclude='reference' --exclude='release-build' \
         --exclude='frontend/dist' --exclude='data/' --exclude='*.vault' --exclude='.env' \
-        .
+        . || fail "tar failed"
 fi
 ok "archive: $ARCHIVE ($(du -sh "$ARCHIVE" | cut -f1))"
 
@@ -389,8 +416,10 @@ run_ssh "rm -rf /tmp/arkmaniagest-deploy && mkdir -p /tmp/arkmaniagest-deploy &&
     || fail "remote tar extraction failed"
 
 run_scp "${STAGING}/deploy.conf" /tmp/arkmaniagest-deploy/deploy/deploy.conf || fail "scp of deploy.conf failed"
-run_ssh "mkdir -p /tmp/arkmaniagest-deploy/backend" >/dev/null
-run_scp "${STAGING}/.env"        /tmp/arkmaniagest-deploy/backend/.env       || fail "scp of .env failed"
+# The generated .env is NOT uploaded here: full-deploy.sh's rsync excludes
+# .env, so a copy in this world-readable /tmp tree was never used and sat on
+# the server with the DB password and encryption keys.  Step 7b installs it
+# straight into place.
 ok "config files uploaded"
 
 # Strip CRLF just in case the tar was round-tripped through Windows
@@ -402,44 +431,44 @@ run_ssh "find /tmp/arkmaniagest-deploy/deploy -name '*.sh' -exec sed -i 's/\r//g
 
 if [[ $DB_INSTALL -eq 1 ]]; then
     section "Installing MariaDB on the target"
-    # The install script body reads $1/$2/$3 (db_name, db_user, db_pass)
-    # rather than embedding them in the heredoc.  That sidesteps all the
-    # quoting edge cases around identifiers/passwords and lets us pass
-    # the values as plain positional args at invocation time.
+    # The install script reads db_name, db_user and db_pass one per line
+    # from stdin.  As arguments the password showed up in ps on both ends
+    # and in sudo's command log, and inside `mysql --execute` a quote in it
+    # broke the SQL.
     local_script="${STAGING}/install-mariadb.sh"
     cat > "$local_script" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-DB_NAME="$1"
-DB_USER="$2"
-DB_PASS="$3"
+IFS= read -r DB_NAME
+IFS= read -r DB_USER
+IFS= read -r DB_PASS
 
 if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
-    echo "ERROR: MariaDB install script requires 3 args: db_name db_user db_pass" >&2
+    echo "ERROR: MariaDB install script expects db_name, db_user, db_pass on stdin" >&2
     exit 2
 fi
+
+# SQL string literal: double the backslashes and the single quotes.
+sql_str() { local s="${1//\\/\\\\}"; printf '%s' "${s//\'/\'\'}"; }
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq mariadb-server
 systemctl enable --now mariadb
 
-mysql --user=root --execute="
-  CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
-  GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
-  FLUSH PRIVILEGES;
-"
+mysql --user=root <<SQL
+CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '$(sql_str "$DB_USER")'@'localhost' IDENTIFIED BY '$(sql_str "$DB_PASS")';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$(sql_str "$DB_USER")'@'localhost';
+FLUSH PRIVILEGES;
+SQL
 EOF
     remote_script="/tmp/arkmaniagest-install-mariadb.sh"
     run_scp "$local_script" "$remote_script" || fail "scp of MariaDB install script failed"
 
-    # Shell-escape each value for safe single-arg passing through ssh.
-    sq_name="'${DB_NAME//\'/\'\\\'\'}'"
-    sq_user="'${DB_USER//\'/\'\\\'\'}'"
-    sq_pass="'${DB_PASS//\'/\'\\\'\'}'"
-    if run_ssh "sudo -n bash $remote_script $sq_name $sq_user $sq_pass && rm -f $remote_script"; then
+    if printf '%s\n%s\n%s\n' "$DB_NAME" "$DB_USER" "$DB_PASS" \
+        | run_ssh "sudo -n bash $remote_script && rm -f $remote_script"; then
         ok "MariaDB installed and panel DB created"
     else
         warn "MariaDB install returned non-zero; may need manual grants before re-running."
@@ -469,8 +498,9 @@ fi
 
 section "Installing the real backend/.env and restarting the service"
 
-run_scp "${STAGING}/.env" "/tmp/arkmaniagest-panel.env" || fail "scp of backend/.env failed"
-if ! run_ssh "sudo -n install -o arkmania -g arkmania -m 600 /tmp/arkmaniagest-panel.env /opt/arkmaniagest/backend/.env && sudo -n rm -f /tmp/arkmaniagest-panel.env && sudo -n systemctl restart arkmaniagest"; then
+# Streamed over ssh's stdin: an scp to /tmp left the secrets world-readable
+# on the server until the install below moved them.
+if ! run_ssh "sudo -n install -o arkmania -g arkmania -m 600 /dev/stdin /opt/arkmaniagest/backend/.env && sudo -n systemctl restart arkmaniagest" < "${STAGING}/.env"; then
     fail "Could not install backend/.env or restart the service. Run: sudo systemctl status arkmaniagest on the server."
 fi
 ok ".env installed; backend restarted"
@@ -521,12 +551,24 @@ ADMIN_USER_JS="$(json_escape "$ADMIN_USER")"
 ADMIN_PASS_JS="$(json_escape "$ADMIN_PASS")"
 ADMIN_DISP_JS="$(json_escape "$ADMIN_DISPLAY")"
 admin_body="{\"admin_username\":\"${ADMIN_USER_JS}\",\"admin_password\":\"${ADMIN_PASS_JS}\",\"admin_display_name\":\"${ADMIN_DISP_JS}\",\"app_name\":\"ArkManiaGest\"}"
-admin_b64="$(printf '%s' "$admin_body" | base64 -w0 2>/dev/null || printf '%s' "$admin_body" | base64)"
 
-if run_ssh "echo $admin_b64 | base64 -d | curl -sS -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup"; then
+# The body travels on ssh's stdin: as a base64 argument the admin password
+# was readable through ps on both ends.  curl without -f exits 0 on a 4xx,
+# so judge the HTTP status: a rejected password (422) or an existing user
+# (409) must not report "admin user created" and leave the setup open.
+setup_out="$(printf '%s' "$admin_body" | run_ssh "curl -sS -w '\n%{http_code}' -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/settings/setup")"
+setup_code="${setup_out##*$'\n'}"
+if [[ "$setup_code" == 2?? ]]; then
     ok "admin user created"
 else
-    warn "setup endpoint call returned non-zero.  Complete the setup wizard manually at https://${DOMAIN}."
+    if [[ "$setup_code" == 422 ]]; then
+        # A 422 body echoes the rejected values ("input"), the password
+        # included: print only the messages.
+        printf '%s\n' "${setup_out%$'\n'*}" | grep -o '"msg":"[^"]*"' | sed 's/^/  /'
+    else
+        echo "  ${setup_out%$'\n'*}"
+    fi
+    warn "setup endpoint answered HTTP ${setup_code:-none}.  Complete the setup wizard manually at https://${DOMAIN}."
 fi
 
 # ---------------------------------------------------------------------------

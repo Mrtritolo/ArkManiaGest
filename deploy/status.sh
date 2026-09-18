@@ -17,7 +17,8 @@ for svc in arkmaniagest nginx fail2ban; do
     systemctl is-active --quiet $svc && echo -e "\e[32mACTIVE\e[0m" || echo -e "\e[31mSTOPPED\e[0m"
 done
 printf "  %-14s" "UFW:"
-ufw status 2>/dev/null | grep -q "active" && echo -e "\e[32mACTIVE\e[0m" || echo -e "\e[33mOFF\e[0m"
+# "Status: inactive" contains "active" too: anchor the match.
+ufw status 2>/dev/null | grep -q '^Status: active' && echo -e "\e[32mACTIVE\e[0m" || echo -e "\e[33mOFF\e[0m"
 printf "  %-14s" "SSL:"
 [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ] && echo -e "\e[32mOK\e[0m ($(openssl x509 -enddate -noout -in /etc/letsencrypt/live/$DOMAIN/fullchain.pem 2>/dev/null | cut -d= -f2))" || echo -e "\e[31mNO\e[0m"
 printf "  %-14s" "GeoIP:"

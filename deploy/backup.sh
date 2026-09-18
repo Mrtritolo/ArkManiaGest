@@ -47,6 +47,14 @@ get_env() {
     sed -n "s/^${key}=//p" "$ENV_FILE" | head -1
 }
 
+# Option-file value, double-quoted with \ and " escaped: unquoted, a # in
+# the password started a comment and a backslash began an escape, so the
+# dump failed to log in and the backup went out without the database.
+optval() {
+    local v="${1//\\/\\\\}"
+    printf '"%s"' "${v//\"/\\\"}"
+}
+
 dump_db() {
     local label="$1" host="$2" port="$3" user="$4" password="$5" name="$6"
     [ -n "$host" ] && [ -n "$user" ] && [ -n "$password" ] && [ -n "$name" ] || {
@@ -62,8 +70,8 @@ dump_db() {
 [client]
 host=$host
 port=$port
-user=$user
-password=$password
+user=$(optval "$user")
+password=$(optval "$password")
 EOF
     if mysqldump --defaults-extra-file="$creds" \
         --single-transaction --skip-lock-tables \

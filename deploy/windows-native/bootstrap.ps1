@@ -48,7 +48,9 @@ $STEAMCMD_URL     = 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.z
 $WINSW_URL        = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe'
 $VCREDIST_URL     = 'https://aka.ms/vs/16/release/vc_redist.x64.exe'
 $VCREDIST_REG_KEY = 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64'
-$SYNCTHING_URL    = 'https://github.com/syncthing/syncthing/releases/latest/download/syncthing-windows-amd64.zip'
+# Pinned like WinSW: the asset name carries the version, so there is no
+# stable "latest" download URL for it.
+$SYNCTHING_URL    = 'https://github.com/syncthing/syncthing/releases/download/v2.1.5/syncthing-windows-amd64-v2.1.5.zip'
 
 function Write-Step  { param([string] $Message) Write-Host "==> $Message" -ForegroundColor Cyan }
 function Write-Ok    { param([string] $Message) Write-Host "    $Message" -ForegroundColor Green }
@@ -234,10 +236,15 @@ if ($InstallSyncthing) {
   <log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>4</keepFiles></log>
 </service>
 "@
-        $svcXml = Join-Path $SyncDir 'service.xml'
+        # WinSW 2.x ignores a config path argument and only reads the XML
+        # named after its own executable, in its own directory.
+        $svcXml = Join-Path $SyncDir 'WinSW.xml'
         [System.IO.File]::WriteAllText($svcXml, $xml, (New-Object System.Text.UTF8Encoding $false))
         Copy-Item -Path $WinSW -Destination (Join-Path $SyncDir 'WinSW.exe') -Force
-        & (Join-Path $SyncDir 'WinSW.exe') install $svcXml
+        & (Join-Path $SyncDir 'WinSW.exe') install
+        if ($LASTEXITCODE -ne 0) {
+            throw "WinSW could not register $svcName (exit $LASTEXITCODE)"
+        }
         Start-Service -Name $svcName
         Write-Ok "registered and started $svcName"
         Write-Host ''

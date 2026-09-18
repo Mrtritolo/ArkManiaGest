@@ -67,12 +67,17 @@ CONF_FILE="$PROJECT/deploy/deploy.conf"
 DEFAULT_SERVER=""; DEFAULT_USER="root"; DEFAULT_PORT=22
 CONF_SSH_KEY=""
 if [[ -f "$CONF_FILE" ]]; then
+    # deploy.conf defines SSH_USER / SSH_PORT too: sourcing it used to
+    # overwrite --user / --port silently (e.g. --port 2222 became 22).
+    CLI_SSH_USER="$SSH_USER"; CLI_SSH_PORT="$SSH_PORT"
     # shellcheck disable=SC1090
     source "$CONF_FILE" || true
     DEFAULT_SERVER="${DEPLOY_SERVER:-$DEFAULT_SERVER}"
     DEFAULT_USER="${SSH_USER_CONF:-${SSH_USER:-$DEFAULT_USER}}"
     DEFAULT_PORT="${SSH_PORT_CONF:-${SSH_PORT:-$DEFAULT_PORT}}"
     CONF_SSH_KEY="${SSH_KEY_PATH:-}"
+    [[ -n "$CLI_SSH_USER" ]] && SSH_USER="$CLI_SSH_USER"
+    [[ "$CLI_SSH_PORT" -gt 0 ]] && SSH_PORT="$CLI_SSH_PORT"
 fi
 
 section "ArkManiaGest -- Dev update"

@@ -5,9 +5,9 @@
 #
 #   1. Validate working tree (clean, on main, up-to-date with origin).
 #   2. Resolve the new version (explicit -Version OR -Bump patch|minor|major).
-#   3. Rewrite every hardcoded version string in source (backend + frontend).
-#   4. Prepend a new CHANGELOG section (from -Notes / -NotesFile, or stub).
-#   5. Smoke-build the frontend (skip with -SkipBuild).
+#   3. Smoke-build the frontend (skip with -SkipBuild), before touching files.
+#   4. Rewrite every hardcoded version string in source (backend + frontend).
+#   5. Prepend a new CHANGELOG section (from -Notes / -NotesFile, or stub).
 #   6. Commit "Bump version to X.Y.Z" and push.
 #   7. Create annotated tag vX.Y.Z and push it (fires the Release workflow).
 #   8. Poll the GitHub Actions run until the release is published (or fail).
@@ -79,9 +79,11 @@ function Fail([string]$msg, [int]$code = 1) {
 }
 
 function Read-VersionFromBackend {
-    $mainPy = Join-Path $PROJECT "backend\app\main.py"
-    $m = Select-String -Path $mainPy -Pattern 'version="([^"]+)"' | Select-Object -First 1
-    if (-not $m) { Fail "Cannot read backend version from main.py" }
+    # Since 4.1.4 the backend version lives only in core/config.py; main.py
+    # reads APP_VERSION and carries no literal any more.
+    $configPy = Join-Path $PROJECT "backend\app\core\config.py"
+    $m = Select-String -Path $configPy -Pattern '^APP_VERSION: str = "([^"]+)"' | Select-Object -First 1
+    if (-not $m) { Fail "Cannot read APP_VERSION from backend\app\core\config.py" }
     return $m.Matches[0].Groups[1].Value
 }
 
@@ -107,12 +109,14 @@ function Invoke-Replace([string]$path, [string]$old, [string]$new, [int]$expecte
     # file.  We target cross-platform sources so all our files are UTF-8.
     $content = Get-Content -Raw -Path $path -Encoding UTF8
     $hits = ([regex]::Matches($content, [regex]::Escape($old))).Count
+    # Checked before the zero-hit skip: a version literal that has moved
+    # must stop the release, not be skipped and ship a mismatched version.
+    if ($expectedHits -gt 0 -and $hits -ne $expectedHits) {
+        Fail "$path : expected $expectedHits occurrences of '$old', found $hits"
+    }
     if ($hits -eq 0) {
         Write-Host "    skip: $path (no occurrence of '$old')" -ForegroundColor DarkGray
         return 0
-    }
-    if ($expectedHits -gt 0 -and $hits -ne $expectedHits) {
-        Fail "$path : expected $expectedHits occurrences of '$old', found $hits"
     }
     if ($DryRun) {
         Write-Host "    would replace $hits occurrence(s) in $path" -ForegroundColor DarkGray
@@ -133,6 +137,18 @@ Write-Section "ArkManiaGest release"
 
 $currentVersion = Read-VersionFromBackend
 Write-Host "  current version : $currentVersion" -ForegroundColor Gray
+
+# Everything that can refuse the release is checked before the first file is
+# rewritten: a failure after that leaves the tree half-bumped, and a re-run
+# then reads the new version as the current one.
+$frontendVersion = (Get-Content -Raw -Path (Join-Path $PROJECT "frontend\package.json") -Encoding UTF8 | ConvertFrom-Json).version
+if ($frontendVersion -ne $currentVersion) {
+    Fail "frontend\package.json is at $frontendVersion but backend\app\core\config.py is at $currentVersion. Align them first."
+}
+if ($NotesFile -and -not (Test-Path $NotesFile)) { Fail "NotesFile not found: $NotesFile" }
+# Same separator test as section 4, which inserts the new section after it.
+$changelogPre = Get-Content -Raw -Path (Join-Path $PROJECT "CHANGELOG.md") -Encoding UTF8
+if (-not [regex]::IsMatch($changelogPre, "(\r?\n)---(\r?\n)")) { Fail "Cannot locate '---' separator in CHANGELOG.md" }
 
 if ($Bump) {
     $Version = Invoke-Bump-Semver $currentVersion $Bump
@@ -189,8 +205,20 @@ if ($dirty) {
 if (-not $SkipPull -and -not $DryRun) {
     Write-Action "git fetch origin"
     git fetch origin --tags --quiet
-    $behindRaw = (git rev-list --count "HEAD..origin/$branch" 2>$null)
-    $aheadRaw  = (git rev-list --count "origin/$branch..HEAD" 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        Fail "git fetch origin failed; cannot tell whether the branch is up to date (pass -SkipPull to skip the check)."
+    }
+    # PS 5.1 + "Stop" turns a native command's redirected stderr into a
+    # terminating error, so a branch with no origin counterpart would abort
+    # here instead of falling back to 0.
+    $prev_eap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $behindRaw = (git rev-list --count "HEAD..origin/$branch" 2>$null)
+        $aheadRaw  = (git rev-list --count "origin/$branch..HEAD" 2>$null)
+    } finally {
+        $ErrorActionPreference = $prev_eap
+    }
     $behind = if ($behindRaw) { $behindRaw.Trim() } else { "0" }
     $ahead  = if ($aheadRaw)  { $aheadRaw.Trim() }  else { "0" }
     if ($behind -ne "0") {
@@ -209,76 +237,10 @@ if ($remoteTag) {
 Write-OK "tag $tag is available"
 
 # ---------------------------------------------------------------------------
-# 2. Patch version strings
+# 2. Smoke build
 # ---------------------------------------------------------------------------
-
-Write-Section "Bump version strings: $currentVersion -> $Version"
-
-$cv = $currentVersion
-
-# The patches we apply are all unambiguous literals.
-$q = [char]0x22  # double-quote literal, used inside the search/replace strings below.
-Invoke-Replace "backend\app\main.py"                      "version=$q$cv$q"            "version=$q$Version$q"            1 | Out-Null
-Invoke-Replace "backend\app\main.py"                      "${q}version${q}: ${q}$cv$q" "${q}version${q}: ${q}$Version$q" 1 | Out-Null
-Invoke-Replace "frontend\package.json"                    "${q}version${q}: ${q}$cv$q" "${q}version${q}: ${q}$Version$q" 1 | Out-Null
-Invoke-Replace "frontend\src\components\Sidebar.tsx"      ">V $cv<"                     ">V $Version<"                     1 | Out-Null
-Invoke-Replace "backend\app\api\routes\settings.py"       "${q}app_version${q}, ${q}$cv$q" "${q}app_version${q}, ${q}$Version$q" 1 | Out-Null
-Invoke-Replace "backend\app\api\routes\settings.py"       "or ${q}$cv${q}"             "or ${q}$Version${q}"              1 | Out-Null
-Invoke-Replace "backend\app\schemas\settings.py"          "version: str = ${q}$cv${q}" "version: str = ${q}$Version${q}"  1 | Out-Null
-
-Write-OK "version literals patched"
-
-# ---------------------------------------------------------------------------
-# 3. CHANGELOG
-# ---------------------------------------------------------------------------
-
-Write-Section "CHANGELOG"
-
-$changelogPath = Join-Path $PROJECT "CHANGELOG.md"
-# UTF-8 read (see Invoke-Replace for why) — the CHANGELOG contains em-dashes
-# and accented characters that would round-trip to mojibake on ANSI locales.
-$changelogRaw  = Get-Content -Raw -Path $changelogPath -Encoding UTF8
-
-if ($changelogRaw -match "## \[$([regex]::Escape($Version))\]") {
-    Write-Host "  section for $Version already exists - leaving CHANGELOG untouched" -ForegroundColor DarkGray
-} else {
-    $notesBody = ""
-    if ($NotesFile) {
-        if (-not (Test-Path $NotesFile)) { Fail "NotesFile not found: $NotesFile" }
-        $notesBody = Get-Content -Raw -Path $NotesFile -Encoding UTF8
-    } elseif ($Notes) {
-        $notesBody = $Notes
-    } else {
-        $notesBody = "_Release notes to fill in.  See commit log since v$currentVersion for changes._"
-    }
-
-    $today = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
-    $newSection = "## [$Version] - $today`r`n`r`n$notesBody`r`n`r`n---`r`n"
-
-    # Insert just after the first "---" line (that ends the intro block).
-    # Match the separator with a CRLF-tolerant regex: CHANGELOG.md is committed
-    # with LF on Linux but Git on Windows checks it out as CRLF unless
-    # `* text=auto eol=lf` is set, so we accept either.
-    $sepMatch = [regex]::Match($changelogRaw, "(\r?\n)---(\r?\n)")
-    if (-not $sepMatch.Success) { Fail "Cannot locate '---' separator in CHANGELOG.md" }
-    $insertAt = $sepMatch.Index + $sepMatch.Length
-
-    $new_changelog = $changelogRaw.Substring(0, $insertAt) + "`r`n" + $newSection + $changelogRaw.Substring($insertAt).TrimStart("`r", "`n")
-
-    if ($DryRun) {
-        Write-Host "  would prepend section:" -ForegroundColor DarkGray
-        $newSection.Split("`n") | Select-Object -First 6 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-        Write-Host "    ..." -ForegroundColor DarkGray
-    } else {
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($changelogPath, $new_changelog, $utf8NoBom)
-        Write-OK "CHANGELOG section [$Version] prepended"
-    }
-}
-
-# ---------------------------------------------------------------------------
-# 4. Smoke build
-# ---------------------------------------------------------------------------
+#
+# Before any file is patched, so a broken build leaves the tree untouched.
 
 if (-not $SkipBuild) {
     Write-Section "Smoke build (frontend)"
@@ -321,13 +283,77 @@ if (-not $SkipBuild) {
 }
 
 # ---------------------------------------------------------------------------
+# 3. Patch version strings
+# ---------------------------------------------------------------------------
+
+Write-Section "Bump version strings: $currentVersion -> $Version"
+
+$cv = $currentVersion
+
+# The patches we apply are all unambiguous literals.  The version lives in
+# exactly these two files (see CLAUDE.md "Versioning"); everything else
+# derives it.
+$q = [char]0x22  # double-quote literal, used inside the search/replace strings below.
+Invoke-Replace "backend\app\core\config.py"               "APP_VERSION: str = $q$cv$q" "APP_VERSION: str = $q$Version$q" 1 | Out-Null
+Invoke-Replace "frontend\package.json"                    "${q}version${q}: ${q}$cv$q" "${q}version${q}: ${q}$Version$q" 1 | Out-Null
+
+Write-OK "version literals patched"
+
+# ---------------------------------------------------------------------------
+# 4. CHANGELOG
+# ---------------------------------------------------------------------------
+
+Write-Section "CHANGELOG"
+
+$changelogPath = Join-Path $PROJECT "CHANGELOG.md"
+# UTF-8 read (see Invoke-Replace for why) — the CHANGELOG contains em-dashes
+# and accented characters that would round-trip to mojibake on ANSI locales.
+$changelogRaw  = Get-Content -Raw -Path $changelogPath -Encoding UTF8
+
+if ($changelogRaw -match "## \[$([regex]::Escape($Version))\]") {
+    Write-Host "  section for $Version already exists - leaving CHANGELOG untouched" -ForegroundColor DarkGray
+} else {
+    $notesBody = ""
+    if ($NotesFile) {
+        $notesBody = Get-Content -Raw -Path $NotesFile -Encoding UTF8
+    } elseif ($Notes) {
+        $notesBody = $Notes
+    } else {
+        $notesBody = "_Release notes to fill in.  See commit log since v$currentVersion for changes._"
+    }
+
+    $today = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+    $newSection = "## [$Version] - $today`r`n`r`n$notesBody`r`n`r`n---`r`n"
+
+    # Insert just after the first "---" line (that ends the intro block).
+    # Match the separator with a CRLF-tolerant regex: CHANGELOG.md is committed
+    # with LF on Linux but Git on Windows checks it out as CRLF unless
+    # `* text=auto eol=lf` is set, so we accept either.
+    $sepMatch = [regex]::Match($changelogRaw, "(\r?\n)---(\r?\n)")
+    if (-not $sepMatch.Success) { Fail "Cannot locate '---' separator in CHANGELOG.md" }
+    $insertAt = $sepMatch.Index + $sepMatch.Length
+
+    $new_changelog = $changelogRaw.Substring(0, $insertAt) + "`r`n" + $newSection + $changelogRaw.Substring($insertAt).TrimStart("`r", "`n")
+
+    if ($DryRun) {
+        Write-Host "  would prepend section:" -ForegroundColor DarkGray
+        $newSection.Split("`n") | Select-Object -First 6 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        Write-Host "    ..." -ForegroundColor DarkGray
+    } else {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($changelogPath, $new_changelog, $utf8NoBom)
+        Write-OK "CHANGELOG section [$Version] prepended"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # 5. Commit + push
 # ---------------------------------------------------------------------------
 
 Write-Section "Commit + push"
 
 if ($DryRun) {
-    Write-Host "  would run: git add -A; git commit -m 'Bump version to $Version'; git push origin main" -ForegroundColor DarkGray
+    Write-Host "  would run: git add -A; git commit -m 'Bump version to $Version'; git push origin $branch" -ForegroundColor DarkGray
     Write-Host "  would run: git tag -a $tag -m 'ArkManiaGest $tag'; git push origin $tag" -ForegroundColor DarkGray
     Write-Section "DRY-RUN complete"
     exit 0
@@ -340,7 +366,10 @@ Write-Action "git commit"
 git commit -m "Bump version to $Version" | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "git commit failed" }
 
-Write-Action "git push origin main"
+# The branch the commit was made on: with -AllowDirty that need not be main,
+# and "git push origin main" would then publish whatever local main holds
+# while the bump commit reached origin only through the tag.
+Write-Action "git push origin $branch"
 # PS 5.1 + $ErrorActionPreference='Stop' wraps every stderr line from a
 # native exe in a NativeCommandError record (which sets $? to false even on
 # exit 0).  git push prints harmless progress to stderr, so we lower the
@@ -349,7 +378,7 @@ Write-Action "git push origin main"
 $prev_eap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    $pushOut = & git push origin main 2>&1
+    $pushOut = & git push origin $branch 2>&1
 } finally {
     $ErrorActionPreference = $prev_eap
 }
@@ -399,8 +428,8 @@ Write-Section "Monitoring GitHub Actions"
 $apiRoot = "https://api.github.com/repos/Mrtritolo/ArkManiaGest/actions/runs"
 Write-Host "  Polling every 15 s (max 10 min)..." -ForegroundColor Gray
 
-$deadline = (Get-Date).AddMinutes(10)
-$runId    = $null
+$deadline  = (Get-Date).AddMinutes(10)
+$succeeded = $false
 Start-Sleep -Seconds 5
 
 while ((Get-Date) -lt $deadline) {
@@ -417,7 +446,6 @@ while ((Get-Date) -lt $deadline) {
     } | Select-Object -First 1
 
     if ($run) {
-        $runId = $run.id
         $status = $run.status
         $conclusion = if ($run.conclusion) { $run.conclusion } else { "-" }
         $ts = Get-Date -Format HH:mm:ss
@@ -425,6 +453,7 @@ while ((Get-Date) -lt $deadline) {
         if ($status -eq "completed") {
             if ($conclusion -eq "success") {
                 Write-OK "workflow succeeded"
+                $succeeded = $true
                 break
             } else {
                 Fail "Release workflow ended with conclusion=$conclusion`n    $($run.html_url)"
@@ -437,7 +466,9 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 15
 }
 
-if (-not $runId) {
+# Only a completed, successful run gets past this point: a run still in
+# progress at the deadline used to fall through to "Release published".
+if (-not $succeeded) {
     Fail "Timed out waiting for the Release workflow to complete. Check manually: https://github.com/Mrtritolo/ArkManiaGest/actions"
 }
 

@@ -47,6 +47,17 @@ Runs: upload archive → `full-deploy.sh` on server (packages, user, venv, npm b
 .\deploy\update-panel.ps1 -DryRun
 ```
 
+> **Upgrade note — nginx vhost.** This release raises `proxy_read_timeout`
+> in the `/api/` block of `nginx-production.conf` from 120s to 1800s, so
+> server start/stop/update calls stop returning 504 while the host is still
+> working. Only `full-deploy.sh` renders that template: a code update leaves
+> the installed vhost as it is. On an existing install either re-run
+> `sudo bash /opt/arkmaniagest/deploy/full-deploy.sh`, or edit
+> `/etc/nginx/sites-available/arkmaniagest` by hand — raise
+> `proxy_read_timeout` inside `location /api/ {` (leave the one in
+> `location /api/v1/public/ {` at 120s), then
+> `sudo nginx -t && sudo systemctl reload nginx`.
+
 ---
 
 ## Server Management
@@ -84,7 +95,7 @@ sudo bash /opt/arkmaniagest/deploy/setup-ssl.sh your-domain.example.com
 ### Cron
 ```bash
 sudo bash /opt/arkmaniagest/deploy/setup-cron.sh
-crontab -l
+cat /etc/cron.d/arkmaniagest
 ```
 
 ---
@@ -98,8 +109,8 @@ crontab -l
 | `install-panel.ps1` | **PC** — Full initial deploy (tar + scp + full-deploy.sh) |
 | `server-update.sh` | **Server** — Executed by update-panel.ps1 (sync, deps, build, restart) |
 | `full-deploy.sh` | **Server** — Full setup (packages, nginx, SSL, firewall, cron) |
-| `backup.sh` | **Server** — Backup .env + nginx config |
-| `restore.sh` | **Server** — Restore from backup |
+| `backup.sh` | **Server** — Backup .env, nginx config, panel/plugin DB dumps and backend/data |
+| `restore.sh` | **Server** — Restore from backup (.env + nginx; data and DB dumps each on confirmation) |
 | `status.sh` | **Server** — Service health check |
 | `setup-ssl.sh` | **Server** — Let's Encrypt certificate setup |
 | `setup-cron.sh` | **Server** — Install cron jobs (backup, health, name sync) |

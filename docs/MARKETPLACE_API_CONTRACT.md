@@ -293,8 +293,10 @@ All endpoints prefixed `/api/v1/market/...`.  Auth model:
   others.
 
 ### `GET /market/listed`
-List browseable items.  Public to any authenticated user
-(disc_session OR panel JWT).
+List browseable items.  Requires a panel JWT (any role) OR a
+`disc_session` cookie of a Discord identity linked to a player;
+anonymous callers get 401 and an unlinked Discord identity 403
+(listings carry every seller's EOS ID).
 
 Query params:
 - `limit`        (int, default 50, max 200)
@@ -404,13 +406,13 @@ return it on next call.  Atomic: same FOR UPDATE pattern.
 
 Only valid when `status='listed'` AND `owner_eos_id == disc_session.eos_id`.
 
-### Admin endpoints (panel JWT, role=admin)
+### Admin endpoints (panel JWT)
 
-- `POST /market/admin/wallet/credit` -- top up a wallet (faucet,
-  refund, dispute).  Body `{ eos_id, amount, reason }`.  Adds an
-  audit row with `action='credit_admin'`.
-- `GET  /market/admin/audit?limit=&offset=` -- full audit log,
-  filterable by actor / action / item_id.
+- `POST /market/admin/wallet/credit` (operator or admin role) -- top
+  up a wallet (faucet, refund, dispute).  Body `{ eos_id, amount,
+  reason }`.  Adds an audit row with `action='credit_admin'`.
+- `GET  /market/admin/audit?limit=&offset=` (any panel role) -- full
+  audit log, filterable by actor / action / item_id.
 
 ---
 

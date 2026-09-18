@@ -89,8 +89,9 @@ Database, config, dependency.
   (or a hand-rolled minimal flow using stdlib + `httpx` to keep the
   dependency set lean).
 * Config validators: empty CLIENT_ID/SECRET means the Discord routes
-  return 503 with a clear "configure Discord first" hint instead of
-  blowing up at import time.
+  return 409 with a detail naming the missing `.env` keys instead of
+  blowing up at import time (503 is reserved for "panel database
+  unavailable").
 
 ### Phase 2 — OAuth2 sign-in  (1-2 days)
 

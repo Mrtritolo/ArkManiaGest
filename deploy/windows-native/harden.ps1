@@ -27,8 +27,9 @@
         never be the change that locks you out.
       * ``ssh.no_password_auth`` refuses to run unless a non-empty
         authorized_keys is already in place for an administrator.
-      * -AllowIp defaults to the address you are connected from, so the
-        firewall keeps the session that is applying the change reachable.
+      * -AllowIp defaults to the address of the SSH session applying the
+        change, so the firewall keeps it reachable.  Over RDP or the console
+        there is no such default: pass -AllowIp.
 
 .PARAMETER Apply
     Apply fixes.  Without it the script only audits and changes nothing.
@@ -100,17 +101,15 @@ $SSH_PORT = 22
 
 function Get-CurrentPeerAddress {
     <#
-        Best-effort discovery of the address this session came from, so the
-        firewall rules keep it reachable.  SSH_CLIENT is set by OpenSSH; the
-        TCP fallback covers RDP and console runs.
+        Address this SSH session came from, so the firewall rules keep it
+        reachable.  SSH_CLIENT is set by OpenSSH.  Outside an SSH session
+        (RDP, console) nothing is guessed: an established connection on the
+        SSH port may be another administrator or a scanner in the middle of
+        a brute force, and restricting SSH or RDP to it locks the real
+        administrators out.  Those runs must pass -AllowIp.
     #>
     if ($env:SSH_CLIENT) { return ($env:SSH_CLIENT -split '\s+')[0] }
     if ($env:SSH_CONNECTION) { return ($env:SSH_CONNECTION -split '\s+')[0] }
-    try {
-        $conn = Get-NetTCPConnection -LocalPort $SSH_PORT -State Established -ErrorAction Stop |
-                Select-Object -First 1
-        if ($conn) { return $conn.RemoteAddress }
-    } catch { }
     return ''
 }
 
@@ -145,6 +144,35 @@ function Test-Elevated {
     return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-UserRightsPolicy {
+    <#
+        The local user-rights assignments as INF lines, from secedit /export.
+        Changes nothing: the export goes to a temp file that is removed again.
+    #>
+    $inf = Join-Path $env:TEMP 'arkmania-user-rights.inf'
+    Remove-Item -LiteralPath $inf -Force -ErrorAction SilentlyContinue
+    try {
+        & secedit.exe /export /areas USER_RIGHTS /cfg $inf | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "secedit /export failed (exit $LASTEXITCODE)" }
+        return Get-Content -LiteralPath $inf
+    } finally {
+        Remove-Item -LiteralPath $inf -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-ServiceLogonRight {
+    <#
+        Whether an account holds "Log on as a service" in a secedit export.
+        secedit writes most principals as *SID but can write a local account
+        by name, so both forms count.
+    #>
+    param([string[]] $Policy, [string] $Sid, [string] $Name)
+    $right = $Policy | Where-Object { $_ -match '^SeServiceLogonRight\s*=' } | Select-Object -First 1
+    if (-not $right) { return $false }
+    $holders = ($right.Trim() -replace '^SeServiceLogonRight\s*=\s*', '') -split '\s*,\s*'
+    return [bool]($holders | Where-Object { $_ -in @("*$Sid", $Name, "$env:COMPUTERNAME\$Name") })
+}
+
 # ── Control catalogue ────────────────────────────────────────────────────────
 #
 # Each entry: Id / Title / Category / Risk / Check / Fix.
@@ -171,6 +199,16 @@ function Get-ControlCatalogue {
             if ($addr -contains 'Any') {
                 return @{ Compliant = $false; Detail = 'ArkMania-SSH accepts any source address.' }
             }
+            # Allow rules add up: ArkMania-SSH restricts nothing while another
+            # rule -- typically OpenSSH-Server-In-TCP, created by the OpenSSH
+            # install -- still admits the SSH port from anywhere.
+            $open = Get-NetFirewallPortFilter -ErrorAction SilentlyContinue |
+                Where-Object { $_.Protocol -eq 'TCP' -and ($_.LocalPort -contains "$SSH_PORT") } |
+                ForEach-Object { $_ | Get-NetFirewallRule -ErrorAction SilentlyContinue } |
+                Where-Object { $_.DisplayName -ne 'ArkMania-SSH' -and $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and (($_ | Get-NetFirewallAddressFilter).RemoteAddress -contains 'Any') }
+            if ($open) {
+                return @{ Compliant = $false; Detail = "SSH is still allowed from any address by: $(($open | ForEach-Object { $_.DisplayName }) -join ', ')" }
+            }
             return @{ Compliant = $true; Detail = "Restricted to: $($addr -join ', ')" }
         }
         Fix = {
@@ -182,6 +220,13 @@ function Get-ControlCatalogue {
             New-NetFirewallRule -DisplayName 'ArkMania-SSH' -Direction Inbound `
                 -Protocol TCP -LocalPort $SSH_PORT -RemoteAddress $AllowIp `
                 -Action Allow -Profile Any | Out-Null
+            # Only once the restricted rule exists: disable (not delete) every
+            # other rule that still admits the SSH port from any address.
+            Get-NetFirewallPortFilter -ErrorAction SilentlyContinue |
+                Where-Object { $_.Protocol -eq 'TCP' -and ($_.LocalPort -contains "$SSH_PORT") } |
+                ForEach-Object { $_ | Get-NetFirewallRule -ErrorAction SilentlyContinue } |
+                Where-Object { $_.DisplayName -ne 'ArkMania-SSH' -and $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and (($_ | Get-NetFirewallAddressFilter).RemoteAddress -contains 'Any') } |
+                Disable-NetFirewallRule
         }
     }
 
@@ -265,8 +310,10 @@ function Get-ControlCatalogue {
         Id = 'fw.rdp_restricted'; Category = 'firewall'; Risk = 'lockout'
         Title = 'RDP reachable only from the administration addresses'
         Check = {
+            # DisplayGroup is localised ("Desktop remoto" on Italian Windows);
+            # Group carries the language-neutral resource id of the same group.
             $rules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
-                Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and $_.DisplayGroup -like '*Remote Desktop*' }
+                Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and ($_.Group -eq '@FirewallAPI.dll,-28752' -or $_.DisplayGroup -like '*Remote Desktop*') }
             if (-not $rules) {
                 return @{ Compliant = $true; Detail = 'No enabled inbound RDP allow rule.' }
             }
@@ -281,7 +328,7 @@ function Get-ControlCatalogue {
                 throw 'Refusing to restrict RDP with an empty -AllowIp.'
             }
             Get-NetFirewallRule -ErrorAction SilentlyContinue |
-                Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and $_.DisplayGroup -like '*Remote Desktop*' } |
+                Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and ($_.Group -eq '@FirewallAPI.dll,-28752' -or $_.DisplayGroup -like '*Remote Desktop*') } |
                 Set-NetFirewallRule -RemoteAddress $AllowIp
         }
     }
@@ -326,8 +373,9 @@ function Get-ControlCatalogue {
             if (-not (Test-Path $cfg)) {
                 return @{ Compliant = $false; Detail = 'sshd_config not found; OpenSSH server may not be installed.' }
             }
+            # sshd keeps the first value it reads for a keyword.
             $line = Select-String -LiteralPath $cfg -Pattern '^\s*PasswordAuthentication\s+(\w+)' |
-                Select-Object -Last 1
+                Select-Object -First 1
             if ($line -and $line.Matches[0].Groups[1].Value -match '^(?i)no$') {
                 return @{ Compliant = $true; Detail = 'PasswordAuthentication no' }
             }
@@ -350,7 +398,10 @@ function Get-ControlCatalogue {
             if ($body -match '(?m)^\s*#?\s*PasswordAuthentication\s+\w+') {
                 $body = $body -replace '(?m)^\s*#?\s*PasswordAuthentication\s+\w+', 'PasswordAuthentication no'
             } else {
-                $body = $body.TrimEnd() + "`r`nPasswordAuthentication no`r`n"
+                # Prepended, not appended: the stock Windows sshd_config ends
+                # with a "Match Group administrators" block, and a directive
+                # after it would only apply to that group.
+                $body = "PasswordAuthentication no`r`n" + $body
             }
             [System.IO.File]::WriteAllText($cfg, $body, (New-Object System.Text.UTF8Encoding $false))
             Restart-Service sshd -Force
@@ -422,6 +473,20 @@ function Get-ControlCatalogue {
             if ($system) {
                 return @{ Compliant = $false; Detail = "Configured to run as SYSTEM: $(($system | ForEach-Object { $_.Name }) -join ', '). ARK parses untrusted network input; a memory-safety bug in the server or a plugin would execute with full machine privileges. Fixing this rewrites the service logon; it takes effect at the next graceful restart, because bouncing a live server here would cost players their session." }
             }
+            # Off SYSTEM is not enough: earlier versions of the fix never
+            # granted "Log on as a service", and without it the services fail
+            # with error 1069 at their next start.
+            $asAccount = $svcs | Where-Object { $_.StartName -match ('(^|\\)' + [regex]::Escape($ServiceAccount) + '$') }
+            if ($asAccount) {
+                $names = ($asAccount | ForEach-Object { $_.Name }) -join ', '
+                $acct = Get-LocalUser -Name $ServiceAccount -ErrorAction SilentlyContinue
+                if ($null -eq $acct) {
+                    return @{ Compliant = $false; Detail = "Configured to run as $ServiceAccount, which does not exist, so they cannot start: $names." }
+                }
+                if (-not (Test-ServiceLogonRight -Policy (Get-UserRightsPolicy) -Sid $acct.SID.Value -Name $ServiceAccount)) {
+                    return @{ Compliant = $false; Detail = "$ServiceAccount lacks the 'Log on as a service' right, so these services fail with error 1069 at their next start: $names." }
+                }
+            }
             return @{ Compliant = $true; Detail = "All $($svcs.Count) service(s) run as a restricted account." }
         }
         Fix = {
@@ -458,6 +523,29 @@ function Get-ControlCatalogue {
             # The minimum it needs: modify rights on the ArkMania tree only.
             if (Test-Path $BaseDir) {
                 icacls $BaseDir /grant "${ServiceAccount}:(OI)(CI)M" /T /C | Out-Null
+            }
+
+            # ...plus "Log on as a service".  sc.exe only records the logon;
+            # unlike services.msc it does not grant the right, and without it
+            # every service fails with error 1069 at its next start.
+            $sid    = (Get-LocalUser -Name $ServiceAccount).SID.Value
+            $policy = Get-UserRightsPolicy
+            if (-not (Test-ServiceLogonRight -Policy $policy -Sid $sid -Name $ServiceAccount)) {
+                if ($policy -match '^SeServiceLogonRight\s*=') {
+                    $policy = $policy -replace '^(SeServiceLogonRight\s*=.*)$', "`$1,*$sid"
+                } else {
+                    $policy = $policy -replace '^\[Privilege Rights\]$', "[Privilege Rights]`r`nSeServiceLogonRight = *$sid"
+                }
+                $inf = Join-Path $env:TEMP 'arkmania-logon-right.inf'
+                $sdb = Join-Path $env:TEMP 'arkmania-logon-right.sdb'
+                Remove-Item -LiteralPath $inf, $sdb -Force -ErrorAction SilentlyContinue
+                try {
+                    Set-Content -LiteralPath $inf -Value $policy -Encoding Unicode
+                    & secedit.exe /configure /db $sdb /cfg $inf /areas USER_RIGHTS | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "secedit /configure failed (exit $LASTEXITCODE)" }
+                } finally {
+                    Remove-Item -LiteralPath $inf, $sdb -Force -ErrorAction SilentlyContinue
+                }
             }
 
             $svcs = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |

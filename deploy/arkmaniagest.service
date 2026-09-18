@@ -22,12 +22,12 @@ StandardError=append:/var/log/arkmaniagest/backend-error.log
 # whitelisted server-update.sh as root.  Keeping NoNewPrivileges=yes
 # here would silently disable that codepath with the opaque error
 # `sudo: The "no new privileges" flag is set, which prevents sudo from
-# running as root.`  The attack surface is limited by the matching
-# /etc/sudoers.d/arkmaniagest snippet, which only whitelists:
+# running as root.`  The matching /etc/sudoers.d/arkmaniagest snippet
+# only whitelists:
 #   /usr/bin/bash /opt/arkmaniagest/deploy/server-update.sh *
-# so compromising the panel user still does not give arbitrary root
-# shell access -- only the ability to (re)install an already-trusted
-# update pipeline.
+# but that script runs, as root, code from a tarball and a tree the panel
+# user controls, so while the snippet is installed a compromise of the
+# panel user is a root compromise (see deploy/sudoers-arkmaniagest).
 #
 # PrivateTmp is also disabled because the self-update workflow hands
 # the tarball to server-update.sh via /tmp/arkmaniagest-update.tar.gz

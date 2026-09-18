@@ -11,7 +11,6 @@ set -euo pipefail
 MODE=${1:-FULL}
 DEPS=${2:-AUTO}
 APP=/opt/arkmaniagest
-TMP=/tmp/arkmaniagest-update
 USR=arkmania
 
 # When the in-UI updater launches this script it pre-creates a status
@@ -28,9 +27,9 @@ finalise_status() {
     local state="$1"
     local msg="$2"
     [ -f "$STATUS_FILE" ] || return 0
-    python3 - "$STATUS_FILE" "$state" "$msg" <<'PYEOF' 2>/dev/null || true
-import json, os, sys, datetime
-path, state, msg = sys.argv[1], sys.argv[2], sys.argv[3]
+    python3 - "$STATUS_FILE" "$state" "$msg" "$USR" <<'PYEOF' 2>/dev/null || true
+import json, os, pwd, sys, datetime
+path, state, msg, owner = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 try:
     with open(path) as f:
         d = json.load(f)
@@ -44,6 +43,13 @@ if state == "success":
 tmp = path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(d, f, indent=2)
+# Hand the file back to the panel user.  /tmp is sticky, so a root-owned
+# status file could be neither rewritten nor renamed over by the panel.
+try:
+    pw = pwd.getpwnam(owner)
+    os.chown(tmp, pw.pw_uid, pw.pw_gid)
+except (KeyError, OSError):
+    pass
 os.replace(tmp, path)
 PYEOF
 }
@@ -55,9 +61,22 @@ echo "=== ArkManiaGest Update ==="
 echo "Mode: $MODE  Deps: $DEPS"
 echo ""
 
-# Extract
-rm -rf "$TMP"
-mkdir -p "$TMP"
+# A run killed outright -- systemd stopping the panel whose cgroup we live
+# in, or the OOM killer during `npm ci` -- never reaches the traps below,
+# and with a random name per run nothing else would ever reclaim its source
+# tree and npm cache.  Sweep what earlier runs left behind: `rm -rf` unlinks
+# a planted symlink instead of following it.
+rm -rf /tmp/arkmaniagest-update.?????? 2>/dev/null || true
+
+# Extract.  Root untars here and rsyncs --delete from here into $APP, so the
+# directory gets an unpredictable name: with a fixed /tmp path any local
+# user could plant a symlink between an `rm -rf` and a `mkdir -p`.  0755
+# (mktemp creates 0700) keeps $TMP/npm-cache reachable for $USR, and rsync
+# -a copies this mode onto $APP when a dev tarball has files at its root.
+TMP=$(mktemp -d /tmp/arkmaniagest-update.XXXXXX)
+chmod 0755 "$TMP"
+# Every run gets its own directory now, so a failed run must not leave one.
+trap 'rm -rf "$TMP"' EXIT
 tar -xzf /tmp/arkmaniagest-update.tar.gz -C "$TMP"
 rm -f /tmp/arkmaniagest-update.tar.gz
 
@@ -122,6 +141,18 @@ find "$APP/deploy" -name "*.sh" -exec sed -i 's/\r//g' {} \;
 bash "$APP/deploy/migrate-env.sh" "$APP" || true
 chown "$USR:$USR" "$APP/backend/.env"
 chmod 600 "$APP/backend/.env"
+
+# certbot renewal hook, as full-deploy.sh writes it: installs from before it
+# existed renew the certificate without nginx ever loading it.  Best effort:
+# inside the unit's ProtectSystem=strict namespace (in-UI updater)
+# /etc/letsencrypt is read-only, and that must not fail the update.
+HOOK=/etc/letsencrypt/renewal-hooks/deploy/arkmaniagest-reload-nginx
+if [ -d /etc/letsencrypt ] && [ ! -x "$HOOK" ]; then
+    { mkdir -p "$(dirname "$HOOK")" \
+        && printf '#!/bin/sh\nnginx -t && systemctl reload nginx\n' > "$HOOK" \
+        && chmod 755 "$HOOK"; } 2>/dev/null \
+        || echo "  certbot renewal hook not installed (read-only /etc/letsencrypt): an update-panel.{sh,ps1} run installs it"
+fi
 echo "  OK"
 
 # Backend
@@ -133,11 +164,16 @@ if [ "$MODE" != "FRONTEND" ]; then
         sudo -u "$USR" python3 -m venv venv
     fi
 
-    if [ "$DEPS" = "FORCE" ] || { [ "$DEPS" = "AUTO" ] && [ ! -f "venv/.deps_installed" ]; }; then
+    # AUTO reinstalls whenever requirements.txt differs from the last
+    # install.  The marker used to be a bare "installed once" flag, so the
+    # in-UI updater (always AUTO) never installed a dependency added by a
+    # later release and the restarted backend died on the import.
+    REQ_HASH=$(sha256sum requirements.txt | cut -d' ' -f1)
+    if [ "$DEPS" = "FORCE" ] || { [ "$DEPS" = "AUTO" ] && [ "$(cat venv/.deps_installed 2>/dev/null)" != "$REQ_HASH" ]; }; then
         echo "  pip install..."
         sudo -u "$USR" venv/bin/pip install -q --upgrade pip
         sudo -u "$USR" venv/bin/pip install -q -r requirements.txt
-        touch venv/.deps_installed
+        echo "$REQ_HASH" > venv/.deps_installed
     else
         echo "  Deps: skip"
     fi
@@ -155,9 +191,23 @@ if [ "$MODE" != "BACKEND" ]; then
     echo "[3/4] Frontend..."
     cd "$APP/frontend"
 
-    if [ "$DEPS" = "FORCE" ] || [ ! -d "node_modules" ]; then
+    # Same for package-lock.json: AUTO used to skip npm ci as soon as
+    # node_modules existed, so a release adding a frontend package failed
+    # its build.  A node_modules from before this marker existed is taken
+    # to match the current lock once, as the old check assumed.
+    LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+    if [ -d "node_modules" ] && [ ! -f "node_modules/.deps_installed" ]; then
+        echo "$LOCK_HASH" > node_modules/.deps_installed
+    fi
+    if [ "$DEPS" = "FORCE" ] || [ ! -d "node_modules" ] \
+        || { [ "$DEPS" = "AUTO" ] && [ "$(cat node_modules/.deps_installed)" != "$LOCK_HASH" ]; }; then
         echo "  npm ci..."
-        sudo -u "$USR" npm ci --silent 2>&1 | tail -2
+        # The in-UI updater runs inside the unit's ProtectSystem=strict
+        # namespace, where the home directory holding npm's default cache
+        # is read-only: npm ci failed there on every lock change.
+        install -d -o "$USR" -g "$USR" "$TMP/npm-cache"
+        sudo -u "$USR" npm ci --silent --cache "$TMP/npm-cache" 2>&1 | tail -2
+        echo "$LOCK_HASH" > node_modules/.deps_installed
     else
         echo "  Node deps: skip"
     fi
@@ -169,6 +219,10 @@ if [ "$MODE" != "BACKEND" ]; then
 else
     echo "[3/4] Frontend: skip"
 fi
+
+# Nothing below uses $TMP: remove it before the restart signals this
+# script, rather than leave it to the EXIT trap of a process being killed.
+rm -rf "$TMP"
 
 # Restart
 echo "[4/4] Restart..."
@@ -210,6 +264,5 @@ else
     journalctl -u arkmaniagest --no-pager -n 5
 fi
 
-rm -rf "$TMP"
 echo ""
 echo "=== Update completato ==="

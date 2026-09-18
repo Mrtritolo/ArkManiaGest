@@ -208,6 +208,10 @@ if ($DryRun) {
     exit 0
 }
 
+# An archive left behind by an earlier run that failed after packaging must
+# not pass for this run's output.
+if (Test-Path $ARCHIVE) { Remove-Item -Force $ARCHIVE }
+
 Push-Location $PROJECT
 try {
     if (Test-Path $DEPLOYIGNORE) {
@@ -221,10 +225,15 @@ try {
             --exclude='deploy/maintainer' --exclude='release-build' `
             .
     }
+    $tarRc = $LASTEXITCODE
 } finally {
     Pop-Location
 }
 
+# A failing tar still writes an archive, minus the files it could not read,
+# and server-update.sh syncs with rsync --delete: those files would be
+# deleted on the server.
+if ($tarRc -ne 0) { Fail "tar failed (rc=$tarRc)" }
 if (-not (Test-Path $ARCHIVE)) { Fail "tar failed (no archive produced)" }
 $sizeMB = [math]::Round((Get-Item $ARCHIVE).Length / 1MB, 2)
 OK "Archive: $ARCHIVE ($sizeMB MB)"
