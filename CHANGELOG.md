@@ -7,10 +7,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [4.16.0] - 2026-09-18
 
 Audit of the whole repository, the fixes it produced, and a full UI refactor
-onto a new design system. No version bump yet.
+onto a new design system.
 
 ### Changed — read before upgrading
 
