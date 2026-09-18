@@ -150,13 +150,26 @@ class IniSection:
 
     # -- Write helpers ---------------------------------------------------------
 
+    def _append_index(self) -> int:
+        """
+        Index just past the last non-blank entry.
+
+        New keys go there, above the blank lines that close the section:
+        appended after them, every save would push one more blank line
+        between this section and the next.
+        """
+        i = len(self.entries)
+        while i and self.entries[i - 1].is_blank:
+            i -= 1
+        return i
+
     def set(self, key: str, value: str) -> None:
         """Update the first occurrence of *key*, or append a new entry."""
         for e in self.entries:
             if not e.is_comment and not e.is_blank and e.key == key:
                 e.value = str(value)
                 return
-        self.entries.append(IniEntry(key=key, value=str(value)))
+        self.entries.insert(self._append_index(), IniEntry(key=key, value=str(value)))
 
     def remove(self, key: str) -> None:
         """Remove all entries with the given *key*."""
@@ -168,8 +181,8 @@ class IniSection:
     def set_all(self, key: str, values: list[str]) -> None:
         """Replace all occurrences of *key* with the supplied *values* list."""
         self.remove(key)
-        for v in values:
-            self.entries.append(IniEntry(key=key, value=str(v)))
+        pos = self._append_index()
+        self.entries[pos:pos] = [IniEntry(key=key, value=str(v)) for v in values]
 
     # -- Export ----------------------------------------------------------------
 
@@ -223,18 +236,6 @@ class IniFile:
             s = IniSection(name=name, is_readonly=name in READONLY_SECTIONS)
             self.sections[name] = s
         return s
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return all sections as a nested dict."""
-        return {name: section.to_dict() for name, section in self.sections.items()}
-
-    def server_sections(self) -> dict[str, dict]:
-        """Return only non-readonly sections."""
-        return {
-            name: section.to_dict()
-            for name, section in self.sections.items()
-            if not section.is_readonly
-        }
 
     def mod_sections(self) -> dict[str, dict]:
         """
@@ -302,9 +303,14 @@ def parse_ini(content: str) -> IniFile:
         section_match = re.match(r"^\[(.+)\]\s*$", stripped)
         if section_match:
             section_name = section_match.group(1)
-            is_ro        = section_name in READONLY_SECTIONS
-            current_section = IniSection(name=section_name, is_readonly=is_ro)
-            ini.sections[section_name] = current_section
+            # A repeated header continues the earlier block, as UE merges
+            # them: starting a fresh section would drop the first block's
+            # keys from the next save.
+            current_section = ini.get_section(section_name)
+            if current_section is None:
+                is_ro           = section_name in READONLY_SECTIONS
+                current_section = IniSection(name=section_name, is_readonly=is_ro)
+                ini.sections[section_name] = current_section
             continue
 
         # Key=Value pair
@@ -347,7 +353,9 @@ def write_ini(ini: IniFile) -> str:
 
     first_section = True
     for name, section in ini.sections.items():
-        if not first_section:
+        # The previous section normally ends with its own parsed blank line;
+        # adding another one unconditionally grew the gap on every save.
+        if not first_section and lines[-1] != "":
             lines.append("")
         first_section = False
         lines.append(f"[{name}]")
@@ -417,10 +425,12 @@ def parse_stack_override(value: str) -> dict | None:
 
     Returns:
         Dict with ``class``, ``max_quantity``, ``ignore_multiplier``, or None.
+        The whole line must match: a line with anything more would lose it
+        when rebuilt, so it stays raw instead.
     """
     m = re.match(
         r'\(ItemClassString="([^"]+)",\s*Quantity=\('
-        r'MaxItemQuantity=(\d+),\s*bIgnoreMultiplier=(true|false)\)\)',
+        r'MaxItemQuantity=(\d+),\s*bIgnoreMultiplier=(true|false)\)\)\s*$',
         value, re.IGNORECASE,
     )
     if m:
@@ -470,32 +480,35 @@ def parse_supply_crate_override(value: str) -> dict | None:
     return result
 
 
-def build_supply_crate_override(data: dict) -> str:
-    """Return the raw line for a supply-crate override entry."""
-    return data.get("raw", "")
+_CRAFTING_RESOURCE = (
+    r'\(ResourceItemTypeString="([^"]+)",\s*'
+    r'BaseResourceRequirement=([\d.]+),\s*'
+    r'bCraftingRequireExactResourceType=(true|false)\)'
+)
 
 
 def parse_crafting_override(value: str) -> dict | None:
     """
     Parse a ``ConfigOverrideItemCraftingCosts`` value.
 
-    Returns a dict with the item class, resource list, and the raw line.
+    Returns a dict with the item class, resource list, and the raw line, or
+    None unless every resource matches the expected form: the save rebuilds
+    the recipe from the parsed resources, so one that was skipped here
+    (reordered or missing fields, extra keys) would vanish from the server.
     """
     m = re.match(
-        r'\(ItemClassString="([^"]+)",\s*BaseCraftingResourceRequirements=\((.+)\)\s*\)',
+        r'\(ItemClassString="([^"]+)",\s*BaseCraftingResourceRequirements=\((.+)\)\s*\)\s*$',
         value, re.IGNORECASE,
     )
-    if not m:
+    if not m or not re.fullmatch(
+        rf'\s*{_CRAFTING_RESOURCE}(?:\s*,\s*{_CRAFTING_RESOURCE})*\s*',
+        m.group(2), re.IGNORECASE,
+    ):
         return None
 
     result: dict = {"item_class": m.group(1), "raw": value, "resources": []}
 
-    for res_match in re.finditer(
-        r'\(ResourceItemTypeString="([^"]+)",\s*'
-        r'BaseResourceRequirement=([\d.]+),\s*'
-        r'bCraftingRequireExactResourceType=(true|false)\)',
-        m.group(2), re.IGNORECASE,
-    ):
+    for res_match in re.finditer(_CRAFTING_RESOURCE, m.group(2), re.IGNORECASE):
         result["resources"].append({
             "resource_class": res_match.group(1),
             "amount":         float(res_match.group(2)),
@@ -529,7 +542,7 @@ def parse_npc_replacement(value: str) -> dict | None:
         (FromClassName="...",ToClassName="...")
     """
     m = re.match(
-        r'\(FromClassName="([^"]+)",\s*ToClassName="([^"]*)"\)',
+        r'\(FromClassName="([^"]+)",\s*ToClassName="([^"]*)"\)\s*$',
         value, re.IGNORECASE,
     )
     if m:
@@ -565,7 +578,7 @@ def parse_spawn_entry(value: str) -> dict | None:
 # The metadata drives the control type (float slider, bool toggle, text, …).
 SETTING_GROUPS: dict[str, dict] = {
     "general": {
-        "label": "Generale", "icon": "Settings",
+        "label": "General", "icon": "Settings",
         "settings": {
             "SessionName":         {"type": "string",   "section": "SessionSettings",             "file": "gus"},
             "MaxPlayers":          {"type": "int",      "section": "/Script/Engine.GameSession",  "file": "gus", "default": 70, "min": 1, "max": 127},
@@ -576,7 +589,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "rates": {
-        "label": "Rates & Moltiplicatori", "icon": "TrendingUp",
+        "label": "Rates & Multipliers", "icon": "TrendingUp",
         "settings": {
             "DifficultyOffset":                  {"type": "float", "section": "ServerSettings",                              "file": "gus",  "default": 1.0, "min": 0.1, "max": 10,  "step": 0.1},
             "OverrideOfficialDifficulty":        {"type": "float", "section": "ServerSettings",                              "file": "gus",  "default": 0,   "min": 0,   "max": 15,  "step": 0.5},
@@ -590,7 +603,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "xp": {
-        "label": "XP Dettaglio", "icon": "Star",
+        "label": "XP Details", "icon": "Star",
         "settings": {
             "CraftXPMultiplier":   {"type": "float", "section": "/script/shootergame.shootergamemode", "file": "game", "default": 1.0, "min": 0.01, "max": 100, "step": 0.5},
             "GenericXPMultiplier": {"type": "float", "section": "/script/shootergame.shootergamemode", "file": "game", "default": 1.0, "min": 0.01, "max": 100, "step": 0.5},
@@ -600,7 +613,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "day_night": {
-        "label": "Giorno / Notte", "icon": "Sun",
+        "label": "Day / Night", "icon": "Sun",
         "settings": {
             "DayCycleSpeedScale":  {"type": "float", "section": "ServerSettings", "file": "gus", "default": 1.0, "min": 0.01, "max": 10, "step": 0.1},
             "DayTimeSpeedScale":   {"type": "float", "section": "ServerSettings", "file": "gus", "default": 1.0, "min": 0.01, "max": 10, "step": 0.1},
@@ -608,7 +621,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "combat": {
-        "label": "Combattimento", "icon": "Swords",
+        "label": "Combat", "icon": "Swords",
         "settings": {
             "PlayerDamageMultiplier":      {"type": "float", "section": "ServerSettings", "file": "gus", "default": 1.0},
             "PlayerResistanceMultiplier":  {"type": "float", "section": "ServerSettings", "file": "gus", "default": 1.0},
@@ -621,7 +634,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "player": {
-        "label": "Giocatore", "icon": "User",
+        "label": "Player", "icon": "User",
         "settings": {
             "PlayerCharacterFoodDrainMultiplier":    {"type": "float", "section": "ServerSettings",                              "file": "gus",  "default": 1.0},
             "PlayerCharacterWaterDrainMultiplier":   {"type": "float", "section": "ServerSettings",                              "file": "gus",  "default": 1.0},
@@ -632,7 +645,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "dino": {
-        "label": "Creature", "icon": "Bug",
+        "label": "Creatures", "icon": "Bug",
         "settings": {
             "DinoCharacterFoodDrainMultiplier":       {"type": "float", "section": "ServerSettings",                              "file": "gus",  "default": 1.0},
             "DinoCharacterStaminaDrainMultiplier":    {"type": "float", "section": "ServerSettings",                              "file": "gus",  "default": 1.0},
@@ -668,7 +681,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "structures": {
-        "label": "Strutture", "icon": "Building",
+        "label": "Structures", "icon": "Building",
         "settings": {
             "TheMaxStructuresInRange":              {"type": "int",   "section": "ServerSettings", "file": "gus", "default": 10500},
             "PerPlatformMaxStructuresMultiplier":   {"type": "float", "section": "ServerSettings", "file": "gus", "default": 1.0},
@@ -685,7 +698,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "gameplay": {
-        "label": "Regole di Gioco", "icon": "Gamepad2",
+        "label": "Game Rules", "icon": "Gamepad2",
         "settings": {
             "ServerPVE":                    {"type": "bool",  "section": "ServerSettings",                              "file": "gus",  "default": False, "label": "PvE Mode"},
             "ServerHardcore":               {"type": "bool",  "section": "ServerSettings",                              "file": "gus",  "default": False},
@@ -746,7 +759,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "turrets": {
-        "label": "Torrette", "icon": "Crosshair",
+        "label": "Turrets", "icon": "Crosshair",
         "settings": {
             "bLimitTurretsInRange": {"type": "bool", "section": "/script/shootergame.shootergamemode", "file": "game", "default": True},
             "LimitTurretsNum":      {"type": "int",  "section": "/script/shootergame.shootergamemode", "file": "game", "default": 100, "min": 0},
@@ -762,7 +775,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "tribe_limits": {
-        "label": "Tribe & Limiti", "icon": "Users",
+        "label": "Tribes & Limits", "icon": "Users",
         "settings": {
             "TribeNameChangeCooldown":                            {"type": "int", "section": "ServerSettings", "file": "gus", "default": 15},
             "KickIdlePlayersPeriod":                              {"type": "int", "section": "ServerSettings", "file": "gus", "default": 3600},
@@ -788,7 +801,7 @@ SETTING_GROUPS: dict[str, dict] = {
         },
     },
     "bunkers": {
-        "label": "Bunker", "icon": "Shield",
+        "label": "Bunkers", "icon": "Shield",
         "settings": {
             "LimitBunkersPerTribe":              {"type": "bool",  "section": "ServerSettings", "file": "gus", "default": True},
             "LimitBunkersPerTribeNum":           {"type": "int",   "section": "ServerSettings", "file": "gus", "default": 3, "min": 0},

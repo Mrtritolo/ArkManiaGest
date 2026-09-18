@@ -42,12 +42,15 @@ Deletion paths
                                  search/category/type filters
 * ``DELETE /{bp_id}``          — drop a single row by id
 """
+import asyncio
+import gzip
 import hashlib
 import io
 import json
 import re
 import tarfile
 import logging
+import zlib
 from typing import Optional, List
 from datetime import datetime, timezone
 
@@ -57,6 +60,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_operator
 from app.db.session import get_db
 
 router = APIRouter()
@@ -164,9 +168,6 @@ def _clean_dino_name(raw: str) -> str:
         return _DINO_NAME_MAP[lower]
     if no_under in _DINO_NAME_MAP:
         return _DINO_NAME_MAP[no_under]
-    for key, full in sorted(_DINO_NAME_MAP.items(), key=lambda x: -len(x[0])):
-        if lower == key or no_under == key:
-            return full
     return raw
 
 
@@ -589,13 +590,18 @@ def _parse_wiki_creatures(raw_text: str) -> list[dict]:
 # ── Beacon parser helpers ─────────────────────────────────────────────────────
 
 _BEACON_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# The upload cap bounds the compressed size only: a small, highly
+# compressible archive could still expand to many GB in memory.  Not
+# measured against a real Complete export (15k blueprints, see CHANGELOG);
+# a bundle past it can still be imported as Per-Pack exports.
+_BEACON_MAX_UNPACKED_BYTES = 300 * 1024 * 1024
 _BEACON_SKIP_PATH_FRAGMENTS = (
     "/Buffs/", "/Effects/", "/UI/", "/HUD/",
 )
 
 
 def _beacon_normalize_path(path: Optional[str]) -> Optional[str]:
-    if not path:
+    if not isinstance(path, str):
         return None
     p = path.strip()
     return p if p else None
@@ -659,14 +665,25 @@ def _normalize_beacon_engram(e: dict, source: str) -> Optional[dict]:
     }
 
 
+def _json_dicts(value) -> list[dict]:
+    """The dict elements of a JSON list; any other shape yields nothing."""
+    return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
+
+
 def _iter_beacon_records(archive_bytes: bytes):
-    bio = io.BytesIO(archive_bytes)
-    try:
-        tf = tarfile.open(fileobj=bio, mode="r:gz")
-    except (tarfile.ReadError, OSError):
-        bio.seek(0)
-        tf = tarfile.open(fileobj=bio, mode="r:")
-    with tf:
+    data = archive_bytes
+    if data[:2] == b"\x1f\x8b":
+        # Gunzip with a cap before tarfile sees the stream: headers, pax
+        # records and member data all count, and a plain tar is already
+        # bounded by the upload cap.
+        data = gzip.GzipFile(fileobj=io.BytesIO(data)).read(_BEACON_MAX_UNPACKED_BYTES + 1)
+        if len(data) > _BEACON_MAX_UNPACKED_BYTES:
+            raise ValueError(
+                f"archive expands beyond "
+                f"{_BEACON_MAX_UNPACKED_BYTES // (1024 * 1024)} MB; "
+                f"import it as Per-Pack exports instead"
+            )
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tf:
         for member in tf:
             if not member.isfile() or not member.name.endswith(".json"):
                 continue
@@ -678,11 +695,50 @@ def _iter_beacon_records(archive_bytes: bytes):
                 doc = json.loads(raw)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
-            for payload in doc.get("payloads", []) or []:
-                for c in payload.get("creatures", []) or []:
+            if not isinstance(doc, dict):
+                continue
+            for payload in _json_dicts(doc.get("payloads")):
+                for c in _json_dicts(payload.get("creatures")):
                     yield ("creature", c)
-                for e in payload.get("engrams", []) or []:
+                for e in _json_dicts(payload.get("engrams")):
                     yield ("engram", e)
+
+
+def _parse_beacon_bundle(
+    archive_bytes: bytes, source_label: str, dinos_only: bool, official_only: bool,
+) -> tuple[list[dict], int, int, dict[str, int]]:
+    """
+    Decode a bundle into normalised rows plus the counts the import reports.
+
+    Returns ``(blueprints, items_count, dinos_count, pack_counts)``.  This is
+    CPU-bound gunzip + JSON work, so the endpoint runs it in a worker thread.
+    """
+    blueprints:  list[dict] = []
+    items_count: int = 0
+    dinos_count: int = 0
+    pack_counts: dict[str, int] = {}
+
+    for kind, record in _iter_beacon_records(archive_bytes):
+        if kind == "creature":
+            normalized = _normalize_beacon_creature(record, source_label)
+            if normalized:
+                if official_only and not is_official_blueprint(normalized):
+                    continue
+                dinos_count += 1
+                pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
+                blueprints.append(normalized)
+        else:  # engram
+            if dinos_only:
+                continue
+            normalized = _normalize_beacon_engram(record, source_label)
+            if normalized:
+                if official_only and not is_official_blueprint(normalized):
+                    continue
+                items_count += 1
+                pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
+                blueprints.append(normalized)
+
+    return blueprints, items_count, dinos_count, pack_counts
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -725,7 +781,7 @@ async def blueprint_status(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/sync", response_model=SyncResult)
+@router.post("/sync", response_model=SyncResult, dependencies=[Depends(require_operator)])
 async def sync_blueprints(db: AsyncSession = Depends(get_db)):
     """
     UPSERT Dododex content (creatures + commands) and the ark.wiki.gg
@@ -885,7 +941,7 @@ async def sync_blueprints(db: AsyncSession = Depends(get_db)):
 
 # ── Beacon import ──────────────────────────────────────────────────────────────
 
-@router.post("/import-beacondata", response_model=SyncResult)
+@router.post("/import-beacondata", response_model=SyncResult, dependencies=[Depends(require_operator)])
 async def import_beacondata(
     file: UploadFile = File(...),
     dinos_only: bool = Query(
@@ -906,15 +962,17 @@ async def import_beacondata(
     label of ``beacon:<filename>`` so the operator can later wipe a
     single import via ``DELETE /blueprints/by-source``.
     """
-    raw = await file.read()
+    # One byte past the cap is enough to tell "too large" without loading
+    # an arbitrarily large upload into memory.
+    raw = await file.read(_BEACON_MAX_UPLOAD_BYTES + 1)
     if not raw:
         raise HTTPException(status_code=400, detail="Empty upload.")
     if len(raw) > _BEACON_MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
             detail=(
-                f"File too large ({len(raw)} bytes; max "
-                f"{_BEACON_MAX_UPLOAD_BYTES} = "
+                f"File too large (max "
+                f"{_BEACON_MAX_UPLOAD_BYTES} bytes = "
                 f"{_BEACON_MAX_UPLOAD_BYTES // (1024*1024)} MB)."
             ),
         )
@@ -924,33 +982,15 @@ async def import_beacondata(
 
     log.info("Beacon import: %s (%d bytes)", fname, len(raw))
 
-    blueprints:     list[dict] = []
-    items_count:    int = 0
-    dinos_count:    int = 0
-    pack_counts:    dict[str, int] = {}
-    errors:         list[str] = []
+    errors: list[str] = []
 
     try:
-        for kind, record in _iter_beacon_records(raw):
-            if kind == "creature":
-                normalized = _normalize_beacon_creature(record, source_label)
-                if normalized:
-                    if official_only and not is_official_blueprint(normalized):
-                        continue
-                    dinos_count += 1
-                    pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
-                    blueprints.append(normalized)
-            else:  # engram
-                if dinos_only:
-                    continue
-                normalized = _normalize_beacon_engram(record, source_label)
-                if normalized:
-                    if official_only and not is_official_blueprint(normalized):
-                        continue
-                    items_count += 1
-                    pack_counts[normalized["category"]] = pack_counts.get(normalized["category"], 0) + 1
-                    blueprints.append(normalized)
-    except (tarfile.TarError, OSError) as exc:
+        blueprints, items_count, dinos_count, pack_counts = await asyncio.to_thread(
+            _parse_beacon_bundle, raw, source_label, dinos_only, official_only,
+        )
+    except (tarfile.TarError, OSError, EOFError, zlib.error, ValueError) as exc:
+        # EOFError / zlib.error: truncated or corrupt gzip stream;
+        # ValueError: the unpacked-size cap above.
         raise HTTPException(
             status_code=400,
             detail=f"Could not read .beacondata archive: {exc}",
@@ -1097,7 +1137,7 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
 
 # ── Bulk deletion endpoints ───────────────────────────────────────────────────
 
-@router.delete("")
+@router.delete("", dependencies=[Depends(require_operator)])
 async def clear_blueprints(db: AsyncSession = Depends(get_db)):
     """Delete every blueprint row.  Metadata blob is reset too."""
     res = await db.execute(text("DELETE FROM ARKM_blueprints"))
@@ -1106,7 +1146,7 @@ async def clear_blueprints(db: AsyncSession = Depends(get_db)):
     return {"success": True, "removed": removed}
 
 
-@router.delete("/non-official")
+@router.delete("/non-official", dependencies=[Depends(require_operator)])
 async def prune_non_official_blueprints(db: AsyncSession = Depends(get_db)):
     """
     Drop every blueprint that is NOT vanilla / DLC / ASA content.
@@ -1131,7 +1171,7 @@ async def prune_non_official_blueprints(db: AsyncSession = Depends(get_db)):
     return {"success": True, "removed": removed, "kept": before - removed, "before": before}
 
 
-@router.delete("/by-source")
+@router.delete("/by-source", dependencies=[Depends(require_operator)])
 async def delete_by_source(
     source: str = Query(..., description="Exact source label to delete (case-sensitive)."),
     db: AsyncSession = Depends(get_db),
@@ -1147,7 +1187,7 @@ async def delete_by_source(
     return {"success": True, "removed": removed, "source": source}
 
 
-@router.delete("/by-filter")
+@router.delete("/by-filter", dependencies=[Depends(require_operator)])
 async def delete_by_filter(
     search:   Optional[str] = Query(None),
     category: Optional[str] = Query(None),
@@ -1192,8 +1232,13 @@ async def delete_by_filter(
     )
     removed = res.rowcount or 0
     if removed:
-        applied = ",".join(k for k in ("search", "category", "type", "source")
-                           if locals().get(k))
+        # Not locals(): inside a generator expression it is the generator's
+        # own frame, so the label always came out empty.
+        applied = ",".join(
+            k for k, v in (("search", search), ("category", category),
+                           ("type", type), ("source", source))
+            if v
+        )
         await _bump_meta(db, source_label=f"delete by-filter [{applied}] ({removed} removed)")
     return {
         "success": True,
@@ -1202,7 +1247,7 @@ async def delete_by_filter(
     }
 
 
-@router.delete("/{bp_id}")
+@router.delete("/{bp_id}", dependencies=[Depends(require_operator)])
 async def delete_one(bp_id: int, db: AsyncSession = Depends(get_db)):
     """Drop a single blueprint row by its integer id."""
     res = await db.execute(
@@ -1247,7 +1292,7 @@ async def list_all_categories(db: AsyncSession = Depends(get_db)):
     return {"categories": all_cats}
 
 
-@router.put("/{bp_id}/category")
+@router.put("/{bp_id}/category", dependencies=[Depends(require_operator)])
 async def update_blueprint_category(
     bp_id: int,
     body:  CategoryUpdate,
@@ -1263,7 +1308,7 @@ async def update_blueprint_category(
     return {"success": True, "id": bp_id, "category": body.category}
 
 
-@router.put("/bulk-category")
+@router.put("/bulk-category", dependencies=[Depends(require_operator)])
 async def bulk_update_category(
     body: BulkCategoryUpdate,
     db:   AsyncSession = Depends(get_db),
@@ -1307,7 +1352,7 @@ async def export_blueprints(db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/import")
+@router.post("/import", dependencies=[Depends(require_operator)])
 async def import_blueprints(
     body: ImportRequest,
     db:   AsyncSession = Depends(get_db),
@@ -1335,14 +1380,23 @@ async def import_blueprints(
             name = _extract_name(bp_path)
         bp_type = raw.get("type") or _classify_type(bp_path)
         normalized.append({
-            "id":        raw.get("id") or _make_id(name),
-            "name":      name,
-            "blueprint": bp_path,
-            "category":  raw.get("category", "Custom"),
-            "type":      bp_type,
-            "gfi":       raw.get("gfi"),
-            "source":    raw.get("source", "manual-import"),
+            # GET /export writes the row PK as ``id`` and the upstream id as
+            # ``ext_id``; prefer the latter so a backup restores it.
+            "id":          raw.get("ext_id") or raw.get("id") or _make_id(name),
+            "name":        name,
+            "blueprint":   bp_path,
+            "category":    raw.get("category", "Custom"),
+            "type":        bp_type,
+            "gfi":         raw.get("gfi"),
+            "source":      raw.get("source", "manual-import"),
+            "class":       raw.get("class"),
+            "description": raw.get("description"),
         })
+
+    # Checked before the replace-mode wipe: a file in another format
+    # normalises to nothing and used to leave an empty catalog behind.
+    if not normalized:
+        raise HTTPException(status_code=400, detail="No valid blueprints in payload.")
 
     if body.mode == "replace":
         await db.execute(text("DELETE FROM ARKM_blueprints"))

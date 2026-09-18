@@ -9,32 +9,41 @@ ARK: Survival Ascended dedicated server:
 Also provides specialised endpoints for the complex repeatable overrides
 (stack sizes, supply crate loot, crafting costs, NPC replacements, spawn
 entries).
-"""
-import json
-from datetime import datetime, timezone
-from typing import Optional, Any
 
-from fastapi import APIRouter, HTTPException
+Handlers are plain ``def``: every one of them does blocking SSH and store
+I/O, which FastAPI then runs in its threadpool instead of on the event loop.
+"""
+import re
+import shlex
+from datetime import datetime, timezone
+from typing import Any, Callable, Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import require_operator, require_viewer
 from app.core.config import server_settings
-from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
+from app.core.store import get_machine_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
-from app.ssh.scanner import read_remote_file, write_remote_file, backup_remote_file
+from app.ssh.scanner import write_remote_file, backup_remote_file
 from app.ssh.ini_parser import (
     parse_ini, write_ini, apply_changes,
     parse_stack_override, build_stack_override,
-    parse_supply_crate_override,
     parse_crafting_override, build_crafting_override,
     parse_npc_replacement, build_npc_replacement,
     get_setting_definitions, get_current_values, get_all_overrides,
-    SETTING_GROUPS, READONLY_SECTIONS, OVERRIDE_KEYS,
+    SETTING_GROUPS, OVERRIDE_KEYS,
 )
 
 router = APIRouter()
 
-# Settings key for the scanned container map
-_CONTAINERS_MAP_KEY = "containers_map"
+# Passwords never sent to non-admins.  UE config keys are case-insensitive
+# and may carry an array-operation prefix (+Key=, .Key=, -Key=).
+_SECRET_MASK    = "********"
+_SECRET_LINE_RE = re.compile(
+    r"^(\s*[+.!-]?(ServerAdminPassword|ServerPassword|SpectatorPassword)\s*=)([^\r\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 # ── Private helpers ────────────────────────────────────────────────────────────
@@ -132,6 +141,83 @@ def _find_uncategorized(ini, file_ref: str) -> dict[str, list[dict]]:
     return uncategorized
 
 
+def _mask_secrets(content: str) -> str:
+    """Replace every non-empty password value in raw INI text with the mask."""
+    return _SECRET_LINE_RE.sub(
+        lambda m: m.group(1) + (_SECRET_MASK if m.group(3) else ""), content,
+    )
+
+
+def _restore_secrets(content: str, current: str) -> str:
+    """
+    Put the live value back on password lines that still carry the mask.
+
+    Non-admins only ever see masked passwords, so saving that view (raw
+    editor or structured form) must not write the mask over the real value.
+    A key can appear in several sections with different values, so the n-th
+    line of a key gets the n-th live value of that key, not the first one.
+    """
+    live: dict[str, list[str]] = {}
+    for m in _SECRET_LINE_RE.finditer(current):
+        live.setdefault(m.group(2).lower(), []).append(m.group(3))
+    seen: dict[str, int] = {}
+
+    def restore(m: re.Match) -> str:
+        key = m.group(2).lower()
+        n   = seen.get(key, 0)
+        seen[key] = n + 1
+        if m.group(3) != _SECRET_MASK:
+            return m.group(0)
+        values = live.get(key, [])
+        return m.group(1) + (values[n] if n < len(values) else "")
+
+    return _SECRET_LINE_RE.sub(restore, content)
+
+
+def _read_ini(ssh: SSHManager, path: str) -> str:
+    """
+    Read an INI file, raising when it cannot be read.
+
+    ``read_remote_file`` returns None for a failed ``cat`` as well as for an
+    empty file; parsing a failed read as "" made a save rewrite the whole
+    file from just the changed keys.
+    """
+    stdout, stderr, exit_code = ssh.execute(f"cat {shlex.quote(path)}")
+    if exit_code != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not read {path}: {stderr or f'exit code {exit_code}'}",
+        )
+    return stdout
+
+
+def _write_ini(
+    ssh: SSHManager, path: str, content: str, current: str, backup: bool,
+) -> Optional[str]:
+    """
+    Overwrite an INI file, optionally after a timestamped backup.
+
+    Masked passwords get their live value back first.  A failed backup
+    aborts before anything is written, and a failed write raises instead of
+    being reported as saved.
+
+    Returns:
+        The backup path, or None when *backup* is False.
+    """
+    content     = _restore_secrets(content, current)
+    backup_path = None
+    if backup:
+        backup_path = backup_remote_file(ssh, path)
+        if not backup_path:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Backup of {path} failed; the file was not changed.",
+            )
+    if not write_remote_file(ssh, path, content):
+        raise HTTPException(status_code=500, detail=f"Writing {path} failed.")
+    return backup_path
+
+
 # ── Request schemas ────────────────────────────────────────────────────────────
 
 class SaveConfigRequest(BaseModel):
@@ -141,7 +227,7 @@ class SaveConfigRequest(BaseModel):
 
 
 class SaveRawRequest(BaseModel):
-    file:    str   # "gus" or "game"
+    file:    Literal["gus", "game"]
     content: str
     backup:  bool = True
 
@@ -198,13 +284,16 @@ async def get_definitions():
 
 
 @router.get("/machines/{machine_id}/containers/{container_name}/config")
-async def load_config(machine_id: int, container_name: str):
+def load_config(
+    machine_id: int, container_name: str, user: dict = Depends(require_viewer),
+):
     """
     Load and parse both INI files from a container.
 
     Returns the current values for all known settings, all complex overrides,
     mod-specific sections, and uncategorized keys — plus the raw file content
-    for advanced editing.
+    for advanced editing.  Passwords are masked for non-admins everywhere in
+    the response.
     """
     machine   = _get_machine_or_404(machine_id)
     cmap      = _get_containers_map()
@@ -230,11 +319,17 @@ async def load_config(machine_id: int, container_name: str):
     try:
         with _ssh_for_machine(machine) as ssh:
             if gus_path:
-                gus_content  = read_remote_file(ssh, gus_path)  or ""
+                gus_content  = _read_ini(ssh, gus_path)
             if game_path:
-                game_content = read_remote_file(ssh, game_path) or ""
+                game_content = _read_ini(ssh, game_path)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}")
+
+    if user["role"] != "admin":
+        gus_content  = _mask_secrets(gus_content)
+        game_content = _mask_secrets(game_content)
 
     gus_ini  = parse_ini(gus_content)
     game_ini = parse_ini(game_content)
@@ -255,8 +350,11 @@ async def load_config(machine_id: int, container_name: str):
     }
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/config")
-async def save_config(machine_id: int, container_name: str, req: SaveConfigRequest):
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/config",
+    dependencies=[Depends(require_operator)],
+)
+def save_config(machine_id: int, container_name: str, req: SaveConfigRequest):
     """Save structured setting changes to one or both INI files."""
     machine   = _get_machine_or_404(machine_id)
     cmap      = _get_containers_map()
@@ -266,31 +364,34 @@ async def save_config(machine_id: int, container_name: str, req: SaveConfigReque
 
     gus_path  = container.get("paths", {}).get("gameusersettings_ini")
     game_path = container.get("paths", {}).get("game_ini")
+    # Changes for a file the scan did not find used to be dropped while the
+    # response still said the save succeeded.
+    if (req.gus_changes and not gus_path) or (req.game_changes and not game_path):
+        raise HTTPException(
+            status_code=404,
+            detail="INI file path not found. Re-scan the container.",
+        )
     results: dict = {"gus": None, "game": None, "backups": []}
 
     try:
         with _ssh_for_machine(machine) as ssh:
-            if req.gus_changes and gus_path:
-                gus_ini     = parse_ini(read_remote_file(ssh, gus_path) or "")
-                gus_ini     = apply_changes(gus_ini, req.gus_changes)
-                new_content = write_ini(gus_ini)
-                if req.backup:
-                    bp = backup_remote_file(ssh, gus_path)
-                    if bp:
-                        results["backups"].append(bp)
-                ok = write_remote_file(ssh, gus_path, new_content)
-                results["gus"] = {"success": ok, "path": gus_path, "size": len(new_content)}
+            if req.gus_changes:
+                current     = _read_ini(ssh, gus_path)
+                new_content = write_ini(apply_changes(parse_ini(current), req.gus_changes))
+                bp = _write_ini(ssh, gus_path, new_content, current, req.backup)
+                if bp:
+                    results["backups"].append(bp)
+                results["gus"] = {"success": True, "path": gus_path, "size": len(new_content)}
 
-            if req.game_changes and game_path:
-                game_ini    = parse_ini(read_remote_file(ssh, game_path) or "")
-                game_ini    = apply_changes(game_ini, req.game_changes)
-                new_content = write_ini(game_ini)
-                if req.backup:
-                    bp = backup_remote_file(ssh, game_path)
-                    if bp:
-                        results["backups"].append(bp)
-                ok = write_remote_file(ssh, game_path, new_content)
-                results["game"] = {"success": ok, "path": game_path, "size": len(new_content)}
+            if req.game_changes:
+                current     = _read_ini(ssh, game_path)
+                new_content = write_ini(apply_changes(parse_ini(current), req.game_changes))
+                bp = _write_ini(ssh, game_path, new_content, current, req.backup)
+                if bp:
+                    results["backups"].append(bp)
+                results["game"] = {"success": True, "path": game_path, "size": len(new_content)}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}")
 
@@ -301,8 +402,11 @@ async def save_config(machine_id: int, container_name: str, req: SaveConfigReque
     }
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/config/raw")
-async def save_raw_config(machine_id: int, container_name: str, req: SaveRawRequest):
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/config/raw",
+    dependencies=[Depends(require_operator)],
+)
+def save_raw_config(machine_id: int, container_name: str, req: SaveRawRequest):
     """Write raw INI content directly (advanced editor)."""
     machine   = _get_machine_or_404(machine_id)
     cmap      = _get_containers_map()
@@ -317,13 +421,12 @@ async def save_raw_config(machine_id: int, container_name: str, req: SaveRawRequ
 
     try:
         with _ssh_for_machine(machine) as ssh:
-            backup_path = backup_remote_file(ssh, file_path) if req.backup else None
-            success     = write_remote_file(ssh, file_path, req.content)
+            current     = _read_ini(ssh, file_path)
+            backup_path = _write_ini(ssh, file_path, req.content, current, req.backup)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}")
-
-    if not success:
-        raise HTTPException(status_code=500, detail="Write failed.")
 
     return {
         "success":     True,
@@ -334,8 +437,11 @@ async def save_raw_config(machine_id: int, container_name: str, req: SaveRawRequ
     }
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/config/stacks")
-async def save_stack_overrides(
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/config/stacks",
+    dependencies=[Depends(require_operator)],
+)
+def save_stack_overrides(
     machine_id: int, container_name: str, req: SaveStacksRequest,
 ):
     """Save ConfigOverrideItemMaxQuantity entries to Game.ini."""
@@ -347,14 +453,18 @@ async def save_stack_overrides(
         })
         for i in req.items
     ]
-    return await _save_override_list(
+    return _save_override_list(
         machine_id, container_name,
         "ConfigOverrideItemMaxQuantity", values, req.backup,
+        keep_unparsed=parse_stack_override,
     )
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/config/crafting")
-async def save_crafting_overrides(
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/config/crafting",
+    dependencies=[Depends(require_operator)],
+)
+def save_crafting_overrides(
     machine_id: int, container_name: str, req: SaveCraftingRequest,
 ):
     """Save ConfigOverrideItemCraftingCosts entries to Game.ini."""
@@ -372,14 +482,18 @@ async def save_crafting_overrides(
         })
         for c in req.items
     ]
-    return await _save_override_list(
+    return _save_override_list(
         machine_id, container_name,
         "ConfigOverrideItemCraftingCosts", values, req.backup,
+        keep_unparsed=parse_crafting_override,
     )
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/config/npc-replacements")
-async def save_npc_replacements(
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/config/npc-replacements",
+    dependencies=[Depends(require_operator)],
+)
+def save_npc_replacements(
     machine_id: int, container_name: str, req: SaveNpcReplacementsRequest,
 ):
     """Save NPCReplacements entries to Game.ini."""
@@ -387,13 +501,17 @@ async def save_npc_replacements(
         build_npc_replacement({"from_class": i.from_class, "to_class": i.to_class})
         for i in req.items
     ]
-    return await _save_override_list(
+    return _save_override_list(
         machine_id, container_name, "NPCReplacements", values, req.backup,
+        keep_unparsed=parse_npc_replacement,
     )
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/config/override-raw")
-async def save_override_raw(
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/config/override-raw",
+    dependencies=[Depends(require_operator)],
+)
+def save_override_raw(
     machine_id: int, container_name: str, req: SaveOverrideRawRequest,
 ):
     """
@@ -407,19 +525,20 @@ async def save_override_raw(
             status_code=400,
             detail=f"'{req.key}' is not a valid override key.",
         )
-    return await _save_override_list(
+    return _save_override_list(
         machine_id, container_name, req.key, req.values, req.backup,
     )
 
 
 # ── Shared override helper ─────────────────────────────────────────────────────
 
-async def _save_override_list(
+def _save_override_list(
     machine_id:     int,
     container_name: str,
     key:            str,
     values:         list[str],
     backup:         bool,
+    keep_unparsed:  Optional[Callable[[str], Optional[dict]]] = None,
 ) -> dict:
     """
     Replace all entries for a repeatable INI key in Game.ini.
@@ -430,10 +549,33 @@ async def _save_override_list(
         key:            INI key to replace (e.g. ``ConfigOverrideItemMaxQuantity``).
         values:         New list of raw value strings.
         backup:         Create a timestamped backup before writing.
+        keep_unparsed:  Parser behind a typed editor.  Existing lines it cannot
+                        parse never reach that editor, so they are kept as
+                        they are instead of being deleted by the replace.
 
     Returns:
         Result dict with success flag, key name, count, and timestamp.
+
+    Raises:
+        HTTPException 400: A value spans more than one line, which would
+                           split into stray lines in Game.ini, or a typed
+                           value its own parser cannot read back.
     """
+    if any("\n" in v or "\r" in v for v in values):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Each {key} entry must be a single line.",
+        )
+    if keep_unparsed:
+        # Unparsed lines are kept on every later typed save, so a malformed
+        # row written here could only be removed from the Raw tab.
+        for n, v in enumerate(values, start=1):
+            if keep_unparsed(v) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Entry {n} of {key} is incomplete or malformed.",
+                )
+
     machine   = _get_machine_or_404(machine_id)
     cmap      = _get_containers_map()
     container = _find_container(cmap, machine_id, container_name)
@@ -446,21 +588,25 @@ async def _save_override_list(
 
     try:
         with _ssh_for_machine(machine) as ssh:
-            game_ini = parse_ini(read_remote_file(ssh, game_path) or "")
+            current  = _read_ini(ssh, game_path)
+            game_ini = parse_ini(current)
             section  = (
                 game_ini.get_section("/script/shootergame.shootergamemode")
                 or game_ini.ensure_section("/script/shootergame.shootergamemode")
             )
+            if keep_unparsed:
+                values = [
+                    v for v in section.get_all(key) if keep_unparsed(v) is None
+                ] + values
             section.set_all(key, values)
-            new_content = write_ini(game_ini)
-            if backup:
-                backup_remote_file(ssh, game_path)
-            success = write_remote_file(ssh, game_path, new_content)
+            _write_ini(ssh, game_path, write_ini(game_ini), current, backup)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}")
 
     return {
-        "success":  success,
+        "success":  True,
         "key":      key,
         "count":    len(values),
         "saved_at": datetime.now(timezone.utc).isoformat(),
