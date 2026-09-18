@@ -1,4 +1,4 @@
-@layer reset, legacy, base, ui, page, utilities;
+@layer reset, base, ui, page, utilities;
 
 @layer ui {
   /* position:relative keeps sr-only captions from widening the page. */

@@ -1,11 +1,12 @@
 /*
  * utilities.css -- small layout (l-*) and helper (u-*) classes.
  *
- * Deliberately short, so pages stop writing inline flex/grid/px. The last
+ * Deliberately short, so pages never write inline flex/grid/px. The last
  * layer, so a utility beats a component default. Breakpoints: 600 / 900 /
- * 1200px (see tokens.css).
+ * 1200px (see tokens.css). Add one only when three pages want it; anything
+ * used by a single page belongs in that page's CSS module.
  */
-@layer reset, legacy, base, ui, page, utilities;
+@layer reset, base, ui, page, utilities;
 
 @layer utilities {
   /* ------------------------------------------------------------ layout */
@@ -17,7 +18,8 @@
     max-width: var(--layout-content-max);
     margin-inline: auto;
     padding: var(--layout-page-pad);
-    /* Explicit, so a migrated page never inherits the legacy 17px body. */
+    /* Explicit: a page states its own density instead of inheriting whatever
+       the shell around it uses (.ui-scope-player re-points --text-body). */
     font-size: var(--text-body);
     line-height: var(--leading-normal);
   }

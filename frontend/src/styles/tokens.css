@@ -10,11 +10,13 @@
  * attribute selectors are not tied to :root, so a subtree can opt into the
  * other theme (the UI-kit harness uses this).
  *
- * Layer order is repeated at the top of every stylesheet of the new system,
- * so whichever file the bundler emits first fixes the same order:
- *   reset < legacy < base < ui < page < utilities
+ * Layer order is repeated at the top of every stylesheet of the system, so
+ * whichever file the bundler emits first fixes the same order:
+ *   reset < base < ui < page < utilities
+ * A repeat that lists a different set of names would re-order the layers,
+ * so the statement is copied verbatim (see styles/index.css).
  */
-@layer reset, legacy, base, ui, page, utilities;
+@layer reset, base, ui, page, utilities;
 
 @layer base {
   /* ---------------------------------------------------------------- dark */

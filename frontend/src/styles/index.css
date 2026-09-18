@@ -4,21 +4,25 @@
  * Import it FIRST in main.tsx (before App), so the layer order below is the
  * first one the bundle declares:
  *
- *   reset      element defaults, below the legacy sheet (base.css)
- *   legacy     src/index.css + pages/GameConfigPage.css, wrapped in
- *              @layer legacy at integration time; deleted after migration
- *   base       tokens, legacy aliases, global guarantees (focus ring,
- *              reduced motion, forced colours, 16px root)
+ *   reset      element defaults (base.css)
+ *   base       tokens and global guarantees (focus ring, selection and
+ *              scrollbars, [hidden], the dialog scroll lock, the skip link,
+ *              forced colours, 16px root). Motion is NOT one of them:
+ *              there is no global reduced-motion override, motion is
+ *              opt-in inside a no-preference query -- see base.css
  *   ui         components/ui/*.css and content classes
  *   page       page-level CSS modules (tokens only)
  *   utilities  l-* layout and u-* helpers
  *
- * Primitive stylesheets are imported by their own components.
+ * Primitive stylesheets are imported by their own components, and page CSS
+ * modules by their pages. Every one of those sheets repeats the statement
+ * below verbatim on its first line, so the order still holds whichever file
+ * the bundler happens to emit first; a repeat that lists a different set of
+ * names would silently re-order the layers.
  */
-@layer reset, legacy, base, ui, page, utilities;
+@layer reset, base, ui, page, utilities;
 
 @import "./tokens.css";
 @import "./base.css";
-@import "./legacy-aliases.css";
 @import "./content.css";
 @import "./utilities.css";

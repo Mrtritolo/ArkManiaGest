@@ -15,7 +15,12 @@ const FieldContext = createContext<FieldContextValue | null>(null);
 
 export interface FieldProps {
   label: ReactNode;
-  /** Exactly one Input | Select | Textarea | Combobox. */
+  /**
+   * One Input | Select | Textarea | Combobox, optionally inside a single
+   * wrapper element when the control needs an adjacent action (a 'reset to
+   * default' IconButton): the control reads its id from the Field context, so
+   * nesting does not break the label wiring.
+   */
   children: ReactElement;
   hint?: ReactNode;
   /** Cause + fix ('Enter a port between 1 and 65535'). Sets aria-invalid on the control. */

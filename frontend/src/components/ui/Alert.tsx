@@ -9,11 +9,20 @@ export type AlertTone = "info" | "success" | "warning" | "danger";
 export interface AlertProps {
   tone: AlertTone;
   title?: ReactNode;
+  /** Detail under the title. An empty string, null or false is "no detail": no empty body is rendered. */
   children?: ReactNode;
-  /** Button size="sm" secondary/ghost, e.g. Retry. */
+  /** Button size="sm" secondary/ghost, e.g. Retry. `canRetry && <Button/>` is fine: false renders no row. */
   actions?: ReactNode;
   onDismiss?: () => void;
   className?: string;
+}
+
+/**
+ * A slot is filled only by something that renders. `cond && <Button/>`,
+ * `null` and `''` (an error with no detail) must not leave an empty box.
+ */
+function present(node: ReactNode): boolean {
+  return node != null && node !== "" && typeof node !== "boolean";
 }
 
 const ICONS: Record<AlertTone, LucideIcon> = {
@@ -34,6 +43,7 @@ export function Alert({ tone, title, children, actions, onDismiss, className }: 
   const { t } = useTranslation();
   const Icon = ICONS[tone];
   const prefix = <span className="u-sr-only">{t(`ui.tone.${TONE_KEY[tone]}`)} </span>;
+  const hasTitle = present(title);
 
   return (
     <div
@@ -42,19 +52,19 @@ export function Alert({ tone, title, children, actions, onDismiss, className }: 
     >
       <Icon className="ui-alert__icon" aria-hidden="true" />
       <div className="ui-alert__content">
-        {title !== undefined && (
+        {hasTitle && (
           <div className="ui-alert__title">
             {prefix}
             {title}
           </div>
         )}
-        {children !== undefined && (
+        {present(children) && (
           <div className="ui-alert__body">
-            {title === undefined && prefix}
+            {!hasTitle && prefix}
             {children}
           </div>
         )}
-        {actions !== undefined && <div className="ui-alert__actions">{actions}</div>}
+        {present(actions) && <div className="ui-alert__actions">{actions}</div>}
       </div>
       {onDismiss && <IconButton size="sm" icon={X} label={t("ui.dismiss")} onClick={onDismiss} />}
     </div>

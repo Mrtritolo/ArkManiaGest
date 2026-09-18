@@ -13,7 +13,7 @@
  *   .ui-nav-item        vertical nav item (Sidebar, config rails)
  *   .ui-auth            centred auth / status card layout
  */
-@layer reset, legacy, base, ui, page, utilities;
+@layer reset, base, ui, page, utilities;
 
 @layer ui {
   /* ------------------------------------------------------ bold-stable

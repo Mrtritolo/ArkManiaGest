@@ -11,7 +11,12 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   size?: "sm" | "md";
   /** JetBrains Mono + tabular figures, ligatures off: IDs, numbers, paths, tokens. */
   mono?: boolean;
-  /** type="password" only: trailing toggle that shows the value (aria-pressed; the eye icon turns into eye-off). */
+  /**
+   * type="password" only: trailing toggle that shows the value (aria-pressed;
+   * the eye icon turns into eye-off). It stays usable while the input is
+   * `disabled` or `readOnly`: reading a value the backend already sent is not
+   * editing it.
+   */
   revealable?: boolean;
   /**
    * Goes on the outermost rendered element, like every kit control: the
@@ -70,7 +75,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             icon={revealed ? EyeOff : Eye}
             label={t("ui.showPassword")}
             pressed={revealed}
-            disabled={rest.disabled}
             onClick={() => setRevealed(v => !v)}
           />
         </span>

@@ -3,20 +3,19 @@
  *
  * Two layers on purpose:
  *
- *   @layer reset  sits BELOW the legacy stylesheet, so every legacy rule
- *                 beats these element defaults (headings, links, code,
- *                 lists, body typography). They still apply wherever the
- *                 legacy sheet leaves a property unset: legacy body text
- *                 and unclassed headings. Until the migration ends, the
- *                 legacy block of legacy-aliases.css keeps those at their
- *                 old size (17px inherited text, user-agent heading sizes)
- *                 outside migrated roots.
- *   @layer base   sits ABOVE legacy. Only rules every page must get,
- *                 migrated or not: 16px root, the neutral focus ring,
- *                 selection and scrollbar colours, [hidden], scroll lock,
- *                 reduced motion and forced colours.
+ *   @layer reset  element defaults: body typography, headings, links, code
+ *                 and figures. The lowest layer, so a primitive, a page
+ *                 module or a utility overrides them without a specificity
+ *                 fight. Nothing here is component-specific.
+ *   @layer base   the guarantees every page gets whatever it renders: the
+ *                 16px root, the neutral focus ring, selection and
+ *                 scrollbar colours, [hidden], the dialog scroll lock, the
+ *                 skip link and the forced-colours fallbacks. Above reset
+ *                 and below `ui`, so a primitive can still adjust one
+ *                 property locally (an inset focus ring only changes
+ *                 outline-offset).
  */
-@layer reset, legacy, base, ui, page, utilities;
+@layer reset, base, ui, page, utilities;
 
 @layer reset {
   *,
@@ -109,8 +108,8 @@
 
 @layer base {
   html {
-    /* The legacy sheet sets 15px then 17px; every rem token assumes the
-       user's default (normally 16px). */
+    /* Every rem token is sized against a 16px root, so keep the user's own
+       default instead of pinning a px value here. */
     font-size: 100%;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -179,20 +178,14 @@
     transform: none;
   }
 
-  /* Reduced motion. New components declare motion only inside
-     (prefers-reduced-motion: no-preference), so nothing has to be undone for
-     them. This net catches legacy CSS and inline animations; !important in
-     this layer outranks !important in later layers and unlayered styles. */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
-  }
+  /* Reduced motion has no global override here, on purpose. Motion is
+     opt-in: every @keyframes and every transition in the bundle is declared
+     inside @media (prefers-reduced-motion: no-preference) (primitives,
+     content.css, page modules), and the two smooth scrollIntoView calls
+     (MachinesPage, useInstanceForm) read the media query in JS before
+     asking for it. There is nothing left to undo, so the old `*` net with
+     !important was dropped with the legacy sheet it was aimed at. A new
+     rule that animates follows the same pattern -- MASTER.md section 4.5. */
 
   /* Forced colours (Windows High Contrast): tinted fills and box-shadow
      indicators are dropped, so state gets a system-colour edge. */
