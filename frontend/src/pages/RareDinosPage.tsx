@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { useTranslation } from 'react-i18next'
 import { arkRareDinosApi, blueprintsApi, type BlueprintRow } from '../services/api'
+import type { AuthUser } from '../types'
 import { copyText } from '../utils/clipboard'
 import {
   Eye, Plus, Trash2, Edit2, Save, X, AlertCircle, Search,
@@ -22,14 +23,15 @@ interface RareDino {
 
 interface BpItem { name: string; blueprint: string; category: string }
 
+// Labels come from i18n: rareDinos.stats.<key>.
 const STATS = [
-  { key: 'health', label: 'Health', icon: '❤️' },
-  { key: 'stamina', label: 'Stamina', icon: '⚡' },
-  { key: 'oxygen', label: 'Oxygen', icon: '💧' },
-  { key: 'food', label: 'Food', icon: '🍖' },
-  { key: 'weight', label: 'Weight', icon: '⚖️' },
-  { key: 'melee', label: 'Melee', icon: '⚔️' },
-  { key: 'speed', label: 'Speed', icon: '💨' },
+  { key: 'health', icon: '❤️' },
+  { key: 'stamina', icon: '⚡' },
+  { key: 'oxygen', icon: '💧' },
+  { key: 'food', icon: '🍖' },
+  { key: 'weight', icon: '⚖️' },
+  { key: 'melee', icon: '⚔️' },
+  { key: 'speed', icon: '💨' },
 ]
 
 const DEFAULT_STATS = {
@@ -39,8 +41,17 @@ const DEFAULT_STATS = {
   speed_min: -1, speed_max: -1,
 }
 
-export default function RareDinosPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function RareDinosPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Pool edits (add, edit, toggle, delete, bulk apply) are require_operator
+  // server side; wiping the spawn log is require_admin. The generator is
+  // only a preview of a bulk apply, so it goes with the pool edits.
+  const isAdmin = currentUser?.role === 'admin'
+  const canOperate = isAdmin || currentUser?.role === 'operator'
   const [dinos, setDinos] = useState<RareDino[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -204,7 +215,7 @@ export default function RareDinosPage() {
 
   async function toggleEnabled(id: number, current: boolean) {
     try { await arkRareDinosApi.update(id, { enabled: !current }); await loadDinos() }
-    catch (e: any) { setError(e.message) }
+    catch (e: any) { setError(e.response?.data?.detail || e.message) }
   }
 
   async function handleClearSpawnTable() {
@@ -222,21 +233,9 @@ export default function RareDinosPage() {
       // state would mean threading more plumbing for one toast.
       window.alert(t('rareDinos.clearSpawnsDone', { count: res.data.deleted }))
     } catch (e: unknown) {
-      // FastAPI returns `detail: string` for HTTPException raises, but
-      // Pydantic validation errors come back as `detail: Array<{type,
-      // loc, msg, input}>`.  Rendering an object directly into JSX
-      // throws React error #31, so coerce arrays into a readable string.
-      const raw = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-      let detail = ''
-      if (Array.isArray(raw)) {
-        detail = raw
-          .map(it => (it && typeof it === 'object' && 'msg' in it ? String((it as { msg: unknown }).msg) : JSON.stringify(it)))
-          .join('; ')
-      } else if (typeof raw === 'string') {
-        detail = raw
-      } else if (raw) {
-        detail = JSON.stringify(raw)
-      }
+      // The api.ts response interceptor already turns a Pydantic array
+      // `detail` into a string, so it is always safe to render here.
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || t('rareDinos.clearSpawnsFailed'))
     } finally {
       setClearingSpawns(false)
@@ -246,7 +245,7 @@ export default function RareDinosPage() {
   async function handleDelete(id: number, name: string) {
     if (!confirm(t('rareDinos.confirmDelete', { name }))) return
     try { await arkRareDinosApi.delete(id); await loadDinos() }
-    catch (e: any) { setError(e.message) }
+    catch (e: any) { setError(e.response?.data?.detail || e.message) }
   }
 
   function formatStat(min: number, max: number) {
@@ -267,15 +266,19 @@ export default function RareDinosPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <button onClick={handleClearSpawnTable} disabled={clearingSpawns} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }} aria-label={t('rareDinos.clearSpawnsTitle')} title={t('rareDinos.clearSpawnsTitle')}>
-            <Trash2 size={15} /> {clearingSpawns ? t('rareDinos.clearingSpawns') : t('rareDinos.clearSpawns')}
-          </button>
-          <button onClick={() => { setShowGenerator(true); setGenResults([]) }} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }}>
-            <Shuffle size={15} /> {t('rareDinos.generateRandom')}
-          </button>
-          <button onClick={openAddModal} className="btn btn-primary">
-            <Plus size={16} /> {t('rareDinos.addDino')}
-          </button>
+          {isAdmin && (
+            <button onClick={handleClearSpawnTable} disabled={clearingSpawns} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }} aria-label={t('rareDinos.clearSpawnsTitle')} title={t('rareDinos.clearSpawnsTitle')}>
+              <Trash2 size={15} /> {clearingSpawns ? t('rareDinos.clearingSpawns') : t('rareDinos.clearSpawns')}
+            </button>
+          )}
+          {canOperate && (<>
+            <button onClick={() => { setShowGenerator(true); setGenResults([]) }} className="btn btn-ghost" style={{ borderColor: 'var(--border)' }}>
+              <Shuffle size={15} /> {t('rareDinos.generateRandom')}
+            </button>
+            <button onClick={openAddModal} className="btn btn-primary">
+              <Plus size={16} /> {t('rareDinos.addDino')}
+            </button>
+          </>)}
         </div>
       </div>
 
@@ -435,7 +438,7 @@ export default function RareDinosPage() {
             <span>{t('rareDinos.table.dino')}</span>
             <span>{t('rareDinos.table.map')}</span>
             <span style={{ textAlign: 'center' }}>{t('rareDinos.table.status')}</span>
-            {STATS.map(s => <span key={s.key} style={{ textAlign: 'center' }}>{s.icon} {s.label}</span>)}
+            {STATS.map(s => <span key={s.key} style={{ textAlign: 'center' }}>{s.icon} {t(`rareDinos.stats.${s.key}`)}</span>)}
             <span style={{ textAlign: 'center' }}>{t('rareDinos.table.actions')}</span>
           </div>
 
@@ -463,7 +466,11 @@ export default function RareDinosPage() {
 
               {/* Toggle */}
               <div style={{ textAlign: 'center' }}>
-                <button onClick={() => toggleEnabled(dino.id, dino.enabled)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
+                {/* aria-disabled rather than disabled: the state stays readable
+                    and the tooltip still says why it cannot be flipped. */}
+                <button onClick={() => { if (canOperate) toggleEnabled(dino.id, dino.enabled) }}
+                  aria-disabled={!canOperate} title={canOperate ? undefined : t('rareDinos.operatorOnly')}
+                  style={{ background: 'none', border: 'none', cursor: canOperate ? 'pointer' : 'default', padding: 2 }}>
                   {dino.enabled ? <ToggleRight size={22} color="var(--success)" /> : <ToggleLeft size={22} color="var(--text-muted)" />}
                 </button>
               </div>
@@ -480,15 +487,19 @@ export default function RareDinosPage() {
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'center' }}>
-                <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} aria-label={t('rareDinos.tooltip.edit')} title={t('rareDinos.tooltip.edit')}>
-                  <Edit2 size={14} />
-                </button>
+                {canOperate && (
+                  <button onClick={() => openEditModal(dino)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} aria-label={t('rareDinos.tooltip.edit')} title={t('rareDinos.tooltip.edit')}>
+                    <Edit2 size={14} />
+                  </button>
+                )}
                 <button onClick={() => { void copyText(dino.dino_bp) }} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem' }} aria-label={t('rareDinos.tooltip.copyBp')} title={t('rareDinos.tooltip.copyBp')}>
                   <Copy size={14} />
                 </button>
-                <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} aria-label={t('rareDinos.tooltip.delete')} title={t('rareDinos.tooltip.delete')}>
-                  <Trash2 size={14} />
-                </button>
+                {canOperate && (
+                  <button onClick={() => handleDelete(dino.id, dino.display_name)} className="btn btn-ghost" style={{ padding: '0.2rem 0.35rem', color: 'var(--danger)' }} aria-label={t('rareDinos.tooltip.delete')} title={t('rareDinos.tooltip.delete')}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -652,7 +663,7 @@ export default function RareDinosPage() {
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}>
-                          {s.icon} {s.label}
+                          {s.icon} {t(`rareDinos.stats.${s.key}`)}
                         </span>
                         <button onClick={() => {
                           if (isActive) {

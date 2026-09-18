@@ -16,7 +16,7 @@
  * fonts, spacing and colours are consistent with Machines / Players /
  * GameConfig pages.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Play,
@@ -61,7 +61,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 interface Props {
-  /** Passed in from App.tsx so the Delete button is gated for non-admins. */
+  /** Passed in from App.tsx so write controls are gated by role. */
   currentUser?: AuthUser | null;
 }
 
@@ -120,6 +120,9 @@ function emptyImportForm(c: DiscoveredContainer): ImportFormState {
 export default function ServerInstancesPage({ currentUser }: Props) {
   const { t } = useTranslation();
   const isAdmin = currentUser?.role === "admin";
+  // servers.py / containers.py: create, edit, import, scan and every
+  // lifecycle action need an operator; delete needs an admin.
+  const canOperate = isAdmin || currentUser?.role === "operator";
 
   const [instances, setInstances]   = useState<ServerInstance[]>([]);
   const [machines, setMachines]     = useState<SSHMachine[]>([]);
@@ -134,6 +137,8 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   // Per-row action state
   const [busyId, setBusyId] = useState<{ id: number; action: string } | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Read after an awaited action, when the closure's expandedId may be stale.
+  const expandedIdRef = useRef<number | null>(null);
   const [actionLog, setActionLog] = useState<Record<number, InstanceAction[]>>({});
 
   // Create / edit modal-as-card
@@ -141,6 +146,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ServerInstanceCreate>({ ...emptyForm });
   const [saving, setSaving] = useState(false);
+  const [clearServerPassword, setClearServerPassword] = useState(false);
 
   // Scan + import-orphan flow
   const [scanningMachineId, setScanningMachineId] = useState<number | null>(null);
@@ -197,6 +203,32 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     return () => clearTimeout(tm);
   }, [success]);
 
+  // While a log drawer is open, re-read its rows and the instance status.
+  // Some actions finish after their request returned (a native countdown
+  // restart announces and restarts from a background task, another operator
+  // acts on the same instance) and would otherwise never show up.
+  useEffect(() => {
+    expandedIdRef.current = expandedId;
+    if (expandedId === null) return;
+    const id = expandedId;
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      loadActionLog(id);
+      refreshOne(id);
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [expandedId]);
+
+  // Close the drawer once its card is gone (deleted, or hidden by the machine
+  // filter): the card can no longer be clicked, so the poll above would keep
+  // running against it.
+  useEffect(() => {
+    if (expandedId === null) return;
+    const visible = instances.some((i) => i.id === expandedId
+      && (filterMachineId === "all" || i.machine_id === filterMachineId));
+    if (!visible) setExpandedId(null);
+  }, [expandedId, instances, filterMachineId]);
+
   // -------------------------------------------------------------------------
   // Derived data
   // -------------------------------------------------------------------------
@@ -237,13 +269,14 @@ export default function ServerInstancesPage({ currentUser }: Props) {
 
   function showActionFeedback(result: InstanceActionResult) {
     if (result.status === "success") {
-      setSuccess(`OK (rc=${result.exit_code}, ${result.duration_ms} ms)`);
+      setSuccess(t("instances.actionOk", { rc: result.exit_code, ms: result.duration_ms }));
     } else {
-      setError(
-        `rc=${result.exit_code}: ${(
+      setError(t("instances.actionFailed", {
+        rc: result.exit_code,
+        output: (
           result.stderr_tail || result.stdout_tail || t("instances.errors.action")
-        ).split("\n").slice(-5).join(" | ")}`,
-      );
+        ).split("\n").slice(-5).join(" | "),
+      }));
     }
   }
 
@@ -281,15 +314,17 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       if ("scheduled" in res.data) {
         // Native countdown restart: nothing ran yet, the panel is holding a
         // timer. The announcements and the restart write their own audit
-        // rows, so the log drawer picks them up as they happen.
+        // rows, which the open log drawer picks up on its periodic re-read.
         setSuccess(res.data.detail);
       } else {
         showActionFeedback(res.data);
       }
       await refreshOne(id);
-      if (expandedId === id) await loadActionLog(id);
+      if (expandedIdRef.current === id) await loadActionLog(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("instances.errors.action"));
+      // AxiosError is an Error too: read the backend detail (409 on shared
+      // installs or port clashes) instead of "Request failed with status code".
+      setError(extractError(e, t("instances.errors.action")));
     } finally {
       setBusyId(null);
     }
@@ -309,7 +344,8 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       const res = await serverInstancesApi.actions(id, { limit: 20 });
       setActionLog((prev) => ({ ...prev, [id]: res.data }));
     } catch {
-      setActionLog((prev) => ({ ...prev, [id]: [] }));
+      // A failed periodic re-read keeps the rows already on screen.
+      setActionLog((prev) => (prev[id] ? prev : { ...prev, [id]: [] }));
     }
   }
 
@@ -318,7 +354,9 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       setExpandedId(null);
     } else {
       setExpandedId(id);
-      if (!actionLog[id]) await loadActionLog(id);
+      // Always re-read: actions run while the drawer was closed are not in
+      // the cached rows, which stay on screen until the new ones arrive.
+      await loadActionLog(id);
     }
   }
 
@@ -329,6 +367,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
   function openCreate() {
     setEditingId(null);
     setForm({ ...emptyForm, machine_id: machines[0]?.id ?? 0 });
+    setClearServerPassword(false);
     setShowForm(true);
   }
 
@@ -361,6 +400,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       cpu_optimization: inst.cpu_optimization,
       pok_base_dir: inst.pok_base_dir,
     });
+    setClearServerPassword(false);
     setShowForm(true);
   }
 
@@ -368,6 +408,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     setShowForm(false);
     setEditingId(null);
     setForm({ ...emptyForm });
+    setClearServerPassword(false);
   }
 
   function setField<K extends keyof ServerInstanceCreate>(
@@ -406,15 +447,18 @@ export default function ServerInstancesPage({ currentUser }: Props) {
           cpu_optimization: form.cpu_optimization,
         };
         if (form.admin_password)  payload.admin_password  = form.admin_password;
-        if (form.server_password) payload.server_password = form.server_password;
+        // An empty string clears the stored join password; omitting the
+        // field keeps it (servers.py maps "" to NULL).
+        if (clearServerPassword) payload.server_password = "";
+        else if (form.server_password) payload.server_password = form.server_password;
         await serverInstancesApi.update(editingId, payload);
       }
-      setSuccess(t("instances.form.save"));
+      setSuccess(t("instances.saved"));
       await loadInstances();
       closeForm();
     } catch (e) {
-      setError(e instanceof Error ? e.message
-        : t(editingId === null ? "instances.errors.create" : "instances.errors.update"));
+      setError(extractError(e,
+        t(editingId === null ? "instances.errors.create" : "instances.errors.update")));
     } finally {
       setSaving(false);
     }
@@ -427,9 +471,9 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     try {
       await serverInstancesApi.delete(inst.id, purge);
       await loadInstances();
-      setSuccess("OK");
+      setSuccess(t("instances.deleted", { name: inst.name }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("instances.errors.delete"));
+      setError(extractError(e, t("instances.errors.delete")));
     }
   }
 
@@ -497,6 +541,9 @@ export default function ServerInstancesPage({ currentUser }: Props) {
     : instances.filter((i) => i.machine_id === filterMachineId);
 
   const isAnyScanning = scanningMachineId !== null;
+  const editingInstance = editingId === null
+    ? undefined
+    : instances.find((i) => i.id === editingId);
 
   return (
     <div>
@@ -531,21 +578,25 @@ export default function ServerInstancesPage({ currentUser }: Props) {
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
-          <button
-            className="btn btn-secondary"
-            onClick={handleScanAll}
-            disabled={isAnyScanning || machines.length === 0}
-          >
-            <RefreshCw size={14} style={{ animation: isAnyScanning ? "spin 1s linear infinite" : "none" }} />
-            {isAnyScanning ? t("instances.scanning") : t("instances.scanAll")}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={openCreate}
-            disabled={machines.length === 0}
-          >
-            <Plus size={14} /> {t("instances.newButton")}
-          </button>
+          {canOperate && (
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={handleScanAll}
+                disabled={isAnyScanning || machines.length === 0}
+              >
+                <RefreshCw size={14} style={{ animation: isAnyScanning ? "spin 1s linear infinite" : "none" }} />
+                {isAnyScanning ? t("instances.scanning") : t("instances.scanAll")}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={openCreate}
+                disabled={machines.length === 0}
+              >
+                <Plus size={14} /> {t("instances.newButton")}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -562,7 +613,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       )}
 
       {/* ── Create / edit form ─────────────────────────────────────── */}
-      {showForm && (
+      {canOperate && showForm && (
         <div className="card card-form mb-8">
           <h2 className="card-title">
             <span className="card-title-icon">{editingId === null ? "+" : "~"}</span>
@@ -692,7 +743,21 @@ export default function ServerInstancesPage({ currentUser }: Props) {
                   type="password"
                   value={form.server_password ?? ""}
                   onChange={(e) => setField("server_password", e.target.value)}
+                  disabled={clearServerPassword}
                 />
+                {/* A blank field keeps the stored password, so removing it
+                    needs its own explicit control. */}
+                {editingInstance?.has_server_password && (
+                  <label className="form-label-inline">
+                    <input
+                      className="form-checkbox"
+                      type="checkbox"
+                      checked={clearServerPassword}
+                      onChange={(e) => setClearServerPassword(e.target.checked)}
+                    />
+                    {t("instances.form.clearServerPassword")}
+                  </label>
+                )}
               </div>
 
               <div className="form-group form-group-3">
@@ -751,6 +816,8 @@ export default function ServerInstancesPage({ currentUser }: Props) {
                   className="form-input"
                   value={form.pok_base_dir ?? ""}
                   onChange={(e) => setField("pok_base_dir", e.target.value)}
+                  // ServerInstanceUpdate has no pok_base_dir: an edit would be dropped.
+                  disabled={editingId !== null}
                 />
               </div>
 
@@ -830,6 +897,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
               inst={inst}
               busyId={busyId}
               isAdmin={isAdmin}
+              canOperate={canOperate}
               expanded={expandedId === inst.id}
               actions={actionLog[inst.id]}
               machineLabel={machineName(inst.machine_id)}
@@ -858,7 +926,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
                 key={`${c.machine_id}-${c.name}`}
                 container={c}
                 machineLabel={machineName(c.machine_id)}
-                onImport={() => openImport(c)}
+                onImport={canOperate ? () => openImport(c) : undefined}
               />
             ))}
           </div>
@@ -866,7 +934,7 @@ export default function ServerInstancesPage({ currentUser }: Props) {
       )}
 
       {/* ── Import dialog (rendered as inline card, scrolls into view) ── */}
-      {importingFor && importForm && (
+      {canOperate && importingFor && importForm && (
         <div className="card card-form mt-8">
           <h2 className="card-title">
             <span className="card-title-icon"><PackagePlus size={14} /></span>
@@ -949,6 +1017,7 @@ interface InstanceCardProps {
   inst: ServerInstance;
   busyId: { id: number; action: string } | null;
   isAdmin: boolean;
+  canOperate: boolean;
   expanded: boolean;
   actions: InstanceAction[] | undefined;
   machineLabel: string;
@@ -974,7 +1043,7 @@ function InstanceCard(p: InstanceCardProps) {
           <h3 className="machine-card-name">
             {inst.display_name || inst.name}
             <span className="machine-card-tag">{inst.map_name}</span>
-            {inst.cluster_id && <span className="machine-card-tag">cluster: {inst.cluster_id}</span>}
+            {inst.cluster_id && <span className="machine-card-tag">{t("instances.clusterTag", { id: inst.cluster_id })}</span>}
           </h3>
           <p className="machine-card-host">
             {p.machineLabel} &middot; {inst.container_name || inst.service_name || inst.name} &middot; {inst.game_port}/{inst.rcon_port}
@@ -992,7 +1061,8 @@ function InstanceCard(p: InstanceCardProps) {
         </div>
       </div>
 
-      {/* Always-visible action toolbar */}
+      {/* Always-visible action toolbar (hidden for viewers: every call needs an operator) */}
+      {p.canOperate && (
       <div className="machine-card-actions">
         <ActionBtn icon={<Play     size={14} />} label={t("instances.actions.start")}   busy={busy && busyId?.action === "start"}   disabled={!!busyId} onClick={() => p.onAction("start")} />
         <ActionBtn icon={<Square   size={14} />} label={t("instances.actions.stop")}    busy={busy && busyId?.action === "stop"}    disabled={!!busyId} onClick={() => p.onAction("stop")} />
@@ -1014,6 +1084,7 @@ function InstanceCard(p: InstanceCardProps) {
           </button>
         )}
       </div>
+      )}
 
       {expanded && (
         <div className="machine-card-body">
@@ -1056,7 +1127,8 @@ function InstanceCard(p: InstanceCardProps) {
 interface OrphanCardProps {
   container: DiscoveredContainer;
   machineLabel: string;
-  onImport: () => void;
+  /** Omitted for roles that cannot import (the button is hidden). */
+  onImport?: () => void;
 }
 
 function OrphanCard({ container, machineLabel, onImport }: OrphanCardProps) {
@@ -1074,7 +1146,7 @@ function OrphanCard({ container, machineLabel, onImport }: OrphanCardProps) {
                 : "badge badge-md badge-offline"
             }>
               <span className="badge-dot" />
-              {container.status || (container.process_running ? "running" : "stopped")}
+              {container.status || t(container.process_running ? "instances.status.running" : "instances.status.stopped")}
             </span>
           </h3>
           <p className="machine-card-host">
@@ -1087,11 +1159,13 @@ function OrphanCard({ container, machineLabel, onImport }: OrphanCardProps) {
             </p>
           )}
         </div>
-        <div className="machine-card-status">
-          <button className="btn btn-primary btn-sm" onClick={onImport}>
-            <PackagePlus size={14} /> {t("instances.importButton")}
-          </button>
-        </div>
+        {onImport && (
+          <div className="machine-card-status">
+            <button className="btn btn-primary btn-sm" onClick={onImport}>
+              <PackagePlus size={14} /> {t("instances.importButton")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

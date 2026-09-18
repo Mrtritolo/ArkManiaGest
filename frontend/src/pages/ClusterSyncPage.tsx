@@ -16,7 +16,7 @@ import {
   Clock, HelpCircle, Copy, Check,
 } from 'lucide-react'
 import { clusterSyncApi } from '../services/api'
-import type { ClusterSyncHealth, ClusterSyncStatus } from '../types'
+import type { AuthUser, ClusterSyncHealth, ClusterSyncStatus } from '../types'
 
 const GRID_COLUMNS = '1.4fr 2.2fr 90px 110px 150px 1fr'
 
@@ -43,25 +43,33 @@ function formatBytes(n: number): string {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-export default function ClusterSyncPage() {
+interface Props {
+  // Passed to every page by App.tsx; this page is read-only for every role.
+  currentUser?: AuthUser | null
+}
+
+export default function ClusterSyncPage(_props: Props) {
   const { t } = useTranslation()
   const [clusters, setClusters] = useState<ClusterSyncHealth[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  // null = no error; '' = failed without a detail (generic message at render).
+  const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState('')
 
+  // No dependency on `t`: it changes identity on a language switch, and every
+  // reload probes each cluster host over SSH.
   const load = useCallback(async () => {
     setLoading(true)
-    setError('')
+    setError(null)
     try {
       const res = await clusterSyncApi.list()
       setClusters(res.data)
     } catch (e: any) {
-      setError(e?.response?.data?.detail || t('clusterSync.loadError'))
+      setError(e?.response?.data?.detail || '')
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -93,10 +101,10 @@ export default function ClusterSyncPage() {
         </button>
       </div>
 
-      {error && (
+      {error !== null && (
         <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
-          <AlertCircle size={14} /> {error}
-          <button onClick={() => setError('')}
+          <AlertCircle size={14} /> {error || t('clusterSync.loadError')}
+          <button onClick={() => setError(null)}
             style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>×</button>
         </div>
       )}

@@ -8,7 +8,7 @@ import {
   ShoppingBag, Settings, Package, MessageSquare, Database,
   Upload, Download, Save, Plus, Trash2, Edit3, X, Search,
   DollarSign, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
-  Server, CloudDownload, CloudUpload, RefreshCw, Archive, RotateCcw, Play, Square, Clock
+  CloudDownload, CloudUpload, RefreshCw, Archive, RotateCcw, Play, Clock
 } from 'lucide-react'
 import {
   arkshopApi, blueprintsApi,
@@ -16,6 +16,7 @@ import {
   type ArkServerRow, type PluginVersionRow, type PluginPushSummary,
   type ArkShopMysql,
 } from '../services/api'
+import type { AuthUser } from '../types'
 
 type Tab = 'mysql' | 'general' | 'shop' | 'kits' | 'sell' | 'messages'
 
@@ -164,8 +165,17 @@ function SubItemEditor({ items, onChange }: { items: any[]; onChange: (items: an
 }
 
 // ===== MAIN =====
-export default function ArkShopPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function ArkShopPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Same split as the backend: entry/General/Messages edits, pull, deploy and
+  // version save/restore are require_operator; replacing or clearing the whole
+  // config, the MySQL block and deleting versions are require_admin.
+  const isAdmin = currentUser?.role === 'admin'
+  const canOperate = isAdmin || currentUser?.role === 'operator'
   const [configLoaded, setConfigLoaded] = useState(false)
   const [tab, setTab] = useState<Tab>('shop')
   const [loading, setLoading] = useState(false)
@@ -265,6 +275,11 @@ export default function ArkShopPage() {
     if (kit.status === 'fulfilled') setKits(kit.value.data)
     if (sell.status === 'fulfilled') setSellItems(sell.value.data)
     if (msg.status === 'fulfilled') setMessages(msg.value.data)
+    // Pull and restore do not return counts; report the ones just loaded.
+    return {
+      items: shop.status === 'fulfilled' ? shop.value.data.length : 0,
+      kits: kit.status === 'fulfilled' ? kit.value.data.length : 0,
+    }
   }
   useEffect(() => {
     arkshopApi.configStatus().then(r => {
@@ -286,9 +301,9 @@ export default function ArkShopPage() {
     setPulling(true); setError('')
     try {
       const res = await arkshopApi.pull(machineId, containerName)
-      setSuccess(t('arkshop.messagesResult.pullSuccess', { source: res.data.source, items: res.data.shop_items, kits: res.data.kits }))
       setConfigLoaded(true)
-      loadAll()
+      const counts = await loadAll()
+      setSuccess(t('arkshop.messagesResult.pullSuccess', { source: res.data.source, ...counts }))
     } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.pullError')) }
     finally { setPulling(false) }
   }
@@ -334,8 +349,8 @@ export default function ArkShopPage() {
   async function handleRestoreVersion(id: number) {
     try {
       const res = await arkshopApi.restoreVersion(id)
-      setSuccess(t('arkshop.messagesResult.versionRestored', { label: res.data.label, items: res.data.shop_items, kits: res.data.kits }))
-      loadAll()
+      const counts = await loadAll()
+      setSuccess(t('arkshop.messagesResult.versionRestored', { label: res.data.label, ...counts }))
     } catch (err: any) { setError(err.response?.data?.detail || t('arkshop.messagesResult.versionRestoreError')) }
   }
 
@@ -367,9 +382,16 @@ export default function ArkShopPage() {
 
   // ===== Save from dialog =====
   async function handleDialogSave() {
-    if (!dialogData?.key) { setError(t('arkshop.messagesResult.keyRequired')); return }
+    if (!dialogData?.key?.trim()) { setError(t('arkshop.messagesResult.keyRequired')); return }
+    const { key: rawKey, ...data } = dialogData
+    const key = dialogIsNew ? rawKey.trim() : rawKey
+    // The PUT is an upsert: a "new" entry with an existing key would silently
+    // replace that entry (items, price, permissions) with this one.
+    if (dialogIsNew) {
+      const existing = dialogType === 'shop' ? shopItems : dialogType === 'kit' ? kits : sellItems
+      if (existing.some(e => e.key === key)) { setError(t('arkshop.messagesResult.keyExists', { key })); return }
+    }
     try {
-      const { key, ...data } = dialogData
       if (dialogType === 'shop') {
         await arkshopApi.updateShopItem(key, data)
         const res = await arkshopApi.listShopItems(); setShopItems(res.data)
@@ -435,10 +457,12 @@ export default function ArkShopPage() {
                   <td>{s.map_name || '-'}</td>
                   <td><span className="pl-sync-mono">{s.hostname}</span></td>
                   <td>
+                    {canOperate && (
                     <button onClick={() => handlePull(s.machine_id, s.container_name)}
                       disabled={pulling} className="btn btn-primary btn-sm" style={{ padding: '0.2rem 0.5rem' }}>
                       {pulling ? <Loader2 size={12} className="pl-spin" /> : <CloudDownload size={12} />} {t('arkshop.loadFromServer.pullButton')}
                     </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -448,6 +472,7 @@ export default function ArkShopPage() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('arkshop.loadFromServer.empty')}</p>
         )}
 
+        {isAdmin && (
         <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
           <p className="card-text" style={{ marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('arkshop.loadFromServer.manualHint')}</p>
           <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileUpload} style={{ display: 'none' }} />
@@ -455,6 +480,7 @@ export default function ArkShopPage() {
             <Upload size={14} /> {loading ? t('arkshop.loadFromServer.uploading') : t('arkshop.loadFromServer.uploadButton')}
           </button>
         </div>
+        )}
       </div>
     </div>
   )
@@ -468,12 +494,14 @@ export default function ArkShopPage() {
           <p className="page-subtitle">{t('arkshop.subtitleStats', { items: shopItems.length, kits: kits.length, sell: sellItems.length })}</p>
         </div>
         <div className="page-header-actions">
-          <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: 'var(--danger)' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>
-          <button onClick={handleUploadClick} className="btn btn-secondary btn-sm"><Upload size={14} /> {t('arkshop.actions.reload')}</button>
+          {isAdmin && <button onClick={handleReset} className="btn btn-secondary btn-sm" style={{ color: 'var(--danger)' }}><RotateCcw size={14} /> {t('arkshop.actions.reset')}</button>}
+          {isAdmin && <button onClick={handleUploadClick} className="btn btn-secondary btn-sm"><Upload size={14} /> {t('arkshop.actions.reload')}</button>}
           <button onClick={handleExport} className="btn btn-secondary btn-sm"><Download size={14} /> {t('arkshop.actions.export')}</button>
+          {canOperate && (
           <button onClick={() => setShowDeploy(!showDeploy)} className="btn btn-primary btn-sm" disabled={pushing}>
             {pushing ? <Loader2 size={14} className="pl-spin" /> : <CloudUpload size={14} />} {t('arkshop.actions.deploy')}
           </button>
+          )}
         </div>
       </div>
       <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileUpload} style={{ display: 'none' }} />
@@ -481,7 +509,7 @@ export default function ArkShopPage() {
       {success && <div className="pl-alert pl-alert-ok"><CheckCircle size={14} /> {success}</div>}
 
       {/* Deploy panel */}
-      {showDeploy && (
+      {showDeploy && canOperate && (
         <div className="pl-sync-panel" style={{ marginBottom: '1rem' }}>
           <div className="pl-sync-header">
             <span className="pl-sync-title"><CloudUpload size={14} /> {t('arkshop.deploy.title')}</span>
@@ -538,10 +566,12 @@ export default function ArkShopPage() {
                               className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem' }} aria-label={t('arkshop.deploy.restoreCurrent')} title={t('arkshop.deploy.restoreCurrent')}>
                               <RotateCcw size={10} />
                             </button>
+                            {isAdmin && (
                             <button onClick={() => handleDeleteVersion(v.id)}
                               className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', color: 'var(--danger)' }} aria-label={t('arkshop.deploy.deleteTitle')} title={t('arkshop.deploy.deleteTitle')}>
                               <Trash2 size={10} />
                             </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -641,7 +671,7 @@ export default function ArkShopPage() {
           <select value={shopTypeFilter} onChange={e => setShopTypeFilter(e.target.value)} className="dc-select">
             <option value="">{t('arkshop.shop.filterAll')}</option><option value="item">{t('arkshop.shop.filterItem')}</option><option value="command">{t('arkshop.shop.filterCommand')}</option><option value="dino">{t('arkshop.shop.filterDino')}</option>
           </select>
-          <button onClick={() => openShopDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.shop.new')}</button>
+          {canOperate && <button onClick={() => openShopDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.shop.new')}</button>}
         </div>
         <div className="as-list">
           {filteredShop.map(item => (
@@ -656,7 +686,7 @@ export default function ArkShopPage() {
                 <span className="as-list-count">{t('arkshop.shop.objectsShort', { count: item.Items?.length || 0 })}</span>
                 <div className="as-list-actions">
                   <button onClick={e => { e.stopPropagation(); openShopDialog(item) }} className="btn btn-sm btn-ghost" aria-label={t('arkshop.shop.editTooltip')} title={t('arkshop.shop.editTooltip')}><Edit3 size={13} /></button>
-                  <button onClick={e => { e.stopPropagation(); handleDelete('shop', item.key) }} className="btn btn-sm btn-danger" aria-label={t('arkshop.shop.deleteTooltip')} title={t('arkshop.shop.deleteTooltip')}><Trash2 size={13} /></button>
+                  {canOperate && <button onClick={e => { e.stopPropagation(); handleDelete('shop', item.key) }} className="btn btn-sm btn-danger" aria-label={t('arkshop.shop.deleteTooltip')} title={t('arkshop.shop.deleteTooltip')}><Trash2 size={13} /></button>}
                 </div>
                 {expandedItem === item.key ? <ChevronUp size={14} className="as-list-chevron" /> : <ChevronDown size={14} className="as-list-chevron" />}
               </div>
@@ -685,7 +715,7 @@ export default function ArkShopPage() {
 
       {/* ==================== KITS - Lista a righe ==================== */}
       {tab === 'kits' && (<div>
-        <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openKitDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.kits.new')}</button></div>
+        {canOperate && <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openKitDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.kits.new')}</button></div>}
         <div className="as-list">
           {kits.map(kit => (
             <div key={kit.key} className="as-list-item">
@@ -699,7 +729,7 @@ export default function ArkShopPage() {
                 <span className="as-list-count">{t('arkshop.kits.itemsShort', { count: kit.Items?.length || 0 })}</span>
                 <div className="as-list-actions">
                   <button onClick={e => { e.stopPropagation(); openKitDialog(kit) }} className="btn btn-sm btn-ghost"><Edit3 size={13} /></button>
-                  <button onClick={e => { e.stopPropagation(); handleDelete('kit', kit.key) }} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
+                  {canOperate && <button onClick={e => { e.stopPropagation(); handleDelete('kit', kit.key) }} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>}
                 </div>
                 {expandedItem === kit.key ? <ChevronUp size={14} className="as-list-chevron" /> : <ChevronDown size={14} className="as-list-chevron" />}
               </div>
@@ -722,7 +752,7 @@ export default function ArkShopPage() {
 
       {/* ==================== SELL ITEMS - Lista a righe ==================== */}
       {tab === 'sell' && (<div>
-        <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openSellDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.sell.new')}</button></div>
+        {canOperate && <div style={{ marginBottom: '0.75rem' }}><button onClick={() => openSellDialog()} className="btn btn-primary btn-sm"><Plus size={14} /> {t('arkshop.sell.new')}</button></div>}
         <div className="as-list">
           {sellItems.map(item => (
             <div key={item.key} className="as-list-item">
@@ -733,7 +763,7 @@ export default function ArkShopPage() {
                 <span className="as-list-count">{item.Amount}x {bpName(item.Blueprint ?? '')}</span>
                 <div className="as-list-actions">
                   <button onClick={() => openSellDialog(item)} className="btn btn-sm btn-ghost"><Edit3 size={13} /></button>
-                  <button onClick={() => handleDelete('sell', item.key)} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>
+                  {canOperate && <button onClick={() => handleDelete('sell', item.key)} className="btn btn-sm btn-danger"><Trash2 size={13} /></button>}
                 </div>
               </div>
             </div>
@@ -747,7 +777,7 @@ export default function ArkShopPage() {
         <div className="as-general-grid">
           <div className="as-gen-section">{t('arkshop.general.sectionDisplay')}</div>
           <div className="as-gen-field"><label>{t('arkshop.general.itemsPerPage')}</label><input type="number" value={general.ItemsPerPage??10} onChange={e=>setGeneral({...general,ItemsPerPage:parseInt(e.target.value)||10})} /></div>
-          <div className="as-gen-field"><label>{t('arkshop.general.shopTextSize')}</label><input type="number" step="0.1" value={general.ShopTextSize??1.5} onChange={e=>setGeneral({...general,ShopTextSize:parseFloat(e.target.value)||1.5})} /></div>
+          <div className="as-gen-field"><label>{t('arkshop.general.shopTextSize')}</label><input type="number" step="0.1" value={general.ShopTextSize??1.5} onChange={e=>{ const v=parseFloat(e.target.value); if(!Number.isNaN(v)) setGeneral({...general,ShopTextSize:v}) }} /></div>
           <div className="as-gen-field"><label>{t('arkshop.general.shopDisplayTime')}</label><input type="number" value={general.ShopDisplayTime??15} onChange={e=>setGeneral({...general,ShopDisplayTime:parseInt(e.target.value)||15})} /></div>
           <div className="as-gen-field"><label>{t('arkshop.general.defaultKit')}</label><input type="text" value={general.DefaultKit??''} onChange={e=>setGeneral({...general,DefaultKit:e.target.value})} /></div>
           <div className="as-gen-field"><label>{t('arkshop.general.dbPathOverride')}</label><input type="text" value={general.DbPathOverride??''} onChange={e=>setGeneral({...general,DbPathOverride:e.target.value})} /></div>
@@ -768,7 +798,7 @@ export default function ArkShopPage() {
           {general.TimedPointsReward?.Groups && Object.entries(general.TimedPointsReward.Groups).map(([g,v]:any)=>(
             <div key={g} className="as-gen-field"><label>{t('arkshop.general.timedGroupPoints', { group: g })}</label><input type="number" value={v.Amount??0} onChange={e=>setGeneral({...general,TimedPointsReward:{...general.TimedPointsReward,Groups:{...(general.TimedPointsReward?.Groups ?? {}),[g]:{Amount:parseInt(e.target.value)||0}}}})} /></div>))}
         </div>
-        <button onClick={saveGeneral} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
+        {canOperate && <button onClick={saveGeneral} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>}
       </div>)}
 
       {/* ==================== MYSQL ==================== */}
@@ -782,7 +812,7 @@ export default function ArkShopPage() {
           <div className="as-gen-field"><label>{t('arkshop.mysql.user')}</label><input type="text" value={mysql.MysqlUser??''} onChange={e=>setMysql({...mysql,MysqlUser:e.target.value})} /></div>
           <div className="as-gen-field"><label>{t('arkshop.mysql.password')}</label><input type="password" value={mysql.MysqlPass??''} onChange={e=>setMysql({...mysql,MysqlPass:e.target.value})} /></div>
         </div>
-        <button onClick={saveMysql} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
+        {isAdmin && <button onClick={saveMysql} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>}
       </div>)}
 
       {/* ==================== MESSAGES ==================== */}
@@ -793,7 +823,7 @@ export default function ArkShopPage() {
             <div key={key} className="as-msg-row"><label className="as-msg-key">{key}</label>
               <input type="text" value={String(val)} className="as-msg-input" onChange={e=>setMessages({...messages,[key]:e.target.value})} /></div>))}
         </div>
-        <button onClick={saveMessages} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>
+        {canOperate && <button onClick={saveMessages} className="btn btn-primary mt-4"><Save size={14} /> {t('arkshop.dialog.save')}</button>}
       </div>)}
 
       {/* ==================== EDIT DIALOG ==================== */}
@@ -866,9 +896,9 @@ export default function ArkShopPage() {
 
           {/* Dialog footer */}
           <div className="as-dlg-footer">
-            <button onClick={handleDialogSave} className="btn btn-primary"><Save size={14} /> {t('arkshop.dialog.save')}</button>
+            {canOperate && <button onClick={handleDialogSave} className="btn btn-primary"><Save size={14} /> {t('arkshop.dialog.save')}</button>}
             <button onClick={() => setDialogOpen(false)} className="btn btn-secondary"><X size={14} /> {t('arkshop.dialog.cancel')}</button>
-            {!dialogIsNew && <button onClick={() => handleDelete(dialogType, dialogData.key)} className="btn btn-danger" style={{marginLeft:'auto'}}><Trash2 size={14} /> {t('arkshop.dialog.delete')}</button>}
+            {!dialogIsNew && canOperate && <button onClick={() => handleDelete(dialogType, dialogData.key)} className="btn btn-danger" style={{marginLeft:'auto'}}><Trash2 size={14} /> {t('arkshop.dialog.delete')}</button>}
           </div>
         </EditDialog>
       )}

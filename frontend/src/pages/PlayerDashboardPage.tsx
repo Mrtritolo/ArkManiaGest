@@ -49,6 +49,7 @@ import {
   type MapCalib,
 } from "../utils/mapCalibration";
 import DiscordIcon from "../components/DiscordIcon";
+import type { AuthUser } from "../types";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,12 @@ function PrivacyFooter({ onDeleted }: { onDeleted: () => void }) {
 interface PlayerDashboardPageProps {
   onLogout?: () => void;
   embedded?: boolean;
+  /**
+   * Accepted because App.tsx hands it to every page; unused on purpose:
+   * every action here is authorised by the viewer's own Discord session
+   * (/me/*), not by a panel role, so there is nothing to gate.
+   */
+  currentUser?: AuthUser | null;
 }
 
 export default function PlayerDashboardPage({ onLogout, embedded = false }: PlayerDashboardPageProps) {
@@ -235,8 +242,11 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
     window.location.href = "/";
   }
 
-  const Wrapper = embedded
-    ? ({ children }: { children: React.ReactNode }) => (
+  // A plain render function, not a component: a component defined in here
+  // is a new type on every render, so each reload remounted the whole
+  // subtree (and every card's local state) instead of updating it.
+  const wrap = (children: React.ReactNode) => embedded
+    ? (
         <div className="pl-page">
           <div className="pl-header">
             <div>
@@ -255,7 +265,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
           {children}
         </div>
       )
-    : ({ children }: { children: React.ReactNode }) => (
+    : (
         <div style={{
           minHeight: "100vh",
           background: "var(--bg, var(--bg-card-muted))",
@@ -277,8 +287,7 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
         </div>
       );
 
-  return (
-    <Wrapper>
+  return wrap(
       <>
         {error && (
           <div className="alert alert-error">
@@ -308,7 +317,6 @@ export default function PlayerDashboardPage({ onLogout, embedded = false }: Play
           <PrivacyFooter onDeleted={handleLogout} />
         )}
       </>
-    </Wrapper>
   );
 }
 
@@ -1173,7 +1181,7 @@ function CharacterToolsCard({ presence }: { presence: DashboardPresence }) {
                     fontSize: "0.65rem", fontWeight: 600, padding: "0.1rem 0.35rem",
                     borderRadius: 4,
                     color: REQUEST_STATUS_COLOR[r.status] ?? "var(--text-muted)",
-                    background: `${REQUEST_STATUS_COLOR[r.status] ?? "var(--text-muted)"}15`,
+                    background: `color-mix(in srgb, ${REQUEST_STATUS_COLOR[r.status] ?? "var(--text-muted)"} 8%, transparent)`,
                   }}>
                     {t(`dashboard.tools.status.${r.status}`, r.status)}
                   </span>

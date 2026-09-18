@@ -40,14 +40,16 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   }
 
   function isValid(): boolean {
-    // Mirror the backend policy (12+ chars, letters + digits).
+    // Mirror the backend policy (12+ chars, letters + digits).  Username and
+    // display name are checked trimmed: the backend strips them after its
+    // length check, so 'a ' would create admin 'a', which login rejects.
     return (
-      form.admin_username.length >= 2 &&
+      form.admin_username.trim().length >= 2 &&
       form.admin_password.length >= 12 &&
       /[a-zA-Z]/.test(form.admin_password) &&
       /[0-9]/.test(form.admin_password) &&
       form.admin_password === form.admin_password_confirm &&
-      form.admin_display_name.length >= 1
+      form.admin_display_name.trim().length >= 1
     )
   }
 
@@ -56,9 +58,9 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     setError('')
     try {
       await settingsApi.setup({
-        admin_username:      form.admin_username,
+        admin_username:      form.admin_username.trim(),
         admin_password:      form.admin_password,
-        admin_display_name:  form.admin_display_name,
+        admin_display_name:  form.admin_display_name.trim(),
         app_name:            form.app_name,
       })
       onComplete()

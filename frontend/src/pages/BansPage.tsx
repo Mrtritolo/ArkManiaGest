@@ -8,9 +8,10 @@ import { useTranslation } from 'react-i18next'
 import { arkBansApi } from '../services/api'
 import { fmtCompactDateTime } from '../utils/format'
 import { copyText } from '../utils/clipboard'
+import type { AuthUser } from '../types'
 import {
-  Ban, Search, Plus, XCircle, AlertCircle, X, Shield,
-  Clock, UserX, CheckCircle, Copy, ChevronDown
+  Ban, Search, Plus, AlertCircle, X, Shield,
+  Clock, UserX, CheckCircle, Copy
 } from 'lucide-react'
 
 interface BanItem {
@@ -19,10 +20,23 @@ interface BanItem {
   is_active: boolean; unbanned_by: string | null; unban_time: string | null
 }
 
-export default function BansPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+/** Current local time as a datetime-local value (the input has no zone). */
+function localNowInput(): string {
+  const now = new Date()
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
+export default function BansPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Banning and unbanning are require_operator server side.
+  const canOperate = currentUser?.role === 'admin' || currentUser?.role === 'operator'
   const [bans, setBans] = useState<BanItem[]>([])
   const [activeCount, setActiveCount] = useState(0)
+  const [totalCount, setTotalCount] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -31,8 +45,10 @@ export default function BansPage() {
   // Modal
   const [showModal, setShowModal] = useState(false)
   const banModal = useModalA11y(showModal, () => setShowModal(false))
-  const [form, setForm] = useState({ eos_id: '', player_name: '', reason: '', banned_by: 'Admin', expire_time: '', permanent: true })
+  const [form, setForm] = useState({ eos_id: '', player_name: '', reason: '', expire_time: '', permanent: true })
   const [creating, setCreating] = useState(false)
+  // Shown inside the modal: the page alert sits behind the overlay.
+  const [modalError, setModalError] = useState('')
 
   // Dettaglio espanso
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -42,6 +58,9 @@ export default function BansPage() {
       const res = await arkBansApi.list({ active_only: !showAll, search: search || undefined, limit: 200 })
       setBans(res.data.bans)
       setActiveCount(res.data.active_count)
+      // Unfiltered count of every ban on record; the list itself is
+      // filtered and capped, so it cannot give the totals.
+      setTotalCount(res.data.total_count ?? null)
     } catch (e: any) { setError(e.response?.data?.detail || e.message) }
     finally { setLoading(false) }
   }
@@ -65,24 +84,34 @@ export default function BansPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!form.eos_id.trim()) return
+    setModalError('')
+    // A temporary ban with no expiry would be stored as permanent
+    // (expire_time NULL), and one already expired would do nothing.
+    const expire = form.permanent ? null : new Date(form.expire_time)
+    if (expire && (isNaN(expire.getTime()) || expire.getTime() <= Date.now())) {
+      setModalError(t('bans.modal.expireInvalid'))
+      return
+    }
     setCreating(true)
     try {
       await arkBansApi.create({
         eos_id: form.eos_id.trim(),
         player_name: form.player_name.trim() || undefined,
         reason: form.reason.trim() || t('bans.defaultReason'),
-        banned_by: form.banned_by.trim() || 'Admin',
-        expire_time: form.permanent ? undefined : (form.expire_time || undefined),
+        // The server records the logged-in user as banned_by.  Send the
+        // expiry with its zone, like PlayersPage, so the backend moves it
+        // onto the database clock.
+        expire_time: expire ? expire.toISOString() : undefined,
       })
       setShowModal(false)
-      setForm({ eos_id: '', player_name: '', reason: '', banned_by: 'Admin', expire_time: '', permanent: true })
+      setForm({ eos_id: '', player_name: '', reason: '', expire_time: '', permanent: true })
       await loadBans()
-    } catch (e: any) { setError(e.response?.data?.detail || e.message) }
+    } catch (e: any) { setModalError(e.response?.data?.detail || e.message) }
     finally { setCreating(false) }
   }
 
-  const totalBans = bans.length
-  const expiredCount = bans.filter(b => !b.is_active).length
+  const totalBans = totalCount ?? bans.length
+  const expiredCount = totalCount != null ? totalCount - activeCount : bans.filter(b => !b.is_active).length
 
   return (
     <div className="page-container">
@@ -94,9 +123,11 @@ export default function BansPage() {
             {t('bans.subtitle', { count: activeCount })}
           </p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn btn-primary">
-          <Plus size={16} /> {t('bans.newButton')}
-        </button>
+        {canOperate && (
+          <button onClick={() => { setModalError(''); setShowModal(true) }} className="btn btn-primary">
+            <Plus size={16} /> {t('bans.newButton')}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -253,7 +284,7 @@ export default function BansPage() {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center' }}>
-                  {ban.is_active && (
+                  {ban.is_active && canOperate && (
                     <button onClick={e => { e.stopPropagation(); handleUnban(ban.id, ban.player_name || '') }}
                       className="btn btn-ghost" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', color: 'var(--success)' }}>
                       <CheckCircle size={14} /> {t('bans.unbanButton')}
@@ -309,7 +340,7 @@ export default function BansPage() {
       )}
 
       {/* Modal Nuovo Ban */}
-      {showModal && (
+      {showModal && canOperate && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(2px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
           <div {...banModal.panelProps} style={{ background: 'var(--bg-popover)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', width: '95%', maxWidth: 520 }}>
@@ -355,34 +386,24 @@ export default function BansPage() {
                     style={{ fontSize: '0.88rem', height: 36 }} />
                 </div>
 
-                {/* Bannato da + Durata */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                      {t('bans.modal.bannedByLabel')}
-                    </label>
-                    <input className="input" value={form.banned_by}
-                      onChange={e => setForm({ ...form, banned_by: e.target.value })}
-                      style={{ fontSize: '0.88rem', height: 36 }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                      {t('bans.modal.durationLabel')}
-                    </label>
-                    <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)', height: 36 }}>
-                      <button type="button" onClick={() => setForm({ ...form, permanent: true })} style={{
-                        flex: 1, border: 'none', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-                        background: form.permanent ? 'var(--danger)' : 'var(--bg-input)', color: form.permanent ? '#fff' : 'var(--text-secondary)',
-                      }}>
-                        {t('bans.modal.permanent')}
-                      </button>
-                      <button type="button" onClick={() => setForm({ ...form, permanent: false })} style={{
-                        flex: 1, border: 'none', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-                        background: !form.permanent ? 'var(--warning)' : 'var(--bg-input)', color: !form.permanent ? '#fff' : 'var(--text-secondary)',
-                      }}>
-                        {t('bans.modal.temporary')}
-                      </button>
-                    </div>
+                {/* Duration (banned_by is the logged-in user, set server side) */}
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                    {t('bans.modal.durationLabel')}
+                  </label>
+                  <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)', height: 36 }}>
+                    <button type="button" onClick={() => setForm({ ...form, permanent: true })} style={{
+                      flex: 1, border: 'none', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+                      background: form.permanent ? 'var(--danger)' : 'var(--bg-input)', color: form.permanent ? '#fff' : 'var(--text-secondary)',
+                    }}>
+                      {t('bans.modal.permanent')}
+                    </button>
+                    <button type="button" onClick={() => setForm({ ...form, permanent: false })} style={{
+                      flex: 1, border: 'none', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+                      background: !form.permanent ? 'var(--warning)' : 'var(--bg-input)', color: !form.permanent ? '#fff' : 'var(--text-secondary)',
+                    }}>
+                      {t('bans.modal.temporary')}
+                    </button>
                   </div>
                 </div>
 
@@ -393,8 +414,15 @@ export default function BansPage() {
                       <Clock size={12} style={{ verticalAlign: -1 }} /> {t('bans.modal.expireLabel')}
                     </label>
                     <input type="datetime-local" className="input" value={form.expire_time}
+                      required min={localNowInput()}
                       onChange={e => setForm({ ...form, expire_time: e.target.value })}
                       style={{ fontSize: '0.88rem', height: 36 }} />
+                  </div>
+                )}
+
+                {modalError && (
+                  <div className="alert alert-error" role="alert">
+                    <AlertCircle size={16} /> {modalError}
                   </div>
                 )}
               </div>

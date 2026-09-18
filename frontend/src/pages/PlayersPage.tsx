@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import {
   Search, Users, Star, Shield, ChevronRight, X, Plus, Minus,
   Clock, UserCheck, Skull, Home, Calendar, CreditCard, Save,
@@ -19,23 +19,28 @@ import {
 import { playersApi, arkBansApi, discordApi, type SyncNamesResponse, type SyncContainer } from '../services/api'
 import { fmtDate, fmtLocaleDateTime } from '../utils/format'
 import type { DiscordAccount, SyncNamesAmbiguousEntry } from '../services/api'
-import type { PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
+import type { AuthUser, PlayerListItem, PlayerFull, PlayersStats, PermissionGroupItem, PlayerMapResult } from '../types'
 import DiscordIcon from '../components/DiscordIcon'
 
 // ── Tiny filter trigger icon for column headers ─────────────────────────────
 
 interface FilterIconProps {
-  colKey:   string
+  /** Translated column title, used in the accessible label. */
+  label:    string
   active:   boolean
   open:     boolean
   onToggle: (open: boolean) => void
 }
 
 function FilterIcon(p: FilterIconProps) {
+  const { t } = useTranslation()
+  const label = p.active
+    ? t('players.filterPopup.filterActiveAria', { col: p.label })
+    : t('players.filterPopup.filterAria', { col: p.label })
   return (
     <button
       onClick={(e) => { e.stopPropagation(); p.onToggle(!p.open) }}
-      aria-label={p.active ? `Filter active (${p.colKey})` : `Filter ${p.colKey}`} title={p.active ? `Filter active (${p.colKey})` : `Filter ${p.colKey}`}
+      aria-label={label} title={label}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 18, height: 18, marginLeft: 4, padding: 0,
@@ -76,13 +81,20 @@ interface ColumnFilterPopupProps {
 }
 
 function ColumnFilterPopup(p: ColumnFilterPopupProps) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
   // Close on outside click + Escape.
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) p.onClose()
+      // "Outside" means outside the header cell, not just this box: the cell
+      // also holds the trigger icon and the timed column's Active/Expired
+      // tabs.  Closing on their mousedown unmounted them before the click
+      // landed, so the Expired tab was unreachable and the icon reopened
+      // the popup instead of closing it.
+      const cell = ref.current?.closest('th')
+      if (cell && !cell.contains(e.target as Node)) p.onClose()
     }
     function onEsc(e: KeyboardEvent) { if (e.key === 'Escape') p.onClose() }
     // Use capture so we beat the input's own focus handlers.
@@ -122,7 +134,7 @@ function ColumnFilterPopup(p: ColumnFilterPopupProps) {
       <input
         type="text"
         autoFocus
-        placeholder="Search…"
+        placeholder={t('players.filterPopup.search')}
         value={search}
         onChange={e => setSearch(e.target.value)}
         className="form-input"
@@ -142,18 +154,18 @@ function ColumnFilterPopup(p: ColumnFilterPopupProps) {
             }}
             onChange={() => p.onSetAll(!allSelected)}
           />
-          (Select all)
+          {t('players.filterPopup.selectAll')}
         </label>
         <button
           onClick={p.onClear}
           className="btn btn-ghost btn-sm"
           style={{ padding: '0.1rem 0.4rem', fontSize: '0.72rem' }}
-        >Clear</button>
+        >{t('players.filterPopup.clear')}</button>
       </div>
       <div style={{ maxHeight: 220, overflowY: 'auto' }}>
         {filteredOptions.length === 0 ? (
           <div style={{ padding: '0.5rem', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-            No matches.
+            {t('players.filterPopup.noMatches')}
           </div>
         ) : filteredOptions.map(opt => {
           const label = opt === p.noValueKey
@@ -189,8 +201,20 @@ function ColumnFilterPopup(p: ColumnFilterPopupProps) {
   )
 }
 
-export default function PlayersPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function PlayersPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Same split as the backend: player edits, bans, syncs, imports and
+  // character copies are require_operator; the cluster-wide character wipe
+  // is require_admin.  The backend stays the authority, this only hides the
+  // controls a role would get a 403 from.
+  const isAdmin = currentUser?.role === 'admin'
+  const canOperate = isAdmin || currentUser?.role === 'operator'
+  // Viewers still see the permission values, as disabled controls that say why.
+  const permsReadOnlyTitle = canOperate ? undefined : t('players.perms.readOnlyRole')
   const [players, setPlayers] = useState<PlayerListItem[]>([])
   const [stats, setStats] = useState<PlayersStats | null>(null)
   const [groups, setGroups] = useState<PermissionGroupItem[]>([])
@@ -310,18 +334,31 @@ export default function PlayersPage() {
   }
   useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
 
+  // The filter the table is showing, committed by the search box / group
+  // selector.  Reloads after a mutation read it from here rather than from
+  // the closure of the render that started the mutation, and only the most
+  // recent list request may write the table.
+  const listFilterRef = useRef({ search: '', group: '' })
+  const listReqRef = useRef(0)
+
   const loadPlayers = useCallback(async (s?: string, g?: string) => {
+    if (s !== undefined) listFilterRef.current.search = s
+    if (g !== undefined) listFilterRef.current.group = g
+    const { search: qSearch, group: qGroup } = listFilterRef.current
+    const seq = ++listReqRef.current
     setLoading(true)
     try {
       // Use the backend-side max (500) so the table actually shows every
       // registered player on small/medium clusters.  When we cross the
       // 500 mark we'll need real pagination (offset-based) -- for now a
       // single batch covers it.
-      const res = await playersApi.list({ search: (s ?? search) || undefined, group: (g ?? groupFilter) || undefined, limit: 500 })
-      setPlayers(res.data)
-    } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.load')) }
-    finally { setLoading(false) }
-  }, [search, groupFilter, t])
+      const res = await playersApi.list({ search: qSearch || undefined, group: qGroup || undefined, limit: 500 })
+      if (seq === listReqRef.current) setPlayers(res.data)
+    } catch (err: any) {
+      if (seq === listReqRef.current) setError(err.response?.data?.detail || t('players.errors.load'))
+    }
+    finally { if (seq === listReqRef.current) setLoading(false) }
+  }, [t])
 
   async function loadStats() { try { const res = await playersApi.stats(); setStats(res.data) } catch {} }
   async function loadGroups() { try { const res = await playersApi.permissionGroups(); setGroups(res.data) } catch {} }
@@ -329,41 +366,71 @@ export default function PlayersPage() {
   function handleSearch() { loadPlayers(search, groupFilter) }
   function handleKeyDown(e: React.KeyboardEvent) { if (e.key === 'Enter') handleSearch() }
 
+  // detailReqRef: only the latest openDetail call may fill the panel.
+  // shownPlayerRef: id of the player the panel currently shows.  Handlers
+  // that await re-check it before touching panel state, so a slow response
+  // for player A never lands in the panel after the operator moved to B.
+  const detailReqRef = useRef(0)
+  const shownPlayerRef = useRef<number | null>(null)
+
   async function openDetail(id: number) {
+    const seq = ++detailReqRef.current
     setDetailLoading(true); setError('')
-    setPlayerMaps([]); setMapsSearched(false); setMapsErrors([])
-    setCopySource(null); setCopyDestContainer(''); setCopyDestMap('')
     try {
       const res = await playersApi.get(id)
+      if (seq !== detailReqRef.current) return
+      // Swap the whole panel in one go, once the new player's data is here.
+      shownPlayerRef.current = id
+      setPlayerMaps([]); setMapsSearched(false); setMapsErrors([])
+      setCopySource(null); setCopyDestContainer(''); setCopyDestMap('')
+      setShowBanDialog(false)
       setSelectedPlayer(res.data)
       setPointsInput(String(res.data.points ?? 0))
       setPermInput(res.data.permission_groups)
       setTimedPerms(parseTimedPerms(res.data.timed_permission_groups))
-    } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.detail')) }
-    finally { setDetailLoading(false) }
+    } catch (err: any) {
+      if (seq === detailReqRef.current) setError(err.response?.data?.detail || t('players.errors.detail'))
+    }
+    finally { if (seq === detailReqRef.current) setDetailLoading(false) }
+  }
+
+  function closeDetail() {
+    detailReqRef.current++
+    shownPlayerRef.current = null
+    setDetailLoading(false)
+    setSelectedPlayer(null)
   }
 
   const [mapsDebug, setMapsDebug] = useState<Record<string, unknown>[]>([])
 
   async function handleFindMaps() {
     if (!selectedPlayer) return
+    const id = selectedPlayer.id
     setMapsLoading(true); setMapsErrors([]); setMapsSearched(false); setMapsDebug([])
     try {
       const res = await playersApi.findPlayerMaps(selectedPlayer.eos_id)
+      if (shownPlayerRef.current !== id) return
       setPlayerMaps(res.data.maps || [])
       setMapsErrors(res.data.errors || [])
       setMapsDebug(res.data.debug || [])
       setMapsSearched(true)
     } catch (err: any) {
-      setError(err.response?.data?.detail || t('players.errors.mapSearch'))
+      if (shownPlayerRef.current === id) setError(err.response?.data?.detail || t('players.errors.mapSearch'))
     } finally { setMapsLoading(false) }
   }
 
+  // A container name is only unique per host, so destination containers are
+  // keyed on machine id + name.
+  function containerKey(c: { machine_id: number; container_name: string }) {
+    return `${c.machine_id}|${c.container_name}`
+  }
+
   async function handleCopyCharacter() {
-    if (!copySource || !copyDestContainer || !copyDestMap) return
+    if (!selectedPlayer || !copySource || !copyDestContainer || !copyDestMap) return
+    const id = selectedPlayer.id
     setCopying(true); setError('')
     // Find destination machine_id from syncContainers
-    const destC = syncContainers.find(c => c.container_name === copyDestContainer)
+    const destC = syncContainers.find(c => containerKey(c) === copyDestContainer)
     if (!destC) { setError(t('players.errors.destContainerNotFound')); setCopying(false); return }
     try {
       const res = await playersApi.copyCharacter({
@@ -371,15 +438,17 @@ export default function PlayersPage() {
         source_container: copySource.container_name,
         source_profile_path: copySource.profile_path,
         dest_machine_id: destC.machine_id,
-        dest_container: copyDestContainer,
+        dest_container: destC.container_name,
         dest_map_name: copyDestMap,
       })
       if (res.data.success) {
         setSuccess(res.data.overwritten
           ? t('players.copy.successOverwritten', { map: copyDestMap })
           : t('players.copy.success', { map: copyDestMap }))
-        setCopySource(null); setCopyDestContainer(''); setCopyDestMap('')
-        handleFindMaps() // Reload maps
+        if (shownPlayerRef.current === id) {
+          setCopySource(null); setCopyDestContainer(''); setCopyDestMap('')
+          handleFindMaps() // Reload maps
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || t('players.errors.copyCharacter'))
@@ -387,8 +456,8 @@ export default function PlayersPage() {
   }
 
   // Get available maps for a destination container
-  function getDestMaps(containerName: string): string[] {
-    const c = syncContainers.find(sc => sc.container_name === containerName)
+  function getDestMaps(key: string): string[] {
+    const c = syncContainers.find(sc => containerKey(sc) === key)
     if (!c) return []
     // Use map_name from the container as an option
     return c.map_name ? [c.map_name as string] : []
@@ -396,37 +465,42 @@ export default function PlayersPage() {
 
   async function handleSetPoints() {
     if (!selectedPlayer) return
+    const id = selectedPlayer.id
     const val = parseInt(pointsInput)
     if (isNaN(val) || val < 0) { setError(t('players.errors.invalidPoints')); return }
     setPointsSaving(true)
     try {
-      await playersApi.setPoints(selectedPlayer.id, val)
+      await playersApi.setPoints(id, val)
       setSuccess(t('players.messages.pointsSet', { value: val }))
-      setSelectedPlayer({ ...selectedPlayer, points: val }); loadPlayers(); loadStats()
+      setSelectedPlayer(prev => prev?.id === id ? { ...prev, points: val } : prev); loadPlayers(); loadStats()
     } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.generic')) }
     finally { setPointsSaving(false) }
   }
 
   async function handleAddPoints(amount: number) {
     if (!selectedPlayer) return
+    const id = selectedPlayer.id
     setPointsSaving(true)
     try {
-      const res = await playersApi.addPoints(selectedPlayer.id, amount)
+      const res = await playersApi.addPoints(id, amount)
       setSuccess(amount > 0
         ? t('players.messages.pointsChangedPositive', { amount, total: res.data.points })
         : t('players.messages.pointsChangedNegative', { amount, total: res.data.points }))
-      setSelectedPlayer({ ...selectedPlayer, points: res.data.points })
-      setPointsInput(String(res.data.points)); loadPlayers(); loadStats()
+      setSelectedPlayer(prev => prev?.id === id ? { ...prev, points: res.data.points } : prev)
+      if (shownPlayerRef.current === id) setPointsInput(String(res.data.points))
+      loadPlayers(); loadStats()
     } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.generic')) }
     finally { setPointsSaving(false) }
   }
 
   async function handleSavePermissions() {
     if (!selectedPlayer) return
+    const id = selectedPlayer.id
+    const value = permInput
     try {
-      await playersApi.update(selectedPlayer.id, { permission_groups: permInput })
+      await playersApi.update(id, { permission_groups: value })
       setSuccess(t('players.messages.fixedPermsUpdated'))
-      setSelectedPlayer({ ...selectedPlayer, permission_groups: permInput }); loadPlayers()
+      setSelectedPlayer(prev => prev?.id === id ? { ...prev, permission_groups: value } : prev); loadPlayers()
     } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.generic')) }
   }
 
@@ -447,16 +521,24 @@ export default function PlayersPage() {
     setTimedPerms(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p))
   }
 
-  function tsToInput(ts: number) { return ts ? new Date(ts * 1000).toISOString().slice(0, 16) : '' }
+  // datetime-local has no zone: the browser parses its value as local time
+  // (inputToTs), so it must also be rendered as local time.  toISOString()
+  // rendered UTC, and every edit moved the expiry by the UTC offset.
+  function tsToInput(ts: number) {
+    if (!ts) return ''
+    const d = new Date(ts * 1000)
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  }
   function inputToTs(val: string) { return val ? Math.floor(new Date(val).getTime() / 1000) : 0 }
 
   async function handleSaveTimedPermissions() {
     if (!selectedPlayer) return
+    const id = selectedPlayer.id
     const s = serializeTimedPerms(timedPerms)
     try {
-      await playersApi.update(selectedPlayer.id, { timed_permission_groups: s })
+      await playersApi.update(id, { timed_permission_groups: s })
       setSuccess(t('players.messages.timedPermsUpdated'))
-      setSelectedPlayer({ ...selectedPlayer, timed_permission_groups: s }); loadPlayers()
+      setSelectedPlayer(prev => prev?.id === id ? { ...prev, timed_permission_groups: s } : prev); loadPlayers()
     } catch (err: any) { setError(err.response?.data?.detail || t('players.errors.generic')) }
   }
 
@@ -475,7 +557,6 @@ export default function PlayersPage() {
         eos_id: selectedPlayer.eos_id,
         player_name: selectedPlayer.name || undefined,
         reason: banReason || t('players.ban.noReason'),
-        banned_by: 'Admin',
         expire_time: expireTime,
       })
       const who = selectedPlayer.name || selectedPlayer.eos_id
@@ -517,6 +598,22 @@ export default function PlayersPage() {
   }
   function clearSelection() { setSelectedIds(new Set()); setBulkModalOpen(false) }
 
+  // A bulk grant/align rewrites TimedPermissionGroups server side.  If the
+  // detail panel shows one of those players, its editor still holds the old
+  // list and "Save timed perms" would PUT it back over the bulk change.
+  async function reloadShownPlayerIfIn(ids: number[]) {
+    const shown = shownPlayerRef.current
+    if (shown === null || !ids.includes(shown)) return
+    try {
+      const res = await playersApi.get(shown)
+      if (shownPlayerRef.current !== shown) return
+      setSelectedPlayer(res.data)
+      setTimedPerms(parseTimedPerms(res.data.timed_permission_groups))
+    } catch (err: any) {
+      if (shownPlayerRef.current === shown) setError(err.response?.data?.detail || t('players.errors.detail'))
+    }
+  }
+
   function openBulkModal() {
     setBulkGroup('')
     setBulkDurationSeconds(7 * 24 * 3600)
@@ -536,9 +633,10 @@ export default function PlayersPage() {
     }))) return
 
     setBulkApplying(true); setError('')
+    const ids = Array.from(selectedIds)
     try {
       const res = await playersApi.bulkAddTimedPerm({
-        player_ids:       Array.from(selectedIds),
+        player_ids:       ids,
         group:            bulkGroup,
         duration_seconds: bulkDurationSeconds,
       })
@@ -550,6 +648,7 @@ export default function PlayersPage() {
       }))
       clearSelection()
       loadPlayers()
+      reloadShownPlayerIfIn(ids)
     } catch (err: any) {
       setError(err.response?.data?.detail || t('players.bulkPerm.failed'))
     } finally {
@@ -591,9 +690,10 @@ export default function PlayersPage() {
     }))) return
 
     setAlignApplying(true); setError('')
+    const ids = Array.from(selectedIds)
     try {
       const res = await playersApi.bulkAlignTimedPerms({
-        player_ids: Array.from(selectedIds),
+        player_ids: ids,
         groups:     alignGroups,
       })
       setSuccess(t('players.bulkAlign.done', {
@@ -605,6 +705,7 @@ export default function PlayersPage() {
       setAlignModalOpen(false)
       clearSelection()
       loadPlayers()
+      reloadShownPlayerIfIn(ids)
     } catch (err: any) {
       setError(err.response?.data?.detail || t('players.bulkAlign.failed'))
     } finally {
@@ -639,6 +740,12 @@ export default function PlayersPage() {
   } | null>(null)
   const [wipeLoading, setWipeLoading] = useState(false)
   const [wiping, setWiping]           = useState(false)
+  // The player the modal was opened for.  The modal is bound to it, not to
+  // whatever the panel shows later, so a detail load that lands while the
+  // modal is open cannot relabel it.  wipeReqRef: only the latest opening
+  // may fill the modal.
+  const [wipeTarget, setWipeTarget]   = useState<{ name: string | null; eos_id: string } | null>(null)
+  const wipeReqRef = useRef(0)
 
   // Semantica di finestra, Escape, cattura e ripristino del focus per le sei
   // modali della pagina. Raggruppate qui perche' devono stare dopo tutte le
@@ -756,26 +863,34 @@ export default function PlayersPage() {
 
   async function openWipeModal(): Promise<void> {
     if (!selectedPlayer) return
+    const target = { name: selectedPlayer.name, eos_id: selectedPlayer.eos_id }
+    const seq = ++wipeReqRef.current
+    setWipeTarget(target)
     setWipeOpen(true)
     setWipePreview(null)
     setWipeLoading(true)
     try {
-      const res = await playersApi.listCharacterFiles(selectedPlayer.eos_id)
+      const res = await playersApi.listCharacterFiles(target.eos_id)
+      // A superseded opening (modal closed and reopened meanwhile) must not
+      // fill the newer modal; the newer request owns it.
+      if (seq !== wipeReqRef.current) return
       setWipePreview(res.data)
     } catch (err: any) {
+      if (seq !== wipeReqRef.current) return
       setError(err.response?.data?.detail
         || t('players.wipe.errors.preview'))
       setWipeOpen(false)
     } finally {
-      setWipeLoading(false)
+      if (seq === wipeReqRef.current) setWipeLoading(false)
     }
   }
 
   async function confirmWipe(): Promise<void> {
-    if (!selectedPlayer || !wipePreview) return
+    if (!wipePreview) return
     setWiping(true)
     try {
-      const res = await playersApi.deleteCharacterFiles(selectedPlayer.eos_id)
+      // Wipe exactly the EOS whose files the operator just reviewed.
+      const res = await playersApi.deleteCharacterFiles(wipePreview.eos_id)
       setSuccess(t('players.wipe.done', {
         n: res.data.total_deleted,
       }))
@@ -956,7 +1071,9 @@ export default function PlayersPage() {
     [players, colFilters],
   )
 
-  const sortedPlayers = [...filteredPlayers].sort((a, b) => {
+  // Memoised: every keystroke in the page's inputs re-renders this component,
+  // and re-sorting up to 500 rows with localeCompare each time is wasted work.
+  const sortedPlayers = useMemo(() => [...filteredPlayers].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
     switch (sortCol) {
       case 'name': return dir * (a.name || '').localeCompare(b.name || '')
@@ -970,7 +1087,7 @@ export default function PlayersPage() {
         return dir * (ta - tb)
       default: return 0
     }
-  })
+  }), [filteredPlayers, sortCol, sortDir])
 
   return (
     <div className="pl-page">
@@ -984,53 +1101,55 @@ export default function PlayersPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          <button
-            onClick={openBulkModal}
-            disabled={selectedIds.size === 0 || bulkApplying}
-            className="btn btn-secondary btn-sm"
-            aria-label={
-              selectedIds.size === 0
-                ? t('players.bulkPerm.headerTitleDisabled')
-                : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
-            } title={
-              selectedIds.size === 0
-                ? t('players.bulkPerm.headerTitleDisabled')
-                : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
-            }
-          >
-            <Clock size={14} />
-            {t('players.bulkPerm.headerButton', { count: selectedIds.size })}
-          </button>
-          <button
-            onClick={openAlignModal}
-            disabled={selectedIds.size === 0 || alignApplying}
-            className="btn btn-secondary btn-sm"
-            aria-label={
-              selectedIds.size === 0
-                ? t('players.bulkAlign.headerTitleDisabled')
-                : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
-            } title={
-              selectedIds.size === 0
-                ? t('players.bulkAlign.headerTitleDisabled')
-                : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
-            }
-          >
-            <ArrowUpDown size={14} />
-            {t('players.bulkAlign.headerButton', { count: selectedIds.size })}
-          </button>
-          <button
-            onClick={handleSyncTribes}
-            disabled={syncing || syncingTribes}
-            className="btn btn-secondary btn-sm"
-            aria-label={t('players.tribeSync.title')} title={t('players.tribeSync.title')}
-          >
-            {syncingTribes
-              ? <><Loader2 size={14} className="pl-spin" /> {t('players.tribeSync.running')}</>
-              : <><Download size={14} /> {t('players.tribeSync.button')}</>}
-          </button>
-          <button onClick={() => setShowSyncPanel(!showSyncPanel)} disabled={syncing || syncingTribes} className="btn btn-primary btn-sm" aria-label={t('players.syncNamesTitle')} title={t('players.syncNamesTitle')}>
-            {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('players.syncing')}</> : <><Download size={14} /> {t('players.syncNamesButton')}</>}
-          </button>
+          {canOperate && (<>
+            <button
+              onClick={openBulkModal}
+              disabled={selectedIds.size === 0 || bulkApplying}
+              className="btn btn-secondary btn-sm"
+              aria-label={
+                selectedIds.size === 0
+                  ? t('players.bulkPerm.headerTitleDisabled')
+                  : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
+              } title={
+                selectedIds.size === 0
+                  ? t('players.bulkPerm.headerTitleDisabled')
+                  : t('players.bulkPerm.headerTitleEnabled', { count: selectedIds.size })
+              }
+            >
+              <Clock size={14} />
+              {t('players.bulkPerm.headerButton', { count: selectedIds.size })}
+            </button>
+            <button
+              onClick={openAlignModal}
+              disabled={selectedIds.size === 0 || alignApplying}
+              className="btn btn-secondary btn-sm"
+              aria-label={
+                selectedIds.size === 0
+                  ? t('players.bulkAlign.headerTitleDisabled')
+                  : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
+              } title={
+                selectedIds.size === 0
+                  ? t('players.bulkAlign.headerTitleDisabled')
+                  : t('players.bulkAlign.headerTitleEnabled', { count: selectedIds.size })
+              }
+            >
+              <ArrowUpDown size={14} />
+              {t('players.bulkAlign.headerButton', { count: selectedIds.size })}
+            </button>
+            <button
+              onClick={handleSyncTribes}
+              disabled={syncing || syncingTribes}
+              className="btn btn-secondary btn-sm"
+              aria-label={t('players.tribeSync.title')} title={t('players.tribeSync.title')}
+            >
+              {syncingTribes
+                ? <><Loader2 size={14} className="pl-spin" /> {t('players.tribeSync.running')}</>
+                : <><Download size={14} /> {t('players.tribeSync.button')}</>}
+            </button>
+            <button onClick={() => setShowSyncPanel(!showSyncPanel)} disabled={syncing || syncingTribes} className="btn btn-primary btn-sm" aria-label={t('players.syncNamesTitle')} title={t('players.syncNamesTitle')}>
+              {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('players.syncing')}</> : <><Download size={14} /> {t('players.syncNamesButton')}</>}
+            </button>
+          </>)}
           <button onClick={() => { loadPlayers(); loadStats() }} className="pl-btn-icon" aria-label={t('players.refreshTooltip')} title={t('players.refreshTooltip')}>
             <RefreshCw size={16} />
           </button>
@@ -1112,15 +1231,17 @@ export default function PlayersPage() {
               n: notMatchedList.length,
             })}
           </span>
-          <button
-            onClick={() => setImportModalOpen(true)}
-            className="btn btn-primary btn-sm"
-          >
-            <Download size={12} />{' '}
-            {t('players.importMissing.openModal', {
-              n: notMatchedList.length,
-            })}
-          </button>
+          {canOperate && (
+            <button
+              onClick={() => setImportModalOpen(true)}
+              className="btn btn-primary btn-sm"
+            >
+              <Download size={12} />{' '}
+              {t('players.importMissing.openModal', {
+                n: notMatchedList.length,
+              })}
+            </button>
+          )}
           <button onClick={() => setNotMatchedList([])} className="pl-alert-x"><X size={14}/></button>
         </div>
       )}
@@ -1204,7 +1325,7 @@ export default function PlayersPage() {
                       {t('players.table.tribe')} <SortIcon col="tribe" />
                     </span>
                     <FilterIcon
-                      colKey="tribe"
+                      label={t('players.table.tribe')}
                       active={colFilters.tribe.size > 0}
                       open={openFilter === 'tribe'}
                       onToggle={(open) => setOpenFilter(open ? 'tribe' : null)}
@@ -1228,7 +1349,7 @@ export default function PlayersPage() {
                       {t('players.table.groups')} <SortIcon col="groups" />
                     </span>
                     <FilterIcon
-                      colKey="groups"
+                      label={t('players.table.groups')}
                       active={colFilters.groups.size > 0}
                       open={openFilter === 'groups'}
                       onToggle={(open) => setOpenFilter(open ? 'groups' : null)}
@@ -1251,7 +1372,7 @@ export default function PlayersPage() {
                       {t('players.table.timed')} <SortIcon col="timed" />
                     </span>
                     <FilterIcon
-                      colKey="timedActive"
+                      label={t('players.table.timed')}
                       active={colFilters.timedActive.size > 0 || colFilters.timedExpired.size > 0}
                       open={openFilter === 'timedActive' || openFilter === 'timedExpired'}
                       onToggle={(open) => setOpenFilter(open ? 'timedActive' : null)}
@@ -1412,16 +1533,20 @@ export default function PlayersPage() {
                 <h3 className="pl-detail-name">{selectedPlayer.name || t('players.unknownPlayer')}</h3>
                 <p className="pl-detail-eos">{selectedPlayer.eos_id}</p>
               </div>
-              <button onClick={() => setShowBanDialog(true)} className="pl-btn-icon" aria-label={t('players.detail.banTooltip')} title={t('players.detail.banTooltip')} style={{ color: 'var(--danger)' }}><ShieldOff size={16} /></button>
-              <button
-                onClick={openWipeModal}
-                className="pl-btn-icon"
-                aria-label={t('players.detail.wipeTooltip')} title={t('players.detail.wipeTooltip')}
-                style={{ color: 'var(--danger)' }}
-              >
-                <Skull size={16} />
-              </button>
-              <button onClick={() => setSelectedPlayer(null)} className="pl-btn-icon"><X size={16} /></button>
+              {canOperate && (
+                <button onClick={() => setShowBanDialog(true)} className="pl-btn-icon" aria-label={t('players.detail.banTooltip')} title={t('players.detail.banTooltip')} style={{ color: 'var(--danger)' }}><ShieldOff size={16} /></button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={openWipeModal}
+                  className="pl-btn-icon"
+                  aria-label={t('players.detail.wipeTooltip')} title={t('players.detail.wipeTooltip')}
+                  style={{ color: 'var(--danger)' }}
+                >
+                  <Skull size={16} />
+                </button>
+              )}
+              <button onClick={closeDetail} className="pl-btn-icon"><X size={16} /></button>
             </div>
 
             {/* Meta */}
@@ -1435,8 +1560,18 @@ export default function PlayersPage() {
             {showBanDialog && (
               <div className="pl-section" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 4, padding: '0.75rem' }}>
                 <h4 className="pl-section-title" style={{ color: 'var(--danger)' }}><ShieldOff size={14} /> {t('players.ban.sectionTitle')}</h4>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}
-                   dangerouslySetInnerHTML={{ __html: t('players.ban.intro', { name: selectedPlayer.name || selectedPlayer.eos_id }) }} />
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                  {/* The name is player-controlled and escapeValue is off
+                      globally: escape it at interpolation so it can never
+                      become markup, then unescape the text nodes to show it. */}
+                  <Trans
+                    i18nKey="players.ban.intro"
+                    values={{ name: selectedPlayer.name || selectedPlayer.eos_id }}
+                    components={{ strong: <strong /> }}
+                    tOptions={{ interpolation: { escapeValue: true } }}
+                    shouldUnescape
+                  />
+                </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <div>
                     <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>{t('players.ban.reasonLabel')}</label>
@@ -1491,23 +1626,25 @@ export default function PlayersPage() {
             <div className="pl-section">
               <h4 className="pl-section-title"><Star size={14} /> {t('players.points.sectionTitle')}</h4>
               <div className="pl-points-current">{selectedPlayer.points?.toLocaleString(undefined) ?? 0}</div>
-              <div className="pl-points-controls">
-                <input type="number" value={pointsInput} onChange={e => setPointsInput(e.target.value)}
-                  className="pl-points-input" min={0} />
-                <button onClick={handleSetPoints} disabled={pointsSaving} className="pl-btn-sm pl-btn-primary">
-                  <Save size={12} /> {t('players.points.setButton')}
-                </button>
-              </div>
-              <div className="pl-points-quick">
-                {[100, 500, 1000].map(n => (
-                  <button key={n} onClick={() => handleAddPoints(n)} disabled={pointsSaving} className="pl-btn-sm pl-btn-ghost-green">
-                    <Plus size={11} />{n}
+              {canOperate && (<>
+                <div className="pl-points-controls">
+                  <input type="number" value={pointsInput} onChange={e => setPointsInput(e.target.value)}
+                    className="pl-points-input" min={0} />
+                  <button onClick={handleSetPoints} disabled={pointsSaving} className="pl-btn-sm pl-btn-primary">
+                    <Save size={12} /> {t('players.points.setButton')}
                   </button>
-                ))}
-                <button onClick={() => handleAddPoints(-100)} disabled={pointsSaving} className="pl-btn-sm pl-btn-ghost-red">
-                  <Minus size={11} />100
-                </button>
-              </div>
+                </div>
+                <div className="pl-points-quick">
+                  {[100, 500, 1000].map(n => (
+                    <button key={n} onClick={() => handleAddPoints(n)} disabled={pointsSaving} className="pl-btn-sm pl-btn-ghost-green">
+                      <Plus size={11} />{n}
+                    </button>
+                  ))}
+                  <button onClick={() => handleAddPoints(-100)} disabled={pointsSaving} className="pl-btn-sm pl-btn-ghost-red">
+                    <Minus size={11} />100
+                  </button>
+                </div>
+              </>)}
             </div>
 
             {/* Permessi Fissi */}
@@ -1515,19 +1652,28 @@ export default function PlayersPage() {
               <h4 className="pl-section-title"><Shield size={14} /> {t('players.perms.sectionTitle')}</h4>
               <div className="pl-perm-chips">
                 {groups.map(g => {
-                  const active = permInput.includes(g.group_name)
+                  // Compare whole comma-separated entries: a substring match
+                  // made 'VIP' look active on 'VIPPlus' and removing it left
+                  // 'Plus' behind.
+                  const current = parseFixedGroups(permInput)
+                  const active = current.includes(g.group_name)
                   return (
                     <button key={g.id} className={`pl-perm-chip ${active ? 'pl-perm-active' : ''}`}
+                      disabled={!canOperate} aria-disabled={!canOperate} title={permsReadOnlyTitle}
                       onClick={() => {
-                        if (active) setPermInput(permInput.replace(g.group_name + ',', '').replace(g.group_name, ''))
-                        else setPermInput((permInput.endsWith(',') ? permInput : permInput + ',') + g.group_name + ',')
+                        const next = active
+                          ? current.filter(name => name !== g.group_name)
+                          : [...current, g.group_name]
+                        setPermInput(next.length > 0 ? next.join(',') + ',' : '')
                       }}>
                       {active && <UserCheck size={11} />} {g.group_name}
                     </button>
                   )
                 })}
               </div>
-              <button onClick={handleSavePermissions} className="pl-btn-sm pl-btn-primary pl-btn-full"><Save size={12} /> {t('players.perms.save')}</button>
+              {canOperate && (
+                <button onClick={handleSavePermissions} className="pl-btn-sm pl-btn-primary pl-btn-full"><Save size={12} /> {t('players.perms.save')}</button>
+              )}
             </div>
 
             {/* Permessi Temporanei */}
@@ -1549,41 +1695,46 @@ export default function PlayersPage() {
                         <div className="pl-timed-fields">
                           <div className="pl-timed-field">
                             <label>{t('players.perms.flagLabel')}</label>
-                            <input type="text" value={tp.flag} onChange={e => handleTimedPermChange(i, 'flag', e.target.value)} />
+                            <input type="text" value={tp.flag} disabled={!canOperate} aria-disabled={!canOperate} title={permsReadOnlyTitle} onChange={e => handleTimedPermChange(i, 'flag', e.target.value)} />
                           </div>
                           <div className="pl-timed-field pl-timed-field-grow">
                             <label>{t('players.perms.expiresLabel')}</label>
-                            <input type="datetime-local" value={tsToInput(tp.timestamp)}
+                            <input type="datetime-local" value={tsToInput(tp.timestamp)} disabled={!canOperate}
+                              aria-disabled={!canOperate} title={permsReadOnlyTitle}
                               onChange={e => handleTimedPermChange(i, 'timestamp', inputToTs(e.target.value))} />
                           </div>
                         </div>
-                        <div className="pl-timed-actions">
-                          <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 7*24*3600)}
-                            className="pl-btn-xs pl-btn-extend">+7d</button>
-                          <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 30*24*3600)}
-                            className="pl-btn-xs pl-btn-extend">+1m</button>
-                          <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 90*24*3600)}
-                            className="pl-btn-xs pl-btn-extend">+3m</button>
-                          <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 365*24*3600)}
-                            className="pl-btn-xs pl-btn-extend">+12m</button>
-                          <button onClick={() => setTimedPerms(prev => prev.filter((_, idx) => idx !== i))}
-                            className="pl-btn-xs pl-btn-del"><X size={11} /></button>
-                        </div>
+                        {canOperate && (
+                          <div className="pl-timed-actions">
+                            <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 7*24*3600)}
+                              className="pl-btn-xs pl-btn-extend">+7d</button>
+                            <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 30*24*3600)}
+                              className="pl-btn-xs pl-btn-extend">+1m</button>
+                            <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 90*24*3600)}
+                              className="pl-btn-xs pl-btn-extend">+3m</button>
+                            <button onClick={() => handleTimedPermChange(i, 'timestamp', tp.timestamp + 365*24*3600)}
+                              className="pl-btn-xs pl-btn-extend">+12m</button>
+                            <button onClick={() => setTimedPerms(prev => prev.filter((_, idx) => idx !== i))}
+                              className="pl-btn-xs pl-btn-del"><X size={11} /></button>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
                 </div>
               ) : <p className="pl-empty-text">{t('players.perms.emptyTimed')}</p>}
 
-              <div className="pl-timed-add-row">
-                {groups.filter(g => !timedPerms.some(tp => tp.group === g.group_name)).map(g => (
-                  <button key={g.id} className="pl-btn-xs pl-btn-add"
-                    onClick={() => setTimedPerms(prev => [...prev, { flag: '0', timestamp: Math.floor(Date.now()/1000) + 30*24*3600, group: g.group_name }])}>
-                    <Plus size={10} /> {g.group_name}
-                  </button>
-                ))}
-              </div>
-              <button onClick={handleSaveTimedPermissions} className="pl-btn-sm pl-btn-primary pl-btn-full"><Save size={12} /> {t('players.perms.saveTimed')}</button>
+              {canOperate && (<>
+                <div className="pl-timed-add-row">
+                  {groups.filter(g => !timedPerms.some(tp => tp.group === g.group_name)).map(g => (
+                    <button key={g.id} className="pl-btn-xs pl-btn-add"
+                      onClick={() => setTimedPerms(prev => [...prev, { flag: '0', timestamp: Math.floor(Date.now()/1000) + 30*24*3600, group: g.group_name }])}>
+                      <Plus size={10} /> {g.group_name}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={handleSaveTimedPermissions} className="pl-btn-sm pl-btn-primary pl-btn-full"><Save size={12} /> {t('players.perms.saveTimed')}</button>
+              </>)}
             </div>
 
             {/* Kits */}
@@ -1636,14 +1787,16 @@ export default function PlayersPage() {
                         <span className="pl-map-detail">{m.container_name} &middot; {m.machine_name}</span>
                         {m.player_name && <span className="pl-map-detail">{t('players.maps.nameLabel')} {m.player_name}</span>}
                       </div>
-                      <button
-                        onClick={() => setCopySource(copySource?.profile_path === m.profile_path ? null : m)}
-                        className={`pl-btn-xs ${copySource?.profile_path === m.profile_path ? 'pl-btn-del' : 'pl-btn-add'}`}
-                        aria-label={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')} title={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')}
-                      >
-                        {copySource?.profile_path === m.profile_path ? <X size={10} /> : <Copy size={10} />}
-                        {copySource?.profile_path === m.profile_path ? t('players.maps.sourceCancelLabel') : t('players.maps.sourceSelectLabel')}
-                      </button>
+                      {canOperate && (
+                        <button
+                          onClick={() => setCopySource(copySource?.profile_path === m.profile_path ? null : m)}
+                          className={`pl-btn-xs ${copySource?.profile_path === m.profile_path ? 'pl-btn-del' : 'pl-btn-add'}`}
+                          aria-label={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')} title={copySource?.profile_path === m.profile_path ? t('players.maps.sourceTooltipDeselect') : t('players.maps.sourceTooltipSelect')}
+                        >
+                          {copySource?.profile_path === m.profile_path ? <X size={10} /> : <Copy size={10} />}
+                          {copySource?.profile_path === m.profile_path ? t('players.maps.sourceCancelLabel') : t('players.maps.sourceSelectLabel')}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1665,10 +1818,10 @@ export default function PlayersPage() {
                       }}>
                         <option value="">{t('players.copy.selectPlaceholder')}</option>
                         {syncContainers
-                          .filter(c => !(c.container_name === copySource.container_name && c.map_name === copySource.map_name))
+                          .filter(c => !(c.machine_id === copySource.machine_id && c.container_name === copySource.container_name && c.map_name === copySource.map_name))
                           .map((c, i) => (
-                            <option key={i} value={c.container_name}>
-                              {c.container_name} — {c.map_name || c.server_name || '?'}
+                            <option key={i} value={containerKey(c)}>
+                              {c.container_name} — {c.map_name || c.server_name || '?'} ({c.machine_name})
                             </option>
                           ))}
                       </select>
@@ -2317,7 +2470,7 @@ export default function PlayersPage() {
                     />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                        {o.player_name || <span style={{ color: 'var(--text-secondary)' }}>(no name)</span>}
+                        {o.player_name || <span style={{ color: 'var(--text-secondary)' }}>{t('players.unknownPlayer')}</span>}
                       </div>
                       <div style={{
                         fontSize: '0.7rem', color: 'var(--text-secondary)',
@@ -2404,11 +2557,11 @@ export default function PlayersPage() {
 
             <div style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
               <strong>{t('players.wipe.player')}</strong>{' '}
-              {selectedPlayer?.name || '(no name)'}
+              {wipeTarget?.name || t('players.unknownPlayer')}
               <br />
               <strong>EOS:</strong>{' '}
               <span style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                {selectedPlayer?.eos_id}
+                {wipeTarget?.eos_id}
               </span>
             </div>
 

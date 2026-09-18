@@ -8,7 +8,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
-import { Users, RefreshCw, Globe, Server } from 'lucide-react'
+import type { AuthUser } from '../types'
+import { Users, RefreshCw, Globe } from 'lucide-react'
 
 interface OnlinePlayer {
   eos_id:         string
@@ -45,7 +46,12 @@ function formatMapName(map: string): string {
   return map?.replace('_WP', '').replace(/([a-z])([A-Z])/g, '$1 $2') || '—'
 }
 
-export default function OnlinePlayersPage() {
+interface Props {
+  // Read-only page: nothing to gate.
+  currentUser?: AuthUser | null
+}
+
+export default function OnlinePlayersPage(_props: Props) {
   const { t } = useTranslation()
   const [players, setPlayers]     = useState<OnlinePlayer[]>([])
   const [servers, setServers]     = useState<ServerStat[]>([])
@@ -61,8 +67,10 @@ export default function OnlinePlayersPage() {
     if (!silent) setLoading(true)
     else setRefreshing(true)
     try {
-      const serverParam = filterServer !== 'all' ? filterServer : undefined
-      const res = await arkmaniaApi.getOnlinePlayers(serverParam)
+      // Always fetch the whole cluster: total_online is counted after the
+      // server_key filter, so a filtered fetch made the "All servers" card
+      // show one server's count.  filteredPlayers narrows the list below.
+      const res = await arkmaniaApi.getOnlinePlayers()
       setPlayers(res.data.players)
       setServers(res.data.servers)
       setTotalOnline(res.data.total_online)
@@ -70,7 +78,7 @@ export default function OnlinePlayersPage() {
       setLastUpdate(new Date())
     } catch { /* silently handle */ }
     finally { setLoading(false); setRefreshing(false) }
-  }, [filterServer])
+  }, [])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -251,8 +259,6 @@ export default function OnlinePlayersPage() {
           ))}
         </div>
       )}
-
-      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }

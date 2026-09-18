@@ -21,10 +21,17 @@ import AccountsTab from "./discord/AccountsTab";
 import MembersTab from "./discord/MembersTab";
 import ConfigTab from "./discord/ConfigTab";
 import SettingsTab from "./discord/SettingsTab";
+import type { AuthUser } from "../types";
 
 type TabKey = "accounts" | "members" | "config" | "settings";
 
-export default function DiscordSettingsPage() {
+interface Props {
+  // Nothing to gate here: App.tsx mounts this route for admins only and
+  // every /discord endpoint is require_admin server side.
+  currentUser?: AuthUser | null;
+}
+
+export default function DiscordSettingsPage(_props: Props) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("accounts");
 

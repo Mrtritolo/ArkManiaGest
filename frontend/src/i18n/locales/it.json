@@ -11,7 +11,9 @@
     "language": "Lingua",
     "themeLight": "Passa al tema chiaro",
     "themeDark": "Passa al tema scuro",
-    "showAll": "Mostra tutti"
+    "showAll": "Mostra tutti",
+    "retry": "Riprova",
+    "pageLoadError": "Impossibile caricare la pagina. Ricarica per riprovare."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -43,7 +45,12 @@
     "playerMap": "Mappa giocatore",
     "clusterSync": "Sincronia cluster",
     "hardening": "Hardening",
-    "skipToContent": "Vai al contenuto"
+    "skipToContent": "Vai al contenuto",
+    "section": {
+      "main": "Principale",
+      "plugins": "Plugin",
+      "settings": "Impostazioni"
+    }
   },
   "auth": {
     "login": {
@@ -58,7 +65,8 @@
       "discordStartFailed": "Impossibile avviare il login Discord: {{message}}",
       "discordErr": "Login Discord fallito: {{reason}}"
     },
-    "logout": "Esci"
+    "logout": "Esci",
+    "connectionError": "Errore di connessione"
   },
   "setup": {
     "title": "Configurazione iniziale",
@@ -126,13 +134,15 @@
       "sshMachines": "Macchine SSH",
       "database": "Database",
       "dbOk": "OK",
-      "dbOffline": "Offline"
+      "dbOffline": "Offline",
+      "dbAdminOnly": "Lo stato del database è disponibile solo per gli amministratori."
     },
     "card": {
       "onlinePlayers": "Giocatori online",
       "viewAll": "Vedi tutti →",
       "noPlayers": "Nessun giocatore connesso",
-      "unknown": "Sconosciuto"
+      "unknown": "Sconosciuto",
+      "loadFailed": "Impossibile caricare i giocatori online."
     },
     "errors": {
       "load": "Caricamento della dashboard fallito."
@@ -363,7 +373,8 @@
         "userRequired": "Inserisci l'utente SSH per importare",
         "passwordRequired": "Inserisci la password SSH per importare",
         "generic": "Errore durante l'importazione"
-      }
+      },
+      "containersCount": "{{count}} container"
     },
     "runtime": {
       "pok": "POK-manager + Docker (Proton)",
@@ -438,7 +449,8 @@
       "deleted": "Utente \"{{username}}\" eliminato",
       "enabled": "Utente \"{{username}}\" abilitato",
       "disabled": "Utente \"{{username}}\" disabilitato",
-      "allRequired": "Tutti i campi sono obbligatori"
+      "allRequired": "Tutti i campi sono obbligatori",
+      "displayNameRequired": "Il nome visualizzato è obbligatorio"
     },
     "errors": {
       "load": "Impossibile caricare gli utenti",
@@ -511,7 +523,8 @@
         "success": "Aggiornamento installato",
         "failed": "Aggiornamento fallito"
       }
-    }
+    },
+    "loadFailed": "Caricamento impostazioni fallito"
   },
   "eventLog": {
     "title": "Log eventi",
@@ -636,14 +649,14 @@
       "namePlaceholder": "Opzionale",
       "reasonLabel": "Motivo",
       "reasonPlaceholder": "Motivo del ban…",
-      "bannedByLabel": "Bannato da",
       "durationLabel": "Durata",
       "permanent": "Permanente",
       "temporary": "Temporaneo",
       "expireLabel": "Scadenza",
       "cancel": "Annulla",
       "submit": "Banna giocatore",
-      "submitting": "Creazione…"
+      "submitting": "Creazione…",
+      "expireInvalid": "Un ban temporaneo richiede una data di scadenza futura."
     },
     "defaultReason": "Nessun motivo"
   },
@@ -701,7 +714,9 @@
         "expires": "Scadenza",
         "status": "Stato",
         "actions": "Azioni"
-      }
+      },
+      "daysValue": "{{d}}g",
+      "truncated": "Mostrate le prime {{shown}} tribù, in ordine di scadenza. Usa i filtri o la ricerca per trovare le altre."
     },
     "scheduleTitle": "Aggiungi questa tribù in ARKM_decay_pending; il prossimo sweep del plugin la distruggerà.",
     "confirmSchedule": "Programmare la distruzione della tribù #{{id}} ({{name}}) su tutti i server?\n\nIl pannello prepara solo la richiesta; il prossimo sweep periodico del plugin distrugge strutture e dino della tribù. Usa 'Annulla' dal tab Pending per revocare prima dello sweep.",
@@ -780,7 +795,8 @@
       "dinos": "Dino",
       "dinosTitle": "Distruggi tutti i dino di questa tribu' sulla mappa selezionata",
       "confirmDinos": "Distruggere TUTTI i dino della tribu' {{team}} su {{server}}?",
-      "noTarget": "Nessun server risolto per questa mappa: scegline uno nella barra in alto."
+      "noTarget": "Nessun server risolto per questa mappa: scegline uno nella barra in alto.",
+      "rconFailed": "Comando RCON fallito, nessuna risposta dal server."
     }
   },
   "leaderboard": {
@@ -848,7 +864,10 @@
         "target": "Target",
         "server": "Server",
         "date": "Data"
-      }
+      },
+      "killDino": "Kill dino nemico",
+      "structDestroyed": "Struttura distrutta",
+      "death": "Morte"
     }
   },
   "rareDinos": {
@@ -937,7 +956,17 @@
       "cancel": "Annulla",
       "save": "Salva modifiche",
       "add": "Aggiungi al pool"
-    }
+    },
+    "stats": {
+      "health": "Salute",
+      "stamina": "Stamina",
+      "oxygen": "Ossigeno",
+      "food": "Cibo",
+      "weight": "Peso",
+      "melee": "Mischia",
+      "speed": "Velocità"
+    },
+    "operatorOnly": "Modificare il pool dei dino rari richiede un account operatore o amministratore."
   },
   "transferRules": {
     "heading": "Regole transfer",
@@ -1097,7 +1126,8 @@
       "active": "Attivo",
       "expired": "Scaduto",
       "flagLabel": "Flag",
-      "expiresLabel": "Scadenza"
+      "expiresLabel": "Scadenza",
+      "readOnlyRole": "La modifica dei permessi richiede un account operatore o amministratore."
     },
     "bulkAlign": {
       "headerButton": "Allinea ({{count}})",
@@ -1124,7 +1154,13 @@
       "noValueTribe": "(senza tribù)",
       "noValueGroups": "(senza permessi)",
       "noValueTimedActive": "(senza permessi temp. attivi)",
-      "noValueTimedExpired": "(senza permessi temp. scaduti)"
+      "noValueTimedExpired": "(senza permessi temp. scaduti)",
+      "search": "Cerca…",
+      "selectAll": "(Seleziona tutto)",
+      "clear": "Azzera",
+      "noMatches": "Nessun risultato.",
+      "filterAria": "Filtra {{col}}",
+      "filterActiveAria": "Filtro attivo ({{col}})"
     },
     "bulkPerm": {
       "headerButton": "Assegna massivo ({{count}})",
@@ -1319,7 +1355,10 @@
       "groupCount_one": "{{count}} gruppo",
       "groupCount_other": "{{count}} gruppi",
       "groupCount": "{{count}} gruppi",
-      "jsonLabel": "JSON ({{count}} car)"
+      "jsonLabel": "JSON ({{count}} car)",
+      "missingGroup": "{{group}} (non presente nei gruppi permessi)",
+      "duplicateKey": "Chiave duplicata: le modifiche non vengono applicate finché ogni chiave non è unica",
+      "invalidJson": "JSON non valido (o è passato da lista a oggetto): correggilo prima di salvare"
     },
     "typeBadge": {
       "dino": "Dino",
@@ -1368,7 +1407,9 @@
       "level": "Livello",
       "weight": "Peso",
       "speed": "Velocità"
-    }
+    },
+    "unsavedConfirm": "Ci sono modifiche non salvate. Scartarle?",
+    "readOnlyRole": "Per salvare la configurazione dei plugin serve un account operatore o amministratore."
   },
   "arkshop": {
     "heading": "ArkShop",
@@ -1570,7 +1611,8 @@
       "deleteError": "Errore",
       "mysqlSaved": "MySQL salvato",
       "generalSaved": "Generali salvate",
-      "messagesSaved": "Messaggi salvati"
+      "messagesSaved": "Messaggi salvati",
+      "keyExists": "Esiste già una voce con chiave \"{{key}}\""
     }
   },
   "blueprints": {
@@ -1658,6 +1700,31 @@
       "importSuccess": "Importazione completata: {{added}} aggiunti, {{updated}} aggiornati ({{total}} totali)",
       "importError": "Importazione fallita: {{reason}}",
       "unknownError": "Errore sconosciuto"
+    },
+    "manage": {
+      "deleteSelectedConfirm": "Eliminare {{count}} blueprint?",
+      "deleted": "{{count}} blueprint eliminati",
+      "deleteFailed": "Eliminazione non riuscita",
+      "filterRequired": "Applica almeno un filtro prima di eliminare in blocco le righe filtrate",
+      "deleteFilteredConfirm": "Eliminare TUTTI i {{count}} blueprint che corrispondono al filtro attuale?",
+      "deleteSourceConfirm": "Eliminare tutti i blueprint con sorgente \"{{source}}\"?",
+      "deletedFromSource": "{{count}} blueprint eliminati dalla sorgente \"{{source}}\"",
+      "pruneConfirm": "Rimuovere tutte le voci che NON sono vanilla / DLC / ASA?",
+      "pruned": "{{removed}} blueprint non ufficiali rimossi ({{kept}} mantenuti)",
+      "pruneFailed": "Pulizia non riuscita",
+      "deleteOneConfirm": "Eliminare il blueprint \"{{name}}\"?",
+      "sourceFilterTitle": "Filtra per sorgente / etichetta di importazione",
+      "allSources": "Tutte le sorgenti",
+      "sourceOption": "{{name}} ({{count}})",
+      "noSource": "(nessuna)",
+      "sourcesLabel": "Sorgenti:",
+      "deleteSourceTitle": "Elimina tutti i blueprint da \"{{source}}\"",
+      "deleteFilteredTitle": "Elimina tutti i blueprint che corrispondono al filtro attuale",
+      "deleteFiltered": "Elimina filtrati ({{count}})",
+      "pruneTitle": "Rimuovi tutte le voci che NON sono vanilla/DLC/ASA",
+      "prune": "Rimuovi non ufficiali",
+      "deleteSelected": "Elimina selezionati",
+      "deleteOneTitle": "Elimina questo blueprint"
     }
   },
   "gameConfig": {
@@ -1751,8 +1818,33 @@
       "loadConfigFailed": "Caricamento config fallito: {{detail}}",
       "saveFailed": "Salvataggio fallito: {{detail}}",
       "saved": "Configurazione salvata con backup!",
-      "unknownError": "Errore sconosciuto"
-    }
+      "unknownError": "Errore sconosciuto",
+      "incompleteOverrides": "Alcune righe di stack, crafting o NPC sono incomplete (classe vuota, nessuna risorsa o un valore negativo). Completale o rimuovile prima di salvare."
+    },
+    "groups": {
+      "general": "Generale",
+      "rates": "Rates & Moltiplicatori",
+      "xp": "XP Dettaglio",
+      "day_night": "Giorno / Notte",
+      "combat": "Combattimento",
+      "player": "Giocatore",
+      "dino": "Creature",
+      "breeding": "Breeding & Imprinting",
+      "structures": "Strutture",
+      "gameplay": "Regole di Gioco",
+      "pvp_orp": "PvP & ORP",
+      "cryopod": "Cryopod",
+      "decay_spoil": "Decay & Spoilage",
+      "turrets": "Torrette",
+      "supply_loot": "Supply & Loot",
+      "tribe_limits": "Tribe & Limiti",
+      "transfer": "Transfer & Cluster",
+      "bunkers": "Bunker",
+      "cryo_hospital": "Cryo Hospital"
+    },
+    "passwordMasked": "Nascosta: solo gli admin possono vedere questa password. Lasciala invariata per mantenere quella attuale.",
+    "rawOnlyHint": "Questa riga non è stata interpretata e viene mantenuta così com'è. Modificala dall'Editor Raw.",
+    "readOnlyRole": "Per salvare le modifiche agli INI serve un account operatore o amministratore."
   },
   "serversPage": {
     "heading": "Gestione Server",
@@ -1801,7 +1893,8 @@
       "missingRequired": "Server key, nome e mappa sono obbligatori.",
       "created": "Server creato",
       "updated": "Server aggiornato",
-      "deleted": "Server eliminato"
+      "deleted": "Server eliminato",
+      "invalidMaxPlayers": "Max giocatori deve essere un numero intero tra 1 e 500."
     },
     "confirmDelete": "Eliminare il server \"{{name}}\"?\nVerranno rimossi anche tutti gli override di configurazione."
   },
@@ -1857,7 +1950,8 @@
     },
     "editTokenBtn": "Modifica Token ServerForge",
     "gauge": {
-      "placeholder": "--"
+      "placeholder": "--",
+      "disk": "Disco"
     },
     "confirm": {
       "start": "Avviare il server \"{{label}}\"?",
@@ -1870,7 +1964,8 @@
       "restartSent": "Restart inviato per \"{{label}}\""
     },
     "errorPrefix": "Errore: {{detail}}",
-    "ipFallback": "N/D"
+    "ipFallback": "N/D",
+    "tokenAdminOnly": "Solo un amministratore può configurare il token ServerForge."
   },
   "sqlConsole": {
     "heading": "Console SQL",
@@ -1900,7 +1995,8 @@
       "title": "Risultati",
       "summarySuccess": "{{message}} — {{time}} ms",
       "summaryFailure": "Query fallita",
-      "dmlSuccess": "{{message}} — {{time}} ms"
+      "dmlSuccess": "{{message}} — {{time}} ms",
+      "truncated": "Vengono mostrate solo le prime {{n}} righe. Aggiungi una clausola WHERE o un LIMIT per restringere il risultato."
     },
     "browser": {
       "title": "Tabelle",
@@ -1919,7 +2015,8 @@
     },
     "errors": {
       "executeFailed": "Esecuzione query fallita."
-    }
+    },
+    "confirmDestructive": "Eseguire {{verbs}} su {{database}}?\n\nL'istruzione viene applicata subito e non si può annullare."
   },
   "database": {
     "title": "Configurazione Database",
@@ -1948,7 +2045,8 @@
     "configCard": {
       "title": "Configurazione",
       "body": "Le credenziali sono salvate nel file <code>.env</code> del backend. Per modificarle edita <code>.env</code> (chiavi <code>DB_*</code> per il pannello, <code>PLUGIN_DB_*</code> per il plugin) e riavvia il backend. Le password SSH delle macchine sono cifrate AES-256-GCM nel Panel DB."
-    }
+    },
+    "loadFailed": "Impossibile caricare la configurazione del database"
   },
   "instances": {
     "title": "Istanze server ARK",
@@ -2025,7 +2123,8 @@
       "updatePriority": "Priorità update",
       "save": "Salva",
       "saving": "Salvataggio…",
-      "cancel": "Annulla"
+      "cancel": "Annulla",
+      "clearServerPassword": "Rimuovi la password del server (chiunque può entrare)"
     },
     "errors": {
       "load": "Caricamento istanze fallito.",
@@ -2042,7 +2141,12 @@
       "title": "Azioni recenti per {{name}}",
       "empty": "Nessuna azione registrata per questa istanza.",
       "noStdout": "(nessun output)"
-    }
+    },
+    "actionOk": "Completato (codice di uscita {{rc}}, {{ms}} ms).",
+    "actionFailed": "Codice di uscita {{rc}}: {{output}}",
+    "saved": "Istanza salvata.",
+    "deleted": "Istanza '{{name}}' eliminata.",
+    "clusterTag": "cluster: {{id}}"
   },
   "discord": {
     "title": "Discord",
@@ -2092,12 +2196,14 @@
         "placeholder": "Lascia vuoto per mantenere il valore attuale",
         "undoClear": "Annulla cancellazione",
         "clearTitle": "Cancella questo segreto al salvataggio",
-        "clear": "Cancella"
+        "clear": "Cancella",
+        "show": "Mostra",
+        "hide": "Nascondi"
       }
     },
     "config": {
       "toast": {
-        "copied": "Copia"
+        "copySuccess": "Copiato negli appunti"
       },
       "errors": {
         "guildProbe": "Le credenziali del bot sono impostate ma Discord ha rifiutato la richiesta della guild.",
@@ -2145,7 +2251,10 @@
       "whitelist": {
         "admin": "Admin",
         "operator": "Operatore",
-        "viewer": "Viewer"
+        "viewer": "Viewer",
+        "empty": "(vuota)",
+        "idCount_one": "{{count}} ID",
+        "idCount_other": "{{count}} ID"
       },
       "whitelistsEditHint": "Per modificare una whitelist: modifica /opt/arkmaniagest/backend/.env ed esegui 'systemctl restart arkmaniagest'.",
       "vipSync": {
@@ -2163,8 +2272,17 @@
           "discord": "Discord",
           "action": "Azione",
           "detail": "Dettaglio"
+        },
+        "metric": {
+          "assigned": "assegnati",
+          "removed": "rimossi",
+          "noop": "invariati",
+          "errors": "errori",
+          "strangers": "VIP non collegati"
         }
-      }
+      },
+      "copy": "Copia",
+      "missingKeys": "Chiavi .env mancanti:"
     },
     "roleMap": {
       "errors": {
@@ -2288,7 +2406,8 @@
         "search": "Cerca per nome, EOS o tribù",
         "searchPh": "min. 2 caratteri…",
         "searching": "Ricerca in corso…",
-        "noHits": "Nessun giocatore corrisponde."
+        "noHits": "Nessun giocatore corrisponde.",
+        "noName": "(senza nome)"
       }
     }
   },
@@ -2300,7 +2419,26 @@
       "buy": "Acquisto fallito.",
       "priceRequired": "Inserisci un prezzo valido.",
       "list": "Pubblicazione fallita.",
-      "cancel": "Cancellazione fallita."
+      "cancel": "Cancellazione fallita.",
+      "codes": {
+        "FORGE_NOT_SUPPORTED": "Shop uova/embrioni non ancora attivo: i server di gioco non sono aggiornati (ARKM-Marketplace >= 7.5.0).",
+        "SHOP_DISABLED": "Shop disabilitato.",
+        "SPECIES_REQUIRED": "Scegli una specie.",
+        "SPECIES_NOT_FOR_SALE": "Questa specie non è in vendita in questo shop.",
+        "TOO_MANY_TRAITS": "Troppi tratti genetici per questo shop.",
+        "TRAIT_MALFORMED": "Tratto genetico malformato.",
+        "TRAIT_NOT_FOUND": "Tratto genetico sconosciuto.",
+        "ITEM_NOT_FOUND": "Item non trovato.",
+        "WRONG_KIND": "Tipo errato per questa voce.",
+        "NO_PRICE": "Questa voce non ha un prezzo.",
+        "INSUFFICIENT_FUNDS": "Punti insufficienti.",
+        "NOTHING_TO_DELIVER": "Questa voce non ha nulla da consegnare.",
+        "ORDER_FAILED": "Ordine non registrato. Nessun punto è stato scalato: riprova.",
+        "ITEM_NOT_AVAILABLE": "Item non più disponibile.",
+        "INVALID_STATE": "Operazione non valida nello stato corrente.",
+        "NOT_OWNER": "Solo il proprietario può farlo.",
+        "CANNOT_BUY_OWN_ITEM": "Non puoi acquistare un tuo item."
+      }
     },
     "bought": "Acquistato! Nuovo saldo: {{b}}. Usa /market claim in-game per ritirarlo.",
     "listed": "Item pubblicato sul mercato.",
@@ -2386,6 +2524,21 @@
         "tools": "Attrezzi",
         "structures": "Strutture",
         "other": "Altro"
+      },
+      "errors": {
+        "forgeNotSupported": "Lo shop uova/embrioni non e' ancora attivo: i server di gioco devono avere ARKM-Marketplace 7.5.0 o successivo.",
+        "shopDisabled": "Questo shop e' disabilitato.",
+        "speciesRequired": "Scegli una specie.",
+        "speciesNotForSale": "Questa specie non e' in vendita in questo shop.",
+        "tooManyTraits": "Troppi tratti selezionati.",
+        "traitMalformed": "Tratto non valido.",
+        "traitNotFound": "Tratto non trovato.",
+        "itemNotFound": "Oggetto non trovato o non piu' in vendita.",
+        "wrongKind": "Questa voce non e' del tipo selezionato.",
+        "noPrice": "Questa voce non ha un prezzo.",
+        "insufficientFunds": "Punti insufficienti.",
+        "nothingToDeliver": "Questa voce non ha nulla da consegnare.",
+        "orderFailed": "Non e' stato possibile registrare l'ordine. Nessun punto e' stato scalato."
       }
     },
     "forge": {
@@ -2443,7 +2596,26 @@
       "confirm": "Conferma",
       "cancel": "Annulla"
     },
-    "pointsHint": "Punti ArkShop: la moneta unica di tutti gli shop e del mercato giocatori."
+    "pointsHint": "Punti ArkShop: la moneta unica di tutti gli shop e del mercato giocatori.",
+    "stats": {
+      "draft": "Bozze",
+      "listed": "In vendita",
+      "sold": "Venduti (in claim)",
+      "claimed": "Conclusi"
+    },
+    "status": {
+      "draft": "Bozza",
+      "listed": "In vendita",
+      "sold": "Venduto",
+      "claimed": "Concluso"
+    },
+    "role": {
+      "owner": "Proprietario",
+      "buyer": "Acquirente"
+    },
+    "qty": "Qta: {{n}}",
+    "walletUnavailable": "Saldo punti non disponibile",
+    "loadMore": "Carica altri ({{n}} di {{total}})"
   },
   "auditLog": {
     "title": "Registro Audit",
@@ -2516,7 +2688,12 @@
     "zoomOut": "Riduci",
     "zoomReset": "Mostra tutta la mappa",
     "zoomHint": "Rotella per lo zoom, trascina per spostarti.",
-    "noCalibration": "{{map}} non ha ancora una calibrazione GPS: le posizioni sono relative e lo sfondo non viene disegnato. Compare appena un server con questa mappa si avvia con il plugin 5.7.0+."
+    "noCalibration": "{{map}} non ha ancora una calibrazione GPS: le posizioni sono relative e lo sfondo non viene disegnato. Compare appena un server con questa mappa si avvia con il plugin 5.7.0+.",
+    "kind": {
+      "structure": "Struttura",
+      "dino": "Dino"
+    },
+    "sameMapUnattributed": "Anche un altro server attivo esegue {{map}} e questa scansione non ha lasciato righe attribuibili solo al server selezionato. La mappa resta vuota, così nessuna azione può colpire la tribù dell'altro server. Se il giocatore ha qualcosa su questo server, ripeti la scansione completa."
   },
   "clusterSync": {
     "title": "Sincronia cluster",

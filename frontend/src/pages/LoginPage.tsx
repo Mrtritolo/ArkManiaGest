@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { authApi, setAuthToken } from '../services/api'
+import { extractError } from '../utils/errors'
 import type { AuthUser } from '../types'
 import DiscordIcon from '../components/DiscordIcon'
 
@@ -56,7 +57,9 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
       const { data } = await authApi.discordStart('/')
       window.location.assign(data.authorize_url)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('auth.login.errorNetwork')
+      // Prefer the backend detail (e.g. which DISCORD_* keys are missing)
+      // over axios' generic "Request failed with status code 409".
+      const msg = extractError(err, t('auth.login.errorNetwork'))
       setError(t('auth.login.discordStartFailed', { message: msg }))
       setDiscordRedirecting(false)
     }

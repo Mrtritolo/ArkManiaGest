@@ -11,7 +11,7 @@
  *                  my pending claims, my completed sales.
  *   3. History  -- recent transactions where I'm buyer or seller.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Loader2, AlertCircle, RefreshCw, ShoppingBag, Coins,
@@ -45,6 +45,9 @@ const SHOP_CATEGORY_ORDER = [
   "boss", "armor", "dino", "resources", "tools", "structures", "other",
 ];
 
+/** Listings fetched per Browse page (GET /market/listed caps limit at 200). */
+const LISTED_PAGE = 100;
+
 type TabKey =
   | "browse" | "mine" | "history"
   | "shop" | "genes" | "forge" | "orders" | "prices";
@@ -55,19 +58,23 @@ interface MarketPageProps {
   currentUser?: AuthUser | null;
 }
 
-function fmtRelative(iso: string | null): string {
+/** The `t` from `useTranslation()`, narrowed to what the helpers below need. */
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+/** Relative time through the shared time.* keys (same as PlayerDashboardPage). */
+function fmtRelative(iso: string | null, t: TFunc): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const diff = Date.now() - d.getTime();
   const abs = Math.abs(diff);
   let label: string;
-  if (abs < 60_000)             label = "< 1m";
-  else if (abs < 3_600_000)     label = `${Math.floor(abs / 60_000)}m`;
-  else if (abs < 86_400_000)    label = `${Math.floor(abs / 3_600_000)}h`;
-  else if (abs < 86_400_000*30) label = `${Math.floor(abs / 86_400_000)}g`;
+  if (abs < 60_000)             label = t("time.underMinute");
+  else if (abs < 3_600_000)     label = t("time.minutes", { n: Math.floor(abs / 60_000) });
+  else if (abs < 86_400_000)    label = t("time.hours",   { n: Math.floor(abs / 3_600_000) });
+  else if (abs < 86_400_000*30) label = t("time.days",    { n: Math.floor(abs / 86_400_000) });
   else return d.toLocaleDateString();
-  return diff >= 0 ? `${label} fa` : `tra ${label}`;
+  return diff >= 0 ? t("time.ago", { v: label }) : t("time.in", { v: label });
 }
 
 function shortBp(bp: string): string {
@@ -76,25 +83,25 @@ function shortBp(bp: string): string {
   return last.length > 60 ? last.slice(0, 57) + "…" : last;
 }
 
-function extractError(err: unknown, fallback: string): string {
-  const code = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+/**
+ * Error text for a market or shop call.  Both routers answer with stable
+ * machine codes (INSUFFICIENT_FUNDS, SHOP_DISABLED, ...) that are translated
+ * here; any other detail (e.g. "No Discord session.") is shown as-is.
+ */
+function extractError(err: unknown, fallback: string, t: TFunc): string {
+  const code = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
   if (typeof code === "string") {
-    // Map known machine codes to user text
-    const map: Record<string, string> = {
-      INSUFFICIENT_FUNDS:    "Saldo insufficiente.",
-      ITEM_NOT_AVAILABLE:    "Item non più disponibile.",
-      INVALID_STATE:         "Operazione non valida nello stato corrente.",
-      NOT_OWNER:             "Solo il proprietario può farlo.",
-      ITEM_NOT_FOUND:        "Item non trovato.",
-      CANNOT_BUY_OWN_ITEM:   "Non puoi acquistare un tuo item.",
-    };
-    return map[code] ?? code;
+    return /^[A-Z_]+$/.test(code)
+      ? t(`market.errors.codes.${code}`, { defaultValue: code })
+      : code;
   }
   return (err as { message?: string })?.message ?? fallback;
 }
 
 export default function MarketPage({ embedded = false, currentUser }: MarketPageProps) {
-  const isAdmin = currentUser?.role === "admin";
+  // Catalogue import and price edits are require_operator on the backend
+  // (the price read is require_viewer, but the tab exists to edit them).
+  const canOperate = currentUser?.role === "admin" || currentUser?.role === "operator";
   const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("browse");
 
@@ -209,7 +216,9 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
 
 
   const confirmPendingBuy = async () => {
-    if (!pendingBuy) return;
+    // pendingBusy: a second confirm while the first purchase is in flight
+    // would charge twice.
+    if (!pendingBuy || pendingBusy) return;
     setPendingBusy(true);
     try {
       await pendingBuy.run();
@@ -232,8 +241,11 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
         const r = await webShopApi.buy(kind, key, 1, tier, species);
         setSuccess(t("market.shop.bought", { spent: r.data.spent }));
         await Promise.all([loadWallet(), loadShopOrders()]);
-      } catch (e: any) {
-        setError(e.response?.data?.detail || String(e));
+      } catch (e: unknown) {
+        setError(extractError(e, t("market.errors.buy"), t));
+        // The balance may have moved in game since it was loaded (that is
+        // the usual reason for INSUFFICIENT_FUNDS): show the real one.
+        loadWallet();
       } finally {
         setShopBusy(null);
       }
@@ -247,13 +259,22 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   const [listed, setListed]       = useState<MarketListedItem[]>([]);
   const [listedTotal, setListedTotal] = useState(0);
   const [listedLoading, setListedLoading] = useState(true);
+  const [listedMoreLoading, setListedMoreLoading] = useState(false);
   const [searchBp, setSearchBp]   = useState("");
+  // What the list was actually queried with: searchBp after a short pause,
+  // so typing does not fire one request per keystroke.
+  const [appliedBp, setAppliedBp] = useState("");
   const [sort, setSort]           = useState<"newest" | "price_asc" | "price_desc">("newest");
+  // Bumped by every fresh query: a response whose number is no longer the
+  // current one belongs to an older search and is dropped.
+  const listedSeq = useRef(0);
 
   // My items
   const [myItems, setMyItems] = useState<MarketMyItem[]>([]);
   const [myLoading, setMyLoading] = useState(false);
   const [priceInput, setPriceInput] = useState<Record<number, string>>({});
+  // Item with a publish/cancel request in flight (double-click guard).
+  const [myBusyId, setMyBusyId] = useState<number | null>(null);
 
   // Wallet
   const [wallet, setWallet] = useState<MarketWallet | null>(null);
@@ -263,22 +284,52 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   const [histLoading, setHistLoading] = useState(false);
 
   const loadListed = useCallback(async () => {
+    const seq = ++listedSeq.current;
     setListedLoading(true);
     setError("");
     try {
       const res = await marketApi.listed({
-        limit: 100,
-        blueprint: searchBp || undefined,
+        limit: LISTED_PAGE,
+        blueprint: appliedBp || undefined,
         sort,
       });
+      if (seq !== listedSeq.current) return;
       setListed(res.data.items);
       setListedTotal(res.data.total);
     } catch (err) {
-      setError(extractError(err, t("market.errors.loadListed")));
+      if (seq !== listedSeq.current) return;
+      setError(extractError(err, t("market.errors.loadListed"), t));
     } finally {
-      setListedLoading(false);
+      if (seq === listedSeq.current) setListedLoading(false);
     }
-  }, [searchBp, sort, t]);
+  }, [appliedBp, sort, t]);
+
+  /** Next page of the current query, appended (the backend caps a page). */
+  const loadMoreListed = async () => {
+    if (listedMoreLoading) return;
+    const seq = listedSeq.current;
+    setListedMoreLoading(true);
+    try {
+      const res = await marketApi.listed({
+        limit: LISTED_PAGE,
+        offset: listed.length,
+        blueprint: appliedBp || undefined,
+        sort,
+      });
+      if (seq !== listedSeq.current) return;
+      // Listings sold or added meanwhile shift the pages: skip duplicates.
+      setListed(prev => {
+        const seen = new Set(prev.map(i => i.id));
+        return [...prev, ...res.data.items.filter(i => !seen.has(i.id))];
+      });
+      setListedTotal(res.data.total);
+    } catch (err) {
+      if (seq === listedSeq.current)
+        setError(extractError(err, t("market.errors.loadListed"), t));
+    } finally {
+      setListedMoreLoading(false);
+    }
+  };
 
   const loadWallet = useCallback(async () => {
     try {
@@ -296,7 +347,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       const res = await marketApi.myItems();
       setMyItems(res.data);
     } catch (err) {
-      setError(extractError(err, t("market.errors.loadMine")));
+      setError(extractError(err, t("market.errors.loadMine"), t));
     } finally {
       setMyLoading(false);
     }
@@ -308,13 +359,18 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       const res = await marketApi.myTransactions();
       setHistory(res.data.transactions);
     } catch (err) {
-      setError(extractError(err, t("market.errors.loadHistory")));
+      setError(extractError(err, t("market.errors.loadHistory"), t));
     } finally {
       setHistLoading(false);
     }
   }, [t]);
 
-  useEffect(() => { loadListed(); loadWallet(); }, [loadListed, loadWallet]);
+  useEffect(() => {
+    const h = setTimeout(() => setAppliedBp(searchBp), 300);
+    return () => clearTimeout(h);
+  }, [searchBp]);
+  useEffect(() => { loadListed(); }, [loadListed]);
+  useEffect(() => { loadWallet(); }, [loadWallet]);
   useEffect(() => {
     if (tab === "mine") loadMyItems();
     if (tab === "history") loadHistory();
@@ -326,6 +382,13 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   // Il numero di acquisti da ritirare va saputo appena si apre la pagina:
   // e' l'unica cosa che richiede un'azione in gioco.
   useEffect(() => { loadShopOrders(); }, [loadShopOrders]);
+
+  // Forge mode follows the configs: with only one of the two shops enabled,
+  // defaulting to "egg" showed the embryo-only shop as disabled.
+  useEffect(() => {
+    if (eggShopCfg?.enabled && !embryoShopCfg?.enabled) setForgeMode("egg");
+    else if (!eggShopCfg?.enabled && embryoShopCfg?.enabled) setForgeMode("embryo");
+  }, [eggShopCfg, embryoShopCfg]);
 
   // Auto-clear toasts.
   useEffect(() => {
@@ -339,6 +402,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       label: arkItemDisplayName(item.blueprint),
       price: item.price,
       run: async () => {
+        setError(""); setSuccess("");
         try {
           const res = await marketApi.buy(item.id);
           setSuccess(t("market.bought", {
@@ -348,19 +412,30 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
           setListedTotal(t => t - 1);
           loadWallet();
         } catch (err) {
-          setError(extractError(err, t("market.errors.buy")));
+          setError(extractError(err, t("market.errors.buy"), t));
+          // Someone else bought it (or it was withdrawn): drop the stale
+          // card so its Buy button cannot repeat the failing purchase.
+          const code = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+          if (code === "ITEM_NOT_AVAILABLE" || code === "ITEM_NOT_FOUND") {
+            setListed(prev => prev.filter(i => i.id !== item.id));
+            setListedTotal(n => Math.max(0, n - 1));
+          }
+          // INSUFFICIENT_FUNDS usually means points were spent in game.
+          loadWallet();
         }
       },
     });
   }
 
   async function handleList(itemId: number) {
-    const raw = priceInput[itemId];
-    const price = parseInt(raw || "", 10);
-    if (!price || price <= 0) {
+    if (myBusyId !== null) return;
+    const price = Number((priceInput[itemId] || "").trim());
+    // Integers only: parseInt silently turned "12.5" into 12.
+    if (!Number.isInteger(price) || price <= 0) {
       setError(t("market.errors.priceRequired"));
       return;
     }
+    setMyBusyId(itemId);
     try {
       await marketApi.listForSale(itemId, price);
       setSuccess(t("market.listed"));
@@ -368,19 +443,25 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
       loadMyItems();
       loadListed();
     } catch (err) {
-      setError(extractError(err, t("market.errors.list")));
+      setError(extractError(err, t("market.errors.list"), t));
+    } finally {
+      setMyBusyId(null);
     }
   }
 
   async function handleCancel(itemId: number) {
+    if (myBusyId !== null) return;
     if (!confirm(t("market.confirmCancel"))) return;
+    setMyBusyId(itemId);
     try {
       await marketApi.cancel(itemId);
       setSuccess(t("market.cancelled"));
       loadMyItems();
       loadListed();
     } catch (err) {
-      setError(extractError(err, t("market.errors.cancel")));
+      setError(extractError(err, t("market.errors.cancel"), t));
+    } finally {
+      setMyBusyId(null);
     }
   }
 
@@ -401,6 +482,13 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     }
     return out;
   }, [shopItems, shopSearch]);
+
+  /** Chip order: known categories first, then unknown slugs (as shopGroups). */
+  const shopCatChips = useMemo(() => {
+    const known = SHOP_CATEGORY_ORDER.filter(c => shopCatCounts[c]);
+    const rest = Object.keys(shopCatCounts).filter(c => !SHOP_CATEGORY_ORDER.includes(c)).sort();
+    return [...known, ...rest];
+  }, [shopCatCounts]);
 
   /** Voci che passano ricerca + categoria. */
   const shopVisible = useMemo(() => {
@@ -434,9 +522,13 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
   }, [myItems]);
 
   // ── Layout shell ──────────────────────────────────────────────────────
+  //
+  // A plain render function, not a component: a component defined in here
+  // is a new type on every render, so React remounted the whole page on each
+  // keystroke and every input lost focus after one character.
 
-  const Wrapper = embedded
-    ? ({ children }: { children: React.ReactNode }) => (
+  const wrap = (children: React.ReactNode) => embedded
+    ? (
         <div className="pl-page">
           <div className="pl-header">
             <div>
@@ -458,7 +550,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
           {children}
         </div>
       )
-    : ({ children }: { children: React.ReactNode }) => (
+    : (
         <div style={{
           minHeight: "100vh",
           background: "var(--bg, var(--bg-card-muted))",
@@ -500,8 +592,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
         </div>
       );
 
-  return (
-    <Wrapper>
+  return wrap(
       <>
         {/* Tab switcher */}
         <div style={{
@@ -534,7 +625,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                     icon={<Egg size={14} />}
                     label={t("market.tab.forge")} />
           )}
-          {isAdmin && (
+          {canOperate && (
             <TabBtn active={tab === "prices"} onClick={() => setTab("prices")}
                     icon={<Coins size={14} />}
                     label={t("market.tab.prices")} />
@@ -654,10 +745,10 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 onChange={e => setShopSearch(e.target.value)}
                 style={{ flex: 1, minWidth: 0 }}
               />
-              {/* Solo admin: riempie la vetrina dalla config di ArkShop. Sta
+              {/* Solo operator/admin: riempie la vetrina dalla config di ArkShop. Sta
                   qui e non in una pagina di impostazioni perche' e' il posto
                   dove ci si accorge che la vetrina e' vuota. */}
-              {isAdmin && (
+              {canOperate && (
                 <button className="btn btn-secondary btn-sm"
                   disabled={shopBusy !== null}
                   aria-label={t("market.shop.importHint")} title={t("market.shop.importHint")}
@@ -672,9 +763,11 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 una categoria che la ricerca ha svuotato si vede subito. */}
             {shopItems.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: "0.7rem" }}>
+                {/* "All" counts every category, not the selected one. */}
                 <CategoryChip active={!shopCat} onClick={() => setShopCat("")}
-                  label={t("market.shop.catAll")} count={shopVisible.length} />
-                {SHOP_CATEGORY_ORDER.filter(c => shopCatCounts[c]).map(c => (
+                  label={t("market.shop.catAll")}
+                  count={Object.values(shopCatCounts).reduce((a, b) => a + b, 0)} />
+                {shopCatChips.map(c => (
                   <CategoryChip key={c} active={shopCat === c}
                     onClick={() => setShopCat(shopCat === c ? "" : c)}
                     label={t(`market.shop.cat.${c}`, { defaultValue: c })} count={shopCatCounts[c]} />
@@ -703,7 +796,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                     {t(`market.shop.cat.${cat}`, { defaultValue: cat })}
                     <span style={{ fontWeight: 500 }}>{items.length}</span>
                   </h3>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: "0.6rem" }}>
                     {items.map(i => {
                     const isPack = i.line_count > 1;
                     const open = openPack === i.key;
@@ -832,7 +925,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   </select>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.6rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: "0.6rem" }}>
                 {shopGenes
                   .filter(g => !shopSearch ||
                     g.label.toLowerCase().includes(shopSearch.toLowerCase()) ||
@@ -915,8 +1008,9 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                   { stats: [], muts: [], colors, traits, gender });
                 setSuccess(t("market.shop.bought", { spent: r.data.spent }));
                 await Promise.all([loadWallet(), loadShopOrders()]);
-              } catch (e: any) {
-                setError(e.response?.data?.detail || String(e));
+              } catch (e: unknown) {
+                setError(extractError(e, t("market.errors.buy"), t));
+                loadWallet();
               } finally {
                 setShopBusy(null);
               }
@@ -930,14 +1024,22 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
               {eggShopCfg?.enabled && (
                 <button
                   className={forgeMode === "egg" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
-                  onClick={() => { setForgeMode("egg"); setForgeSpecies(""); }}>
+                  onClick={() => {
+                    setForgeMode("egg"); setForgeSpecies("");
+                    // Each shop has its own trait cap; extra traits would be
+                    // priced here and then rejected with TOO_MANY_TRAITS.
+                    setForgeTraits(p => p.slice(0, eggShopCfg.max_traits));
+                  }}>
                   <Egg size={13} /> {t("market.forge.eggMode")}
                 </button>
               )}
               {embryoShopCfg?.enabled && (
                 <button
                   className={forgeMode === "embryo" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
-                  onClick={() => { setForgeMode("embryo"); setForgeSpecies(""); }}>
+                  onClick={() => {
+                    setForgeMode("embryo"); setForgeSpecies("");
+                    setForgeTraits(p => p.slice(0, embryoShopCfg.max_traits));
+                  }}>
                   <Dna size={13} /> {t("market.forge.embryoMode")}
                 </button>
               )}
@@ -1075,7 +1177,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
         })()}
 
         {/* TAB ADMIN: gestione prezzi (matrice geni + listino specie forge) */}
-        {tab === "prices" && isAdmin && (() => {
+        {tab === "prices" && canOperate && (() => {
           const saveGenes = async () => {
             setAdminBusy(true); setError(""); setSuccess("");
             try {
@@ -1309,7 +1411,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                         )}
                       </td>
                       <td style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                        {fmtRelative(o.claimed_at || o.created_at)}
+                        {fmtRelative(o.claimed_at || o.created_at, t)}
                       </td>
                     </tr>
                   ))}
@@ -1331,7 +1433,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 placeholder={t("market.searchPh")}
                 value={searchBp}
                 onChange={e => setSearchBp(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && loadListed()}
+                onKeyDown={e => e.key === "Enter" && setAppliedBp(searchBp)}
                 style={{ flex: "1 1 200px", minWidth: 0 }}
               />
               <select
@@ -1375,6 +1477,15 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                     />
                   ))}
                 </div>
+                {listed.length < listedTotal && (
+                  <div style={{ display: "flex", justifyContent: "center", marginTop: "0.8rem" }}>
+                    <button onClick={loadMoreListed} disabled={listedMoreLoading}
+                      className="btn btn-secondary btn-sm">
+                      {listedMoreLoading && <Loader2 size={12} className="pl-spin" />}{" "}
+                      {t("market.loadMore", { n: listed.length, total: listedTotal })}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </>
@@ -1384,10 +1495,10 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
         {tab === "mine" && (
           <>
             <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.7rem", flexWrap: "wrap" }}>
-              <Stat label="Draft" value={myStats.draft} color="var(--text-muted)" />
-              <Stat label="In vendita" value={myStats.listed} color="var(--success)" />
-              <Stat label="Venduti (in claim)" value={myStats.sold} color="var(--warning)" />
-              <Stat label="Conclusi" value={myStats.claimed} color="var(--cyan)" />
+              <Stat label={t("market.stats.draft")} value={myStats.draft} color="var(--text-muted)" />
+              <Stat label={t("market.stats.listed")} value={myStats.listed} color="var(--success)" />
+              <Stat label={t("market.stats.sold")} value={myStats.sold} color="var(--warning)" />
+              <Stat label={t("market.stats.claimed")} value={myStats.claimed} color="var(--cyan)" />
             </div>
             {myLoading ? (
               <div className="pl-loading"><Loader2 size={16} className="pl-spin" /></div>
@@ -1422,14 +1533,14 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 500 }}>{arkItemDisplayName(it.blueprint)}</div>
                             <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                              Qta: {it.quantity}
+                              {t("market.qty", { n: it.quantity })}
                               {it.quality > 0 ? ` · Q${it.quality}` : ""}
                             </div>
                           </div>
                         </div>
                       </td>
                       <td>
-                        <span className="pl-chip">{it.role}</span>
+                        <span className="pl-chip">{t(`market.role.${it.role}`, { defaultValue: it.role })}</span>
                       </td>
                       <td>
                         <StatusChip status={it.status} />
@@ -1443,20 +1554,24 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                           <div style={{ display: "flex", gap: "0.3rem", justifyContent: "flex-end" }}>
                             <input
                               className="form-input"
-                              placeholder="Prezzo"
+                              placeholder={t("market.col.price")}
                               type="number"
                               value={priceInput[it.id] ?? ""}
                               onChange={e => setPriceInput(p => ({ ...p, [it.id]: e.target.value }))}
                               style={{ width: 100, padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
                             />
-                            <button onClick={() => handleList(it.id)} className="btn btn-primary btn-sm">
-                              <Tag size={11} /> {t("market.publish")}
+                            <button onClick={() => handleList(it.id)} className="btn btn-primary btn-sm"
+                              disabled={myBusyId !== null}>
+                              {myBusyId === it.id
+                                ? <Loader2 size={11} className="pl-spin" />
+                                : <Tag size={11} />} {t("market.publish")}
                             </button>
                           </div>
                         )}
                         {it.role === "owner" && it.status === "listed" && (
                           <div style={{ display: "flex", gap: "0.3rem", justifyContent: "flex-end" }}>
-                            <button onClick={() => handleCancel(it.id)} className="btn btn-secondary btn-sm" style={{ color: "var(--danger)" }}>
+                            <button onClick={() => handleCancel(it.id)} className="btn btn-secondary btn-sm" style={{ color: "var(--danger)" }}
+                              disabled={myBusyId !== null}>
                               <Ban size={11} /> {t("market.cancel")}
                             </button>
                           </div>
@@ -1498,7 +1613,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
                 <tbody>
                   {history.map(tx => (
                     <tr key={tx.id}>
-                      <td style={{ fontSize: "0.78rem" }}>{fmtRelative(tx.created_at)}</td>
+                      <td style={{ fontSize: "0.78rem" }}>{fmtRelative(tx.created_at, t)}</td>
                       <td>
                         <span className="pl-chip" style={{
                           background: tx.role === "buyer" ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "color-mix(in srgb, var(--success) 8%, transparent)",
@@ -1524,7 +1639,6 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
           </>
         )}
       </>
-    </Wrapper>
   );
 }
 
@@ -1732,7 +1846,7 @@ function ItemCard({
           </strong>
           {it.listed_at && (
             <span style={{ marginLeft: 6, opacity: 0.85 }}>
-              · {fmtRelative(it.listed_at)}
+              · {fmtRelative(it.listed_at, t)}
             </span>
           )}
         </div>
@@ -1756,11 +1870,11 @@ function ItemCard({
             className="btn btn-primary btn-sm"
             disabled={!walletLoaded || !canAfford}
             aria-label={
-              !walletLoaded ? "Wallet non disponibile"
-              : !canAfford  ? "Saldo insufficiente" : ""
+              !walletLoaded ? t("market.walletUnavailable")
+              : !canAfford  ? t("market.buyModal.insufficient") : undefined
             } title={
-              !walletLoaded ? "Wallet non disponibile"
-              : !canAfford  ? "Saldo insufficiente" : ""
+              !walletLoaded ? t("market.walletUnavailable")
+              : !canAfford  ? t("market.buyModal.insufficient") : undefined
             }
             style={{ padding: "0.35rem 0.65rem" }}
           >
@@ -1861,13 +1975,15 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
 }
 
 function StatusChip({ status }: { status: string }) {
-  const colors: Record<string, [string, string]> = {
-    draft:   ["var(--text-muted)", "Bozza"],
-    listed:  ["var(--success)", "In vendita"],
-    sold:    ["var(--warning)", "Venduto"],
-    claimed: ["var(--cyan)", "Concluso"],
+  const { t } = useTranslation();
+  const colors: Record<string, string> = {
+    draft:   "var(--text-muted)",
+    listed:  "var(--success)",
+    sold:    "var(--warning)",
+    claimed: "var(--cyan)",
   };
-  const [c, lbl] = colors[status] ?? ["var(--text-muted)", status];
+  const c = colors[status] ?? "var(--text-muted)";
+  const lbl = t(`market.status.${status}`, { defaultValue: status });
   return (
     <span className="pl-chip" style={{
       background: `color-mix(in srgb, ${c} 8%, transparent)`, color: c, borderColor: `color-mix(in srgb, ${c} 25%, transparent)`,

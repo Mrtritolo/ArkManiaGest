@@ -52,6 +52,12 @@ export default function ConfigTab() {
 
   useEffect(() => { loadAll(); }, []);
 
+  // Only confirm when the write worked: the Clipboard API is unavailable
+  // over plain HTTP, and the toast must not claim a copy that never happened.
+  async function copy(text: string, key: string): Promise<void> {
+    if (await copyText(text)) setCopied(key);
+  }
+
   async function loadAll(): Promise<void> {
     setLoading(true);
     setError("");
@@ -114,7 +120,7 @@ export default function ConfigTab() {
       >
         <KV label={t("discord.config.field.clientId")}
             value={config.client_id || "—"}
-            onCopy={config.client_id ? () => { copyText(config.client_id); setCopied("client_id"); } : undefined}
+            onCopy={config.client_id ? () => copy(config.client_id, "client_id") : undefined}
             copied={copied === "client_id"}
         />
         <KV label={t("discord.config.field.publicKey")}
@@ -127,7 +133,7 @@ export default function ConfigTab() {
               : t("discord.config.hint.redirectRegister")
             }
             onCopy={config.redirect_uri
-              ? () => { copyText(config.redirect_uri); setCopied("redirect_uri"); }
+              ? () => copy(config.redirect_uri, "redirect_uri")
               : undefined}
             copied={copied === "redirect_uri"}
         />
@@ -151,7 +157,7 @@ export default function ConfigTab() {
       >
         <KV label={t("discord.config.field.guildId")}
             value={config.guild_id || "—"}
-            onCopy={config.guild_id ? () => { copyText(config.guild_id); setCopied("guild_id"); } : undefined}
+            onCopy={config.guild_id ? () => copy(config.guild_id, "guild_id") : undefined}
             copied={copied === "guild_id"}
         />
         <KV label={t("discord.config.field.botToken")}
@@ -243,7 +249,7 @@ export default function ConfigTab() {
 
       {copied && (
         <div className="alert alert-success" style={{ marginTop: 0 }}>
-          <CheckCircle size={14} /> {t("discord.config.toast.copied")}
+          <CheckCircle size={14} /> {t("discord.config.toast.copySuccess")}
         </div>
       )}
     </div>
@@ -262,6 +268,7 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
   async function runSync(): Promise<void> {
     setRunning(true);
     setError("");
+    setShowAll(false);
     try {
       const res = await discordApi.syncVip();
       setReport(res.data);
@@ -335,11 +342,11 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
           display: "flex", flexDirection: "column", gap: "0.3rem",
         }}>
           <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
-            <Metric value={report.assigned_count} label="assegnati" color="var(--success)" />
-            <Metric value={report.removed_count}  label="rimossi"   color="var(--warning)" />
-            <Metric value={report.noop_count}     label="no-op"     color="var(--text-muted)" />
-            <Metric value={report.error_count}    label="errori"    color={report.error_count > 0 ? "var(--danger)" : "var(--text-muted)"} />
-            <Metric value={report.unmapped_with_vip.length} label="stranger VIP" color="var(--text-muted)" />
+            <Metric value={report.assigned_count} label={t("discord.config.vipSync.metric.assigned")} color="var(--success)" />
+            <Metric value={report.removed_count}  label={t("discord.config.vipSync.metric.removed")}  color="var(--warning)" />
+            <Metric value={report.noop_count}     label={t("discord.config.vipSync.metric.noop")}     color="var(--text-muted)" />
+            <Metric value={report.error_count}    label={t("discord.config.vipSync.metric.errors")}   color={report.error_count > 0 ? "var(--danger)" : "var(--text-muted)"} />
+            <Metric value={report.unmapped_with_vip.length} label={t("discord.config.vipSync.metric.strangers")} color="var(--text-muted)" />
           </div>
 
           {report.unmapped_with_vip.length > 0 && (
@@ -366,10 +373,7 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
 
           {report.actions.length > 0 && (
             <details style={{ fontSize: "0.75rem" }}>
-              <summary
-                style={{ cursor: "pointer", color: "var(--text-secondary)" }}
-                onClick={() => setShowAll(true)}
-              >
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
                 {t(
                   "discord.config.vipSync.perRow",
                   {
@@ -504,6 +508,7 @@ function KV({
   onCopy?: () => void;
   copied?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -524,7 +529,7 @@ function KV({
             onClick={onCopy}
             className="btn btn-secondary btn-sm"
             style={{ padding: "0.15rem 0.35rem" }}
-            aria-label="Copy" title="Copy"
+            aria-label={t("discord.config.copy")} title={t("discord.config.copy")}
           >
             {copied ? <CheckCircle size={11} color="var(--success)" /> : <Copy size={11} />}
           </button>
@@ -540,6 +545,7 @@ function KV({
 }
 
 function MissingHint({ keys }: { keys: string[] }) {
+  const { t } = useTranslation();
   return (
     <div
       style={{
@@ -552,7 +558,7 @@ function MissingHint({ keys }: { keys: string[] }) {
       }}
     >
       <div style={{ fontWeight: 600, color: "var(--danger)", marginBottom: "0.2rem" }}>
-        Missing .env keys:
+        {t("discord.config.missingKeys")}
       </div>
       <code style={{ fontFamily: "monospace", fontSize: "0.78rem" }}>
         {keys.join(", ")}
@@ -568,6 +574,7 @@ function WhitelistRow({
   ids: string[];
   envKey: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
@@ -583,7 +590,7 @@ function WhitelistRow({
           {envKey}
         </span>
         <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginLeft: "auto" }}>
-          {ids.length} {ids.length === 1 ? "ID" : "IDs"}
+          {t("discord.config.whitelist.idCount", { count: ids.length })}
         </span>
       </div>
       <div style={{
@@ -594,7 +601,7 @@ function WhitelistRow({
         {ids.length === 0
           ? (
             <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
-              (empty)
+              {t("discord.config.whitelist.empty")}
             </span>
           )
           : ids.map(id => (

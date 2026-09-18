@@ -29,6 +29,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { sqlConsoleApi, type SqlDatabaseTarget } from "../services/api";
+import type { AuthUser } from "../types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +59,8 @@ interface QueryResult {
   columns: string[];
   rows: unknown[][];
   row_count: number;
+  /** Set by the server when it stopped reading rows at its cap. */
+  truncated?: boolean;
   execution_time_ms: number;
   message: string;
   error: string | null;
@@ -71,11 +74,43 @@ interface HistoryEntry {
   execution_time_ms: number;
 }
 
+/** Rows put in the grid; more than this and the tab stalls building cells. */
+const MAX_RENDER_ROWS = 1000;
+
+// Statements that delete or rewrite data.  The server runs every query with
+// autocommit, so there is no undo once one has been sent.
+const DESTRUCTIVE_VERBS = new Set(["DELETE", "UPDATE", "DROP", "TRUNCATE", "ALTER", "RENAME", "REPLACE"]);
+
+/** Leading verb of each statement in the batch that is destructive. */
+function destructiveVerbs(sql: string): string[] {
+  // Strip quoted strings, quoted identifiers and comments first, so a ';'
+  // or a verb inside them is not taken for a statement.
+  const code = sql.replace(
+    /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`[^`]*`|\/\*[\s\S]*?\*\/|(?:#|--(?=\s|$))[^\n]*/g,
+    " ",
+  );
+  const verbs = code
+    .split(";")
+    .map((stmt) => {
+      const s = stmt.trim();
+      // MariaDB's CREATE OR REPLACE drops the existing object and its data.
+      return /^CREATE\s+OR\s+REPLACE\b/i.test(s) ? "CREATE OR REPLACE" : s.split(/\s+/)[0].toUpperCase();
+    })
+    .filter((verb) => verb === "CREATE OR REPLACE" || DESTRUCTIVE_VERBS.has(verb));
+  return [...new Set(verbs)];
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function SqlConsolePage() {
+interface Props {
+  // Nothing to gate here: App.tsx mounts this route for admins only and
+  // every /sql endpoint is require_admin server side.
+  currentUser?: AuthUser | null;
+}
+
+export default function SqlConsolePage(_props: Props) {
   const { t } = useTranslation();
   // ── State ────────────────────────────────────────────────────────────────
 
@@ -97,27 +132,34 @@ export default function SqlConsolePage() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The target the table browser shows.  A table list or schema that
+  // arrives for another target is dropped, so the browser never lists one
+  // database's tables under the other's button.
+  const databaseRef = useRef<SqlDatabaseTarget>(database);
 
   // ── Effects ──────────────────────────────────────────────────────────────
 
   /** Load the table list on mount and whenever the target database changes. */
   useEffect(() => {
+    databaseRef.current = database;
     setExpandedTable(null);
     setTableColumns({});
+    setTables([]);
     loadTables();
   }, [database]);
 
   // ── Data fetching ────────────────────────────────────────────────────────
 
   async function loadTables(): Promise<void> {
+    const target = database;
     setTablesLoading(true);
     try {
-      const res = await sqlConsoleApi.tables(database);
-      setTables(res.data);
+      const res = await sqlConsoleApi.tables(target);
+      if (target === databaseRef.current) setTables(res.data);
     } catch {
-      /* Table list is non-critical; silently ignore */
+      /* Table list is non-critical; the list stays empty */
     } finally {
-      setTablesLoading(false);
+      if (target === databaseRef.current) setTablesLoading(false);
     }
   }
 
@@ -125,10 +167,13 @@ export default function SqlConsolePage() {
     // Skip if already loaded
     if (tableColumns[tableName]) return;
 
+    const target = database;
     setColumnsLoading(tableName);
     try {
-      const res = await sqlConsoleApi.tableSchema(tableName, database);
-      setTableColumns((prev) => ({ ...prev, [tableName]: res.data }));
+      const res = await sqlConsoleApi.tableSchema(tableName, target);
+      if (target === databaseRef.current) {
+        setTableColumns((prev) => ({ ...prev, [tableName]: res.data }));
+      }
     } catch {
       /* Schema load is non-critical */
     } finally {
@@ -141,6 +186,19 @@ export default function SqlConsolePage() {
   const executeQuery = useCallback(async () => {
     const trimmed = query.trim();
     if (!trimmed || executing) return;
+
+    // Ctrl+Enter sends the editor as it is, e.g. a DELETE typed before its
+    // WHERE clause: ask before anything that deletes or rewrites data.
+    const risky = destructiveVerbs(trimmed);
+    if (
+      risky.length > 0 &&
+      !window.confirm(t("sqlConsole.confirmDestructive", {
+        verbs: risky.join(", "),
+        database: t(database === "plugin" ? "sqlConsole.db.plugin" : "sqlConsole.db.panel"),
+      }))
+    ) {
+      return;
+    }
 
     setExecuting(true);
     setResult(null);
@@ -452,6 +510,14 @@ export default function SqlConsolePage() {
                 </div>
               )}
 
+              {/* Row cap notice */}
+              {result.success && (result.truncated || result.rows.length > MAX_RENDER_ROWS) && (
+                <div className="alert" style={{ color: "var(--warning)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                  {t("sqlConsole.results.truncated", { n: Math.min(result.rows.length, MAX_RENDER_ROWS) })}
+                </div>
+              )}
+
               {/* Data grid */}
               {result.success && result.columns.length > 0 && (
                 <div
@@ -482,7 +548,7 @@ export default function SqlConsolePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {result.rows.map((row, rowIdx) => (
+                      {result.rows.slice(0, MAX_RENDER_ROWS).map((row, rowIdx) => (
                         <tr key={rowIdx}>
                           <td
                             style={{
@@ -493,7 +559,9 @@ export default function SqlConsolePage() {
                           >
                             {rowIdx + 1}
                           </td>
-                          {row.map((cell, colIdx) => (
+                          {row.map((cell, colIdx) => {
+                            const text = renderCellValue(cell);
+                            return (
                             <td
                               key={colIdx}
                               style={{
@@ -510,11 +578,12 @@ export default function SqlConsolePage() {
                                     }
                                   : {}),
                               }}
-                              title={renderCellValue(cell)}
+                              title={text}
                             >
-                              {renderCellValue(cell)}
+                              {text}
                             </td>
-                          ))}
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>

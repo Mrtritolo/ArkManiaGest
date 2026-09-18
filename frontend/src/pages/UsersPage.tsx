@@ -31,9 +31,15 @@ interface UserForm {
   role:         string
 }
 
+interface Props {
+  // Nothing to gate here: App.tsx mounts this route for admins only and
+  // every /users endpoint is require_admin server side.
+  currentUser?: AuthUser | null
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function UsersPage() {
+export default function UsersPage(_props: Props) {
   const { t } = useTranslation()
   const [users, setUsers]     = useState<AuthUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,20 +95,29 @@ export default function UsersPage() {
     setSaving(true)
     setError('')
     try {
+      // The backend accepts a blank display name on update (and strips a
+      // whitespace-only one to "" on create); an empty one broke the avatar
+      // initial here and in the Sidebar, so reject it before sending.
+      const displayName = form.display_name.trim()
       if (editUser) {
+        if (!displayName) {
+          setError(t('users.messages.displayNameRequired'))
+          setSaving(false)
+          return
+        }
         const updates: Partial<UserForm> = {}
-        if (form.display_name !== editUser.display_name) updates.display_name = form.display_name
+        if (displayName !== editUser.display_name) updates.display_name = displayName
         if (form.role         !== editUser.role)         updates.role         = form.role
         if (form.password)                               updates.password     = form.password
         await usersApi.update(editUser.id, updates)
         setSuccess(t('users.messages.updated', { username: editUser.username }))
       } else {
-        if (!form.username || !form.password || !form.display_name) {
+        if (!form.username.trim() || !form.password || !displayName) {
           setError(t('users.messages.allRequired'))
           setSaving(false)
           return
         }
-        await usersApi.create(form)
+        await usersApi.create({ ...form, username: form.username.trim(), display_name: displayName })
         setSuccess(t('users.messages.created', { username: form.username }))
       }
       setShowForm(false)
@@ -179,7 +194,7 @@ export default function UsersPage() {
                 <input
                   className="form-input" value={form.username}
                   onChange={e => setForm({ ...form, username: e.target.value })}
-                  placeholder={t('users.placeholder.username')} autoFocus
+                  placeholder={t('users.placeholder.username')} autoFocus autoComplete="off"
                 />
               </div>
             )}
@@ -188,7 +203,7 @@ export default function UsersPage() {
               <input
                 className="form-input" value={form.display_name}
                 onChange={e => setForm({ ...form, display_name: e.target.value })}
-                placeholder={t('users.placeholder.displayName')}
+                placeholder={t('users.placeholder.displayName')} autoComplete="off"
               />
             </div>
             <div className="form-group">
@@ -199,6 +214,9 @@ export default function UsersPage() {
                 className="form-input" type="password" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })}
                 placeholder={editUser ? t('users.placeholder.passwordEdit') : t('users.placeholder.passwordNew')}
+                // Without this a password manager fills the signed-in admin's
+                // own password here, and Save sets it on the edited user.
+                autoComplete="new-password"
               />
             </div>
             <div className="form-group">
@@ -248,7 +266,7 @@ export default function UsersPage() {
                         className="pl-avatar"
                         style={u.role === 'admin' ? { background: 'linear-gradient(135deg, var(--danger), var(--warning))' } : {}}
                       >
-                        {u.display_name[0].toUpperCase()}
+                        {(u.display_name || u.username).charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <span className="pl-cell-name">{u.display_name}</span>

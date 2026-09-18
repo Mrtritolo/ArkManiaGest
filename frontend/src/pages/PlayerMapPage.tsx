@@ -13,12 +13,13 @@
  * maps built in, mod maps via the PlayerMap.MapCalibration config key), and
  * falls back to an auto-fit UU scatter (relative positions) otherwise.
  */
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ScanKind } from '../services/api'
 import { arkDecayApi, playersApi, serverInstancesApi, arkmaniaApi } from '../services/api'
-import type { PlayerListItem, ServerInstance } from '../types'
+import type { AuthUser, PlayerListItem, ServerInstance } from '../types'
 import { DEFAULT_CALIBRATION, parseCalibOverrides, calibFromWorldSettings, gpsOf, fullMapBounds, type MapCalib } from '../utils/mapCalibration'
+import { extractError } from '../utils/errors'
 import {
   Crosshair, Loader2, AlertTriangle, RefreshCw, Building, Skull, MapPin, Copy,
   Eye, EyeOff, ZoomIn, ZoomOut, Maximize2
@@ -47,8 +48,40 @@ type SortKey = 'type' | 'name' | 'level' | 'lat' | 'lon'
 const DOT_HALO = 'rgba(0, 0, 0, 0.75)'
 const OFFLINE_FILL = 'var(--warning)'            // acid yellow: offline character
 
+/**
+ * The player and server a scan was run against. Every action on the map
+ * reuses it instead of the live dropdowns: the dots, the tribe id and the
+ * coordinates belong to this pair, and firing them at whatever is selected
+ * now would hit another player or another map.
+ */
+interface ScanTarget {
+  eosId: string; instanceId: number; mapName: string; label: string
+  /**
+   * The plugin's server_key for this instance, once a scan has proven it.
+   * Only resolved when another active server runs the same map, where the
+   * map prefix alone cannot tell the two servers' rows apart (see loadRows).
+   */
+  serverKey?: string
+}
+
+/** server_key and map names both start with the map; the suffix varies. */
+const mapPrefix = (name: string) => name.split('_')[0]
+
+/** Newest scanned_at per server_key before a scan; `complete` is false when the read was truncated. */
+type ScanBaseline = { newest: Map<string, string>; complete: boolean }
+
+/** Newest scanned_at per server_key. The 'YYYY-MM-DD HH:MM:SS' text sorts as a date. */
+function newestPerKey(rows: ScanRow[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const r of rows) {
+    const s = r.scanned_at || ''
+    if (s > (out.get(r.server_key) ?? '')) out.set(r.server_key, s)
+  }
+  return out
+}
+
 interface Props {
-  currentUser?: { role?: string } | null
+  currentUser?: AuthUser | null
 }
 
 export default function PlayerMapPage({ currentUser }: Props) {
@@ -66,6 +99,7 @@ export default function PlayerMapPage({ currentUser }: Props) {
 
   const [scanning, setScanning] = useState(false)
   const [scanReply, setScanReply] = useState('')
+  const [target, setTarget] = useState<ScanTarget | null>(null)
   const [rows, setRows] = useState<ScanRow[]>([])
   // Which layers the map draws. A base with 2000 foundations buries the
   // handful of dots that matter, so the admin turns layers off to read the
@@ -74,6 +108,9 @@ export default function PlayerMapPage({ currentUser }: Props) {
     structure: true, dino: true, player: true,
   })
   const [truncated, setTruncated] = useState(false)
+  // Set when two active servers share the map and the scan left no rows
+  // that can only be the selected server's: the map is kept empty.
+  const [unattributed, setUnattributed] = useState(false)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<number | null>(null)   // index into rows
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null)
@@ -88,7 +125,12 @@ export default function PlayerMapPage({ currentUser }: Props) {
   // Zoom/pan over the map square, in SVG units.
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [dragging, setDragging] = useState<{ x: number; y: number } | null>(null)
+  // The drag origin lives in a ref: it changes on every pointermove, and as
+  // state each move re-rendered the whole dot layer and table. Only the
+  // grab cursor needs a render, and that flips twice per drag.
+  const dragFrom = useRef<{ x: number; y: number } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const svgRef = useRef<SVGSVGElement | null>(null)
   // Cached topographic image as an object URL, tagged with the map it
   // belongs to. Tagging matters: while a new map's image is in flight the
   // old URL is still in state, and drawing it would show the previous
@@ -121,7 +163,7 @@ export default function PlayerMapPage({ currentUser }: Props) {
 
   useEffect(() => {
     loadAllPlayers()
-      .catch(e => setError(e.response?.data?.detail?.[0]?.msg || String(e)))
+      .catch(e => setError(extractError(e, String(e))))
     // Niente catch muto: se questa fallisce la tendina dei server resta
     // vuota e la pagina sembra rotta senza dire perche' - e' successo due
     // volte, una col 422 sul limite e una col 500 sull'enum.
@@ -156,24 +198,24 @@ export default function PlayerMapPage({ currentUser }: Props) {
   const calib: MapCalib | null =
     calibOverrides[mapName] || calibFromGame[mapName] || DEFAULT_CALIBRATION[mapName] || null
 
-  // Background image follows the displayed map. Revoked on change so the
-  // blobs do not pile up as the admin hops between maps.
+  // Background image follows the displayed map.
   useEffect(() => {
     if (!mapName) return
     let cancelled = false
-    // The previous URL is revoked at the moment it is replaced, not in the
-    // cleanup: revoking on dependency change killed the image that was
-    // still on screen while the next one downloaded.
-    const swap = (next: { name: string; url: string } | null) =>
-      setMapImg(prev => {
-        if (prev && prev.url !== next?.url) URL.revokeObjectURL(prev.url)
-        return next
-      })
     arkDecayApi.mapImage(mapName)
-      .then(r => { if (!cancelled) swap({ name: mapName, url: URL.createObjectURL(r.data) }) })
-      .catch(() => { if (!cancelled) swap(null) })
+      .then(r => { if (!cancelled) setMapImg({ name: mapName, url: URL.createObjectURL(r.data) }) })
+      .catch(() => { if (!cancelled) setMapImg(null) })
     return () => { cancelled = true }
   }, [mapName])
+
+  // Each blob URL is revoked once it is off screen: when the next image (or
+  // null) has replaced it, and on unmount. Not in the effect above: revoking
+  // on a mapName change killed the image that was still on screen while
+  // the next one downloaded, and the last one used to outlive the page.
+  useEffect(() => {
+    if (!mapImg) return
+    return () => URL.revokeObjectURL(mapImg.url)
+  }, [mapImg])
 
   const filteredPlayers = useMemo(() => {
     const q = playerFilter.trim().toLowerCase()
@@ -191,16 +233,59 @@ export default function PlayerMapPage({ currentUser }: Props) {
       })
   }, [players, playerFilter])
 
-  async function loadRows(eos: string) {
-    const res = await arkDecayApi.playerScanRows(eos)
-    const all: ScanRow[] = res.data.rows || []
+  /** The dropdowns as a scan target, or null while either is unset. */
+  function selectionTarget(): ScanTarget | null {
+    const inst = instances.find(i => i.id === instanceId)
+    if (!eosId || !inst) return null
+    const who = players.find(p => p.eos_id === eosId)?.name || eosId
+    return { eosId, instanceId: inst.id, mapName: inst.map_name,
+             label: `${who} — ${inst.display_name || inst.name} (${inst.map_name})` }
+  }
+
+  /** A new player or server makes the snapshot on screen someone else's. */
+  function clearScan() {
+    setTarget(null); setRows([]); setTruncated(false); setSelected(null)
+    setScanReply(''); setActionMsg(''); setUnattributed(false)
+  }
+
+  /**
+   * Load the snapshot for `tgt`. `before` is the newest scanned_at per
+   * server_key read just before the scan, passed only while a same-map
+   * target is unresolved.
+   */
+  async function loadRows(tgt: ScanTarget, before: ScanBaseline | null) {
+    const res = await arkDecayApi.playerScanRows(tgt.eosId, tgt.serverKey)
+    // The endpoint returns the player's rows from every map ever scanned.
+    // Only the scanned instance's map may be shown: when this scan found
+    // nothing, the newest rows would otherwise be an older snapshot of
+    // another map, and every action below would fire its tribe id and
+    // coordinates at this server.
+    const all: ScanRow[] = (res.data.rows || []).filter(
+      (r: ScanRow) => mapPrefix(r.map_name) === mapPrefix(tgt.mapName))
+    let sk = tgt.serverKey
+    if (before) {
+      // Two active servers run this map, and the prefix cannot tell their
+      // rows apart: when this scan found nothing or failed, the newest rows
+      // are the other server's older snapshot. Only a server_key whose rows
+      // this scan moved forward is ours. A key missing from a truncated
+      // baseline proves nothing. Anything but exactly one such key leaves
+      // the map empty rather than arming actions with another server's data.
+      const fresh = [...newestPerKey(all)].filter(([key, s]) => {
+        const was = before.newest.get(key)
+        return was === undefined ? before.complete : s > was
+      })
+      if (fresh.length !== 1) { setRows([]); setTruncated(false); setUnattributed(true); return }
+      sk = fresh[0][0]
+      setTarget({ ...tgt, serverKey: sk })
+    }
     if (all.length === 0) { setRows([]); setTruncated(false); return }
+    // With a single active server on this map, its newest rows are its own.
+    sk = sk ?? all[0].server_key
+    const onMap = all.filter(r => r.server_key === sk)
     // Keep only the newest scan batch, PER LAYER: a per-layer re-scan
     // leaves the other layers with an older timestamp, and a single
     // cluster-wide cutoff would silently drop them from the map.
     // Chunked inserts straddle seconds, hence the 2-minute window.
-    const sk = all[0].server_key
-    const onMap = all.filter(r => r.server_key === sk)
     const newestOf: Record<string, number> = {}
     for (const r of onMap) {
       const t = new Date(r.scanned_at || 0).getTime()
@@ -211,18 +296,30 @@ export default function PlayerMapPage({ currentUser }: Props) {
     setTruncated(!!res.data.truncated)
   }
 
-  async function runScan(kind: ScanKind = 'all') {
-    if (!eosId || instanceId === '') return
-    setScanning(true); setError(''); setScanReply(''); setSelected(null); setActionMsg('')
+  // A non-null target always matches the dropdowns (changing either clears
+  // it), so re-scans reuse it and keep a server_key already resolved.
+  async function runScan(kind: ScanKind = 'all', tgt: ScanTarget | null = target ?? selectionTarget()) {
+    if (!tgt) return
+    setTarget(tgt)
+    setScanning(true); setError(''); setScanReply(''); setSelected(null); setActionMsg(''); setUnattributed(false)
     // A layer you just re-scanned is a layer you want to look at.
     if (kind === 'structures') setLayers(l => ({ ...l, structure: true }))
     else if (kind === 'dinos') setLayers(l => ({ ...l, dino: true }))
     else if (kind === 'players') setLayers(l => ({ ...l, player: true }))
     try {
-      const res = await arkDecayApi.playerScanRun(eosId, instanceId as number, kind)
+      // Another active server on the same map: record how fresh each
+      // server's rows are before scanning, so loadRows can tell which
+      // server_key this scan wrote to.
+      let before: ScanBaseline | null = null
+      const sameMap = instances.filter(i => mapPrefix(i.map_name) === mapPrefix(tgt.mapName)).length > 1
+      if (sameMap && !tgt.serverKey) {
+        const prev = await arkDecayApi.playerScanRows(tgt.eosId)
+        before = { newest: newestPerKey(prev.data.rows || []), complete: !prev.data.truncated }
+      }
+      const res = await arkDecayApi.playerScanRun(tgt.eosId, tgt.instanceId, kind)
       setScanReply(res.data.reply || '')
-      if (res.data.status !== 'success') setError(res.data.stderr || res.data.reply || 'RCON failed')
-      await loadRows(eosId)
+      if (res.data.status !== 'success') setError(res.data.stderr || res.data.reply || t('decay.cmd.rconFailed'))
+      await loadRows(tgt, before)
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e))
     } finally {
@@ -231,17 +328,18 @@ export default function PlayerMapPage({ currentUser }: Props) {
   }
 
   async function doDestroy(kind: 'structures' | 'dinos' | 'all', center: ScanRow, radiusM: number) {
+    if (!target) return
     const label = t(`playerMap.actions.${kind}`)
-    if (!window.confirm(t('playerMap.confirmDestroy', { what: label, r: radiusM }))) return
+    if (!window.confirm(`${target.label}\n\n${t('playerMap.confirmDestroy', { what: label, r: radiusM })}`)) return
     if (kind === 'all' && !window.confirm(t('playerMap.confirmAll'))) return
     setActing(true); setActionMsg('')
     try {
       const res = await arkDecayApi.destroyRadius({
-        instance_id: instanceId as number, targeting_team: center.targeting_team,
+        instance_id: target.instanceId, targeting_team: center.targeting_team,
         x: center.pos_x, y: center.pos_y, z: center.pos_z, radius_m: radiusM, kind,
       })
-      setActionMsg(res.data.reply || '')
-      await runScan()   // the map must show the post-action truth
+      await runScan('all', target)   // the map must show the post-action truth
+      reportAction(res.data)
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e))
     } finally {
@@ -250,15 +348,15 @@ export default function PlayerMapPage({ currentUser }: Props) {
   }
 
   async function doDestroyOne(row: ScanRow) {
-    if (!row.actor_name) return
+    if (!row.actor_name || !target) return
     const label = row.custom_name || row.display_name || row.class_name
-    if (!window.confirm(t('playerMap.confirmDestroyOne', { what: label }))) return
+    if (!window.confirm(`${target.label}\n\n${t('playerMap.confirmDestroyOne', { what: label })}`)) return
     setActing(true); setActionMsg('')
     try {
       const res = await arkDecayApi.destroyActor(
-        instanceId as number, row.targeting_team, row.actor_name)
-      setActionMsg(res.data.reply || '')
-      await runScan()
+        target.instanceId, row.targeting_team, row.actor_name)
+      await runScan('all', target)
+      reportAction(res.data)
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e))
     } finally {
@@ -267,17 +365,29 @@ export default function PlayerMapPage({ currentUser }: Props) {
   }
 
   async function doKillPlayer() {
-    if (!window.confirm(t('playerMap.confirmKill'))) return
+    if (!target) return
+    if (!window.confirm(`${target.label}\n\n${t('playerMap.confirmKill')}`)) return
     setActing(true); setActionMsg('')
     try {
-      const res = await arkDecayApi.killPlayer(eosId, instanceId as number)
-      setActionMsg(res.data.reply || '')
-      await runScan()
+      const res = await arkDecayApi.killPlayer(target.eosId, target.instanceId)
+      await runScan('all', target)
+      reportAction(res.data)
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e))
     } finally {
       setActing(false)
     }
+  }
+
+  /**
+   * Show an action's outcome. Called after the re-scan, which clears both
+   * the message and the error: set before it, the plugin's reply (including
+   * a refusal such as "player offline") was wiped before it ever rendered.
+   * The endpoint answers 200 even when SSH/RCON failed; `status` says so.
+   */
+  function reportAction(r: { status: string; reply: string; stderr: string | null }) {
+    if (r.status === 'success') setActionMsg(r.reply || '')
+    else setError(r.stderr || r.reply || t('decay.cmd.rconFailed'))
   }
 
   // ── Minimap geometry ───────────────────────────────────────────────────
@@ -370,8 +480,11 @@ export default function PlayerMapPage({ currentUser }: Props) {
       const px0 = cx ?? SIZE / 2, py0 = cy ?? SIZE / 2
       setPan(prevPan => {
         const oldView = SIZE / prevZoom, newView = SIZE / next
-        const wx = clampPan(prevPan.x) + (px0 / SIZE) * oldView
-        const wy = clampPan(prevPan.y) + (py0 / SIZE) * oldView
+        // Clamped against prevZoom, not the render's clampPan: the wheel
+        // listener below keeps the zoomAt of the render that attached it.
+        const oldLim = Math.max(0, SIZE - oldView)
+        const wx = Math.min(oldLim, Math.max(0, prevPan.x)) + (px0 / SIZE) * oldView
+        const wy = Math.min(oldLim, Math.max(0, prevPan.y)) + (py0 / SIZE) * oldView
         const nx = wx - (px0 / SIZE) * newView
         const ny = wy - (py0 / SIZE) * newView
         const lim = Math.max(0, SIZE - newView)
@@ -380,6 +493,72 @@ export default function PlayerMapPage({ currentUser }: Props) {
       return next
     })
   }
+
+  // Wheel zoom needs a non-passive native listener: React registers onWheel
+  // as a passive listener on the root, so preventDefault() there was ignored
+  // and the whole page scrolled while the map zoomed.
+  const hasMap = rows.length > 0
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const b = el.getBoundingClientRect()
+      zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - b.left, e.clientY - b.top)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [hasMap])
+
+  // A pan only moves the viewBox. The dot layer, the object table and the
+  // player <option> list run to thousands of elements on a big base, so
+  // they are memoised: a drag must not rebuild any of them on every move.
+  const playerOptions = useMemo(() => filteredPlayers.map(p => (
+    <option key={p.eos_id} value={p.eos_id}>{p.name || t('playerMap.noName')} ({p.eos_id.slice(0, 10)}…)</option>
+  )), [filteredPlayers, t])
+
+  const dots = useMemo(() => visible.map(({ r, i }) => {
+    const d = DOT[r.actor_type] || DOT.structure
+    const isSel = i === selected
+    return (
+      <circle key={i} data-dot="" cx={px(r)} cy={py(r)}
+        r={(isSel ? d.r + 3 : d.r) * k}
+        fill={r.actor_type === 'player' && !r.is_online ? OFFLINE_FILL : d.fill}
+        stroke={isSel ? 'var(--accent)' : DOT_HALO}
+        strokeWidth={(isSel ? 2 : 1) * k}
+        style={{ cursor: 'pointer' }}
+        onClick={e => { e.stopPropagation(); setSelected(i) }}>
+        <title>{`${r.custom_name || r.display_name || r.class_name}\n${coordLabel(r)}`}</title>
+      </circle>
+    )
+  }), [visible, view, calib, selected, k])   // px, py and coordLabel read only view and calib
+
+  const tableRows = useMemo(() => visible.map(({ r, i }) => (
+    <div key={i} onClick={() => setSelected(i)} style={{
+      display: 'grid', gridTemplateColumns: '80px 1fr 52px 74px 74px', alignItems: 'center',
+      fontSize: '0.76rem', padding: '0.24rem 0.8rem', cursor: 'pointer',
+      borderBottom: '1px solid var(--border)',
+      background: i === selected ? 'var(--bg-card-muted)' : 'transparent',
+    }}>
+      <span style={{ fontWeight: 600, color: r.actor_type === 'dino' ? 'var(--violet)' : r.actor_type === 'player' ? (r.is_online ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)' }}>
+        {r.actor_type === 'player'
+          ? (r.is_online ? t('playerMap.online') : t('playerMap.offline'))
+          : t(`playerMap.kind.${r.actor_type}`, { defaultValue: r.actor_type })}
+      </span>
+      <span title={r.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.custom_name || r.display_name || r.class_name}</span>
+      <span style={{ fontFamily: 'var(--font-mono)' }}>{r.actor_type === 'dino' && r.dino_level > 0 ? r.dino_level : '—'}</span>
+      {/* Lat and Lon are separate cells only so each header can
+          sort on its own axis; the UU triplet stays in the title. */}
+      {([calib ? gpsOf(calib, r.pos_x, r.pos_y).lat.toFixed(1) : Math.round(r.pos_y),
+         calib ? gpsOf(calib, r.pos_x, r.pos_y).lon.toFixed(1) : Math.round(r.pos_x)]
+      ).map((v, axis) => (
+        <span key={axis} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}
+          title={`${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}>
+          {v}
+        </span>
+      ))}
+    </div>
+  )), [visible, selected, calib, t])
 
   const sel = selected !== null ? rows[selected] : null
   const anyOnline = rows.some(r => r.actor_type === 'player' && r.is_online)
@@ -409,16 +588,18 @@ export default function PlayerMapPage({ currentUser }: Props) {
           <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{t('playerMap.player')}</label>
           <input className="input" placeholder={t('playerMap.searchPlayer')} value={playerFilter}
             onChange={e => setPlayerFilter(e.target.value)} style={{ width: '100%', marginTop: 4 }} />
-          <select className="input" value={eosId} onChange={e => setEosId(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
+          {/* Locked while a scan or an action runs: its result would land
+              under a selection it does not belong to. */}
+          <select className="input" value={eosId} disabled={scanning || acting}
+            onChange={e => { setEosId(e.target.value); clearScan() }} style={{ width: '100%', marginTop: 4 }}>
             <option value="">—</option>
-            {filteredPlayers.map(p => (
-              <option key={p.eos_id} value={p.eos_id}>{p.name || t('playerMap.noName')} ({p.eos_id.slice(0, 10)}…)</option>
-            ))}
+            {playerOptions}
           </select>
         </div>
         <div style={{ minWidth: 220 }}>
           <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{t('playerMap.server')}</label>
-          <select className="input" value={instanceId} onChange={e => setInstanceId(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '100%', marginTop: 4 }}>
+          <select className="input" value={instanceId} disabled={scanning || acting}
+            onChange={e => { setInstanceId(e.target.value === '' ? '' : Number(e.target.value)); clearScan() }} style={{ width: '100%', marginTop: 4 }}>
             <option value="">—</option>
             {sortedInstances.map(i => (
               <option key={i.id} value={i.id}>{i.display_name || i.name} ({i.map_name})</option>
@@ -489,6 +670,11 @@ export default function PlayerMapPage({ currentUser }: Props) {
           <AlertTriangle size={14} /> {t('playerMap.truncated')}
         </div>
       )}
+      {unattributed && target && (
+        <div className="alert alert-warning" style={{ marginTop: 10 }}>
+          <AlertTriangle size={14} /> {t('playerMap.sameMapUnattributed', { map: target.mapName })}
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
@@ -508,13 +694,7 @@ export default function PlayerMapPage({ currentUser }: Props) {
               </span>
               <span>{rows[0].map_name}</span>
             </div>
-            <svg width={SIZE} height={SIZE} viewBox={viewBox}
-              onWheel={e => {
-                e.preventDefault()
-                const b = e.currentTarget.getBoundingClientRect()
-                zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2,
-                  e.clientX - b.left, e.clientY - b.top)
-              }}
+            <svg ref={svgRef} width={SIZE} height={SIZE} viewBox={viewBox}
               onPointerDown={e => {
                 // Left button only, and never start a drag from a dot: the
                 // dot's own click must still select it. This guard is the
@@ -524,18 +704,21 @@ export default function PlayerMapPage({ currentUser }: Props) {
                 // onClick never runs.
                 if (e.button !== 0) return
                 if ((e.target as Element).hasAttribute?.('data-dot')) return
-                setDragging({ x: e.clientX, y: e.clientY })
+                dragFrom.current = { x: e.clientX, y: e.clientY }
+                setDragging(true)
                 e.currentTarget.setPointerCapture(e.pointerId)
               }}
               onPointerMove={e => {
-                if (!dragging) return
-                const dx = (e.clientX - dragging.x) / zoom
-                const dy = (e.clientY - dragging.y) / zoom
-                setDragging({ x: e.clientX, y: e.clientY })
+                const from = dragFrom.current
+                if (!from) return
+                const dx = (e.clientX - from.x) / zoom
+                const dy = (e.clientY - from.y) / zoom
+                dragFrom.current = { x: e.clientX, y: e.clientY }
                 setPan(prev => ({ x: clampPan(prev.x - dx), y: clampPan(prev.y - dy) }))
               }}
               onPointerUp={e => {
-                setDragging(null)
+                dragFrom.current = null
+                setDragging(false)
                 e.currentTarget.releasePointerCapture(e.pointerId)
               }}
               style={{ background: 'var(--bg-card-muted)', borderRadius: 4, border: '1px solid var(--border)', display: 'block', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}>
@@ -571,21 +754,7 @@ export default function PlayerMapPage({ currentUser }: Props) {
                   style={{ pointerEvents: 'none' }}
                   strokeDasharray={`${4 * k} ${3 * k}`} strokeWidth={1 * k} />
               )}
-              {visible.map(({ r, i }) => {
-                const d = DOT[r.actor_type] || DOT.structure
-                const isSel = i === selected
-                return (
-                  <circle key={i} data-dot="" cx={px(r)} cy={py(r)}
-                    r={(isSel ? d.r + 3 : d.r) * k}
-                    fill={r.actor_type === 'player' && !r.is_online ? OFFLINE_FILL : d.fill}
-                    stroke={isSel ? 'var(--accent)' : DOT_HALO}
-                    strokeWidth={(isSel ? 2 : 1) * k}
-                    style={{ cursor: 'pointer' }}
-                    onClick={e => { e.stopPropagation(); setSelected(i) }}>
-                    <title>{`${r.custom_name || r.display_name || r.class_name}\n${coordLabel(r)}`}</title>
-                  </circle>
-                )
-              })}
+              {dots}
             </svg>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => zoomAt(1 / 1.4)}
@@ -682,30 +851,7 @@ export default function PlayerMapPage({ currentUser }: Props) {
                   </button>
                 ))}
               </div>
-              {visible.map(({ r, i }) => (
-                <div key={i} onClick={() => setSelected(i)} style={{
-                  display: 'grid', gridTemplateColumns: '80px 1fr 52px 74px 74px', alignItems: 'center',
-                  fontSize: '0.76rem', padding: '0.24rem 0.8rem', cursor: 'pointer',
-                  borderBottom: '1px solid var(--border)',
-                  background: i === selected ? 'var(--bg-card-muted)' : 'transparent',
-                }}>
-                  <span style={{ fontWeight: 600, color: r.actor_type === 'dino' ? 'var(--violet)' : r.actor_type === 'player' ? (r.is_online ? 'var(--danger)' : 'var(--warning)') : 'var(--text-secondary)' }}>
-                    {r.actor_type === 'player' ? (r.is_online ? t('playerMap.online') : t('playerMap.offline')) : r.actor_type}
-                  </span>
-                  <span title={r.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.custom_name || r.display_name || r.class_name}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{r.actor_type === 'dino' && r.dino_level > 0 ? r.dino_level : '—'}</span>
-                  {/* Lat and Lon are separate cells only so each header can
-                      sort on its own axis; the UU triplet stays in the title. */}
-                  {([calib ? gpsOf(calib, r.pos_x, r.pos_y).lat.toFixed(1) : Math.round(r.pos_y),
-                     calib ? gpsOf(calib, r.pos_x, r.pos_y).lon.toFixed(1) : Math.round(r.pos_x)]
-                  ).map((v, axis) => (
-                    <span key={axis} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}
-                      title={`${Math.round(r.pos_x)} ${Math.round(r.pos_y)} ${Math.round(r.pos_z)}`}>
-                      {v}
-                    </span>
-                  ))}
-                </div>
-              ))}
+              {tableRows}
             </div>
           </div>
         </div>

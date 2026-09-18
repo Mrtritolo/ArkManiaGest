@@ -11,7 +11,9 @@
     "language": "Language",
     "themeLight": "Switch to light theme",
     "themeDark": "Switch to dark theme",
-    "showAll": "Show all"
+    "showAll": "Show all",
+    "retry": "Retry",
+    "pageLoadError": "This page could not be loaded. Reload to try again."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -43,7 +45,12 @@
     "playerMap": "Player map",
     "clusterSync": "Cluster sync",
     "hardening": "Hardening",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "section": {
+      "main": "Main",
+      "plugins": "Plugins",
+      "settings": "Settings"
+    }
   },
   "auth": {
     "login": {
@@ -58,7 +65,8 @@
       "discordStartFailed": "Could not start Discord login: {{message}}",
       "discordErr": "Discord login failed: {{reason}}"
     },
-    "logout": "Log out"
+    "logout": "Log out",
+    "connectionError": "Connection error"
   },
   "setup": {
     "title": "Initial Configuration",
@@ -126,13 +134,15 @@
       "sshMachines": "SSH Machines",
       "database": "Database",
       "dbOk": "OK",
-      "dbOffline": "Offline"
+      "dbOffline": "Offline",
+      "dbAdminOnly": "Database status is available to administrators only."
     },
     "card": {
       "onlinePlayers": "Online Players",
       "viewAll": "View all →",
       "noPlayers": "No players connected",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "loadFailed": "Could not load online players."
     },
     "errors": {
       "load": "Failed to load dashboard."
@@ -363,7 +373,8 @@
         "userRequired": "Provide the SSH user before importing",
         "passwordRequired": "Provide the SSH password before importing",
         "generic": "Import failed"
-      }
+      },
+      "containersCount": "{{count}} containers"
     },
     "runtime": {
       "pok": "POK-manager + Docker (Proton)",
@@ -438,7 +449,8 @@
       "deleted": "User \"{{username}}\" deleted",
       "enabled": "User \"{{username}}\" enabled",
       "disabled": "User \"{{username}}\" disabled",
-      "allRequired": "All fields are required"
+      "allRequired": "All fields are required",
+      "displayNameRequired": "Display name is required"
     },
     "errors": {
       "load": "Failed to load users",
@@ -511,7 +523,8 @@
         "success": "Update installed",
         "failed": "Update failed"
       }
-    }
+    },
+    "loadFailed": "Failed to load settings"
   },
   "eventLog": {
     "title": "Event Log",
@@ -636,14 +649,14 @@
       "namePlaceholder": "Optional",
       "reasonLabel": "Reason",
       "reasonPlaceholder": "Ban reason…",
-      "bannedByLabel": "Banned by",
       "durationLabel": "Duration",
       "permanent": "Permanent",
       "temporary": "Temporary",
       "expireLabel": "Expires",
       "cancel": "Cancel",
       "submit": "Ban Player",
-      "submitting": "Creating…"
+      "submitting": "Creating…",
+      "expireInvalid": "A temporary ban needs an expiry date in the future."
     },
     "defaultReason": "No reason"
   },
@@ -701,7 +714,9 @@
         "expires": "Expires",
         "status": "Status",
         "actions": "Actions"
-      }
+      },
+      "daysValue": "{{d}}d",
+      "truncated": "Showing the first {{shown}} tribes, soonest expiry first. Use the filters or search to find the rest."
     },
     "scheduleTitle": "Queue this tribe in ARKM_decay_pending; the next plugin purge sweep destroys it.",
     "confirmSchedule": "Schedule tribe #{{id}} ({{name}}) for destruction on every server?\n\nThe panel only stages the request; the plugin's next periodic sweep destroys all of the tribe's structures and dinos. Use 'Cancel' from the Pending tab to revert before the sweep runs.",
@@ -780,7 +795,8 @@
       "dinos": "Dinos",
       "dinosTitle": "Destroy every dino of this tribe on the selected map",
       "confirmDinos": "Destroy ALL dinos of tribe {{team}} on {{server}}?",
-      "noTarget": "No server resolved for this map: pick one in the toolbar above."
+      "noTarget": "No server resolved for this map: pick one in the toolbar above.",
+      "rconFailed": "RCON command failed and the server sent no reply."
     }
   },
   "leaderboard": {
@@ -848,7 +864,10 @@
         "target": "Target",
         "server": "Server",
         "date": "Date"
-      }
+      },
+      "killDino": "Enemy Dino Kill",
+      "structDestroyed": "Structure Destroyed",
+      "death": "Death"
     }
   },
   "rareDinos": {
@@ -937,7 +956,17 @@
       "cancel": "Cancel",
       "save": "Save Changes",
       "add": "Add to Pool"
-    }
+    },
+    "stats": {
+      "health": "Health",
+      "stamina": "Stamina",
+      "oxygen": "Oxygen",
+      "food": "Food",
+      "weight": "Weight",
+      "melee": "Melee",
+      "speed": "Speed"
+    },
+    "operatorOnly": "Changing the rare-dino pool requires an operator or administrator account."
   },
   "transferRules": {
     "heading": "Transfer Rules",
@@ -1097,7 +1126,8 @@
       "active": "Active",
       "expired": "Expired",
       "flagLabel": "Flag",
-      "expiresLabel": "Expires"
+      "expiresLabel": "Expires",
+      "readOnlyRole": "Editing permissions requires an operator or administrator account."
     },
     "bulkAlign": {
       "headerButton": "Align ({{count}})",
@@ -1124,7 +1154,13 @@
       "noValueTribe": "(no tribe)",
       "noValueGroups": "(no permission)",
       "noValueTimedActive": "(no active timed perm)",
-      "noValueTimedExpired": "(no expired timed perm)"
+      "noValueTimedExpired": "(no expired timed perm)",
+      "search": "Search…",
+      "selectAll": "(Select all)",
+      "clear": "Clear",
+      "noMatches": "No matches.",
+      "filterAria": "Filter {{col}}",
+      "filterActiveAria": "Filter active ({{col}})"
     },
     "bulkPerm": {
       "headerButton": "Bulk grant ({{count}})",
@@ -1319,7 +1355,10 @@
       "groupCount_one": "{{count}} group",
       "groupCount_other": "{{count}} groups",
       "groupCount": "{{count}} groups",
-      "jsonLabel": "JSON ({{count}} char)"
+      "jsonLabel": "JSON ({{count}} char)",
+      "missingGroup": "{{group}} (not in permission groups)",
+      "duplicateKey": "Duplicate key: changes are not applied until every key is unique",
+      "invalidJson": "Invalid JSON (or it changed between list and object): fix it before saving"
     },
     "typeBadge": {
       "dino": "Dino",
@@ -1368,7 +1407,9 @@
       "level": "Level",
       "weight": "Weight",
       "speed": "Speed"
-    }
+    },
+    "unsavedConfirm": "You have unsaved changes. Discard them?",
+    "readOnlyRole": "Saving plugin configuration requires an operator or administrator account."
   },
   "arkshop": {
     "heading": "ArkShop",
@@ -1570,7 +1611,8 @@
       "deleteError": "Error",
       "mysqlSaved": "MySQL saved",
       "generalSaved": "General settings saved",
-      "messagesSaved": "Messages saved"
+      "messagesSaved": "Messages saved",
+      "keyExists": "An entry with key \"{{key}}\" already exists"
     }
   },
   "blueprints": {
@@ -1658,6 +1700,31 @@
       "importSuccess": "Import complete: {{added}} added, {{updated}} updated ({{total}} total)",
       "importError": "Import failed: {{reason}}",
       "unknownError": "Unknown error"
+    },
+    "manage": {
+      "deleteSelectedConfirm": "Delete {{count}} blueprint(s)?",
+      "deleted": "{{count}} blueprint(s) deleted",
+      "deleteFailed": "Delete failed",
+      "filterRequired": "Apply at least one filter before bulk-deleting filtered rows",
+      "deleteFilteredConfirm": "Delete ALL {{count}} blueprints matching the current filter?",
+      "deleteSourceConfirm": "Delete every blueprint with source \"{{source}}\"?",
+      "deletedFromSource": "{{count}} blueprint(s) deleted from source \"{{source}}\"",
+      "pruneConfirm": "Drop every entry that is NOT vanilla / DLC / ASA?",
+      "pruned": "{{removed}} non-official blueprint(s) removed ({{kept}} kept)",
+      "pruneFailed": "Prune failed",
+      "deleteOneConfirm": "Delete blueprint \"{{name}}\"?",
+      "sourceFilterTitle": "Filter by source / import label",
+      "allSources": "All sources",
+      "sourceOption": "{{name}} ({{count}})",
+      "noSource": "(none)",
+      "sourcesLabel": "Sources:",
+      "deleteSourceTitle": "Delete every blueprint from \"{{source}}\"",
+      "deleteFilteredTitle": "Delete every blueprint matching the current filter",
+      "deleteFiltered": "Delete filtered ({{count}})",
+      "pruneTitle": "Drop every entry that is NOT vanilla/DLC/ASA",
+      "prune": "Prune non-official",
+      "deleteSelected": "Delete selected",
+      "deleteOneTitle": "Delete this blueprint"
     }
   },
   "gameConfig": {
@@ -1751,8 +1818,33 @@
       "loadConfigFailed": "Failed to load config: {{detail}}",
       "saveFailed": "Save failed: {{detail}}",
       "saved": "Configuration saved with backup!",
-      "unknownError": "Unknown error"
-    }
+      "unknownError": "Unknown error",
+      "incompleteOverrides": "Some stack, crafting or NPC rows are incomplete (empty class, no resources or a negative value). Fill them in or remove them before saving."
+    },
+    "groups": {
+      "general": "General",
+      "rates": "Rates & Multipliers",
+      "xp": "XP Details",
+      "day_night": "Day / Night",
+      "combat": "Combat",
+      "player": "Player",
+      "dino": "Creatures",
+      "breeding": "Breeding & Imprinting",
+      "structures": "Structures",
+      "gameplay": "Game Rules",
+      "pvp_orp": "PvP & ORP",
+      "cryopod": "Cryopod",
+      "decay_spoil": "Decay & Spoilage",
+      "turrets": "Turrets",
+      "supply_loot": "Supply & Loot",
+      "tribe_limits": "Tribes & Limits",
+      "transfer": "Transfer & Cluster",
+      "bunkers": "Bunkers",
+      "cryo_hospital": "Cryo Hospital"
+    },
+    "passwordMasked": "Hidden: only admins can see this password. Leave it unchanged to keep the current one.",
+    "rawOnlyHint": "This line could not be parsed, so it is kept as it is. Edit it in the Raw Editor.",
+    "readOnlyRole": "Saving INI changes requires an operator or administrator account."
   },
   "serversPage": {
     "heading": "Server Manager",
@@ -1801,7 +1893,8 @@
       "missingRequired": "Server key, name and map are required.",
       "created": "Server created",
       "updated": "Server updated",
-      "deleted": "Server deleted"
+      "deleted": "Server deleted",
+      "invalidMaxPlayers": "Max players must be a whole number between 1 and 500."
     },
     "confirmDelete": "Delete server \"{{name}}\"?\nAll configuration overrides will be removed as well."
   },
@@ -1857,7 +1950,8 @@
     },
     "editTokenBtn": "Edit ServerForge Token",
     "gauge": {
-      "placeholder": "--"
+      "placeholder": "--",
+      "disk": "Disk"
     },
     "confirm": {
       "start": "Start server \"{{label}}\"?",
@@ -1870,7 +1964,8 @@
       "restartSent": "Restart sent for \"{{label}}\""
     },
     "errorPrefix": "Error: {{detail}}",
-    "ipFallback": "N/A"
+    "ipFallback": "N/A",
+    "tokenAdminOnly": "Only an administrator can configure the ServerForge token."
   },
   "sqlConsole": {
     "heading": "SQL Console",
@@ -1900,7 +1995,8 @@
       "title": "Results",
       "summarySuccess": "{{message}} — {{time}} ms",
       "summaryFailure": "Query failed",
-      "dmlSuccess": "{{message}} — {{time}} ms"
+      "dmlSuccess": "{{message}} — {{time}} ms",
+      "truncated": "Showing only the first {{n}} rows. Add a WHERE clause or a LIMIT to narrow the result."
     },
     "browser": {
       "title": "Tables",
@@ -1919,7 +2015,8 @@
     },
     "errors": {
       "executeFailed": "Query execution failed."
-    }
+    },
+    "confirmDestructive": "Run {{verbs}} on {{database}}?\n\nThe statement is committed immediately and cannot be undone."
   },
   "database": {
     "title": "Database Configuration",
@@ -1948,7 +2045,8 @@
     "configCard": {
       "title": "Configuration",
       "body": "Credentials live in the backend's <code>.env</code> file. To change them, edit <code>.env</code> (use <code>DB_*</code> for the panel and <code>PLUGIN_DB_*</code> for the plugin) and restart the backend. SSH machine passwords are stored AES-256-GCM encrypted in the Panel DB."
-    }
+    },
+    "loadFailed": "Failed to load the database configuration"
   },
   "instances": {
     "title": "ARK Server Instances",
@@ -2025,7 +2123,8 @@
       "updatePriority": "Update priority",
       "save": "Save",
       "saving": "Saving…",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "clearServerPassword": "Remove the server password (anyone can join)"
     },
     "errors": {
       "load": "Failed to load instances.",
@@ -2042,7 +2141,12 @@
       "title": "Recent actions for {{name}}",
       "empty": "No actions recorded for this instance yet.",
       "noStdout": "(no output)"
-    }
+    },
+    "actionOk": "Done (exit code {{rc}}, {{ms}} ms).",
+    "actionFailed": "Exit code {{rc}}: {{output}}",
+    "saved": "Instance saved.",
+    "deleted": "Instance '{{name}}' deleted.",
+    "clusterTag": "cluster: {{id}}"
   },
   "discord": {
     "title": "Discord",
@@ -2092,12 +2196,14 @@
         "placeholder": "Leave empty to keep current value",
         "undoClear": "Undo clear",
         "clearTitle": "Clear this secret on save",
-        "clear": "Clear"
+        "clear": "Clear",
+        "show": "Show",
+        "hide": "Hide"
       }
     },
     "config": {
       "toast": {
-        "copied": "Copy"
+        "copySuccess": "Copied to clipboard"
       },
       "errors": {
         "guildProbe": "Bot credentials are set but Discord rejected the guild lookup.",
@@ -2145,7 +2251,10 @@
       "whitelist": {
         "admin": "Admin",
         "operator": "Operator",
-        "viewer": "Viewer"
+        "viewer": "Viewer",
+        "empty": "(empty)",
+        "idCount_one": "{{count}} ID",
+        "idCount_other": "{{count}} IDs"
       },
       "whitelistsEditHint": "To change a whitelist: edit /opt/arkmaniagest/backend/.env and run 'systemctl restart arkmaniagest'.",
       "vipSync": {
@@ -2163,8 +2272,17 @@
           "discord": "Discord",
           "action": "Action",
           "detail": "Detail"
+        },
+        "metric": {
+          "assigned": "assigned",
+          "removed": "removed",
+          "noop": "unchanged",
+          "errors": "errors",
+          "strangers": "unlinked VIPs"
         }
-      }
+      },
+      "copy": "Copy",
+      "missingKeys": "Missing .env keys:"
     },
     "roleMap": {
       "errors": {
@@ -2288,7 +2406,8 @@
         "search": "Search by name, EOS or tribe",
         "searchPh": "min. 2 chars…",
         "searching": "Searching…",
-        "noHits": "No players match."
+        "noHits": "No players match.",
+        "noName": "(no name)"
       }
     }
   },
@@ -2300,7 +2419,26 @@
       "buy": "Purchase failed.",
       "priceRequired": "Enter a valid price.",
       "list": "Listing failed.",
-      "cancel": "Cancellation failed."
+      "cancel": "Cancellation failed.",
+      "codes": {
+        "FORGE_NOT_SUPPORTED": "The egg/embryo shop is not active yet: the game servers need ARKM-Marketplace 7.5.0 or later.",
+        "SHOP_DISABLED": "This shop is disabled.",
+        "SPECIES_REQUIRED": "Pick a species.",
+        "SPECIES_NOT_FOR_SALE": "This species is not for sale in this shop.",
+        "TOO_MANY_TRAITS": "Too many gene traits for this shop.",
+        "TRAIT_MALFORMED": "Malformed gene trait.",
+        "TRAIT_NOT_FOUND": "Unknown gene trait.",
+        "ITEM_NOT_FOUND": "Item not found.",
+        "WRONG_KIND": "Wrong kind for this item.",
+        "NO_PRICE": "This entry has no price set.",
+        "INSUFFICIENT_FUNDS": "Not enough points.",
+        "NOTHING_TO_DELIVER": "This entry has nothing to deliver.",
+        "ORDER_FAILED": "The order could not be queued. No points were charged: try again.",
+        "ITEM_NOT_AVAILABLE": "This item is no longer available.",
+        "INVALID_STATE": "Not allowed in the item's current state.",
+        "NOT_OWNER": "Only the owner can do this.",
+        "CANNOT_BUY_OWN_ITEM": "You cannot buy your own item."
+      }
     },
     "bought": "Purchased! New balance: {{b}}. Use /market claim in-game to collect it.",
     "listed": "Item listed on the market.",
@@ -2386,6 +2524,21 @@
         "tools": "Tools",
         "structures": "Structures",
         "other": "Other"
+      },
+      "errors": {
+        "forgeNotSupported": "The egg and embryo shop is not active yet: the game servers need ARKM-Marketplace 7.5.0 or later.",
+        "shopDisabled": "This shop is disabled.",
+        "speciesRequired": "Choose a species.",
+        "speciesNotForSale": "This species is not for sale in this shop.",
+        "tooManyTraits": "Too many traits selected.",
+        "traitMalformed": "Invalid trait.",
+        "traitNotFound": "Trait not found.",
+        "itemNotFound": "Item not found or no longer for sale.",
+        "wrongKind": "This entry is not of the selected type.",
+        "noPrice": "This entry has no price set.",
+        "insufficientFunds": "Not enough points.",
+        "nothingToDeliver": "This entry has nothing to deliver.",
+        "orderFailed": "The order could not be placed. No points were deducted."
       }
     },
     "forge": {
@@ -2443,7 +2596,26 @@
       "confirm": "Confirm",
       "cancel": "Cancel"
     },
-    "pointsHint": "ArkShop points: the single currency of every shop and the player market."
+    "pointsHint": "ArkShop points: the single currency of every shop and the player market.",
+    "stats": {
+      "draft": "Drafts",
+      "listed": "Listed",
+      "sold": "Sold (to claim)",
+      "claimed": "Completed"
+    },
+    "status": {
+      "draft": "Draft",
+      "listed": "Listed",
+      "sold": "Sold",
+      "claimed": "Completed"
+    },
+    "role": {
+      "owner": "Owner",
+      "buyer": "Buyer"
+    },
+    "qty": "Qty: {{n}}",
+    "walletUnavailable": "Points balance not available",
+    "loadMore": "Load more ({{n}} of {{total}})"
   },
   "auditLog": {
     "title": "Audit Log",
@@ -2516,7 +2688,12 @@
     "zoomOut": "Zoom out",
     "zoomReset": "Fit whole map",
     "zoomHint": "Scroll to zoom, drag to pan.",
-    "noCalibration": "{{map}} has no GPS calibration yet, so positions are relative and no background is drawn. It appears as soon as a server running this map boots with plugin 5.7.0+."
+    "noCalibration": "{{map}} has no GPS calibration yet, so positions are relative and no background is drawn. It appears as soon as a server running this map boots with plugin 5.7.0+.",
+    "kind": {
+      "structure": "Structure",
+      "dino": "Dino"
+    },
+    "sameMapUnattributed": "Another active server also runs {{map}}, and this scan left no rows that can only belong to the selected server. The map stays empty so no action can hit the other server's tribe. If the player has anything on this server, run the full scan again."
   },
   "clusterSync": {
     "title": "Cluster sync",

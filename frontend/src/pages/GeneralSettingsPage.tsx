@@ -10,7 +10,7 @@ import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle, DownloadCl
 import { settingsApi, systemApi, systemUpdateApi } from '../services/api'
 import type { SystemUpdatePreflight, SystemUpdateStatus } from '../services/api'
 import { extractError } from '../utils/errors'
-import type { AppSettings, VersionCheckResult } from '../types'
+import type { AppSettings, AuthUser, VersionCheckResult } from '../types'
 
 interface HealthInfo {
   version: string
@@ -19,7 +19,13 @@ interface HealthInfo {
 
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] as const
 
-export default function GeneralSettingsPage() {
+interface Props {
+  // Nothing to gate here: App.tsx mounts this route for admins only, and
+  // the settings write and system update endpoints are admin-only.
+  currentUser?: AuthUser | null
+}
+
+export default function GeneralSettingsPage(_props: Props) {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [form, setForm] = useState({
@@ -48,6 +54,14 @@ export default function GeneralSettingsPage() {
 
   // Stop polling when the component unmounts.
   useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current) }, [])
+
+  // Auto-clear the success message.  An effect (not a bare setTimeout) so a
+  // stale timer from an earlier save cannot wipe a newer error.
+  useEffect(() => {
+    if (!message || isError) return
+    const timer = window.setTimeout(() => setMessage(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [message, isError])
 
   async function loadPreflight(): Promise<void> {
     try {
@@ -157,7 +171,12 @@ export default function GeneralSettingsPage() {
         backup_interval_hours:  res.data.backup_interval_hours,
         backup_retention:       res.data.backup_retention,
       })
-    } catch { /* keep defaults */ }
+    } catch (err: unknown) {
+      // Save stays disabled until this succeeds: the form still holds the
+      // placeholder defaults, and saving them would overwrite every setting.
+      setIsError(true)
+      setMessage(`${t('generalSettings.errorPrefix')}: ${extractError(err, t('generalSettings.loadFailed'))}`)
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>): void {
@@ -179,7 +198,6 @@ export default function GeneralSettingsPage() {
       const res = await settingsApi.update(form)
       setSettings(res.data)
       setMessage(t('generalSettings.saved'))
-      setTimeout(() => setMessage(''), 3000)
     } catch (err: unknown) {
       const detail = extractError(err, t('generalSettings.saveFailed'))
       setIsError(true)
@@ -188,10 +206,6 @@ export default function GeneralSettingsPage() {
       setSaving(false)
     }
   }
-
-  // `settings` is read above for future use (e.g. change detection) but we
-  // only render the editable `form` state; suppress the unused warning.
-  void settings
 
   return (
     <div>
@@ -494,7 +508,7 @@ export default function GeneralSettingsPage() {
 
       {/* Save bar */}
       <div className="form-actions-sticky">
-        <button onClick={handleSave} disabled={saving} className="btn btn-primary">
+        <button onClick={handleSave} disabled={saving || !settings} className="btn btn-primary">
           {saving ? t('generalSettings.saving') : t('generalSettings.save')}
         </button>
         {message && (

@@ -438,6 +438,9 @@ function LinkEosModal({
     lastQueryRef.current = q;
     if (q.length < 2) {
       setHits([]);
+      // A request still in flight for the previous query will skip its
+      // own reset (the query changed), so clear the spinner here.
+      setSearching(false);
       return;
     }
     const timer = setTimeout(async () => {
@@ -521,7 +524,7 @@ function LinkEosModal({
             >
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-                  {h.name || <span style={{ color: "var(--text-secondary)" }}>(no name)</span>}
+                  {h.name || <span style={{ color: "var(--text-secondary)" }}>{t("discord.accounts.modal.noName")}</span>}
                 </div>
                 <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
                   EOS: {h.eos_id}{h.tribe_name ? ` · ${h.tribe_name}` : ""}

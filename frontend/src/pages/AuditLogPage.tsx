@@ -5,10 +5,11 @@
  * filterable, paginated table. Entries cannot be edited or deleted from the
  * UI by design (tamper resistance) — rows age out via the retention job.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { auditApi } from '../services/api'
 import type { AuditEntry } from '../services/api'
+import type { AuthUser } from '../types'
 import {
   ShieldCheck, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, Search,
 } from 'lucide-react'
@@ -23,19 +24,43 @@ const labelStyle: React.CSSProperties = {
   display: 'block', marginBottom: 3,
 }
 
-export default function AuditLogPage() {
+interface Props {
+  // Nothing to gate here: App.tsx mounts this route for admins only and
+  // GET /audit is require_admin server side.
+  currentUser?: AuthUser | null
+}
+
+export default function AuditLogPage(_props: Props) {
   const { t } = useTranslation()
   const [items, setItems] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Filters
+  // Filters.  The inputs feed the query only after a short pause: the
+  // backend matches exactly, so every partial keystroke was a COUNT(*) +
+  // SELECT that could only return an empty page.
+  const [actionInput, setActionInput] = useState('')
+  const [usernameInput, setUsernameInput] = useState('')
   const [action, setAction] = useState('')
   const [username, setUsername] = useState('')
   const [page, setPage] = useState(0)
 
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setAction(actionInput)
+      setUsername(usernameInput)
+      setPage(0)
+    }, 300)
+    return () => clearTimeout(id)
+  }, [actionInput, usernameInput])
+
+  // Only the latest request may update the table, so a slow response for
+  // an older filter cannot overwrite the current one.
+  const loadReq = useRef(0)
+
   const load = useCallback(async () => {
+    const req = ++loadReq.current
     setLoading(true)
     setError('')
     try {
@@ -45,12 +70,14 @@ export default function AuditLogPage() {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       })
+      if (req !== loadReq.current) return
       setItems(res.data.items)
       setTotal(res.data.total)
     } catch (e: any) {
+      if (req !== loadReq.current) return
       setError(e?.response?.data?.detail || t('auditLog.errors.load'))
     } finally {
-      setLoading(false)
+      if (req === loadReq.current) setLoading(false)
     }
   }, [action, username, page, t])
 
@@ -88,14 +115,14 @@ export default function AuditLogPage() {
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input className="input" placeholder={t('auditLog.filter.actionPlaceholder')}
-              value={action} onChange={e => { setAction(e.target.value); setPage(0) }}
+              value={actionInput} onChange={e => setActionInput(e.target.value)}
               style={{ fontSize: '0.82rem', paddingLeft: 28 }} />
           </div>
         </div>
         <div style={{ minWidth: 160 }}>
           <label style={labelStyle}>{t('auditLog.filter.username')}</label>
           <input className="input" placeholder={t('auditLog.filter.usernamePlaceholder')}
-            value={username} onChange={e => { setUsername(e.target.value); setPage(0) }}
+            value={usernameInput} onChange={e => setUsernameInput(e.target.value)}
             style={{ fontSize: '0.82rem' }} />
         </div>
       </div>

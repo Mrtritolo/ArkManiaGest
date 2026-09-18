@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
+import type { AuthUser } from '../types'
 import {
   Server, Plus, Trash2, Edit2, Save, X, AlertCircle,
   CheckCircle, RefreshCw, Users, Wifi, WifiOff
@@ -32,8 +33,19 @@ const EMPTY_NEW: ServerItem = {
   is_online: false, player_count: 0, last_heartbeat: null,
 }
 
-export default function ServersPage() {
+// Same bounds as ServerInstanceUpdate.max_players on the instance side.
+const validMaxPlayers = (n: number | undefined) =>
+  n !== undefined && Number.isInteger(n) && n >= 1 && n <= 500
+
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function ServersPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // arkmania_config.py: create/edit need an operator, delete an admin.
+  const isAdmin = currentUser?.role === 'admin'
+  const canOperate = isAdmin || currentUser?.role === 'operator'
   const [servers, setServers] = useState<ServerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -65,6 +77,10 @@ export default function ServersPage() {
   async function handleCreate() {
     if (!newServer.server_key || !newServer.display_name || !newServer.map_name) {
       setError(t('serversPage.messages.missingRequired'))
+      return
+    }
+    if (!validMaxPlayers(newServer.max_players)) {
+      setError(t('serversPage.messages.invalidMaxPlayers'))
       return
     }
     try {
@@ -100,6 +116,10 @@ export default function ServersPage() {
 
   async function saveEdit() {
     if (!editingKey) return
+    if (!validMaxPlayers(editData.max_players)) {
+      setError(t('serversPage.messages.invalidMaxPlayers'))
+      return
+    }
     try {
       await arkmaniaApi.updateServer(editingKey, editData)
       setEditingKey(null)
@@ -135,9 +155,11 @@ export default function ServersPage() {
           <p className="page-subtitle">{t('serversPage.subtitle', { total: servers.length, online, players: totalPlayers })}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {canOperate && (
           <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
             <Plus size={14} /> {t('serversPage.newServer')}
           </button>
+          )}
           <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }} aria-label={t('serversPage.refresh')} title={t('serversPage.refresh')}>
             <RefreshCw size={14} />
           </button>
@@ -198,7 +220,7 @@ export default function ServersPage() {
       </div>
 
       {/* Add form */}
-      {showAdd && (
+      {canOperate && showAdd && (
         <div className="card" style={{ padding: '1rem', marginBottom: '1rem', borderLeft: '3px solid var(--accent)' }}>
           <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700 }}>
             <Plus size={14} style={{ verticalAlign: -2 }} /> {t('serversPage.form.title')}
@@ -372,8 +394,8 @@ export default function ServersPage() {
 
                   {/* Max players */}
                   {isEditing ? (
-                    <input className="input" type="number" value={editData.max_players || 70}
-                      onChange={e => setEditData({ ...editData, max_players: Number(e.target.value) })}
+                    <input className="input" type="number" value={editData.max_players ?? ''}
+                      onChange={e => setEditData({ ...editData, max_players: e.target.value === '' ? undefined : Number(e.target.value) })}
                       style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem', width: '100%' }} />
                   ) : (
                     <span style={{ fontSize: '0.82rem' }}>
@@ -398,8 +420,8 @@ export default function ServersPage() {
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startEdit(s)} aria-label={t('serversPage.tooltip.edit')} title={t('serversPage.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(s.server_key, s.display_name)} aria-label={t('serversPage.tooltip.delete')} title={t('serversPage.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
+                        {canOperate && <button onClick={() => startEdit(s)} aria-label={t('serversPage.tooltip.edit')} title={t('serversPage.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>}
+                        {isAdmin && <button onClick={() => handleDelete(s.server_key, s.display_name)} aria-label={t('serversPage.tooltip.delete')} title={t('serversPage.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>}
                       </>
                     )}
                   </div>

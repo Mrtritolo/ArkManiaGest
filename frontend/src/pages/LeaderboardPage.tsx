@@ -2,13 +2,14 @@
  * LeaderboardPage — ArkMania player leaderboard.
  * Scores, PvE/PvP filters, recent event log.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkLeaderboardApi } from '../services/api'
 import { fmtShortDateTime } from '../utils/format'
+import type { AuthUser } from '../types'
 import {
   Trophy, Search, Crosshair, Heart, Hammer, Skull, Users, Activity,
-  AlertCircle, RefreshCw, ChevronDown, Trash2
+  AlertCircle, RefreshCw, Trash2
 } from 'lucide-react'
 
 interface LbScore {
@@ -37,6 +38,11 @@ const EVENT_COLORS: Record<number, string> = {
 const EVENT_ICONS: Record<number, string> = {
   1: '🗡️', 2: '⚔️', 3: '☠️', 4: '🦎', 5: '🔨', 6: '💥', 7: '💀',
 }
+// The backend's event_label is English only; it stays the fallback for
+// event types this map does not know.
+const EVENT_LABEL_KEYS: Record<number, string> = {
+  1: 'killWild', 2: 'killDino', 3: 'killPvp', 4: 'tame', 5: 'craft', 6: 'structDestroyed', 7: 'death',
+}
 
 function fmtServer(key: string) {
   return key.split('_')[0]
@@ -44,8 +50,14 @@ function fmtServer(key: string) {
 
 type TabType = 'classifica' | 'eventi'
 
-export default function LeaderboardPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function LeaderboardPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // DELETE /arkmania/leaderboard/scores is require_admin.
+  const isAdmin = currentUser?.role === 'admin'
 
   const SORT_OPTIONS = [
     { value: 'total_points', label: t('leaderboard.sort.points') },
@@ -69,8 +81,14 @@ export default function LeaderboardPage() {
   const [search, setSearch] = useState('')
   const [eventTypeFilter, setEventTypeFilter] = useState<number | undefined>(undefined)
 
+  // Only the latest request may update the page: a slower response for a
+  // filter the user already left must not overwrite the current one.
+  const loadReq = useRef(0)
+
   async function loadData() {
+    const req = ++loadReq.current
     setLoading(true)
+    setError('')
     try {
       const [statsRes, scoresRes, eventsRes] = await Promise.all([
         arkLeaderboardApi.overview(),
@@ -86,12 +104,14 @@ export default function LeaderboardPage() {
           limit: 50,
         }),
       ])
+      if (req !== loadReq.current) return
       setStats(statsRes.data)
       setScores(scoresRes.data.scores)
       setEvents(eventsRes.data.events)
     } catch (e: any) {
+      if (req !== loadReq.current) return
       setError(e.response?.data?.detail || e.message)
-    } finally { setLoading(false) }
+    } finally { if (req === loadReq.current) setLoading(false) }
   }
 
   useEffect(() => { loadData() }, [serverType, sortBy, eventTypeFilter])
@@ -148,6 +168,7 @@ export default function LeaderboardPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {isAdmin && (<>
           <button
             onClick={() => handleClear('PvE')}
             disabled={clearing !== null}
@@ -166,6 +187,7 @@ export default function LeaderboardPage() {
           >
             <Trash2 size={14} /> {clearing === 'PvP' ? t('leaderboard.clearing') : t('leaderboard.clearPvp')}
           </button>
+          </>)}
           <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }}>
             <RefreshCw size={14} />
           </button>
@@ -349,7 +371,9 @@ export default function LeaderboardPage() {
                     <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{ev.player_name}</span>
                     <span style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                       <span>{EVENT_ICONS[ev.event_type] || '?'}</span>
-                      <span style={{ color: EVENT_COLORS[ev.event_type] || '#888', fontWeight: 600 }}>{ev.event_label}</span>
+                      <span style={{ color: EVENT_COLORS[ev.event_type] || '#888', fontWeight: 600 }}>
+                        {EVENT_LABEL_KEYS[ev.event_type] ? t(`leaderboard.events.${EVENT_LABEL_KEYS[ev.event_type]}`) : ev.event_label}
+                      </span>
                     </span>
                     <span style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--warning)' }}>+{ev.points}</span>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

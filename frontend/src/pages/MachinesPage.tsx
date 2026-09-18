@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { machinesApi, sfApi } from '../services/api'
 import StatusBadge from '../components/StatusBadge'
-import type { SSHMachine, SSHMachineCreate, SSHTestResult, SFImportPreview } from '../types'
+import type { AuthUser, SSHMachine, SSHMachineCreate, SSHTestResult, SFImportPreview } from '../types'
 
 const emptyMachine: SSHMachineCreate = {
   name: '',
@@ -29,8 +29,15 @@ const emptyMachine: SSHMachineCreate = {
   is_active: true,
 }
 
-export default function MachinesPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function MachinesPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Every write on this page (create, edit, duplicate, delete, test, import)
+  // is admin-only in machines.py / serverforge.py; other roles only read.
+  const isAdmin = currentUser?.role === 'admin'
   const [machines, setMachines] = useState<SSHMachine[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -198,9 +205,12 @@ export default function MachinesPage() {
   async function handleSave() {
     if (!validate()) return
     setSaving(true); setError('')
+    // runtime=native only exists on Windows: a runtime picked before switching
+    // the OS back to Linux must not be stored (the Hardening page reads it).
+    const payload: SSHMachineCreate = form.os_type === 'windows' ? form : { ...form, runtime: 'pok' }
     try {
-      if (editingId) { await machinesApi.update(editingId, form); setSuccess(t('machines.messages.updated', { name: form.name })) }
-      else { await machinesApi.create(form); setSuccess(t('machines.messages.created', { name: form.name })) }
+      if (editingId) { await machinesApi.update(editingId, payload); setSuccess(t('machines.messages.updated', { name: form.name })) }
+      else { await machinesApi.create(payload); setSuccess(t('machines.messages.created', { name: form.name })) }
       await loadMachines(); setShowForm(false); setEditingId(null)
     } catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.save')) }
     finally { setSaving(false) }
@@ -237,7 +247,7 @@ export default function MachinesPage() {
             {machines.length > 0 && <span className="page-subtitle-count"> {t('machines.subtitleCount', { count: machines.length })}</span>}
           </p>
         </div>
-        {!showForm && !showImport && (
+        {isAdmin && !showForm && !showImport && (
           <div className="page-header-actions">
             {sfHasToken && (
               <button onClick={handleOpenImport} className="btn btn-secondary">
@@ -300,7 +310,7 @@ export default function MachinesPage() {
                         <span>SSH: {sfm.ssh_port}</span>
                         <span>OS: {sfm.os}</span>
                         <span>{sfm.location}</span>
-                        <span>{sfm.containers_count} containers</span>
+                        <span>{t('machines.import.containersCount', { count: sfm.containers_count })}</span>
                       </div>
                     </div>
 
@@ -428,7 +438,7 @@ export default function MachinesPage() {
                 <label className="form-label">{t('machines.field.clusterDir')}</label>
                 <input type="text" name="cluster_dir" value={form.cluster_dir || ''}
                   onChange={handleChange} className="form-input"
-                  placeholder={form.runtime === 'native' ? 'C:\ArkMania\Cluster' : '/gameadmin'} />
+                  placeholder={form.os_type === 'windows' && form.runtime === 'native' ? 'C:\\ArkMania\\Cluster' : '/gameadmin'} />
                 <span className="form-hint">{t('machines.clusterDirHint')}</span>
               </div>
               <div className="form-group form-group-2">
@@ -530,12 +540,14 @@ export default function MachinesPage() {
           <span className="empty-state-icon">&#x29C9;</span>
           <h3 className="empty-state-title">{t('machines.empty.title')}</h3>
           <p className="empty-state-text">{t('machines.empty.text')}</p>
+          {isAdmin && (
           <div className="card-actions" style={{ justifyContent: 'center', marginTop: '1rem' }}>
             <button onClick={handleNew} className="btn btn-primary">+ {t('machines.newMachine')}</button>
             {sfHasToken && (
               <button onClick={handleOpenImport} className="btn btn-secondary">&#x26A1; {t('machines.importServerForge')}</button>
             )}
           </div>
+          )}
         </div>
       ) : (
         <div className="machines-list">
@@ -588,6 +600,7 @@ export default function MachinesPage() {
                       </div>
                     )}
 
+                    {isAdmin && (
                     <div className="machine-card-actions">
                       <button onClick={() => handleTest(machine.id)} disabled={testingId === machine.id} className="btn btn-sm btn-secondary">
                         {testingId === machine.id ? t('machines.status.testing') : t('machines.action.test')}
@@ -596,6 +609,7 @@ export default function MachinesPage() {
                       <button onClick={() => handleDuplicate(machine.id)} className="btn btn-sm btn-ghost">{t('common.duplicate')}</button>
                       <button onClick={() => handleDelete(machine.id, machine.name)} className="btn btn-sm btn-danger">{t('common.delete')}</button>
                     </div>
+                    )}
                   </div>
                 )}
               </div>

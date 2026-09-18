@@ -229,7 +229,7 @@ export default function SettingsTab() {
               onClick={() => copyText(success.hint)}
               className="btn btn-secondary btn-sm"
               style={{ padding: "0.15rem 0.35rem" }}
-              aria-label={t("discord.config.toast.copied")} title={t("discord.config.toast.copied")}
+              aria-label={t("discord.config.copy")} title={t("discord.config.copy")}
             >
               <Copy size={11} />
             </button>
@@ -394,6 +394,7 @@ function Field({
         className="form-input"
         value={value}
         onChange={e => onChange(e.target.value)}
+        autoComplete="off"
         style={{ fontFamily: monospace ? "monospace" : undefined }}
       />
       {hint && (
@@ -468,15 +469,19 @@ function RoleMappingSection() {
     }
   }
 
-  async function patch(id: number, body: Partial<RoleMapping>): Promise<void> {
-    const next = new Set(savingIds); next.add(id); setSavingIds(next);
+  async function patch(id: number, body: Partial<RoleMapping>): Promise<boolean> {
+    // Functional updates: overlapping patches on different rows must not
+    // restore each other's stale snapshot of the set.
+    setSavingIds(prev => new Set(prev).add(id));
     try {
       await discordApi.updateRoleMapping(id, body);
       setMappings(prev => prev?.map(m => m.id === id ? { ...m, ...body } : m) ?? null);
+      return true;
     } catch (err: unknown) {
       setError(extractError(err, t("discord.roleMap.errors.update")));
+      return false;
     } finally {
-      const after = new Set(savingIds); after.delete(id); setSavingIds(after);
+      setSavingIds(prev => { const after = new Set(prev); after.delete(id); return after; });
     }
   }
 
@@ -549,15 +554,23 @@ function RoleMappingSection() {
                   </span>
                 </div>
                 <span style={{ textAlign: "center", color: "var(--text-secondary)" }}>→</span>
+                {/* Uncontrolled: `m.ark_group_name` stays the saved value, so
+                    blur can tell an edit apart.  The key remounts the input
+                    whenever the saved value changes. */}
                 <input
+                  key={m.ark_group_name}
                   className="form-input"
-                  value={m.ark_group_name}
-                  onChange={e => setMappings(prev => prev?.map(x =>
-                    x.id === m.id ? { ...x, ark_group_name: e.target.value } : x
-                  ) ?? null)}
+                  defaultValue={m.ark_group_name}
                   onBlur={e => {
-                    const v = e.target.value.trim();
-                    if (v && v !== m.ark_group_name) patch(m.id, { ark_group_name: v });
+                    const input = e.currentTarget;
+                    const v = input.value.trim();
+                    if (!v || v === m.ark_group_name) {
+                      input.value = m.ark_group_name;
+                      return;
+                    }
+                    void patch(m.id, { ark_group_name: v }).then(ok => {
+                      if (!ok) input.value = m.ark_group_name;
+                    });
                   }}
                   style={{ fontFamily: "monospace", fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
                 />
@@ -728,6 +741,9 @@ function SecretField({
           value={isCleared ? "" : value}
           disabled={isCleared}
           onChange={e => onChange(e.target.value)}
+          // Keeps password managers from filling the admin's own panel
+          // password in here, which would then be saved as the secret.
+          autoComplete="new-password"
           placeholder={
             present && !isCleared
               ? t("discord.settings.secret.placeholder")
@@ -740,7 +756,8 @@ function SecretField({
           className="btn btn-secondary btn-sm"
           style={{ padding: "0 0.5rem" }}
           type="button"
-          aria-label={show ? "Hide" : "Show"} title={show ? "Hide" : "Show"}
+          aria-label={show ? t("discord.settings.secret.hide") : t("discord.settings.secret.show")}
+          title={show ? t("discord.settings.secret.hide") : t("discord.settings.secret.show")}
           disabled={isCleared}
         >
           {show ? <EyeOff size={12} /> : <Eye size={12} />}

@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkTransferRulesApi, arkmaniaApi } from '../services/api'
+import type { AuthUser } from '../types'
 import {
   ArrowRightLeft, Plus, Trash2, Edit2, Save, X, AlertCircle,
   CheckCircle, Shield, ArrowRight, RefreshCw
@@ -27,8 +28,14 @@ const TRANSFER_LEVEL_META = [
   { value: 3, color: 'var(--danger)', bg: 'rgba(220,38,38,0.08)', tkey: 'blocked' },
 ]
 
-export default function TransferRulesPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function TransferRulesPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Creating, editing and deleting rules are require_operator server side.
+  const canOperate = currentUser?.role === 'admin' || currentUser?.role === 'operator'
   const TRANSFER_LEVELS = TRANSFER_LEVEL_META.map(m => ({
     ...m,
     label: t(`transferRules.levels.${m.tkey}.label`),
@@ -103,7 +110,9 @@ export default function TransferRulesPage() {
   async function saveEdit() {
     if (editingId == null) return
     try {
-      await arkTransferRulesApi.update(editingId, { transfer_level: editLevel, notes: editNotes || undefined })
+      // Always send notes: an empty string is how a note gets cleared
+      // (the backend skips the column only when notes is omitted).
+      await arkTransferRulesApi.update(editingId, { transfer_level: editLevel, notes: editNotes })
       setEditingId(null)
       setSuccess(t('transferRules.success.updated'))
       await loadData()
@@ -134,9 +143,11 @@ export default function TransferRulesPage() {
           <p className="page-subtitle">{t('transferRules.subtitle', { count: rules.length })}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
-          <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
-            <Plus size={14} /> {t('transferRules.newButton')}
-          </button>
+          {canOperate && (
+            <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
+              <Plus size={14} /> {t('transferRules.newButton')}
+            </button>
+          )}
           <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
             <RefreshCw size={14} />
           </button>
@@ -176,7 +187,7 @@ export default function TransferRulesPage() {
       </div>
 
       {/* Form nuova regola */}
-      {showAdd && (
+      {showAdd && canOperate && (
         <div className="card" style={{ padding: '1rem', marginBottom: '1rem', borderLeft: '3px solid var(--accent)' }}>
           <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700 }}>
             <Plus size={14} style={{ verticalAlign: -2 }} /> {t('transferRules.form.heading')}
@@ -282,7 +293,7 @@ export default function TransferRulesPage() {
                         <button onClick={saveEdit} aria-label={t('transferRules.tooltip.save')} title={t('transferRules.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
                         <button onClick={() => setEditingId(null)} aria-label={t('transferRules.tooltip.cancel')} title={t('transferRules.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
                       </>
-                    ) : (
+                    ) : canOperate && (
                       <>
                         <button onClick={() => startEdit(rule)} aria-label={t('transferRules.tooltip.edit')} title={t('transferRules.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
                         <button onClick={() => handleDelete(rule.id)} aria-label={t('transferRules.tooltip.delete')} title={t('transferRules.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>

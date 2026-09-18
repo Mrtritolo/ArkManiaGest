@@ -5,12 +5,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sfApi } from '../services/api'
-import type { SFMachine, SFContainer, SFCluster } from '../types'
+import { extractError } from '../utils/errors'
+import type { AuthUser, SFMachine, SFContainer, SFCluster } from '../types'
 
 type Tab = 'containers' | 'machines' | 'clusters'
 
-export default function ServerForgePage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function ServerForgePage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Mirrors serverforge.py: the token is admin-only, container lifecycle
+  // needs an operator. The backend stays the authority.
+  const isAdmin = currentUser?.role === 'admin'
+  const canOperate = isAdmin || currentUser?.role === 'operator'
   // Config
   const [hasToken, setHasToken] = useState<boolean | null>(null)
   const [tokenInput, setTokenInput] = useState('')
@@ -83,14 +92,18 @@ export default function ServerForgePage() {
     setTokenTestResult(null)
     try {
       await sfApi.updateConfig(tokenInput.trim())
-      setHasToken(true)
       setTokenInput('')
-      // Test automatico
+      // Switch to the dashboard only once the token works: the test result
+      // is rendered on this form, and a rejected token would leave the
+      // dashboard stuck on its loading state.
       const test = await sfApi.testToken()
       setTokenTestResult(test.data)
-      if (test.data.success) loadAll()
-    } catch (err: any) {
-      setTokenTestResult({ success: false, message: err.message })
+      if (test.data.success) {
+        setHasToken(true)
+        loadAll()
+      }
+    } catch (err) {
+      setTokenTestResult({ success: false, message: extractError(err, String(err)) })
     } finally {
       setTokenSaving(false)
     }
@@ -99,20 +112,19 @@ export default function ServerForgePage() {
   const loadAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     setError('')
-    try {
-      const [mRes, cRes, clRes] = await Promise.allSettled([
-        sfApi.machines(),
-        sfApi.containers(),
-        sfApi.clusters(),
-      ])
-      if (mRes.status === 'fulfilled') setMachines(mRes.value.data.data || [])
-      if (cRes.status === 'fulfilled') setContainers(cRes.value.data.data || [])
-      if (clRes.status === 'fulfilled') setClusters(clRes.value.data.data || [])
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
+    const [mRes, cRes, clRes] = await Promise.allSettled([
+      sfApi.machines(),
+      sfApi.containers(),
+      sfApi.clusters(),
+    ])
+    if (mRes.status === 'fulfilled') setMachines(mRes.value.data.data || [])
+    if (cRes.status === 'fulfilled') setContainers(cRes.value.data.data || [])
+    if (clRes.status === 'fulfilled') setClusters(clRes.value.data.data || [])
+    // allSettled never rejects: surface the first failure, otherwise an
+    // unreachable ServerForge reads as "no servers". The previous lists stay.
+    const failed = [mRes, cRes, clRes].find(r => r.status === 'rejected')
+    if (failed) setError(extractError(failed.reason, String(failed.reason)))
+    setLoading(false)
   }, [])
 
   async function handleContainerAction(id: number, action: 'start' | 'stop' | 'restart', label: string) {
@@ -152,6 +164,10 @@ export default function ServerForgePage() {
           <p className="card-text">
             {t('serverForge.tokenCardBody')}
           </p>
+          {/* PUT /sf/config is admin-only: other roles get the reason, not a form that 403s. */}
+          {!isAdmin ? (
+            <p className="card-text">{t('serverForge.tokenAdminOnly')}</p>
+          ) : (<>
           <div className="setup-field" style={{ marginTop: '1rem' }}>
             <label className="form-label">{t('serverForge.tokenLabel')}</label>
             <input
@@ -171,6 +187,7 @@ export default function ServerForgePage() {
               {tokenSaving ? t('serverForge.tokenSaving') : t('serverForge.tokenSaveTest')}
             </button>
           </div>
+          </>)}
         </div>
       </div>
     )
@@ -210,7 +227,7 @@ export default function ServerForgePage() {
       {/* Messaggi */}
       {error && (
         <div className="alert alert-error mb-6">
-          <span className="alert-icon">!</span>{error}
+          <span className="alert-icon">!</span>{t('serverForge.errorPrefix', { detail: error })}
           <button onClick={() => setError('')} className="alert-close">&times;</button>
         </div>
       )}
@@ -233,7 +250,7 @@ export default function ServerForgePage() {
               <div className="sf-machine-mini-gauges">
                 <GaugeMini label="CPU" value={m.cpu_usage_percent} placeholder={t('serverForge.gauge.placeholder')} />
                 <GaugeMini label="RAM" value={m.ram_usage_percent} placeholder={t('serverForge.gauge.placeholder')} />
-                <GaugeMini label="Disk" value={m.disk_usage_percent} placeholder={t('serverForge.gauge.placeholder')} />
+                <GaugeMini label={t('serverForge.gauge.disk')} value={m.disk_usage_percent} placeholder={t('serverForge.gauge.placeholder')} />
               </div>
               <div className="sf-machine-mini-info">
                 {t('serverForge.machine.locationCount', { location: m.location, count: m.containers_count })}
@@ -308,6 +325,7 @@ export default function ServerForgePage() {
                   </div>
                 )}
 
+                {canOperate && (
                 <div className="sf-container-actions">
                   {c.status === 'stopped' ? (
                     <button
@@ -336,6 +354,7 @@ export default function ServerForgePage() {
                     </>
                   )}
                 </div>
+                )}
               </div>
             ))
           )}
@@ -355,7 +374,7 @@ export default function ServerForgePage() {
                 <GaugeFull label="CPU" value={m.cpu_usage_percent} placeholder={t('serverForge.gauge.placeholder')} />
                 <GaugeFull label="RAM" value={m.ram_usage_percent} placeholder={t('serverForge.gauge.placeholder')}
                   detail={m.ram_used_gb && m.ram_total_gb ? `${m.ram_used_gb} / ${m.ram_total_gb} GB` : undefined} />
-                <GaugeFull label="Disco" value={m.disk_usage_percent} placeholder={t('serverForge.gauge.placeholder')}
+                <GaugeFull label={t('serverForge.gauge.disk')} value={m.disk_usage_percent} placeholder={t('serverForge.gauge.placeholder')}
                   detail={m.disk_used_gb && m.disk_total_gb ? `${m.disk_used_gb} / ${m.disk_total_gb} GB` : undefined} />
               </div>
               <div className="sf-machine-meta">
@@ -386,11 +405,13 @@ export default function ServerForgePage() {
       )}
 
       {/* Token config link */}
+      {isAdmin && (
       <div className="sf-token-footer">
         <button onClick={() => setHasToken(false)} className="btn btn-sm btn-ghost">
           {t('serverForge.editTokenBtn')}
         </button>
       </div>
+      )}
     </div>
   )
 }

@@ -5,9 +5,10 @@
  * RARE_TAMED, DECAY_SCAN) in a filterable, paginated table with aggregate
  * stats cards.  Follows the same design patterns as TransferRulesPage.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
+import type { AuthUser } from '../types'
 import {
   ScrollText, RefreshCw, AlertCircle, Search, ChevronLeft, ChevronRight,
   LogIn, Skull, Heart, Eye, Timer, Sparkles, Trash2, CheckCircle
@@ -69,8 +70,14 @@ const labelStyle: React.CSSProperties = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function EventLogPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function EventLogPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Purging the log is irreversible and Depends(require_admin) server side.
+  const isAdmin = currentUser?.role === 'admin'
   const [events, setEvents] = useState<EventItem[]>([])
   const [stats, setStats] = useState<EventStat[]>([])
   const [servers, setServers] = useState<ServerItem[]>([])
@@ -82,7 +89,13 @@ export default function EventLogPage() {
   const [eventType, setEventType] = useState('')
   const [serverKey, setServerKey] = useState('')
   const [search, setSearch] = useState('')
+  // What the query actually uses: every keystroke used to fire a COUNT(*)
+  // plus a LIKE '%q%' scan of the whole log.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(0)
+  // Only the latest request may write the table: an older, slower response
+  // (the one for "Re" while the box says "Rexy") is dropped.
+  const eventsReq = useRef(0)
 
   // Purge
   const [showPurge, setShowPurge] = useState(false)
@@ -93,21 +106,23 @@ export default function EventLogPage() {
 
   // ── Data loading ────────────────────────────────────────────────────────
   const loadEvents = useCallback(async () => {
+    const req = ++eventsReq.current
     setLoading(true)
     try {
       const params: Record<string, any> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE }
       if (eventType) params.event_type = eventType
       if (serverKey) params.server_key = serverKey
-      if (search) params.search = search
+      if (debouncedSearch) params.search = debouncedSearch
       const res = await arkmaniaApi.getEvents(params)
+      if (req !== eventsReq.current) return
       setEvents(res.data.events)
       setTotal(res.data.total)
     } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+      if (req === eventsReq.current) setError(e.response?.data?.detail || e.message)
     } finally {
-      setLoading(false)
+      if (req === eventsReq.current) setLoading(false)
     }
-  }, [eventType, serverKey, search, page])
+  }, [eventType, serverKey, debouncedSearch, page])
 
   const loadMeta = useCallback(async () => {
     try {
@@ -122,6 +137,11 @@ export default function EventLogPage() {
 
   useEffect(() => { loadMeta() }, [loadMeta])
   useEffect(() => { loadEvents() }, [loadEvents])
+  useEffect(() => {
+    if (search === debouncedSearch) return
+    const timer = setTimeout(() => { setDebouncedSearch(search); setPage(0) }, 300)
+    return () => clearTimeout(timer)
+  }, [search, debouncedSearch])
   useEffect(() => {
     if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) }
   }, [success])
@@ -142,7 +162,10 @@ export default function EventLogPage() {
       setSuccess(t('eventLog.purgeDeleted', { count: res.data.deleted.toLocaleString() }))
       setShowPurge(false)
       loadMeta()
-      loadEvents()
+      // Back to page one: the old page index can now lie past the end, and
+      // the table would read "no events" while events remain.
+      if (page !== 0) setPage(0)
+      else loadEvents()
     } catch (e: any) {
       setError(e.response?.data?.detail || e.message)
     } finally {
@@ -181,9 +204,11 @@ export default function EventLogPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
-          <button onClick={() => setShowPurge(!showPurge)} className="btn btn-secondary" style={{ fontSize: '0.82rem' }}>
-            <Trash2 size={14} /> {t('eventLog.purge')}
-          </button>
+          {isAdmin && (
+            <button onClick={() => setShowPurge(!showPurge)} className="btn btn-secondary" style={{ fontSize: '0.82rem' }}>
+              <Trash2 size={14} /> {t('eventLog.purge')}
+            </button>
+          )}
           <button onClick={() => { loadMeta(); loadEvents() }} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
             <RefreshCw size={14} />
           </button>
@@ -206,7 +231,7 @@ export default function EventLogPage() {
       )}
 
       {/* Purge panel */}
-      {showPurge && (
+      {isAdmin && showPurge && (
         <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid var(--danger)' }}>
           <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--danger)' }}>
             <Trash2 size={14} style={{ verticalAlign: -2 }} /> {t('eventLog.purgeTitle')}
@@ -299,7 +324,7 @@ export default function EventLogPage() {
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input className="input" placeholder={t('eventLog.filter.searchPlaceholder')}
-              value={search} onChange={e => applyFilter(setSearch, e.target.value)}
+              value={search} onChange={e => setSearch(e.target.value)}
               style={{ fontSize: '0.82rem', paddingLeft: 28 }} />
           </div>
         </div>

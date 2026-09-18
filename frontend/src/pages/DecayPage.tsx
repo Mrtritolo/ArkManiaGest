@@ -2,11 +2,11 @@
  * DecayPage — Tribe decay management (ARKM_tribe_decay).
  * Shows tribes with decay status, pending purge, and recent logs.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkDecayApi, serverInstancesApi } from '../services/api'
 import { fmtShortDateTime } from '../utils/format'
-import type { ServerInstance } from '../types'
+import type { AuthUser, ServerInstance } from '../types'
 import {
   Timer, Search, AlertCircle, AlertTriangle, CheckCircle, Clock,
   Trash2, Building, Activity, XCircle, MapPin, Copy, Loader2,
@@ -53,8 +53,11 @@ function daysSince(iso: string | null): number | null {
 
 type TabType = 'tribes' | 'pending' | 'log'
 
+/** The /tribes endpoint's hard cap; its default (100) hid most of a big cluster. */
+const TRIBES_LIMIT = 500
+
 interface Props {
-  currentUser?: { role?: string } | null
+  currentUser?: AuthUser | null
 }
 
 export default function DecayPage({ currentUser }: Props) {
@@ -62,8 +65,10 @@ export default function DecayPage({ currentUser }: Props) {
   // Everything that reaches the plugin over RCON -- purge, per-map commands,
   // set-expiry, single-object destroy -- is Depends(require_admin) on the
   // backend. Staging a tribe in ARKM_decay_pending (schedule / cancel) is
-  // deliberately not, so those two stay available to every operator.
+  // require_operator: open to operators, hidden from viewers, who only ever
+  // got a 403 back from those buttons.
   const isAdmin = currentUser?.role === 'admin'
+  const canOperate = isAdmin || currentUser?.role === 'operator'
 
   function formatHoursLeft(h: number) {
     if (h < 0) return t('decay.hoursLeft.expired', { h: Math.abs(h) })
@@ -86,7 +91,7 @@ export default function DecayPage({ currentUser }: Props) {
     try {
       const [statsRes, tribesRes, pendingRes, logRes] = await Promise.all([
         arkDecayApi.overview(),
-        arkDecayApi.tribes({ status: filterStatus !== 'all' ? filterStatus : undefined, search: search || undefined }),
+        arkDecayApi.tribes({ status: filterStatus !== 'all' ? filterStatus : undefined, search: search || undefined, limit: TRIBES_LIMIT }),
         arkDecayApi.pending(),
         arkDecayApi.log({ limit: 50 }),
       ])
@@ -113,6 +118,10 @@ export default function DecayPage({ currentUser }: Props) {
   // the snapshot, and a hidden row is still there when you turn it back on.
   const [detailKinds, setDetailKinds] = useState({ structure: true, dino: true })
   const [detailTruncated, setDetailTruncated] = useState(false)
+  // Bumped by every detail open/close: a response that is no longer the
+  // latest request is dropped, so a slow snapshot of tribe A cannot land
+  // in the panel opened for tribe B afterwards.
+  const detailReq = useRef(0)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
   // Per-map commands need an instance to talk to: every plugin command is
@@ -153,21 +162,32 @@ export default function DecayPage({ currentUser }: Props) {
     return hits.length === 1 ? hits[0] : null
   }
 
-  /** Auto-resolved target, else whatever the toolbar has selected. */
+  /**
+   * Auto-resolved target, else the toolbar selection -- but only when the
+   * toolbar serves the row's own map. With no unique match (no instance, or
+   * two on the same map) a toolbar sitting on another map would aim the
+   * command at an unrelated tribe, which is exactly what instanceForRow
+   * exists to prevent; the operator picks the right server instead.
+   */
   function targetFor(serverKey: string): ServerInstance | null {
+    const picked = instances.find(i => i.id === cmdInstance)
     return instanceForRow(serverKey)
-      ?? instances.find(i => i.id === cmdInstance)
-      ?? null
+      ?? (picked && picked.map_name.split('_')[0] === serverKey.split('_')[0] ? picked : null)
   }
 
-  /** Run one plugin command against the selected instance. */
+  /**
+   * Run one plugin command. The instance travels inside `fn`: the toolbar
+   * buttons use the toolbar, the per-row ones the row's own map, so an
+   * empty toolbar must not silently swallow the latter.
+   */
   async function runCmd(key: string, fn: () => Promise<any>, confirmMsg?: string) {
-    if (cmdInstance === '') return
     if (confirmMsg && !window.confirm(confirmMsg)) return
     setCmdBusy(key); setCmdReply(''); setError('')
     try {
       const res = await fn()
-      setCmdReply(res.data?.reply || res.data?.status || 'ok')
+      // The RCON endpoints answer 200 even when SSH or RCON failed.
+      if (res.data?.status === 'failed') setError(res.data.stderr || res.data.reply || t('decay.cmd.rconFailed'))
+      else setCmdReply(res.data?.reply || res.data?.status || 'ok')
       await loadData()
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e))
@@ -177,15 +197,22 @@ export default function DecayPage({ currentUser }: Props) {
   }
 
   async function destroyOne(row: ScanDetailItem, idx: number) {
-    if (!row.actor_name || cmdInstance === '') return
+    // The object's own map, never the toolbar: targeting_team is per map.
+    const tgt = targetFor(row.server_key)
+    if (!row.actor_name || !tgt) return
     const label = row.custom_name || row.display_name || row.class_name
-    if (!window.confirm(t('decay.detail.confirmDestroyOne', { what: label }))) return
+    if (!window.confirm(`${tgt.display_name || tgt.name}\n\n${t('decay.detail.confirmDestroyOne', { what: label })}`)) return
     setCmdBusy(`obj-${idx}`); setError('')
+    const req = detailReq.current
     try {
-      const res = await arkDecayApi.destroyActor(
-        cmdInstance as number, row.targeting_team, row.actor_name)
+      const res = await arkDecayApi.destroyActor(tgt.id, row.targeting_team, row.actor_name)
+      if (res.data.status !== 'success') {
+        setError(res.data.stderr || res.data.reply || t('decay.cmd.rconFailed'))
+        return
+      }
       setCmdReply(res.data.reply || '')
-      setDetailRows(rows => rows.filter((_, i) => i !== idx))
+      // idx points into the list the click came from; skip if it was reloaded.
+      if (req === detailReq.current) setDetailRows(rows => rows.filter((_, i) => i !== idx))
     } catch (e: any) {
       setError(e.response?.data?.detail || String(e))
     } finally {
@@ -195,22 +222,28 @@ export default function DecayPage({ currentUser }: Props) {
 
   /** Load (or reload) the detail of one row, leaving it open. */
   async function openDetail(p: PendingItem) {
+    const req = ++detailReq.current
     setDetailKey(`${p.targeting_team}-${p.server_key}`)
     setDetailRows([]); setDetailLoading(true)
     try {
       const res = await arkDecayApi.pendingDetail(p.targeting_team, p.server_key)
+      if (req !== detailReq.current) return
       setDetailRows(res.data.detail || [])
       setDetailTruncated(!!res.data.truncated)
     } catch {
-      setDetailRows([])
+      if (req === detailReq.current) setDetailRows([])
     } finally {
-      setDetailLoading(false)
+      if (req === detailReq.current) setDetailLoading(false)
     }
   }
 
   async function toggleDetail(p: PendingItem) {
     const key = `${p.targeting_team}-${p.server_key}`
-    if (detailKey === key) { setDetailKey(null); setDetailRows([]); return }
+    if (detailKey === key) {
+      detailReq.current++
+      setDetailKey(null); setDetailRows([]); setDetailLoading(false)
+      return
+    }
     await openDetail(p)
   }
 
@@ -471,6 +504,12 @@ export default function DecayPage({ currentUser }: Props) {
             </form>
           </div>
 
+          {!loading && tribes.length >= TRIBES_LIMIT && (
+            <div style={{ padding: '0.4rem 1rem', fontSize: '0.75rem', color: 'var(--warning)', borderBottom: '1px solid var(--border)' }}>
+              <AlertTriangle size={12} /> {t('decay.tribes.truncated', { shown: tribes.length })}
+            </div>
+          )}
+
           {/* Table */}
           <div style={{ maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
             {loading ? <div className="pl-loading">{t('decay.loading')}</div> : tribes.length === 0 ? (
@@ -494,7 +533,7 @@ export default function DecayPage({ currentUser }: Props) {
                       <div style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', opacity: 0.6 }}>{tr.last_refresh_eos?.slice(0, 16)}</div>
                     </div>
                     <span style={{ fontSize: '0.82rem' }}>{tr.last_refresh_group || t('decay.defaultGroup')}</span>
-                    <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{tr.last_refresh_days}g</span>
+                    <span style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{t('decay.tribes.daysValue', { d: tr.last_refresh_days })}</span>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(tr.expire_time)}</span>
                     <div style={{ textAlign: 'center' }}>
                       <span style={{
@@ -506,15 +545,17 @@ export default function DecayPage({ currentUser }: Props) {
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem' }}>
-                      <button
-                        onClick={() => handleSchedulePurge(tr)}
-                        disabled={acting !== null || running}
-                        className="btn btn-ghost btn-sm"
-                        aria-label={t('decay.scheduleTitle')} title={t('decay.scheduleTitle')}
-                        style={{ padding: '0.2rem 0.4rem' }}
-                      >
-                        <Clock size={12} />
-                      </button>
+                      {canOperate && (
+                        <button
+                          onClick={() => handleSchedulePurge(tr)}
+                          disabled={acting !== null || running}
+                          className="btn btn-ghost btn-sm"
+                          aria-label={t('decay.scheduleTitle')} title={t('decay.scheduleTitle')}
+                          style={{ padding: '0.2rem 0.4rem' }}
+                        >
+                          <Clock size={12} />
+                        </button>
+                      )}
                       {isAdmin && (
                         <button
                           onClick={() => handlePurgeTribeNow(tr)}
@@ -591,16 +632,18 @@ export default function DecayPage({ currentUser }: Props) {
                       <MapPin size={12} />
                       {dOpen ? t('decay.detail.hide') : t('decay.detail.show')}
                     </button>
-                    <button
-                      onClick={() => handleCancelPurge(p)}
-                      disabled={acting !== null}
-                      className="btn btn-ghost btn-sm"
-                      aria-label={t('decay.cancelTitle')} title={t('decay.cancelTitle')}
-                    >
-                      {acting === p.targeting_team
-                        ? <Loader2 size={12} className="pl-spin" />
-                        : <XCircle size={12} />}
-                    </button>
+                    {canOperate && (
+                      <button
+                        onClick={() => handleCancelPurge(p)}
+                        disabled={acting !== null}
+                        className="btn btn-ghost btn-sm"
+                        aria-label={t('decay.cancelTitle')} title={t('decay.cancelTitle')}
+                      >
+                        {acting === p.targeting_team
+                          ? <Loader2 size={12} className="pl-spin" />
+                          : <XCircle size={12} />}
+                      </button>
+                    )}
                     {isAdmin && (<>
                       <span style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 3px' }} />
                       <button className="btn btn-ghost btn-sm"
@@ -696,7 +739,7 @@ export default function DecayPage({ currentUser }: Props) {
                         </div>
                         {detailVisible.map(({ r: row, i: idx }) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 60px 200px 150px', alignItems: 'center', fontSize: '0.76rem', padding: '0.22rem 0.5rem', borderTop: '1px solid var(--border)' }}>
-                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? 'var(--violet)' : 'var(--text-secondary)' }}>{row.actor_type}</span>
+                            <span style={{ fontWeight: 600, color: row.actor_type === 'dino' ? 'var(--violet)' : 'var(--text-secondary)' }}>{t(`playerMap.kind.${row.actor_type}`, { defaultValue: row.actor_type })}</span>
                             <span title={row.class_name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.custom_name || row.display_name || row.class_name}</span>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{row.owner_name || '—'}</span>
                             <span style={{ fontFamily: 'var(--font-mono)' }}>{row.actor_type === 'dino' && row.dino_level > 0 ? row.dino_level : '—'}</span>
@@ -707,8 +750,8 @@ export default function DecayPage({ currentUser }: Props) {
                               </button>
                               {isAdmin && row.actor_name && (
                                 <button className="btn btn-danger btn-sm"
-                                  disabled={cmdInstance === '' || cmdBusy !== null}
-                                  aria-label={row.actor_name} title={row.actor_name}
+                                  disabled={!tgt || cmdBusy !== null}
+                                  aria-label={tgt ? `${row.actor_name} — ${tgtName}` : t('decay.cmd.noTarget')} title={tgt ? `${row.actor_name} — ${tgtName}` : t('decay.cmd.noTarget')}
                                   onClick={() => destroyOne(row, idx)}>
                                   <Crosshair size={10} />
                                 </button>

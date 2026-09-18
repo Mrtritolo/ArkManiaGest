@@ -40,6 +40,10 @@ const RISK_COLOR: Record<HardeningRisk, string> = {
   lockout: 'var(--danger)',
 }
 
+// Same rule as PlatformAdapter.from_machine: runtime=native only counts on a
+// Windows host, so a Linux row saved with a stale runtime is not listed.
+const isNativeHost = (m: SSHMachine) => m.os_type === 'windows' && m.runtime === 'native'
+
 export default function HardeningPage({ currentUser }: Props) {
   const { t } = useTranslation()
   const isAdmin = currentUser?.role === 'admin'
@@ -56,7 +60,7 @@ export default function HardeningPage({ currentUser }: Props) {
   // Only native hosts have these controls: a POK host runs its game servers
   // inside Linux containers, where none of this applies.
   const nativeMachines = useMemo(
-    () => machines.filter(m => m.runtime === 'native'),
+    () => machines.filter(isNativeHost),
     [machines],
   )
 
@@ -64,8 +68,11 @@ export default function HardeningPage({ currentUser }: Props) {
     machinesApi.list()
       .then(res => {
         setMachines(res.data)
-        const first = res.data.find(m => m.runtime === 'native')
-        if (first) setMachineId(first.id)
+        const first = res.data.find(isNativeHost)
+        // This effect re-runs on a language switch (`t` changes identity):
+        // keep the host the operator picked, or Apply would target another
+        // host than the report on screen.
+        if (first) setMachineId(prev => prev ?? first.id)
       })
       .catch(() => setError(t('hardening.machinesError')))
   }, [t])
@@ -83,7 +90,8 @@ export default function HardeningPage({ currentUser }: Props) {
   }, [t])
 
   async function applySelected() {
-    if (machineId === null || !report) return
+    // The selection comes from the report: never apply it to another host.
+    if (machineId === null || !report || report.machine_id !== machineId) return
     const ids = Array.from(selected)
     if (ids.length === 0) return
 
@@ -165,7 +173,7 @@ export default function HardeningPage({ currentUser }: Props) {
           <label style={labelStyle}>{t('hardening.machine')}</label>
           <select className="form-input" value={machineId ?? ''}
             onChange={e => { const v = Number(e.target.value); setMachineId(v); setReport(null); setSelected(new Set()) }}
-            disabled={nativeMachines.length === 0}>
+            disabled={nativeMachines.length === 0 || loading || applying}>
             {nativeMachines.length === 0 && <option value="">{t('hardening.noNativeMachines')}</option>}
             {nativeMachines.map(m => (
               <option key={m.id} value={m.id}>{m.name} ({m.hostname})</option>

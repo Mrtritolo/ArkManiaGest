@@ -11,14 +11,22 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Database, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { databaseApi } from '../services/api'
-import type { DatabaseConfig, DualDatabaseConfig } from '../types'
+import { extractError } from '../utils/errors'
+import type { AuthUser, DatabaseConfig, DualDatabaseConfig } from '../types'
 
 type TestTarget = 'panel' | 'plugin'
 type TestState = { success: boolean; message: string }
 
-export default function DatabaseSettingsPage() {
+interface Props {
+  // Nothing to gate here: App.tsx mounts this route for admins only and
+  // the database endpoints are require_admin server side.
+  currentUser?: AuthUser | null
+}
+
+export default function DatabaseSettingsPage(_props: Props) {
   const { t } = useTranslation()
   const [config, setConfig] = useState<DualDatabaseConfig | null>(null)
+  const [loadError, setLoadError] = useState('')
   const [testing, setTesting] = useState<TestTarget | null>(null)
   const [testResults, setTestResults] = useState<Record<TestTarget, TestState | null>>({
     panel: null,
@@ -31,7 +39,10 @@ export default function DatabaseSettingsPage() {
     try {
       const res = await databaseApi.get()
       setConfig(res.data)
-    } catch { /* silently ignore — page shows "Loading…" */ }
+    } catch (err: unknown) {
+      // Without this the page stayed on "Loading…" forever.
+      setLoadError(extractError(err, t('database.loadFailed')))
+    }
   }
 
   async function handleTest(target: TestTarget): Promise<void> {
@@ -47,7 +58,7 @@ export default function DatabaseSettingsPage() {
         ...prev,
         [target]: {
           success: false,
-          message: err instanceof Error ? err.message : t('database.testFailed'),
+          message: extractError(err, t('database.testFailed')),
         },
       }))
     } finally {
@@ -94,7 +105,9 @@ export default function DatabaseSettingsPage() {
         </>
       ) : (
         <div className="card">
-          <p style={{ color: 'var(--text-muted)' }}>{t('common.loading')}</p>
+          {loadError
+            ? <p style={{ color: 'var(--danger)' }}>{loadError}</p>
+            : <p style={{ color: 'var(--text-muted)' }}>{t('common.loading')}</p>}
         </div>
       )}
 

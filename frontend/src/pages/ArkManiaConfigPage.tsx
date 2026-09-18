@@ -2,15 +2,16 @@
  * ArkManiaConfigPage — Centralised ArkMania plugin configuration editor.
  * Dedicated GUIs for: permission groups (chips), group rules (table), blueprint arrays, key-value maps.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
 import { arkmaniaApi, blueprintsApi, type BlueprintRow } from '../services/api'
+import type { AuthUser } from '../types'
 import { copyText } from '../utils/clipboard'
 import {
   Settings, Save, Search, Server, RotateCcw, AlertCircle, Check, Download,
   LogIn, Zap, Eye, Package, Shield, Heart, MessageSquare, Timer, Bell, MessageCircle, Trophy,
-  ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Plus, X, Trash2, GripVertical,
+  ChevronDown, ChevronUp, Plus, X, Trash2, GripVertical,
   UserCheck, Users, FileText, Swords, Crosshair, ShieldAlert, Hammer, Gauge
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -131,6 +132,14 @@ function detectEditorType(key: string, value: string): EditorType {
   return 'text'
 }
 
+/** True when a hand-edited JSON value parses and keeps the original's shape (array vs object). */
+function isValidJsonEdit(value: string, original: string): boolean {
+  try {
+    const next = JSON.parse(value)
+    return typeof next === 'object' && next !== null && Array.isArray(next) === Array.isArray(JSON.parse(original))
+  } catch { return false }
+}
+
 // ============================================================
 // Sub-components: GUI editors
 // ============================================================
@@ -216,6 +225,10 @@ function GroupRulesEditor({ value, onChange, availableGroups }: { value: string;
             <GripVertical size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
             <select className="input" value={rule.Group} onChange={e => updateRule(i, 'Group', e.target.value)}
               style={{ fontSize: '0.8rem', height: 30, flex: 1 }}>
+              {/* A stored group missing from PermissionGroups (renamed, deleted,
+                  or the list failed to load) still needs an option, or the
+                  select shows the first group while the rule keeps the old one. */}
+              {!availableGroups.includes(rule.Group) && <option value={rule.Group}>{t('arkmaniaConfig.editors.missingGroup', { group: rule.Group })}</option>}
               {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
@@ -241,7 +254,7 @@ function GroupRulesEditor({ value, onChange, availableGroups }: { value: string;
 }
 
 /** Blueprint list editor with DB search, type filters, and manual paste */
-function BlueprintListEditor({ value, onChange, configKey }: { value: string; onChange: (v: string) => void; configKey?: string }) {
+function BlueprintListEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useTranslation()
   let items: string[] = []
   try { items = JSON.parse(value) } catch { items = [] }
@@ -253,9 +266,6 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
   const [showPaste, setShowPaste] = useState(false)
   const [pasteValue, setPasteValue] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('')
-
-  // Tipo suggerito in base alla chiave config
-  const suggestedType = configKey?.includes('Engram') ? '' : configKey?.includes('Reward') ? '' : ''
 
   useEffect(() => {
     if (bpSearch.length < 2) { setBpResults([]); return }
@@ -452,39 +462,69 @@ function BlueprintListEditor({ value, onChange, configKey }: { value: string; on
   )
 }
 
-/** Key-value editor (e.g. MapDisplayNames) */
-function KeyValueEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { t } = useTranslation()
-  let obj: Record<string, string> = {}
-  try { obj = JSON.parse(value) } catch {}
-  const entries = Object.entries(obj)
+function parseRows(value: string): [string, string][] {
+  try { return Object.entries(JSON.parse(value) as Record<string, string>) } catch { return [] }
+}
 
-  function updateEntry(oldKey: string, newKey: string, val: string) {
-    const next = { ...obj }
-    if (newKey !== oldKey) delete next[oldKey]
-    next[newKey] = val
-    onChange(JSON.stringify(next))
+/** Key-value editor (e.g. MapDisplayNames) */
+function KeyValueEditor({ value, onChange, onDuplicatesChange }: {
+  value: string; onChange: (v: string) => void; onDuplicatesChange: (hasDuplicates: boolean) => void
+}) {
+  const { t } = useTranslation()
+  // Rows are edited as an ordered list: rebuilding the object on every
+  // keystroke moved a renamed key to the end (so the focused row started
+  // editing another entry) and merged a key typed onto an existing one.
+  const [rows, setRows] = useState<[string, string][]>(() => parseRows(value))
+  const emitted = useRef(value)
+
+  // Discard or a reload replaces the value from outside: start from it again.
+  useEffect(() => {
+    if (value !== emitted.current) { emitted.current = value; setRows(parseRows(value)) }
+  }, [value])
+
+  const keys = rows.map(([k]) => k)
+  const dupes = new Set(keys.filter((k, i) => keys.indexOf(k) !== i))
+  const hasDupes = dupes.size > 0
+
+  // A held-back change is invisible to the parent otherwise: it keeps Save
+  // disabled and offers Discard while this editor has duplicate keys.
+  useEffect(() => {
+    onDuplicatesChange(hasDupes)
+    return () => onDuplicatesChange(false)
+  }, [hasDupes])
+
+  function commit(next: [string, string][]) {
+    setRows(next)
+    const nextKeys = next.map(([k]) => k)
+    // Duplicate keys would collapse into one entry: hold the change until
+    // the keys are unique again.
+    if (new Set(nextKeys).size !== nextKeys.length) return
+    const json = JSON.stringify(Object.fromEntries(next))
+    emitted.current = json
+    onChange(json)
   }
-  function removeEntry(key: string) {
-    const next = { ...obj }; delete next[key]
-    onChange(JSON.stringify(next))
+  function updateEntry(idx: number, key: string, val: string) {
+    commit(rows.map((r, i) => i === idx ? [key, val] : r))
+  }
+  function removeEntry(idx: number) {
+    commit(rows.filter((_, i) => i !== idx))
   }
   function addEntry() {
-    const next = { ...obj, '': '' }
-    onChange(JSON.stringify(next))
+    commit([...rows, ['', '']])
   }
 
   return (
     <div style={{ width: '100%' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        {entries.map(([k, v], i) => (
+        {rows.map(([k, v], i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <input value={k} onChange={e => updateEntry(k, e.target.value, v)} placeholder={t('arkmaniaConfig.editors.keyPlaceholder')}
-              style={{ flex: 1, fontSize: '0.78rem', height: 30, fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '0 0.5rem', outline: 'none' }} />
+            <input value={k} onChange={e => updateEntry(i, e.target.value, v)} placeholder={t('arkmaniaConfig.editors.keyPlaceholder')}
+              title={dupes.has(k) ? t('arkmaniaConfig.editors.duplicateKey') : undefined} aria-invalid={dupes.has(k) || undefined}
+              style={{ flex: 1, fontSize: '0.78rem', height: 30, fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: `1px solid ${dupes.has(k) ? 'var(--danger)' : 'var(--border)'}`, borderRadius: 6, padding: '0 0.5rem', outline: 'none' }} />
             <span style={{ color: 'var(--green)', fontSize: '0.8rem', flexShrink: 0 }}>→</span>
-            <input value={v} onChange={e => updateEntry(k, k, e.target.value)} placeholder={t('arkmaniaConfig.editors.valuePlaceholder')}
+            <input value={v} onChange={e => updateEntry(i, k, e.target.value)} placeholder={t('arkmaniaConfig.editors.valuePlaceholder')}
               style={{ flex: 1, fontSize: '0.78rem', height: 30, background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '0 0.5rem', outline: 'none' }} />
-            <button onClick={() => removeEntry(k)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2 }}>
+            <button onClick={() => removeEntry(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2 }}>
               <X size={12} />
             </button>
           </div>
@@ -765,10 +805,16 @@ function CraftLimitRulesEditor({ value, onChange, availableGroups }: { value: st
 // ============================================================
 // Main page component
 // ============================================================
-export default function ArkManiaConfigPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function ArkManiaConfigPage({ currentUser }: Props) {
   const { t } = useTranslation()
   const { module: urlModule } = useParams()
   const navigate = useNavigate()
+  // PUT /arkmania/modules/{module} is require_operator; viewers only read.
+  const canOperate = currentUser?.role === 'admin' || currentUser?.role === 'operator'
 
   const [modules, setModules] = useState<ConfigModule[]>([])
   const [activeModule, setActiveModule] = useState('')
@@ -784,53 +830,102 @@ export default function ArkManiaConfigPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedJsonKeys, setExpandedJsonKeys] = useState<Set<string>>(new Set())
   const [permGroups, setPermGroups] = useState<string[]>([])
+  // Config keys whose key-value editor holds duplicate keys (a change not yet passed up).
+  const [duplicateKeys, setDuplicateKeys] = useState<Set<string>>(new Set())
+  // Bumped by Discard to remount the key-value editors, whose rows are local state.
+  const [discardSeq, setDiscardSeq] = useState(0)
+  // Only the latest loadModuleConfig call may apply its result.
+  const moduleSeq = useRef(0)
 
+  // Loaded once: this used to re-run on every sidebar click (the click
+  // changes the URL), and a late response could switch back to an older module.
   useEffect(() => {
     async function load() {
-      try {
-        const [modRes, srvRes, grpRes] = await Promise.all([
-          arkmaniaApi.listModules(),
-          arkmaniaApi.listServers(),
-          arkmaniaApi.getPermissionGroups(),
-        ])
-        setModules(modRes.data.modules)
-        setServers(srvRes.data.servers)
-        setPermGroups(grpRes.data.groups)
-        const target = urlModule || modRes.data.modules[0]?.prefix || ''
-        if (target) setActiveModule(target)
-      } catch (e: any) { setError(e.response?.data?.detail || e.message) }
-      finally { setLoading(false) }
+      const [modRes, srvRes, grpRes] = await Promise.allSettled([
+        arkmaniaApi.listModules(),
+        arkmaniaApi.listServers(),
+        arkmaniaApi.getPermissionGroups(),
+      ])
+      // Servers and permission groups only feed selectors: when one of them
+      // fails (e.g. no PermissionGroups table) the editor still loads.
+      if (modRes.status === 'fulfilled') {
+        setModules(modRes.value.data.modules)
+        const first = modRes.value.data.modules[0]?.prefix || ''
+        setActiveModule(prev => prev || first)
+      }
+      if (srvRes.status === 'fulfilled') setServers(srvRes.value.data.servers)
+      if (grpRes.status === 'fulfilled') setPermGroups(grpRes.value.data.groups)
+      const failed = [modRes, srvRes, grpRes].find((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (failed) setError(failed.reason?.response?.data?.detail || failed.reason?.message)
+      setLoading(false)
     }
     load()
-  }, [urlModule])
+  }, [])
+
+  useEffect(() => { if (urlModule) setActiveModule(urlModule) }, [urlModule])
 
   const loadModuleConfig = useCallback(async () => {
     if (!activeModule) return
+    const seq = ++moduleSeq.current
     setModuleLoading(true)
+    // Edits belong to the module/server they were made on: drop them now,
+    // not when the new load lands (or never, if it fails).
+    setEditedValues({})
     try {
       const res = await arkmaniaApi.getModule(activeModule, selectedServer)
+      if (seq !== moduleSeq.current) return
       setItems(res.data.items)
-      setEditedValues({})
       setSaved(false)
       setSearchQuery('')
-    } catch (e: any) { setError(e.response?.data?.detail || e.message) }
-    finally { setModuleLoading(false) }
+    } catch (e: any) {
+      if (seq !== moduleSeq.current) return
+      setItems([])
+      setError(e.response?.data?.detail || e.message)
+    }
+    finally { if (seq === moduleSeq.current) setModuleLoading(false) }
   }, [activeModule, selectedServer])
 
   useEffect(() => { loadModuleConfig() }, [loadModuleConfig])
 
   function handleTabClick(prefix: string) {
+    if (prefix !== activeModule && hasChanges && !confirm(t('arkmaniaConfig.unsavedConfirm'))) return
     setActiveModule(prefix)
     navigate(`/plugins/config/${prefix}`, { replace: true })
   }
 
   function handleValueChange(key: string, value: string) {
-    setEditedValues(prev => ({ ...prev, [key]: value }))
+    // Setting a value back to what was loaded is not an edit: sending it
+    // anyway would create a per-server override row equal to the global.
+    const item = items.find(i => i.config_key === key)
+    const unchanged = !!item && (detectEditorType(item.short_key, item.value) === 'bool'
+      ? value.toLowerCase() === item.value.toLowerCase()
+      : value === item.value)
+    setEditedValues(prev => {
+      const next = { ...prev }
+      if (unchanged) delete next[key]
+      else next[key] = value
+      return next
+    })
     setSaved(false)
   }
 
+  function handleDuplicatesChange(key: string, hasDuplicates: boolean) {
+    setDuplicateKeys(prev => {
+      if (prev.has(key) === hasDuplicates) return prev
+      const next = new Set(prev)
+      if (hasDuplicates) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  function handleDiscard() {
+    setEditedValues({})
+    setDiscardSeq(s => s + 1)
+  }
+
   async function handleSave() {
-    if (Object.keys(editedValues).length === 0) return
+    if (Object.keys(editedValues).length === 0 || invalidJsonKeys.size > 0 || duplicateKeys.size > 0) return
     setSaving(true); setError('')
     try {
       const updateItems = Object.entries(editedValues).map(([key, val]) => ({ config_key: key, config_value: val }))
@@ -860,7 +955,13 @@ export default function ArkManiaConfigPage() {
     URL.revokeObjectURL(url)
   }
 
-  const hasChanges = Object.keys(editedValues).length > 0
+  const hasChanges = Object.keys(editedValues).length > 0 || duplicateKeys.size > 0
+  // Generic JSON values are typed by hand; the backend stores them verbatim,
+  // and one the plugin cannot parse breaks that key on its next config load.
+  const invalidJsonKeys = new Set(Object.entries(editedValues).filter(([key, val]) => {
+    const item = items.find(i => i.config_key === key)
+    return !!item && detectEditorType(item.short_key, item.value) === 'json' && !isValidJsonEdit(val, item.value)
+  }).map(([key]) => key))
   const filteredItems = searchQuery
     ? items.filter(i => i.short_key.toLowerCase().includes(searchQuery.toLowerCase()) ||
         i.description.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -900,7 +1001,7 @@ export default function ArkManiaConfigPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-input)', borderRadius: 'var(--radius)', padding: '0.35rem 0.6rem', border: '1px solid var(--border)' }}>
             <Server size={14} style={{ color: 'var(--text-muted)' }} />
-            <select value={selectedServer} onChange={e => setSelectedServer(e.target.value)}
+            <select value={selectedServer} onChange={e => { if (!hasChanges || confirm(t('arkmaniaConfig.unsavedConfirm'))) setSelectedServer(e.target.value) }}
               style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
               <option value="*">{t('arkmaniaConfig.server.global')}</option>
               {servers.map(s => <option key={s.server_key} value={s.server_key}>{s.is_online ? t('arkmaniaConfig.server.onlinePrefix') : t('arkmaniaConfig.server.offlinePrefix')}{s.display_name}</option>)}
@@ -910,11 +1011,12 @@ export default function ArkManiaConfigPage() {
             <Download size={14} /> {t('arkmaniaConfig.actions.export')}
           </button>
           {hasChanges && (
-            <button onClick={() => setEditedValues({})} className="btn btn-ghost" style={{ fontSize: '0.8rem' }}>
+            <button onClick={handleDiscard} className="btn btn-ghost" style={{ fontSize: '0.8rem' }}>
               <RotateCcw size={14} /> {t('arkmaniaConfig.actions.discard')}
             </button>
           )}
-          <button onClick={handleSave} className="btn btn-primary" disabled={!hasChanges || saving} style={{ fontSize: '0.8rem' }}>
+          <button onClick={handleSave} className="btn btn-primary" disabled={!canOperate || !hasChanges || saving || moduleLoading || invalidJsonKeys.size > 0 || duplicateKeys.size > 0} style={{ fontSize: '0.8rem' }}
+            title={!canOperate ? t('arkmaniaConfig.readOnlyRole') : invalidJsonKeys.size > 0 ? t('arkmaniaConfig.editors.invalidJson') : duplicateKeys.size > 0 ? t('arkmaniaConfig.editors.duplicateKey') : undefined}>
             {saving ? t('arkmaniaConfig.actions.saving') : saved ? <><Check size={14} /> {t('arkmaniaConfig.actions.saved')}</> : <><Save size={14} /> {t('arkmaniaConfig.actions.save', { count: Object.keys(editedValues).length })}</>}
           </button>
         </div>
@@ -1063,9 +1165,10 @@ export default function ArkManiaConfigPage() {
                               ) : editorType === 'group_rules' ? (
                                 <GroupRulesEditor value={currentValue} onChange={v => handleValueChange(item.config_key, v)} availableGroups={permGroups} />
                               ) : editorType === 'blueprints' ? (
-                                <BlueprintListEditor value={currentValue} onChange={v => handleValueChange(item.config_key, v)} configKey={item.short_key} />
+                                <BlueprintListEditor value={currentValue} onChange={v => handleValueChange(item.config_key, v)} />
                               ) : editorType === 'key_value' ? (
-                                <KeyValueEditor value={currentValue} onChange={v => handleValueChange(item.config_key, v)} />
+                                <KeyValueEditor key={discardSeq} value={currentValue} onChange={v => handleValueChange(item.config_key, v)}
+                                  onDuplicatesChange={has => handleDuplicatesChange(item.config_key, has)} />
                               ) : editorType === 'json' ? (
                                 <div>
                                   <button onClick={() => {
@@ -1079,6 +1182,9 @@ export default function ArkManiaConfigPage() {
                                   {isExpanded && (
                                     <textarea value={currentValue} onChange={e => handleValueChange(item.config_key, e.target.value)}
                                       style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', marginTop: 4, width: '100%', resize: 'vertical', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.4rem 0.5rem', outline: 'none' }} rows={4} />
+                                  )}
+                                  {invalidJsonKeys.has(item.config_key) && (
+                                    <div role="alert" style={{ fontSize: '0.7rem', color: 'var(--danger)', marginTop: 2 }}>{t('arkmaniaConfig.editors.invalidJson')}</div>
                                   )}
                                 </div>
                               ) : (

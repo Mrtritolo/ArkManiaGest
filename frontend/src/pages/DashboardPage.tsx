@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Database, Monitor, Users, Server, RefreshCw } from 'lucide-react'
 import { machinesApi, databaseApi, arkmaniaApi } from '../services/api'
+import type { AuthUser } from '../types'
 
 interface OnlinePlayer {
   eos_id:     string
@@ -33,28 +34,39 @@ function formatDuration(mins: number | null): string {
   return `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}`
 }
 
-export default function DashboardPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function DashboardPage({ currentUser }: Props) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // POST /settings/database/test-current is require_admin: for any other
+  // role it can only answer 403, which read as "Database offline".
+  const isAdmin = currentUser?.role === 'admin'
   const [loading, setLoading]         = useState(true)
   const [refreshing, setRefreshing]   = useState(false)
-  const [dbOk, setDbOk]               = useState(false)
+  // null = not an admin, so the status is unknown
+  const [dbOk, setDbOk]               = useState<boolean | null>(null)
   const [machineCount, setMachineCount] = useState({ total: 0, active: 0, online: 0 })
   const [players, setPlayers]         = useState<OnlinePlayer[]>([])
   const [servers, setServers]         = useState<ServerStat[]>([])
   const [totalOnline, setTotalOnline] = useState(0)
   const [serversOnline, setServersOnline] = useState(0)
+  const [onlineFailed, setOnlineFailed] = useState(false)
 
   async function loadAll(silent = false): Promise<void> {
     if (!silent) setLoading(true)
     else setRefreshing(true)
     try {
       const [dbRes, countRes, onlineRes] = await Promise.allSettled([
-        databaseApi.testCurrent(),
+        isAdmin ? databaseApi.testCurrent() : Promise.reject(new Error('admin only')),
         machinesApi.count(),
         arkmaniaApi.getOnlinePlayers(),
       ])
-      if (dbRes.status     === 'fulfilled') setDbOk(dbRes.value.data.success)
+      // For an admin a rejected test is itself "Offline": get_current_user
+      // reads the panel DB, so a down DB answers 5xx, not success:false.
+      setDbOk(!isAdmin ? null : dbRes.status === 'fulfilled' ? dbRes.value.data.success : false)
       if (countRes.status  === 'fulfilled') setMachineCount(countRes.value.data)
       if (onlineRes.status === 'fulfilled') {
         const d = onlineRes.value.data
@@ -62,6 +74,14 @@ export default function DashboardPage() {
         setServers(d.servers)
         setTotalOnline(d.total_online)
         setServersOnline(d.servers_online)
+        setOnlineFailed(false)
+      } else {
+        // Do not keep showing the last good list as if it were current.
+        setPlayers([])
+        setServers([])
+        setTotalOnline(0)
+        setServersOnline(0)
+        setOnlineFailed(true)
       }
     } finally {
       setLoading(false)
@@ -69,7 +89,7 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { loadAll() }, [isAdmin])
   useEffect(() => {
     // Skip the polling tick when the tab is in the background -- a
     // long-lived admin session would otherwise burn hundreds of XHRs
@@ -85,14 +105,22 @@ export default function DashboardPage() {
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [])
+  }, [isAdmin])
 
 
   const statCards = [
-    { label: t('dashboard.stat.onlinePlayers'), value: totalOnline,                                  icon: Users,   color: 'var(--accent)',         nav: '/online' },
-    { label: t('dashboard.stat.serversOnline'), value: `${serversOnline}/${servers.length}`,         icon: Server,  color: 'var(--success)',        nav: '/serverforge' },
+    { label: t('dashboard.stat.onlinePlayers'), value: onlineFailed ? '—' : totalOnline,                          icon: Users,   color: 'var(--accent)',         nav: '/online' },
+    { label: t('dashboard.stat.serversOnline'), value: onlineFailed ? '—' : `${serversOnline}/${servers.length}`, icon: Server,  color: 'var(--success)',        nav: '/serverforge' },
     { label: t('dashboard.stat.sshMachines'),   value: `${machineCount.online}/${machineCount.total}`, icon: Monitor, color: 'var(--text-secondary)', nav: '/settings/machines' },
-    { label: t('dashboard.stat.database'),      value: dbOk ? t('dashboard.stat.dbOk') : t('dashboard.stat.dbOffline'), icon: Database, color: dbOk ? 'var(--success)' : 'var(--danger)', nav: '/settings/db' },
+    {
+      label: t('dashboard.stat.database'),
+      value: dbOk === null ? '—' : dbOk ? t('dashboard.stat.dbOk') : t('dashboard.stat.dbOffline'),
+      icon: Database,
+      color: dbOk === null ? 'var(--text-muted)' : dbOk ? 'var(--success)' : 'var(--danger)',
+      // /settings/db is registered for admins only in App.tsx.
+      nav: isAdmin ? '/settings/db' : null,
+      title: isAdmin ? undefined : t('dashboard.stat.dbAdminOnly'),
+    },
   ]
 
   return (
@@ -146,12 +174,13 @@ export default function DashboardPage() {
         {statCards.map(s => (
           <div
             key={s.label}
-            onClick={() => navigate(s.nav)}
+            onClick={s.nav ? () => navigate(s.nav!) : undefined}
+            title={s.title}
             style={{
               display: 'flex', alignItems: 'center', gap: '0.7rem',
               padding: '0.75rem 1rem',
               background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', cursor: 'pointer',
+              borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', cursor: s.nav ? 'pointer' : 'default',
             }}
           >
             <div style={{
@@ -194,7 +223,15 @@ export default function DashboardPage() {
             </button>
           </div>
           <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-            {players.length === 0 ? (
+            {loading ? (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                {t('common.loading')}
+              </div>
+            ) : onlineFailed ? (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)', fontSize: '0.85rem' }}>
+                {t('dashboard.card.loadFailed')}
+              </div>
+            ) : players.length === 0 ? (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 <Users size={32} style={{ opacity: 0.15, display: 'block', margin: '0 auto 0.5rem' }} />
                 {t('dashboard.card.noPlayers')}
@@ -225,8 +262,6 @@ export default function DashboardPage() {
         </div>
 
       </div>
-
-      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }

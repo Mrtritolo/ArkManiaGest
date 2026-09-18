@@ -16,6 +16,7 @@ import { blueprintsApi } from '../services/api'
 import { arkItemThumbUrl } from '../utils/arkItem'
 import { fmtLocaleDateTime } from '../utils/format'
 import { copyText } from '../utils/clipboard'
+import type { AuthUser } from '../types'
 
 interface BpItem {
   id: number; name: string; blueprint: string; category: string
@@ -90,8 +91,15 @@ const TYPE_COLORS: Record<string, string> = {
   artifact: 'var(--warning)', command: 'var(--text-muted)', item: 'var(--text-secondary)',
 }
 
-export default function BlueprintsPage() {
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function BlueprintsPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // Every catalogue write (sync, imports, category edits, deletes) is
+  // require_operator on the backend; viewers only browse.
+  const canOperate = currentUser?.role === 'admin' || currentUser?.role === 'operator'
   // DB state
   const [hasData, setHasData] = useState(false)
   const [totalBp, setTotalBp] = useState(0)
@@ -106,6 +114,9 @@ export default function BlueprintsPage() {
   const [sourcesList, setSourcesList] = useState<{ name: string; count: number }[]>([])
   const [allCategories, setAllCategories] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  // The search the table is showing: the box can hold unsubmitted text, and
+  // paging or "Delete filtered" must act on what is on screen.
+  const [appliedSearch, setAppliedSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
@@ -159,7 +170,7 @@ export default function BlueprintsPage() {
   async function loadData(s?: string, cat?: string, typ?: string, src?: string, pg?: number) {
     try {
       const res = await blueprintsApi.list({
-        search: (s ?? search) || undefined,
+        search: (s ?? appliedSearch) || undefined,
         category: (cat ?? catFilter) || undefined,
         type: (typ ?? typeFilter) || undefined,
         source: (src ?? sourceFilter) || undefined,
@@ -227,92 +238,101 @@ export default function BlueprintsPage() {
     } finally { setSyncing(false) }
   }
 
-  function resetFilters() { setSearch(''); setCatFilter(''); setTypeFilter(''); setSourceFilter(''); setPage(0); setSelected(new Set()) }
+  function resetFilters() { setSearch(''); setAppliedSearch(''); setCatFilter(''); setTypeFilter(''); setSourceFilter(''); setPage(0); setSelected(new Set()) }
 
-  function doSearch() { setPage(0); loadData(search, catFilter, typeFilter, sourceFilter, 0) }
-  function handleCatChange(val: string) { setCatFilter(val); setPage(0); loadData(search, val, typeFilter, sourceFilter, 0) }
-  function handleTypeChange(val: string) { setTypeFilter(val); setPage(0); loadData(search, catFilter, val, sourceFilter, 0) }
-  function handleSourceChange(val: string) { setSourceFilter(val); setPage(0); loadData(search, catFilter, typeFilter, val, 0) }
-  function handlePage(p: number) { setPage(p); loadData(search, catFilter, typeFilter, sourceFilter, p) }
+  // Selection is cleared whenever the rows on screen change, so a bulk
+  // action never reaches rows the user can no longer see.
+  function doSearch() { setAppliedSearch(search); setPage(0); setSelected(new Set()); loadData(search, catFilter, typeFilter, sourceFilter, 0) }
+  function handleCatChange(val: string) { setCatFilter(val); setPage(0); setSelected(new Set()); loadData(appliedSearch, val, typeFilter, sourceFilter, 0) }
+  function handleTypeChange(val: string) { setTypeFilter(val); setPage(0); setSelected(new Set()); loadData(appliedSearch, catFilter, val, sourceFilter, 0) }
+  function handleSourceChange(val: string) { setSourceFilter(val); setPage(0); setSelected(new Set()); loadData(appliedSearch, catFilter, typeFilter, val, 0) }
+  function handlePage(p: number) { setPage(p); setSelected(new Set()); loadData(appliedSearch, catFilter, typeFilter, sourceFilter, p) }
 
   // ── Deletion ──────────────────────────────────────────────────
   async function handleDeleteSelected() {
     if (selected.size === 0) return
-    if (!window.confirm(`Delete ${selected.size} blueprint(s)?`)) return
+    if (!window.confirm(t('blueprints.manage.deleteSelectedConfirm', { count: selected.size }))) return
     setDeleting(true); setError('')
+    let removed = 0
     try {
-      let removed = 0
       for (const id of selected) {
         await blueprintsApi.deleteOne(id)
         removed++
       }
-      setSuccess(`${removed} blueprint(s) deleted`)
-      setSelected(new Set())
-      loadStatus()
+      setSuccess(t('blueprints.manage.deleted', { count: removed }))
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Delete failed')
-    } finally { setDeleting(false) }
+      setError(detail || t('blueprints.manage.deleteFailed'))
+    } finally {
+      setDeleting(false)
+      // Also after a failure part-way: the rows deleted before it are gone.
+      setSelected(new Set())
+      if (removed > 0) loadStatus()
+    }
   }
 
   async function handleDeleteFiltered() {
-    if (!search && !catFilter && !typeFilter && !sourceFilter) {
-      setError('Apply at least one filter before bulk-deleting filtered rows')
+    if (!appliedSearch && !catFilter && !typeFilter && !sourceFilter) {
+      setError(t('blueprints.manage.filterRequired'))
       return
     }
-    if (!window.confirm(`Delete ALL ${total} blueprints matching the current filter?`)) return
+    if (!window.confirm(t('blueprints.manage.deleteFilteredConfirm', { count: total }))) return
     setDeleting(true); setError('')
     try {
       const res = await blueprintsApi.deleteByFilter({
-        search: search || undefined,
+        search: appliedSearch || undefined,
         category: catFilter || undefined,
         type: typeFilter || undefined,
         source: sourceFilter || undefined,
       })
-      setSuccess(`${res.data.removed} blueprint(s) deleted`)
+      setSuccess(t('blueprints.manage.deleted', { count: res.data.removed }))
+      setSelected(new Set())
       loadStatus()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Delete failed')
+      setError(detail || t('blueprints.manage.deleteFailed'))
     } finally { setDeleting(false) }
   }
 
   async function handleDeleteSource(src: string) {
-    if (!window.confirm(`Delete every blueprint with source "${src}"?`)) return
+    if (!window.confirm(t('blueprints.manage.deleteSourceConfirm', { source: src }))) return
     setDeleting(true); setError('')
     try {
       const res = await blueprintsApi.deleteBySource(src)
-      setSuccess(`${res.data.removed} blueprint(s) deleted from source "${src}"`)
+      setSuccess(t('blueprints.manage.deletedFromSource', { count: res.data.removed, source: src }))
+      setSelected(new Set())
       loadStatus()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Delete failed')
+      setError(detail || t('blueprints.manage.deleteFailed'))
     } finally { setDeleting(false) }
   }
 
   async function handlePruneNonOfficial() {
-    if (!window.confirm('Drop every entry that is NOT vanilla / DLC / ASA?')) return
+    if (!window.confirm(t('blueprints.manage.pruneConfirm'))) return
     setDeleting(true); setError('')
     try {
       const res = await blueprintsApi.pruneNonOfficial()
-      setSuccess(`${res.data.removed} non-official blueprint(s) removed (${res.data.kept} kept)`)
+      setSuccess(t('blueprints.manage.pruned', { removed: res.data.removed, kept: res.data.kept }))
+      setSelected(new Set())
       loadStatus()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Prune failed')
+      setError(detail || t('blueprints.manage.pruneFailed'))
     } finally { setDeleting(false) }
   }
 
   async function handleDeleteOne(id: number, name: string) {
-    if (!window.confirm(`Delete blueprint "${name}"?`)) return
+    if (!window.confirm(t('blueprints.manage.deleteOneConfirm', { name }))) return
     try {
       await blueprintsApi.deleteOne(id)
       setItems(prev => prev.filter(i => i.id !== id))
-      setTotal(t => Math.max(0, t - 1))
-      setTotalBp(t => Math.max(0, t - 1))
+      setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
+      setTotal(n => Math.max(0, n - 1))
+      setTotalBp(n => Math.max(0, n - 1))
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Delete failed')
+      setError(detail || t('blueprints.manage.deleteFailed'))
     }
   }
 
@@ -419,6 +439,7 @@ export default function BlueprintsPage() {
           <p style={{ marginBottom: '1.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             {t('blueprints.noData.hint')}
           </p>
+          {canOperate && (
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button onClick={() => beaconInputRef.current?.click()} disabled={syncing} className="btn btn-primary">
               {syncing ? <><Loader2 size={16} className="pl-spin" /> {t('blueprints.beacon.importing')}</> : <><Upload size={16} /> {t('blueprints.beacon.importButton')}</>}
@@ -430,6 +451,7 @@ export default function BlueprintsPage() {
               <Upload size={16} /> {t('blueprints.noData.importButton')}
             </button>
           </div>
+          )}
           <p style={{ marginTop: '0.75rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             {t('blueprints.beacon.hint')}
           </p>
@@ -456,7 +478,12 @@ export default function BlueprintsPage() {
         <div {...importModal.panelProps} className="card" style={{ width: 440, maxWidth: '90vw', padding: '1.5rem', background: 'var(--surface, var(--bg-popover, #fff))', color: 'var(--text)' }}>
           <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}><Upload size={18} /> {t('blueprints.importDialog.title')}</h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}
-             dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.fileLine', { name: importPreview.filename, count: importPreview.data.length }) }} />
+             dangerouslySetInnerHTML={{ __html: t('blueprints.importDialog.fileLine', {
+               name: importPreview.filename, count: importPreview.data.length,
+               // The file name is user data going into innerHTML, and the app
+               // turns i18next escaping off globally.
+               interpolation: { escapeValue: true },
+             }) }} />
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer', padding: '0.35rem 0.7rem', borderRadius: 6, border: importMode === 'merge' ? '2px solid var(--accent)' : '1px solid var(--border)', background: importMode === 'merge' ? 'var(--accent-glow)' : 'transparent' }}>
               <input type="radio" name="mode" checked={importMode === 'merge'} onChange={() => setImportMode('merge')} style={{ display: 'none' }} />
@@ -491,6 +518,7 @@ export default function BlueprintsPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <button onClick={handleExport} className="btn btn-ghost btn-sm" aria-label={t('blueprints.actions.exportTitle')} title={t('blueprints.actions.exportTitle')}><Download size={14} /> {t('blueprints.actions.export')}</button>
+          {canOperate && (<>
           <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost btn-sm" aria-label={t('blueprints.actions.importTitle')} title={t('blueprints.actions.importTitle')}><Upload size={14} /> {t('blueprints.actions.import')}</button>
           <button onClick={() => beaconInputRef.current?.click()} disabled={syncing} className="btn btn-secondary btn-sm" aria-label={t('blueprints.beacon.importTitle')} title={t('blueprints.beacon.importTitle')}>
             <Upload size={14} /> {t('blueprints.beacon.importShort')}
@@ -498,6 +526,7 @@ export default function BlueprintsPage() {
           <button onClick={handleSync} disabled={syncing} className="btn btn-primary btn-sm">
             {syncing ? <><Loader2 size={14} className="pl-spin" /> {t('blueprints.actions.syncing')}</> : <><RefreshCw size={14} /> {t('blueprints.actions.sync')}</>}
           </button>
+          </>)}
         </div>
       </div>
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileSelected} />
@@ -541,9 +570,9 @@ export default function BlueprintsPage() {
           <option value="">{t('blueprints.filters.allCategories')}</option>
           {categories.map(c => <option key={c.name} value={c.name}>{t('blueprints.filters.categoryOption', { name: c.name, count: c.count })}</option>)}
         </select>
-        <select value={sourceFilter} onChange={e => handleSourceChange(e.target.value)} className="dc-select" title="Filter by source / import label">
-          <option value="">All sources</option>
-          {sourcesList.map(s => <option key={s.name} value={s.name}>{s.name || '(none)'} ({s.count})</option>)}
+        <select value={sourceFilter} onChange={e => handleSourceChange(e.target.value)} className="dc-select" title={t('blueprints.manage.sourceFilterTitle')}>
+          <option value="">{t('blueprints.manage.allSources')}</option>
+          {sourcesList.map(s => <option key={s.name} value={s.name}>{t('blueprints.manage.sourceOption', { name: s.name || t('blueprints.manage.noSource'), count: s.count })}</option>)}
         </select>
         <button onClick={doSearch} className="pl-btn-search">{t('blueprints.filters.searchButton')}</button>
       </div>
@@ -551,35 +580,37 @@ export default function BlueprintsPage() {
       {/* Source / bulk-delete management */}
       {sourcesList.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', marginBottom: '0.6rem' }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginRight: 4 }}>Sources:</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginRight: 4 }}>{t('blueprints.manage.sourcesLabel')}</span>
           {sourcesList.map(s => (
             <span key={s.name || '_none'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0.2rem 0.5rem', borderRadius: 6, border: '1px solid var(--border)', fontSize: '0.74rem', background: 'var(--bg-card-muted)' }}>
-              <strong>{s.name || '(none)'}</strong>
+              <strong>{s.name || t('blueprints.manage.noSource')}</strong>
               <span style={{ color: 'var(--text-muted)' }}>{s.count}</span>
-              {s.name && (
+              {s.name && canOperate && (
                 <button onClick={() => handleDeleteSource(s.name)} disabled={deleting}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0, lineHeight: 1 }}
-                  aria-label={`Delete every blueprint from "${s.name}"`} title={`Delete every blueprint from "${s.name}"`}>
+                  aria-label={t('blueprints.manage.deleteSourceTitle', { source: s.name })} title={t('blueprints.manage.deleteSourceTitle', { source: s.name })}>
                   <Trash2 size={11} />
                 </button>
               )}
             </span>
           ))}
           <span style={{ flex: 1 }} />
+          {canOperate && (<>
           <button onClick={handleDeleteFiltered} disabled={deleting || total === 0}
             className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
-            aria-label="Delete every blueprint matching the current filter" title="Delete every blueprint matching the current filter">
-            <Trash2 size={13} /> Delete filtered ({total})
+            aria-label={t('blueprints.manage.deleteFilteredTitle')} title={t('blueprints.manage.deleteFilteredTitle')}>
+            <Trash2 size={13} /> {t('blueprints.manage.deleteFiltered', { count: total })}
           </button>
           <button onClick={handlePruneNonOfficial} disabled={deleting}
-            className="btn btn-ghost btn-sm" aria-label="Drop every entry that is NOT vanilla/DLC/ASA" title="Drop every entry that is NOT vanilla/DLC/ASA">
-            <Trash2 size={13} /> Prune non-official
+            className="btn btn-ghost btn-sm" aria-label={t('blueprints.manage.pruneTitle')} title={t('blueprints.manage.pruneTitle')}>
+            <Trash2 size={13} /> {t('blueprints.manage.prune')}
           </button>
+          </>)}
         </div>
       )}
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {canOperate && selected.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.85rem', marginBottom: '0.6rem', background: 'var(--accent-glow)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-lg)' }}>
           <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent)' }}>{t('blueprints.bulk.selected', { count: selected.size })}</span>
           <select value={bulkCat} onChange={e => setBulkCat(e.target.value)} className="dc-select" style={{ fontSize: '0.78rem', padding: '0.3rem 0.5rem' }}>
@@ -588,7 +619,7 @@ export default function BlueprintsPage() {
           </select>
           {bulkCat && <button onClick={handleBulkCategory} className="btn btn-primary btn-sm"><Check size={13} /> {t('blueprints.bulk.apply')}</button>}
           <button onClick={handleDeleteSelected} disabled={deleting} className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}>
-            <Trash2 size={13} /> Delete selected
+            <Trash2 size={13} /> {t('blueprints.manage.deleteSelected')}
           </button>
           <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm"><X size={13} /> {t('blueprints.bulk.clear')}</button>
         </div>
@@ -653,10 +684,10 @@ export default function BlueprintsPage() {
                         <button onClick={() => setEditingCat(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}><X size={12} /></button>
                       </div>
                     ) : (
-                      <span className="bp-cell-cat" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                        onClick={() => { setEditingCat(item.id); setEditCatValue(item.category) }}
-                        title={t('blueprints.table.changeCategoryTip')}>
-                        {item.category} <Edit3 size={10} style={{ opacity: 0.3 }} />
+                      <span className="bp-cell-cat" style={{ cursor: canOperate ? 'pointer' : undefined, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                        onClick={canOperate ? () => { setEditingCat(item.id); setEditCatValue(item.category) } : undefined}
+                        title={canOperate ? t('blueprints.table.changeCategoryTip') : undefined}>
+                        {item.category} {canOperate && <Edit3 size={10} style={{ opacity: 0.3 }} />}
                       </span>
                     )}
                   </td>
@@ -669,11 +700,13 @@ export default function BlueprintsPage() {
                     </div>
                   </td>
                   <td>
+                    {canOperate && (
                     <button onClick={() => handleDeleteOne(item.id, item.name)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 2 }}
-                      aria-label="Delete this blueprint" title="Delete this blueprint">
+                      aria-label={t('blueprints.manage.deleteOneTitle')} title={t('blueprints.manage.deleteOneTitle')}>
                       <Trash2 size={13} />
                     </button>
+                    )}
                   </td>
                 </tr>
               )

@@ -10,7 +10,7 @@
  * - Save with automatic backup, unsaved-changes guard
  */
 import './GameConfigPage.css'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Settings, TrendingUp, Star, Sun, Swords, User, Bug, Heart,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { containersApi, gameConfigApi } from '../services/api'
+import type { AuthUser } from '../types'
 
 const ICONS: Record<string, LucideIcon> = {
   Settings, TrendingUp, Star, Sun, Swords, User, Bug, Heart,
@@ -33,8 +34,24 @@ interface SettingDef { type: string; section: string; file: string; default?: st
 interface GroupDef { label: string; icon: string; settings: Record<string, SettingDef> }
 interface ConfigData { values: Record<string, Record<string, string>>; overrides: Record<string, unknown[]>; mod_sections: { gus: Record<string, Record<string, string>>; game: Record<string, Record<string, string>> }; uncategorized: { gus: Record<string, { key: string; value: string }[]>; game: Record<string, { key: string; value: string }[]> }; raw: { gus: string; game: string } }
 
-export default function GameConfigPage() {
+// Spawn-entry lists: local editor key -> Game.ini key (also the key in
+// ConfigData.overrides).
+const SPAWN_KEYS: [string, string][] = [
+  ['add', 'ConfigAddNPCSpawnEntriesContainer'],
+  ['override', 'ConfigOverrideNPCSpawnEntriesContainer'],
+  ['subtract', 'ConfigSubtractNPCSpawnEntriesContainer'],
+]
+
+function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) }
+
+interface Props {
+  currentUser?: AuthUser | null
+}
+
+export default function GameConfigPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  // INI writes are require_operator on the backend; viewers only read.
+  const canOperate = currentUser?.role === 'admin' || currentUser?.role === 'operator'
   const [containers, setContainers] = useState<Container[]>([])
   const [sel, setSel] = useState<Container | null>(null)
   const [groups, setGroups] = useState<Record<string, GroupDef>>({})
@@ -56,6 +73,8 @@ export default function GameConfigPage() {
   const [hasChanges, setHasChanges] = useState(false)
   const [showPw, setShowPw] = useState<Record<string, boolean>>({})
   const [stackSearch, setStackSearch] = useState('')
+  // Only the latest loadConfig call may apply its result.
+  const loadSeq = useRef(0)
 
   useEffect(() => { loadContainers(); loadDefinitions() }, [])
   useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
@@ -78,34 +97,41 @@ export default function GameConfigPage() {
   }
 
   async function loadConfig(c: Container) {
+    const seq = ++loadSeq.current
     setLoadingConfig(true); setError('')
     try {
       const res = await gameConfigApi.loadConfig(c.machine_id, c.name)
+      // A slower response for a container the user already left must not
+      // overwrite the editor of the one now selected.
+      if (seq !== loadSeq.current) return
       const d = res.data as ConfigData
       setConfigData(d)
-      setLocalValues(JSON.parse(JSON.stringify(d.values)))
-      setLocalStacks([...(d.overrides?.stacks as Record<string, unknown>[] || [])])
-      setLocalCrafting([...(d.overrides?.crafting_costs as Record<string, unknown>[] || [])])
-      setLocalNpcRepl([...(d.overrides?.npc_replacements as Record<string, unknown>[] || [])])
-      setLocalSupplyCrates([...(d.overrides?.supply_crates as Record<string, unknown>[] || [])])
-      setLocalSpawnEntries({
-        add: [...(d.overrides?.ConfigAddNPCSpawnEntriesContainer as Record<string, unknown>[] || [])],
-        override: [...(d.overrides?.ConfigOverrideNPCSpawnEntriesContainer as Record<string, unknown>[] || [])],
-        subtract: [...(d.overrides?.ConfigSubtractNPCSpawnEntriesContainer as Record<string, unknown>[] || [])],
-      })
+      // Deep copies: the editors mutate nested rows, and Save diffs them
+      // against configData.
+      setLocalValues(clone(d.values))
+      setLocalStacks(clone(d.overrides?.stacks as Record<string, unknown>[] || []))
+      setLocalCrafting(clone(d.overrides?.crafting_costs as Record<string, unknown>[] || []))
+      setLocalNpcRepl(clone(d.overrides?.npc_replacements as Record<string, unknown>[] || []))
+      setLocalSupplyCrates(clone(d.overrides?.supply_crates as Record<string, unknown>[] || []))
+      setLocalSpawnEntries(Object.fromEntries(SPAWN_KEYS.map(([sub, key]) =>
+        [sub, clone(d.overrides?.[key] as Record<string, unknown>[] || [])])))
       setRawGus(d.raw?.gus || ''); setRawGame(d.raw?.game || '')
       setHasChanges(false)
     } catch (e: unknown) {
+      if (seq !== loadSeq.current) return
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(t('gameConfig.messages.loadConfigFailed', { detail: detail || (e instanceof Error ? e.message : t('gameConfig.messages.unknownError')) }))
     }
-    finally { setLoadingConfig(false) }
+    finally { if (seq === loadSeq.current) setLoadingConfig(false) }
   }
 
   function selectContainer(name: string) {
     const c = containers.find(x => `${x.machine_id}|${x.name}` === name)
     if (!c) return
     if (hasChanges && !confirm(t('gameConfig.unsavedConfirm'))) return
+    // Drop the previous container's editor state before loading: until the
+    // new load lands (or if it fails), Save would write it to this container.
+    setConfigData(null); setHasChanges(false)
     setSel(c); setActiveTab('general'); loadConfig(c)
   }
 
@@ -119,81 +145,107 @@ export default function GameConfigPage() {
     if (d !== undefined) updateValue(gid, key, String(d))
   }
 
-  // Count changed fields
+  // Count changed fields.  Keys missing from the INI load as null and their
+  // controls show '', so both sides are compared that way.
   const changeCount = useMemo(() => {
     if (!configData) return 0
     let count = 0
     for (const [gid, gv] of Object.entries(localValues)) {
       for (const [key, value] of Object.entries(gv)) {
         const orig = (configData.values as Record<string, Record<string, string>>)[gid]?.[key]
-        if (value !== (orig ?? '')) count++
+        if ((value ?? '') !== (orig ?? '')) count++
       }
     }
     return count
   }, [localValues, configData])
 
   async function handleSave() {
-    if (!sel || !configData) return
+    if (!sel || !configData || loadingConfig) return
+    const c = sel, d = configData
+    const changed = (local: unknown, loadedKey: string) =>
+      JSON.stringify(local) !== JSON.stringify(d.overrides?.[loadedKey] || [])
+    // Each file is backed up on its first write of this Save only. Backup names
+    // resolve to the second, so a later backup of the same file could
+    // overwrite the pre-Save copy with an intermediate one.
+    const backedUp = new Set<'gus' | 'game'>()
+    const backup = (file: 'gus' | 'game') => {
+      if (backedUp.has(file)) return false
+      backedUp.add(file); return true
+    }
     setSaving(true); setError('')
     try {
-      if (activeTab === 'raw') {
-        if (rawGus !== configData.raw.gus) await gameConfigApi.saveRaw(sel.machine_id, sel.name, { file: 'gus', content: rawGus, backup: true })
-        if (rawGame !== configData.raw.game) await gameConfigApi.saveRaw(sel.machine_id, sel.name, { file: 'game', content: rawGame, backup: true })
-      } else if (activeTab === 'stacks') {
+      // Every edited category is written, not just the open tab: the reload
+      // below would otherwise throw away the edits made on the other tabs.
+      // The raw files go first because they replace the whole file; the saves
+      // after them re-read the file and apply their own edits on top.
+      if (rawGus !== d.raw.gus) await gameConfigApi.saveRaw(c.machine_id, c.name, { file: 'gus', content: rawGus, backup: backup('gus') })
+      if (rawGame !== d.raw.game) await gameConfigApi.saveRaw(c.machine_id, c.name, { file: 'game', content: rawGame, backup: backup('game') })
+
+      const gusC: Record<string, Record<string, unknown>> = {}
+      const gameC: Record<string, Record<string, unknown>> = {}
+      for (const [gid, gv] of Object.entries(localValues)) {
+        const g = groups[gid]; if (!g) continue
+        for (const [key, value] of Object.entries(gv)) {
+          const def = g.settings[key]; if (!def) continue
+          const next = value ?? ''
+          if (next === ((d.values as Record<string, Record<string, string>>)[gid]?.[key] ?? '')) continue
+          const bucket = def.file === 'gus' ? gusC : gameC
+          if (!bucket[def.section]) bucket[def.section] = {}
+          const section = bucket[def.section]
+          if (next === '') {
+            // A cleared field removes the key (apply_changes' __delete__), so
+            // the server falls back to its default instead of keeping the value.
+            section.__delete__ = [...((section.__delete__ as string[]) || []), key]
+          } else {
+            section[key] = next
+          }
+        }
+      }
+      // One request per file: the backup flag covers every file a request
+      // writes, and the two files may already be in different backup states.
+      if (Object.keys(gusC).length) {
+        await gameConfigApi.saveConfig(c.machine_id, c.name, { gus_changes: gusC, backup: backup('gus') })
+      }
+      if (Object.keys(gameC).length) {
+        await gameConfigApi.saveConfig(c.machine_id, c.name, { game_changes: gameC, backup: backup('game') })
+      }
+
+      // Rows the backend could not parse carry only `raw`: they are not sent,
+      // and the backend keeps those lines when it replaces the list.
+      if (changed(localStacks, 'stacks')) {
         const items = localStacks.filter((s: Record<string, unknown>) => s.class).map((s: Record<string, unknown>) => ({
           item_class: s.class as string, max_quantity: s.max_quantity as number, ignore_multiplier: s.ignore_multiplier as boolean
         }))
-        await gameConfigApi.saveStacks(sel.machine_id, sel.name, { items, backup: true })
-      } else if (activeTab === 'crafting') {
-        const items = localCrafting.filter((c: Record<string, unknown>) => c.item_class).map((c: Record<string, unknown>) => ({
-          item_class: c.item_class as string, resources: (c.resources as Record<string, unknown>[]) || []
-        }))
-        await gameConfigApi.saveCrafting(sel.machine_id, sel.name, { items, backup: true })
-      } else if (activeTab === 'npc_replace') {
-        await gameConfigApi.saveNpcReplacements(sel.machine_id, sel.name, {
-          items: localNpcRepl.filter((n: Record<string, unknown>) => n.from_class), backup: true
-        })
-      } else if (activeTab === 'supply_crates' || activeTab === 'spawn_entries') {
-        const keyMap: Record<string, string> = {
-          supply_crates: 'ConfigOverrideSupplyCrateItems',
-          spawn_entries_add: 'ConfigAddNPCSpawnEntriesContainer',
-          spawn_entries_override: 'ConfigOverrideNPCSpawnEntriesContainer',
-          spawn_entries_subtract: 'ConfigSubtractNPCSpawnEntriesContainer',
-        }
-        if (activeTab === 'supply_crates') {
-          await gameConfigApi.saveOverrideRaw(sel.machine_id, sel.name, {
-            key: keyMap.supply_crates,
-            values: localSupplyCrates.map((s: Record<string, unknown>) => (s.raw as string) || '').filter(Boolean),
-            backup: true
-          })
-        } else {
-          for (const [subKey, apiKey] of [['add', keyMap.spawn_entries_add], ['override', keyMap.spawn_entries_override], ['subtract', keyMap.spawn_entries_subtract]]) {
-            const entries = localSpawnEntries[subKey] || []
-            if (entries.length > 0) {
-              await gameConfigApi.saveOverrideRaw(sel.machine_id, sel.name, {
-                key: apiKey, values: entries.map((e: Record<string, unknown>) => (e.raw as string) || '').filter(Boolean), backup: true
-              })
-            }
-          }
-        }
-      } else {
-        const gusC: Record<string, Record<string, string>> = {}
-        const gameC: Record<string, Record<string, string>> = {}
-        for (const [gid, gv] of Object.entries(localValues)) {
-          const g = groups[gid]; if (!g) continue
-          for (const [key, value] of Object.entries(gv)) {
-            const d = g.settings[key]; if (!d) continue
-            const orig = (configData.values as Record<string, Record<string, string>>)[gid]?.[key]
-            if (value !== orig && value !== null && value !== '') {
-              const bucket = d.file === 'gus' ? gusC : gameC
-              if (!bucket[d.section]) bucket[d.section] = {}
-              bucket[d.section][key] = value
-            }
-          }
-        }
-        await gameConfigApi.saveConfig(sel.machine_id, sel.name, { gus_changes: gusC, game_changes: gameC, backup: true })
+        await gameConfigApi.saveStacks(c.machine_id, c.name, { items, backup: backup('game') })
       }
-      setSuccess(t('gameConfig.messages.saved')); setHasChanges(false); loadConfig(sel)
+      if (changed(localCrafting, 'crafting_costs')) {
+        const items = localCrafting.filter((r: Record<string, unknown>) => r.item_class).map((r: Record<string, unknown>) => ({
+          item_class: r.item_class as string, resources: (r.resources as Record<string, unknown>[]) || []
+        }))
+        await gameConfigApi.saveCrafting(c.machine_id, c.name, { items, backup: backup('game') })
+      }
+      if (changed(localNpcRepl, 'npc_replacements')) {
+        await gameConfigApi.saveNpcReplacements(c.machine_id, c.name, {
+          items: localNpcRepl.filter((n: Record<string, unknown>) => n.from_class), backup: backup('game')
+        })
+      }
+      if (changed(localSupplyCrates, 'supply_crates')) {
+        await gameConfigApi.saveOverrideRaw(c.machine_id, c.name, {
+          key: 'ConfigOverrideSupplyCrateItems',
+          values: localSupplyCrates.map((s: Record<string, unknown>) => (s.raw as string) || '').filter(Boolean),
+          backup: backup('game')
+        })
+      }
+      for (const [subKey, apiKey] of SPAWN_KEYS) {
+        const entries = localSpawnEntries[subKey] || []
+        // An emptied list is sent too, so deleting the last entry removes it.
+        if (changed(entries, apiKey)) {
+          await gameConfigApi.saveOverrideRaw(c.machine_id, c.name, {
+            key: apiKey, values: entries.map((e: Record<string, unknown>) => (e.raw as string) || '').filter(Boolean), backup: backup('game')
+          })
+        }
+      }
+      setSuccess(t('gameConfig.messages.saved')); setHasChanges(false); loadConfig(c)
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(t('gameConfig.messages.saveFailed', { detail: detail || t('gameConfig.messages.unknownError') }))
@@ -298,7 +350,9 @@ export default function GameConfigPage() {
 
   // ── Render: Stack Overrides ──────────────────────────────────
   function renderStacks() {
-    const filtered = localStacks.filter((s: Record<string, unknown>) =>
+    // Keep each row's index in localStacks: looking it up with indexOf per
+    // row was quadratic on clusters with thousands of overrides.
+    const filtered = localStacks.map((s, oi) => ({ s, oi })).filter(({ s }) =>
       !stackSearch || ((s.class as string) || '').toLowerCase().includes(stackSearch.toLowerCase())
     )
     return (
@@ -312,16 +366,18 @@ export default function GameConfigPage() {
         </div>
         <div className="gc-table">
           <div className="gc-thead gc-thead-stacks"><span className="gc-th">{t('gameConfig.stacks.colItemClass')}</span><span className="gc-th">{t('gameConfig.stacks.colMaxQty')}</span><span className="gc-th">{t('gameConfig.stacks.colIgnoreMulti')}</span><span className="gc-th" /></div>
-          {filtered.map((s: Record<string, unknown>, i: number) => {
-            const oi = localStacks.indexOf(s)
+          {filtered.map(({ s, oi }) => {
+            // A line the backend could not parse comes as { raw } only.  The
+            // save keeps it as it is, so it is read-only here (Raw tab edits it).
+            const rawOnly = s.class === undefined
             return (
-              <div className="gc-row gc-row-stacks" key={i}>
-                <input className="gc-input gc-input-mono" value={(s.class as string) || (s.raw as string) || ''} placeholder="PrimalItemConsumable_..." onChange={e => { const u = [...localStacks]; u[oi] = { ...u[oi], class: e.target.value }; setLocalStacks(u); setHasChanges(true) }} />
-                <input type="number" className="gc-input gc-input-num" value={s.max_quantity as number} min={1} onChange={e => { const u = [...localStacks]; u[oi] = { ...u[oi], max_quantity: parseInt(e.target.value) || 1 }; setLocalStacks(u); setHasChanges(true) }} />
-                <div style={{ justifySelf: 'center', cursor: 'pointer' }} onClick={() => { const u = [...localStacks]; u[oi] = { ...u[oi], ignore_multiplier: !u[oi].ignore_multiplier }; setLocalStacks(u); setHasChanges(true) }}>
+              <div className="gc-row gc-row-stacks" key={oi} title={rawOnly ? t('gameConfig.rawOnlyHint') : undefined}>
+                <input className="gc-input gc-input-mono" value={(s.class as string) || (s.raw as string) || ''} readOnly={rawOnly} placeholder="PrimalItemConsumable_..." onChange={e => { const u = [...localStacks]; u[oi] = { ...u[oi], class: e.target.value }; setLocalStacks(u); setHasChanges(true) }} />
+                <input type="number" className="gc-input gc-input-num" value={(s.max_quantity as number) ?? ''} disabled={rawOnly} min={1} onChange={e => { const u = [...localStacks]; u[oi] = { ...u[oi], max_quantity: parseInt(e.target.value) || 1 }; setLocalStacks(u); setHasChanges(true) }} />
+                <div style={{ justifySelf: 'center', cursor: rawOnly ? 'default' : 'pointer' }} onClick={() => { if (rawOnly) return; const u = [...localStacks]; u[oi] = { ...u[oi], ignore_multiplier: !u[oi].ignore_multiplier }; setLocalStacks(u); setHasChanges(true) }}>
                   <div className={`gc-toggle gc-toggle-sm ${s.ignore_multiplier ? 'on' : ''}`}><div className="gc-toggle-knob" /></div>
                 </div>
-                <button className="gc-del" onClick={() => { setLocalStacks(p => p.filter((_, idx) => idx !== oi)); setHasChanges(true) }}><Trash2 size={13} /></button>
+                <button className="gc-del" disabled={rawOnly} onClick={() => { setLocalStacks(p => p.filter((_, idx) => idx !== oi)); setHasChanges(true) }}><Trash2 size={13} /></button>
               </div>
             )
           })}
@@ -339,11 +395,14 @@ export default function GameConfigPage() {
           <div className="gc-override-count"><Package size={14} /> {t('gameConfig.crafting.count', { count: localCrafting.length })}</div>
           <button className="gc-btn gc-btn-sm gc-btn-primary" onClick={() => { setLocalCrafting(p => [...p, { item_class: '', resources: [{ resource_class: '', amount: 1, exact_type: false }] }]); setHasChanges(true) }}><Plus size={13} /> {t('gameConfig.crafting.add')}</button>
         </div>
-        {localCrafting.map((item: Record<string, unknown>, idx: number) => (
-          <div key={idx} className="gc-card">
+        {localCrafting.map((item: Record<string, unknown>, idx: number) => {
+          // Unparsed line ({ raw } only): kept by the save, read-only here.
+          const rawOnly = item.item_class === undefined
+          return (
+          <div key={idx} className="gc-card" title={rawOnly ? t('gameConfig.rawOnlyHint') : undefined}>
             <div className="gc-card-head">
-              <input className="gc-input gc-input-mono" placeholder={t('gameConfig.crafting.itemClassPlaceholder')} value={(item.item_class as string) || ''} onChange={e => { const u = [...localCrafting]; u[idx] = { ...u[idx], item_class: e.target.value }; setLocalCrafting(u); setHasChanges(true) }} />
-              <button className="gc-del" onClick={() => { setLocalCrafting(p => p.filter((_, i) => i !== idx)); setHasChanges(true) }}><Trash2 size={13} /></button>
+              <input className="gc-input gc-input-mono" placeholder={t('gameConfig.crafting.itemClassPlaceholder')} value={rawOnly ? (item.raw as string) || '' : (item.item_class as string) || ''} readOnly={rawOnly} onChange={e => { const u = [...localCrafting]; u[idx] = { ...u[idx], item_class: e.target.value }; setLocalCrafting(u); setHasChanges(true) }} />
+              <button className="gc-del" disabled={rawOnly} onClick={() => { setLocalCrafting(p => p.filter((_, i) => i !== idx)); setHasChanges(true) }}><Trash2 size={13} /></button>
             </div>
             <div className="gc-card-label">{t('gameConfig.crafting.requiredResources')}</div>
             {((item.resources as Record<string, unknown>[]) || []).map((res: Record<string, unknown>, ri: number) => (
@@ -353,9 +412,10 @@ export default function GameConfigPage() {
                 <button className="gc-del" onClick={() => { const u = [...localCrafting]; u[idx].resources = (u[idx].resources as Record<string, unknown>[]).filter((_, j) => j !== ri); setLocalCrafting(u); setHasChanges(true) }}><X size={12} /></button>
               </div>
             ))}
-            <button className="gc-add-btn" onClick={() => { const u = [...localCrafting]; u[idx].resources = [...((u[idx].resources as Record<string, unknown>[]) || []), { resource_class: '', amount: 1, exact_type: false }]; setLocalCrafting(u); setHasChanges(true) }}><Plus size={12} /> {t('gameConfig.crafting.addResource')}</button>
+            <button className="gc-add-btn" disabled={rawOnly} onClick={() => { const u = [...localCrafting]; u[idx].resources = [...((u[idx].resources as Record<string, unknown>[]) || []), { resource_class: '', amount: 1, exact_type: false }]; setLocalCrafting(u); setHasChanges(true) }}><Plus size={12} /> {t('gameConfig.crafting.addResource')}</button>
           </div>
-        ))}
+          )
+        })}
         {localCrafting.length === 0 && <div className="gc-empty"><Package size={24} /><span>{t('gameConfig.crafting.empty')}</span></div>}
       </div>
     )
@@ -371,13 +431,17 @@ export default function GameConfigPage() {
         </div>
         <div className="gc-table">
           <div className="gc-thead gc-thead-npc"><span className="gc-th">{t('gameConfig.npc.colFrom')}</span><span className="gc-th">{t('gameConfig.npc.colTo')}</span><span className="gc-th" /></div>
-          {localNpcRepl.map((item: Record<string, unknown>, idx: number) => (
-            <div key={idx} className="gc-row gc-row-npc">
-              <input className="gc-input gc-input-mono" placeholder="Pegomastax_Character_BP_C" value={(item.from_class as string) || ''} onChange={e => { const u = [...localNpcRepl]; u[idx] = { ...u[idx], from_class: e.target.value }; setLocalNpcRepl(u); setHasChanges(true) }} />
-              <input className="gc-input gc-input-mono" placeholder="Dodo_Character_BP_C" value={(item.to_class as string) || ''} onChange={e => { const u = [...localNpcRepl]; u[idx] = { ...u[idx], to_class: e.target.value }; setLocalNpcRepl(u); setHasChanges(true) }} />
-              <button className="gc-del" onClick={() => { setLocalNpcRepl(p => p.filter((_, i) => i !== idx)); setHasChanges(true) }}><Trash2 size={13} /></button>
+          {localNpcRepl.map((item: Record<string, unknown>, idx: number) => {
+            // Unparsed line ({ raw } only): kept by the save, read-only here.
+            const rawOnly = item.from_class === undefined
+            return (
+            <div key={idx} className="gc-row gc-row-npc" title={rawOnly ? t('gameConfig.rawOnlyHint') : undefined}>
+              <input className="gc-input gc-input-mono" placeholder="Pegomastax_Character_BP_C" value={rawOnly ? (item.raw as string) || '' : (item.from_class as string) || ''} readOnly={rawOnly} onChange={e => { const u = [...localNpcRepl]; u[idx] = { ...u[idx], from_class: e.target.value }; setLocalNpcRepl(u); setHasChanges(true) }} />
+              <input className="gc-input gc-input-mono" placeholder="Dodo_Character_BP_C" value={(item.to_class as string) || ''} readOnly={rawOnly} onChange={e => { const u = [...localNpcRepl]; u[idx] = { ...u[idx], to_class: e.target.value }; setLocalNpcRepl(u); setHasChanges(true) }} />
+              <button className="gc-del" disabled={rawOnly} onClick={() => { setLocalNpcRepl(p => p.filter((_, i) => i !== idx)); setHasChanges(true) }}><Trash2 size={13} /></button>
             </div>
-          ))}
+            )
+          })}
         </div>
         {localNpcRepl.length === 0 && <div className="gc-empty"><Replace size={24} /><span>{t('gameConfig.npc.empty')}</span></div>}
       </div>
@@ -474,13 +538,13 @@ export default function GameConfigPage() {
       <div className="gc-mods">
         {Object.entries(gus).map(([s, entries]) => (
           <div key={`g-${s}`} className="gc-mod">
-            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warn)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> {t('gameConfig.uncategorized.gusLabel', { section: s })}</div>
+            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> {t('gameConfig.uncategorized.gusLabel', { section: s })}</div>
             <div className="gc-mod-rows">{entries.map((e, i) => <div className="gc-kv" key={i}><span className="gc-kv-key">{e.key}</span><span className="gc-kv-eq">=</span><span className="gc-kv-val">{e.value}</span></div>)}</div>
           </div>
         ))}
         {Object.entries(game).map(([s, entries]) => (
           <div key={`gm-${s}`} className="gc-mod">
-            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warn)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> {t('gameConfig.uncategorized.gameLabel', { section: s })}</div>
+            <div className="gc-mod-head" style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.2)' }}><FileText size={13} /> {t('gameConfig.uncategorized.gameLabel', { section: s })}</div>
             <div className="gc-mod-rows">{entries.map((e, i) => <div className="gc-kv" key={i}><span className="gc-kv-key">{e.key}</span><span className="gc-kv-eq">=</span><span className="gc-kv-val">{e.value}</span></div>)}</div>
           </div>
         ))}
@@ -519,7 +583,7 @@ export default function GameConfigPage() {
           <span className="gc-topbar-title"><Settings size={18} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />{t('gameConfig.topbarTitle')}</span>
           <div className="gc-topbar-sep" />
           <div className="gc-topbar-select">
-            <select value={sel ? `${sel.machine_id}|${sel.name}` : ''} onChange={e => selectContainer(e.target.value)}>
+            <select value={sel ? `${sel.machine_id}|${sel.name}` : ''} onChange={e => selectContainer(e.target.value)} disabled={saving}>
               <option value="">{t('gameConfig.selectPlaceholder')}</option>
               {containers.map(c => (
                 <option key={`${c.machine_id}|${c.name}`} value={`${c.machine_id}|${c.name}`}>
@@ -531,9 +595,9 @@ export default function GameConfigPage() {
           {sel && <span className="gc-topbar-chip">{sel.map_name || sel.name}</span>}
         </div>
         <div className="gc-topbar-actions">
-          {sel && <button className="gc-btn gc-btn-ghost" onClick={() => loadConfig(sel)} aria-label={t('gameConfig.reloadTooltip')} title={t('gameConfig.reloadTooltip')}><RefreshCw size={14} /></button>}
+          {sel && <button className="gc-btn gc-btn-ghost" onClick={() => { if (!hasChanges || confirm(t('gameConfig.unsavedConfirm'))) loadConfig(sel) }} aria-label={t('gameConfig.reloadTooltip')} title={t('gameConfig.reloadTooltip')}><RefreshCw size={14} /></button>}
           {hasChanges && <button className="gc-btn" onClick={() => { setHasChanges(false); if (sel) loadConfig(sel) }}><Undo2 size={14} /> {t('gameConfig.discard')}</button>}
-          <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={!hasChanges || saving || !sel}>
+          <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={!canOperate || !hasChanges || saving || loadingConfig || !sel} title={canOperate ? undefined : t('gameConfig.readOnlyRole')}>
             {saving ? <><Loader2 size={14} className="spin" /> {t('gameConfig.saving')}</> : <><Save size={14} /> {t('gameConfig.save')}</>}
             {changeCount > 0 && !saving && <span className="gc-change-badge">{changeCount}</span>}
           </button>
@@ -543,6 +607,10 @@ export default function GameConfigPage() {
       {error && <div className="gc-alert gc-alert-error"><AlertCircle size={15} /> {error}<button className="gc-alert-close" onClick={() => setError('')}><X size={13} /></button></div>}
       {success && <div className="gc-alert gc-alert-success"><CheckCircle size={15} /> {success}</div>}
 
+      {sel && !configData && loadingConfig && (
+        <div className="gc-empty"><Loader2 size={20} className="spin" /><span>{t('gameConfig.loadingConfig')}</span></div>
+      )}
+
       {sel && configData && (
         <div className="gc-editor">
           {/* Sidebar nav */}
@@ -550,7 +618,7 @@ export default function GameConfigPage() {
             <div className="gc-nav-label">{t('gameConfig.navSettings')}</div>
             {groupTabs.map(tab => {
               const IC = ICONS[tab.icon] || Settings
-              return <button key={tab.id} className={`gc-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><IC size={14} /><span>{tab.label}</span></button>
+              return <button key={tab.id} className={`gc-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><IC size={14} /><span>{t(`gameConfig.groups.${tab.id}`, { defaultValue: tab.label })}</span></button>
             })}
             <div className="gc-nav-label" style={{ marginTop: '0.35rem' }}>{t('gameConfig.navOverrides')}</div>
             {overrideTabs.map(tab => <button key={tab.id} className={`gc-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><tab.icon size={14} /><span>{tab.label}</span></button>)}
@@ -580,7 +648,7 @@ export default function GameConfigPage() {
                 <span className="gc-unsaved-text">{changeCount > 0 ? t('gameConfig.unsavedMulti', { count: changeCount }) : t('gameConfig.unsavedSingle')}</span>
                 <div className="gc-unsaved-actions">
                   <button className="gc-btn" onClick={() => { if (sel) loadConfig(sel) }}><Undo2 size={13} /> {t('gameConfig.discard')}</button>
-                  <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={saving}><Save size={13} /> {t('gameConfig.save')}</button>
+                  <button className="gc-btn gc-btn-primary" onClick={handleSave} disabled={!canOperate || saving || loadingConfig} title={canOperate ? undefined : t('gameConfig.readOnlyRole')}><Save size={13} /> {t('gameConfig.save')}</button>
                 </div>
               </div>
             )}
