@@ -124,12 +124,6 @@ const NAV_SETTINGS: NavItem[] = [
   { to: "/settings/general",    i18nKey: "nav.settings",   icon: Settings,    adminOnly: true },
 ];
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Administrator",
-  operator: "Operator",
-  viewer: "Viewer",
-};
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -173,7 +167,7 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
       {/* Navigation */}
       <nav className="sidebar-nav">
         {/* Main section */}
-        <span className="sidebar-section-label">Main</span>
+        <span className="sidebar-section-label">{t("nav.section.main")}</span>
         {NAV_MAIN.map((item) => (
           <NavLink
             key={item.to}
@@ -191,7 +185,7 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
           className="sidebar-section-label"
           style={{ marginTop: "0.75rem" }}
         >
-          Plugins
+          {t("nav.section.plugins")}
         </span>
         {NAV_PLUGINS.map((item) => (
           <NavLink key={item.to} to={item.to} className={navClass}>
@@ -205,7 +199,7 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
           className="sidebar-section-label"
           style={{ marginTop: "0.75rem" }}
         >
-          Settings
+          {t("nav.section.settings")}
         </span>
         {NAV_SETTINGS.filter(
           (item) => !item.adminOnly || role === "admin"
@@ -221,17 +215,19 @@ export default function Sidebar({ currentUser, onLogout }: SidebarProps) {
       <div className="sidebar-footer">
         {currentUser && (
           <div className="sidebar-user">
+            {/* display_name can be empty (the user edit form accepts ""):
+                indexing [0] on it threw during render and blanked the app. */}
             <div className="sidebar-user-avatar">
-              {currentUser.display_name[0].toUpperCase()}
+              {(currentUser.display_name || currentUser.username || "?").charAt(0).toUpperCase()}
             </div>
             <div className="sidebar-user-info">
               <span className="sidebar-user-name">
-                {currentUser.display_name}
+                {currentUser.display_name || currentUser.username}
               </span>
               <span className="sidebar-user-role">
                 <Shield size={9} />
                 {" "}
-                {ROLE_LABELS[currentUser.role] ?? currentUser.role}
+                {t(`users.role.${currentUser.role}`, { defaultValue: currentUser.role })}
               </span>
             </div>
           </div>

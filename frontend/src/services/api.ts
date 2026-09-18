@@ -13,10 +13,11 @@
  *   {@link setAuthToken} / {@link getAuthToken} to manage the token lifecycle.
  *
  * Error handling:
- *   - 401 on a protected endpoint → token is cleared and {@link _onAuthError}
- *     callback is invoked (triggers redirect to login in App.tsx).
- *   - 503 → backend unreachable; same callback.
- *   - All other errors are left for individual callers to handle.
+ *   - 401 on a panel-JWT endpoint → token is cleared and {@link _onAuthError}
+ *     callback is invoked (triggers redirect to login in App.tsx).  A 401
+ *     from a Discord-cookie endpoint never logs the panel user out.
+ *   - All other errors (5xx included) are left for individual callers to
+ *     handle.
  */
 
 import axios from "axios";
@@ -59,13 +60,13 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * In production the frontend is served from the same origin as the API (via
- * Nginx proxy), so we use a relative path.  In development the Vite dev server
- * runs separately from FastAPI, so we point directly at localhost:8000.
+ * The API is always addressed same-origin: Nginx proxies it in production and
+ * the Vite dev server proxies it in development (see vite.config.ts).  Going
+ * straight to localhost:8000 in dev made every request cross-origin, so the
+ * disc_session cookie was never sent and the player dashboard and marketplace
+ * could not be exercised locally.
  */
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? "/api/v1" : "http://localhost:8000/api/v1");
+const API_BASE = import.meta.env.VITE_API_URL || "/api/v1";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -121,7 +122,7 @@ function _storeToken(token: string | null): void {
 }
 
 let _authToken: string | null = _loadToken();
-/** Callback invoked when a 401 / 503 response clears the token. */
+/** Callback invoked when a panel-JWT 401 response clears the token. */
 let _onAuthError: (() => void) | null = null;
 
 /** Store the JWT after a successful login. */
@@ -136,8 +137,8 @@ export function getAuthToken(): string | null {
 }
 
 /**
- * Register a callback that is invoked when the user's session expires or
- * the backend becomes unavailable.  Typically used to redirect to the login page.
+ * Register a callback that is invoked when the user's panel session expires.
+ * Typically used to redirect to the login page.
  */
 export function setOnAuthError(callback: () => void): void {
   _onAuthError = callback;
@@ -156,11 +157,11 @@ api.interceptors.request.use((config) => {
 });
 
 /**
- * Response interceptor: handles session expiry and backend unavailability.
+ * Response interceptor: handles panel session expiry.
  *
- * Only 401 and 503 errors are handled here.  All other error statuses are
- * passed through to the individual call-site handlers so pages can display
- * context-specific messages.
+ * Only a 401 from a panel-JWT endpoint is handled here.  All other error
+ * statuses are passed through to the individual call-site handlers so pages
+ * can display context-specific messages.
  */
 api.interceptors.response.use(
   (response) => response,
@@ -216,30 +217,26 @@ api.interceptors.response.use(
     //                            probe.  Letting the global handler ALSO
     //                            fire racing setAuthState callbacks creates
     //                            a flash of "login" between probe attempts.
-    //   * /auth/discord/me    -- this probes the Discord-session cookie,
-    //                            which can be absent even when the panel
-    //                            JWT is fine (admin who never logged via
-    //                            Discord).  401 here is a "no Discord
-    //                            session" signal, not a panel-JWT failure.
-    //   * /me/dashboard       -- same shape: 401 means the Discord session
-    //                            is gone or expired, not the panel JWT.
+    //   * Discord-cookie endpoints (/me/*, /market/*, /shop/*,
+    //     /auth/discord/*) -- they authenticate the disc_session cookie,
+    //     which can be absent or expired while the panel JWT is fine (an
+    //     admin who never signed in with Discord opening the Marketplace).
+    //     A 401 there is a "no Discord session" signal, not a panel-JWT
+    //     failure.  /market/admin/* and /shop/admin/* are panel-JWT routes
+    //     and stay subject to the forced logout.
     const isExemptFrom401 =
       url.includes("/auth/login")
       || /\/auth\/me(\?|$)/.test(url)
-      || url.includes("/auth/discord/me")
-      || url.includes("/me/dashboard");
+      || /^\/(me\/|market\/(?!admin\/)|shop\/(?!admin\/)|auth\/discord\/)/.test(url);
     if (status === 401 && _authToken && !isExemptFrom401) {
       console.warn("[AUTH] Token expired or invalid — redirecting to login.");
       _authToken = null;
       _onAuthError?.();
     }
 
-    // 503 = backend process is down
-    if (status === 503) {
-      console.warn("[AUTH] Backend unavailable (503).");
-      _authToken = null;
-      _onAuthError?.();
-    }
+    // No 5xx handling here: the backend answers 503 only when the panel
+    // database is unavailable, which a fresh login cannot fix.  Wiping the
+    // token hid the real error behind the login screen, so callers show it.
 
     return Promise.reject(error);
   }
@@ -386,13 +383,6 @@ export const machinesApi = {
 // ---------------------------------------------------------------------------
 
 /**
- * Cluster directory health.
- *
- * Read-only diagnostics: the panel never performs the replication itself
- * (Syncthing / DFS-R / an SMB share do), it only reports whether the hosts of
- * a cluster still agree on the directory ARK writes transfers into.
- */
-/**
  * Windows hardening for native hosts.
  *
  * The control catalogue lives in deploy/windows-native/harden.ps1; the panel
@@ -408,11 +398,23 @@ export const hardeningApi = {
     api.post<HardeningReport>(`/machines/${machineId}/hardening/apply`, body),
 };
 
+/**
+ * Cluster directory health.
+ *
+ * Read-only diagnostics: the panel never performs the replication itself
+ * (Syncthing / DFS-R / an SMB share do), it only reports whether the hosts of
+ * a cluster still agree on the directory ARK writes transfers into.
+ */
 export const clusterSyncApi = {
   list: () => api.get<ClusterSyncHealth[]>("/cluster-sync"),
-  get: (clusterId: string) =>
-    api.get<ClusterSyncHealth>(`/cluster-sync/${encodeURIComponent(clusterId)}`),
 };
+
+// Lifecycle actions answer only when the remote command exits: a POK stop
+// waits for the world save plus the graceful-shutdown grace period (210 s by
+// default), well past axios' 30 s default.  With the default the call was
+// reported as failed while the host was still working, inviting a second
+// click that queued a duplicate action.
+const LIFECYCLE_TIMEOUT = 10 * 60 * 1000;
 
 export const serverInstancesApi = {
   list: (params?: { machine_id?: number; active_only?: boolean }) =>
@@ -422,12 +424,18 @@ export const serverInstancesApi = {
     api.post<ServerInstance>("/servers", data),
   update: (id: number, data: ServerInstanceUpdate) =>
     api.put<ServerInstance>(`/servers/${id}`, data),
+  // purge_on_host runs a stop on the host before the row is removed.
   delete: (id: number, purgeOnHost = false) =>
-    api.delete(`/servers/${id}`, { params: { purge_on_host: purgeOnHost } }),
+    api.delete(`/servers/${id}`, {
+      params: { purge_on_host: purgeOnHost },
+      timeout: purgeOnHost ? LIFECYCLE_TIMEOUT : undefined,
+    }),
 
   // Lifecycle actions (all return an InstanceActionResult)
-  start:   (id: number) => api.post<InstanceActionResult>(`/servers/${id}/start`),
-  stop:    (id: number) => api.post<InstanceActionResult>(`/servers/${id}/stop`),
+  start:   (id: number) =>
+    api.post<InstanceActionResult>(`/servers/${id}/start`, undefined, { timeout: LIFECYCLE_TIMEOUT }),
+  stop:    (id: number) =>
+    api.post<InstanceActionResult>(`/servers/${id}/stop`, undefined, { timeout: LIFECYCLE_TIMEOUT }),
   // `minutes` is the in-game countdown. POK broadcasts it inside the
   // container; native hosts schedule it in the panel and return immediately
   // with { scheduled: true }, so the caller must not assume an action result.
@@ -435,7 +443,10 @@ export const serverInstancesApi = {
     api.post<InstanceActionResult | { scheduled: true; minutes: number; detail: string }>(
       `/servers/${id}/restart`,
       undefined,
-      minutes === undefined ? undefined : { params: { minutes } },
+      {
+        timeout: LIFECYCLE_TIMEOUT,
+        params: minutes === undefined ? undefined : { minutes },
+      },
     ),
   // Cancels a countdown restart scheduled on a native host. POK countdowns
   // run inside the container and cannot be called back.
@@ -445,7 +456,7 @@ export const serverInstancesApi = {
   // WinSW service and firewall rule. POK hosts create the container on
   // first start and reject this call.
   provision: (id: number) =>
-    api.post<InstanceActionResult>(`/servers/${id}/provision`),
+    api.post<InstanceActionResult>(`/servers/${id}/provision`, undefined, { timeout: LIFECYCLE_TIMEOUT }),
   // POK update pulls the latest ASA build from Steam; it can run for
   // 10+ minutes, well past axios' 30s default, so we bump the per-call
   // timeout to 30 minutes.  The backend also respects SSH_TIMEOUT.
@@ -455,7 +466,8 @@ export const serverInstancesApi = {
       null,
       { timeout: 30 * 60 * 1000 },
     ),
-  backup:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/backup`),
+  backup:  (id: number) =>
+    api.post<InstanceActionResult>(`/servers/${id}/backup`, undefined, { timeout: LIFECYCLE_TIMEOUT }),
   status:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/status`),
   rcon:    (id: number, command: string) =>
     api.post<InstanceActionResult>(`/servers/${id}/rcon`, { command }),
@@ -547,21 +559,15 @@ export const sfApi = {
 
   machines: () =>
     api.get<{ success: boolean; data: SFMachine[]; total_count: number }>("/sf/machines"),
-  machine: (id: number) => api.get<{ success: boolean; data: unknown }>(`/sf/machines/${id}`),
 
   containers: () =>
     api.get<{ success: boolean; data: SFContainer[]; total_count: number }>("/sf/containers"),
-  container: (id: number) =>
-    api.get<{ success: boolean; data: unknown }>(`/sf/containers/${id}`),
-  containerStatus: (id: number) =>
-    api.get<{ success: boolean; data: unknown }>(`/sf/containers/${id}/status`),
   startContainer: (id: number) => api.post(`/sf/containers/${id}/start`),
   stopContainer: (id: number) => api.post(`/sf/containers/${id}/stop`),
   restartContainer: (id: number) => api.post(`/sf/containers/${id}/restart`),
 
   clusters: () =>
     api.get<{ success: boolean; data: SFCluster[]; total_count: number }>("/sf/clusters"),
-  cluster: (id: number) => api.get<{ success: boolean; data: unknown }>(`/sf/clusters/${id}`),
 
   previewImport: () =>
     api.get<{ machines: SFImportPreview[]; total: number }>("/sf/machines/preview-import"),
@@ -602,7 +608,7 @@ export interface SyncNamesUnmatchedEntry {
   source:      string;
 }
 
-/** Un container idoneo alla sincronia nomi / copia personaggio. */
+/** A container eligible for the name sync / character copy. */
 export interface SyncContainer {
   machine_id:      number;
   machine_name:    string;
@@ -715,7 +721,8 @@ export const playersApi = {
   /**
    * Wipe every .arkprofile for an EOS across the cluster (cluster-wide
    * character delete).  Destructive: the player respawns as a brand-new
-   * character on next login.  The Players row is NOT touched.
+   * character on next login.  The matching Players row is removed too
+   * (`db_row_removed`); the ArkShopPlayers row is kept.
    */
   deleteCharacterFiles: (eos_id: string) =>
     api.delete<{
@@ -726,11 +733,6 @@ export const playersApi = {
       errors:          string[];
     }>(`/players/${eos_id}/character-files`),
 
-  /**
-   * Sibling of syncNames: scans .arktribe binary files instead of
-   * .arkprofile and writes the discovered tribe display names into
-   * ARKM_player_tribes + ARKM_tribe_decay (matched by targeting_team).
-   */
   /**
    * Extend (or grant) the same timed permission group across a batch of
    * players in one call.  Server-side semantics:
@@ -780,6 +782,11 @@ export const playersApi = {
       family:           string[];
     }>("/players/bulk-align-timed-perms", data),
 
+  /**
+   * Sibling of syncNames: scans .arktribe binary files instead of
+   * .arkprofile and writes the discovered tribe display names into
+   * ARKM_player_tribes + ARKM_tribe_decay (matched by targeting_team).
+   */
   syncTribes: (machineId?: number, containerName?: string) => {
     const params: Record<string, unknown> = {};
     if (machineId) params.machine_id = machineId;
@@ -828,13 +835,13 @@ export const playersApi = {
 // ---------------------------------------------------------------------------
 
 /**
- * Una riga del catalogo blueprint.
+ * One row of the blueprint catalogue.
  *
- * Rispecchia `_row_to_bp` in backend/app/api/routes/blueprints.py; `class` e'
- * riservata in TS come nome di variabile ma va benissimo come chiave.
+ * Mirrors `_row_to_bp` in backend/app/api/routes/blueprints.py; `class` is
+ * reserved in TS as a variable name but is perfectly fine as a key.
  *
- * Prima era `unknown[]`, e quell'unknown si propagava: da solo produceva 109
- * dei 126 errori di tipo dell'intero frontend, quasi tutti in ArkShopPage.
+ * This used to be `unknown[]`, and that unknown spread: on its own it caused
+ * 109 of the frontend's 126 type errors, almost all of them in ArkShopPage.
  */
 export interface BlueprintRow {
   id:          number | string;
@@ -954,12 +961,8 @@ export const blueprintsApi = {
 // ---------------------------------------------------------------------------
 
 export const containersApi = {
-  scanMachine: (machineId: number, basePath?: string) =>
-    api.post(
-      `/containers/machines/${machineId}/scan`,
-      null,
-      basePath ? { params: { base_path: basePath } } : {}
-    ),
+  scanMachine: (machineId: number) =>
+    api.post(`/containers/machines/${machineId}/scan`),
   getMachineContainers: (machineId: number) =>
     api.get(`/containers/machines/${machineId}/containers`),
   getAllContainers: () => api.get("/containers/containers"),
@@ -993,16 +996,7 @@ export const containersApi = {
 // ArkShop
 // ---------------------------------------------------------------------------
 
-/**
- * Una voce della config ArkShop cosi' come la restituisce il pannello:
- * la chiave del blocco piu' i suoi campi, che variano per tipo di voce
- * (item, dino, beacon, command...) e non hanno una forma unica.
- *
- * `key` e' l'unico campo garantito. Tiparlo esplicitamente e' quello che
- * serve: l'editor ArkShop lo passa a `updateShopItem(key, ...)`, e finche'
- * l'intera riga era `{}` quel parametro arrivava non tipizzato.
- */
-/** Una riga dentro `Items[]`: un oggetto da consegnare, oppure un comando. */
+/** One line inside `Items[]`: an item to deliver, or a command. */
 export interface ArkShopLine extends Record<string, unknown> {
   Blueprint?:      string;
   Amount?:         number;
@@ -1013,6 +1007,15 @@ export interface ArkShopLine extends Record<string, unknown> {
   ExecuteAsAdmin?: boolean;
 }
 
+/**
+ * One ArkShop config entry as the panel returns it: the block key plus its
+ * fields, which vary by entry type (item, dino, beacon, command...) and have
+ * no single shape.
+ *
+ * `key` is the only guaranteed field. Typing it explicitly is what matters:
+ * the ArkShop editor passes it to `updateShopItem(key, ...)`, and while the
+ * whole row was `{}` that argument arrived untyped.
+ */
 export interface ArkShopEntry extends Record<string, unknown> {
   key:             string;
   Title?:          string;
@@ -1021,25 +1024,25 @@ export interface ArkShopEntry extends Record<string, unknown> {
   Price?:          number;
   Permissions?:    string;
   Items?:          ArkShopLine[];
-  // Voci dino: blueprint e livello stanno in cima, non dentro Items.
+  // Dino entries: blueprint and level sit at the top, not inside Items.
   Blueprint?:      string;
   Level?:          number;
   Amount?:         number;
   Quality?:        number;
   ForceBlueprint?: boolean;
-  // Solo kit.
+  // Kits only.
   DefaultAmount?:  number;
   MaxLevel?:       number;
   OnlyFromSpawn?:  boolean;
 }
 
 /**
- * Il blocco `General` della config ArkShop.
+ * The `General` block of the ArkShop config.
  *
- * Rispecchia BasePlugin/ArkShop/config.json. L'indice residuo copre le
- * chiavi che ArkShop aggiunge fra una versione e l'altra: l'editor le
- * mostra comunque, e senza indice ogni chiave nuova sarebbe un errore
- * di compilazione al posto di una riga in piu' nel form.
+ * Mirrors BasePlugin/ArkShop/config.json. The index signature covers the
+ * keys ArkShop adds from one version to the next: the editor shows them
+ * anyway, and without the index every new key would be a compile error
+ * instead of one more row in the form.
  */
 export interface ArkShopGeneral extends Record<string, unknown> {
   CryoLimitedTime?:               boolean;
@@ -1068,10 +1071,10 @@ export interface ArkShopGeneral extends Record<string, unknown> {
   };
 }
 
-/** Il blocco `Messages`: 56 chiavi, tutte stringhe. */
+/** The `Messages` block: 56 keys, all strings. */
 export type ArkShopMessages = Record<string, string>;
 
-/** Una voce dello storico versioni di un plugin. */
+/** One entry of a plugin's version history. */
 export interface PluginVersionRow {
   id:         number;
   label:      string;
@@ -1082,7 +1085,7 @@ export interface PluginVersionRow {
   kits:       number;
 }
 
-/** Un container ARK visto dal pannello, per il pull della config. */
+/** An ARK container as the panel sees it, for pulling the config. */
 export interface ArkServerRow {
   machine_id:     number;
   machine_name:   string;
@@ -1094,7 +1097,7 @@ export interface ArkServerRow {
   plugin_folder:  string;
 }
 
-/** Esito del deploy della config su UN container. */
+/** Outcome of the config deploy on ONE container. */
 export interface PluginDeployResult {
   container:   string;
   machine:     string;
@@ -1105,7 +1108,7 @@ export interface PluginDeployResult {
   backup_path: string | null;
 }
 
-/** Riepilogo del deploy su tutti i container. */
+/** Summary of the deploy across all containers. */
 export interface PluginPushSummary {
   success:         boolean;
   version:         string;
@@ -1116,7 +1119,7 @@ export interface PluginPushSummary {
   results:         PluginDeployResult[];
 }
 
-/** Il blocco `Mysql` della config ArkShop. */
+/** The `Mysql` block of the ArkShop config. */
 export interface ArkShopMysql extends Record<string, unknown> {
   UseMysql?:   boolean;
   MysqlHost?:  string;
@@ -1164,14 +1167,14 @@ export const arkshopApi = {
   listShopItems: () => api.get<ArkShopEntry[]>("/arkshop/shop-items"),
   updateShopItem: (key: string, item: unknown) =>
     api.put("/arkshop/shop-items", { key, item }),
-  deleteShopItem: (key: string) => api.delete(`/arkshop/shop-items/${key}`),
+  deleteShopItem: (key: string) => api.delete(`/arkshop/shop-items/${encodeURIComponent(key)}`),
   listKits: () => api.get<ArkShopEntry[]>("/arkshop/kits"),
   updateKit: (key: string, kit: unknown) => api.put("/arkshop/kits", { key, kit }),
-  deleteKit: (key: string) => api.delete(`/arkshop/kits/${key}`),
+  deleteKit: (key: string) => api.delete(`/arkshop/kits/${encodeURIComponent(key)}`),
   listSellItems: () => api.get<ArkShopEntry[]>("/arkshop/sell-items"),
   updateSellItem: (key: string, item: unknown) =>
     api.put("/arkshop/sell-items", { key, item }),
-  deleteSellItem: (key: string) => api.delete(`/arkshop/sell-items/${key}`),
+  deleteSellItem: (key: string) => api.delete(`/arkshop/sell-items/${encodeURIComponent(key)}`),
   getMessages: () => api.get<ArkShopMessages>("/arkshop/messages"),
   updateMessages: (messages: unknown) => api.put("/arkshop/messages", { messages }),
 };
@@ -1213,11 +1216,11 @@ export const arkmaniaApi = {
     game_mode?: string; server_type?: string; cluster_group?: string; max_players?: number;
   }) => api.post("/arkmania/servers", data),
   updateServer: (serverKey: string, data: unknown) =>
-    api.put(`/arkmania/servers/${serverKey}`, data),
+    api.put(`/arkmania/servers/${encodeURIComponent(serverKey)}`, data),
   deleteServer: (serverKey: string) =>
-    api.delete(`/arkmania/servers/${serverKey}`),
+    api.delete(`/arkmania/servers/${encodeURIComponent(serverKey)}`),
   getServerOverrides: (serverKey: string) =>
-    api.get(`/arkmania/servers/${serverKey}/overrides`),
+    api.get(`/arkmania/servers/${encodeURIComponent(serverKey)}/overrides`),
 
   search: (q: string) => api.get("/arkmania/search", { params: { q } }),
   getOnlinePlayers: (serverKey?: string) =>
@@ -1245,26 +1248,26 @@ export type ActorLayer = "structure" | "dino" | "player"
 /** Scan scope accepted by ARKM.DM.PlayerScan (plugin 5.6.0+). */
 export type ScanKind = "all" | "structures" | "dinos" | "players"
 
-/** Voce del catalogo web (oggetti e dino importati da ArkShop). */
+/** Web catalogue entry (items and dinos imported from ArkShop). */
 export interface WebShopItem {
   key: string; label: string; kind: "item" | "dino"; category: string
   blueprint: string; quantity: number; quality: number
   is_blueprint: boolean; dino_level: number; price: number
-  /** Quante righe compongono la voce: un set di armatura ne ha cinque. */
+  /** How many lines make up the entry: an armour set has five. */
   line_count: number
-  /** Le righe stesse, per il dettaglio del pacchetto. */
+  /** The lines themselves, for the bundle detail view. */
   lines: WebShopLine[]
 }
 export interface WebShopLine {
   blueprint: string; amount: number; quality: number; is_blueprint: boolean
 }
-/** Tratto genetico pubblicato dal plugin GeneShop. */
+/** Genetic trait published by the GeneShop plugin. */
 export interface WebShopGene {
   key: string; label: string; category: string; description: string
   prices: Record<string, number>
 }
-/** Una specie selezionabile per un gene: serve solo al plugin per ricavarne
- *  la DinoEntry da scrivere nello scanner. */
+/** A species selectable for a gene: only the plugin needs it, to derive the
+ *  DinoEntry it writes into the scanner. */
 export interface WebShopGeneDino {
   label: string; blueprint: string
 }
@@ -1274,10 +1277,10 @@ export interface WebShopOrder {
   price: number; status: string; server_key: string
   last_error: string | null; created_at: string | null; claimed_at: string | null
 }
-/** Config add-on dello shop uova / embrioni (da ARKM_config, namespace
- *  WebShop.Egg.* / WebShop.Embryo.*). Il prezzo base e' PER SPECIE, dal
- *  listino admin (WebShopForgePrice); l'uovo esce a livello fisso egg_level
- *  con le stat selvatiche rollate dal server. */
+/** Add-on config of the egg / embryo shops (from ARKM_config, namespaces
+ *  WebShop.Egg.* / WebShop.Embryo.*). The base price is PER SPECIES, from
+ *  the admin price list (WebShopForgePrice); the egg hatches at the fixed
+ *  egg_level with wild stats rolled by the server. */
 export interface WebShopForgeConfig {
   enabled: boolean
   egg_level: number
@@ -1285,33 +1288,33 @@ export interface WebShopForgeConfig {
   price_gender_choice: number
   max_traits: number
 }
-/** Riga del listino admin per specie degli shop uova/embrioni. */
+/** Per-species row of the admin price list for the egg/embryo shops. */
 export interface WebShopForgePrice {
   blueprint: string; label: string
   egg_price: number; embryo_price: number
   egg_enabled: boolean; embryo_enabled: boolean
 }
-/** Cella della matrice prezzi geni (categoria x tier), admin. */
+/** One cell of the gene price matrix (category x tier), admin. */
 export interface WebShopGenePriceEntry {
   category: string; tier: number; price: number
 }
-/** Categoria tratti col fallback dei costi pubblicati dal plugin. */
+/** Trait category with the fallback costs published by the plugin. */
 export interface WebShopGeneCategory {
   category: string; fallback: Record<string, number>; traits: number
 }
-/** Parametri di forgiatura di un acquisto egg/embryo (campi Egg* dell'item;
- *  array indicizzati sui 12 slot stat ARK, tratti in forma Nome[0..2]). */
+/** Forge parameters of an egg/embryo purchase (the item's Egg* fields;
+ *  arrays indexed on the 12 ARK stat slots, traits in the form Name[0..2]). */
 export interface WebShopForgeParams {
   stats: number[]; muts: number[]; colors: number[]
   traits: string[]; gender: number
 }
 
 /**
- * Shop web: si compra qui, si ritira in gioco con /ritiro.
+ * Web shop: buy here, collect in game with /ritiro.
  *
- * Separato da marketApi perche' e' un negozio, non un mercatino fra
- * giocatori: qui vende il server, i punti sono quelli di ArkShop e non
- * esistono venditori.
+ * Kept apart from marketApi because it is a shop, not a player-to-player
+ * market: the server is the seller, the points are ArkShop's and there are
+ * no player sellers.
  */
 export const webShopApi = {
   catalog: (kind?: "item" | "dino" | "gene" | "egg" | "embryo") =>
@@ -1322,15 +1325,15 @@ export const webShopApi = {
               forge_prices: WebShopForgePrice[] }>(
       "/shop/catalog", { params: kind ? { kind } : undefined }),
 
-  /** Stato pricing per il tab admin "Prezzi". */
+  /** Pricing state for the admin "Prices" tab. */
   adminPrices: () =>
     api.get<{ gene_categories: WebShopGeneCategory[];
               gene_matrix: WebShopGenePriceEntry[];
               forge_prices: WebShopForgePrice[] }>("/shop/admin/prices"),
-  /** Sostituisce la matrice prezzi geni (cella assente = fallback plugin). */
+  /** Replace the gene price matrix (missing cell = plugin fallback). */
   saveGenePrices: (entries: WebShopGenePriceEntry[]) =>
     api.put<{ ok: boolean; cells: number }>("/shop/admin/gene-prices", entries),
-  /** Sostituisce il listino specie degli shop uova/embrioni. */
+  /** Replace the per-species price list of the egg/embryo shops. */
   saveForgePrices: (rows: WebShopForgePrice[]) =>
     api.put<{ ok: boolean; rows: number }>("/shop/admin/forge-prices", rows),
   buy: (kind: "item" | "dino" | "gene" | "egg" | "embryo", key: string,
@@ -1426,14 +1429,6 @@ export const arkDecayApi = {
     api.post("/arkmania/decay/set-expiry",
       { instance_id: instanceId, targeting_team: targetingTeam, days }, { timeout: 60_000 }),
 
-  /**
-   * Cached topographic image for a map, as a blob.
-   *
-   * Fetched through axios rather than pointed at from an <image> tag: the
-   * decay router is JWT-protected, and a bare src attribute carries no
-   * Authorization header. Callers wrap the result in an object URL and
-   * revoke it when done. Rejects with 404 when the map has no image.
-   */
   /** Per-map GPS calibration published by the plugin (5.7.0+). */
   mapCalibration: () =>
     api.get<{ maps: Array<{
@@ -1443,6 +1438,14 @@ export const arkDecayApi = {
       updated_at: string | null
     }> }>("/arkmania/decay/map-calibration"),
 
+  /**
+   * Cached topographic image for a map, as a blob.
+   *
+   * Fetched through axios rather than pointed at from an <image> tag: the
+   * decay router is JWT-protected, and a bare src attribute carries no
+   * Authorization header. Callers wrap the result in an object URL and
+   * revoke it when done. Rejects with 404 when the map has no image.
+   */
   mapImage: (mapName: string) =>
     api.get<Blob>(`/arkmania/decay/map-image/${encodeURIComponent(mapName)}`,
       { responseType: "blob", timeout: 60_000 }),
@@ -1540,13 +1543,10 @@ export const arkBansApi = {
     eos_id: string;
     player_name?: string;
     reason?: string;
-    banned_by?: string;
     expire_time?: string;
   }) => api.post("/arkmania/bans", data),
-  unban: (id: number, unbannedBy = "Admin") =>
-    api.put(`/arkmania/bans/${id}/unban`, null, {
-      params: { unbanned_by: unbannedBy },
-    }),
+  // banned_by / unbanned_by are recorded server side from the JWT.
+  unban: (id: number) => api.put(`/arkmania/bans/${id}/unban`),
 };
 
 // ---------------------------------------------------------------------------
@@ -1656,32 +1656,38 @@ export const gameConfigApi = {
   saveConfig: (machineId: number, containerName: string, data: unknown) =>
     api.post(
       `/game-config/machines/${machineId}/containers/${containerName}/config`,
-      data
+      data,
+      { timeout: 60_000 }
     ),
   saveRaw: (machineId: number, containerName: string, data: unknown) =>
     api.post(
       `/game-config/machines/${machineId}/containers/${containerName}/config/raw`,
-      data
+      data,
+      { timeout: 60_000 }
     ),
   saveStacks: (machineId: number, containerName: string, data: unknown) =>
     api.post(
       `/game-config/machines/${machineId}/containers/${containerName}/config/stacks`,
-      data
+      data,
+      { timeout: 60_000 }
     ),
   saveCrafting: (machineId: number, containerName: string, data: unknown) =>
     api.post(
       `/game-config/machines/${machineId}/containers/${containerName}/config/crafting`,
-      data
+      data,
+      { timeout: 60_000 }
     ),
   saveNpcReplacements: (machineId: number, containerName: string, data: unknown) =>
     api.post(
       `/game-config/machines/${machineId}/containers/${containerName}/config/npc-replacements`,
-      data
+      data,
+      { timeout: 60_000 }
     ),
   saveOverrideRaw: (machineId: number, containerName: string, data: unknown) =>
     api.post(
       `/game-config/machines/${machineId}/containers/${containerName}/config/override-raw`,
-      data
+      data,
+      { timeout: 60_000 }
     ),
 };
 
@@ -1734,6 +1740,10 @@ export interface VipSyncReport {
   noop_count:        number;
   error_count:       number;
   unmapped_with_vip: string[];
+  // False when the guild member walk failed or hit its page cap:
+  // unmapped_with_vip is then partial.
+  member_scan_complete: boolean;
+  member_scan_error:    string | null;
   actions:           VipSyncAction[];
 }
 
@@ -2154,11 +2164,6 @@ export const meApi = {
   dashboard: () => api.get<DashboardResponse>("/me/dashboard"),
 
   /**
-   * GDPR Art. 20 -- export every piece of personal data the panel stores
-   * for the current Discord session, as JSON.  Works for unlinked
-   * identities too (no EOS link required).
-   */
-  /**
    * Delete one of the caller's own saved teleport homes.  The backend
    * scopes the DELETE by the session's EOS id, so an id belonging to
    * another player answers 404 rather than deleting anything.
@@ -2171,7 +2176,7 @@ export const meApi = {
 
   /**
    * Queue a kick of the caller's own character (stuck / ghost-session
-   * recovery).  409 when not online or a kick is already pending; 503
+   * recovery).  409 when not online, when a kick is already pending, or
    * when the ARKM-Login plugin on the servers predates the feature.
    */
   requestKick: () => api.post<{ ok: boolean }>("/me/requests/kick"),
@@ -2184,6 +2189,11 @@ export const meApi = {
   requestRename: (newName: string) =>
     api.post<{ ok: boolean }>("/me/requests/rename", { new_name: newName }),
 
+  /**
+   * GDPR Art. 20 -- export every piece of personal data the panel stores
+   * for the current Discord session, as JSON.  Works for unlinked
+   * identities too (no EOS link required).
+   */
   privacyExport: () => api.get<Record<string, unknown>>("/me/privacy/export"),
 
   /**

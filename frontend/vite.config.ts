@@ -21,6 +21,11 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // Served outside /api/v1 (systemApi.health); Nginx proxies it in prod.
+      '/health': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   build: {
@@ -37,7 +42,8 @@ export default defineConfig(({ mode }) => ({
     },
   },
   esbuild: {
-    // Tengo console.warn per debug in prod, rimuovere dopo
+    // console.warn is kept in production builds for debugging (to be removed
+    // later); only debugger statements are dropped.
     drop: mode === 'production' ? ['debugger'] : [],
   },
 }))

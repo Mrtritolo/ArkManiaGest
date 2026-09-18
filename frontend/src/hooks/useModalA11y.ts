@@ -1,21 +1,21 @@
 /**
- * useModalA11y — rende una finestra modale usabile da tastiera.
+ * useModalA11y — makes a modal window usable from the keyboard.
  *
- * Il pannello aveva quattordici overlay costruiti a mano come `<div>` con
- * `position: fixed`, e nessuno di essi era una finestra di dialogo per il
- * browser: niente `role`, niente `aria-modal`, nessuna cattura del focus,
- * nessuna chiusura con Escape (gestita una volta sola in tutta l'app, in un
- * popover). Chi naviga da tastiera apriva la modale e continuava a tabulare
- * nella pagina sotto, senza modo di chiuderla.
+ * The panel had fourteen hand-built overlays made of `<div>`s with
+ * `position: fixed`, and none of them was a dialog as far as the browser
+ * knew: no `role`, no `aria-modal`, no focus trap, no Escape to close
+ * (handled exactly once in the whole app, in a popover). Keyboard users
+ * opened the modal and kept tabbing through the page underneath, with no
+ * way to close it.
  *
- * L'hook copre le quattro cose che mancavano:
- *   - `role="dialog"` + `aria-modal` sul pannello, cosi' le tecnologie
- *     assistive annunciano una finestra e non un riquadro qualunque;
- *   - Escape chiude;
- *   - Tab e Shift+Tab ciclano DENTRO il pannello;
- *   - alla chiusura il focus torna dov'era, non all'inizio del documento.
+ * The hook covers the four missing pieces:
+ *   - `role="dialog"` + `aria-modal` on the panel, so assistive technology
+ *     announces a window rather than an arbitrary box;
+ *   - Escape closes;
+ *   - Tab and Shift+Tab cycle INSIDE the panel;
+ *   - on close, focus returns to where it was, not to the top of the document.
  *
- * Uso:
+ * Usage:
  *
  *     const { panelProps } = useModalA11y(isOpen, close)
  *     ...
@@ -23,12 +23,12 @@
  *       <div {...panelProps} onClick={e => e.stopPropagation()}>…</div>
  *     </div>
  *
- * Il pannello va etichettato: `aria-labelledby` sull'id del titolo, oppure
- * `aria-label` quando un titolo visibile non c'e'.
+ * The panel must be labelled: `aria-labelledby` pointing at the title's id,
+ * or `aria-label` when there is no visible title.
  */
 import { useEffect, useRef } from "react";
 
-/** Cio' che il browser considera raggiungibile con Tab. */
+/** What the browser considers reachable with Tab. */
 const FOCUSABLE = [
   "a[href]", "button:not([disabled])", "input:not([disabled])",
   "select:not([disabled])", "textarea:not([disabled])", "summary",
@@ -47,8 +47,8 @@ export interface ModalA11y {
 export function useModalA11y(open: boolean, onClose: () => void): ModalA11y {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // onClose cambia identita' a ogni render del chiamante. Tenerlo in un ref
-  // evita che l'effetto si ri-esegua e rubi il focus mentre si digita.
+  // onClose changes identity on every render of the caller. Keeping it in a
+  // ref stops the effect from re-running and stealing focus while typing.
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -56,8 +56,8 @@ export function useModalA11y(open: boolean, onClose: () => void): ModalA11y {
     if (!open) return;
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    // Il focus entra nel pannello: senza questo il primo Tab riparte
-    // dall'inizio del documento, cioe' da dietro l'overlay.
+    // Move focus into the panel: without this the first Tab starts again
+    // from the top of the document, i.e. from behind the overlay.
     panelRef.current?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
@@ -71,8 +71,8 @@ export function useModalA11y(open: boolean, onClose: () => void): ModalA11y {
       const panel = panelRef.current;
       if (!panel) return;
       const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
-        // offsetParent null = elemento non renderizzato: un controllo dentro
-        // una sezione collassata non deve entrare nel ciclo.
+        // offsetParent null = element not rendered: a control inside a
+        // collapsed section must not join the cycle.
         .filter(el => el.offsetParent !== null);
       if (items.length === 0) {
         e.preventDefault();
@@ -91,8 +91,8 @@ export function useModalA11y(open: boolean, onClose: () => void): ModalA11y {
       }
     }
 
-    // In fase di cattura: un input dentro la modale che ferma la
-    // propagazione dei tasti non deve poter disattivare Escape.
+    // Capture phase: an input inside the modal that stops key propagation
+    // must not be able to disable Escape.
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);

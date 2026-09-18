@@ -1,9 +1,9 @@
 /**
- * shopFallbackIcon.tsx — icona di ripiego quando la wiki non ha l'immagine.
+ * shopFallbackIcon.tsx — fallback icon when the wiki has no image.
  *
- * Un'icona per tipo, non un segnaposto neutro: dice comunque qualcosa
- * (cassa, creatura, gene) e tiene la griglia allineata, che e' l'unica cosa
- * che un riquadro vuoto non farebbe.
+ * One icon per kind, not a neutral placeholder: it still says something
+ * (crate, creature, gene) and keeps the grid aligned, which is the one thing
+ * an empty box would not do.
  */
 import { Package, PawPrint, Dna } from "lucide-react";
 
