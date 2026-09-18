@@ -2,14 +2,28 @@
  * OnlinePlayersPage.tsx — Real-time view of connected players.
  *
  * Groups sessions by server, shows per-player duration, map and EOS ID.
- * Filters by server via the top card row.
- * Auto-refreshes every 30 seconds.
+ * Filters by server via the stat tiles at the top.
+ * Auto-refreshes every 30 seconds while the tab is visible.
  */
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { arkmaniaApi } from '../services/api'
-import type { AuthUser } from '../types'
 import { Users, RefreshCw, Globe } from 'lucide-react'
+import { arkmaniaApi } from '../services/api'
+import { extractError } from '../utils/errors'
+import type { AuthUser } from '../types'
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  NotAvailable,
+  PageHeader,
+  Spinner,
+  StatTile,
+  Switch,
+  Table,
+  TableMessageRow,
+} from '../components/ui'
 
 interface OnlinePlayer {
   eos_id:         string
@@ -33,8 +47,7 @@ interface ServerStat {
   session_count:number
 }
 
-function formatDuration(mins: number | null): string {
-  if (mins == null) return '—'
+function formatDuration(mins: number): string {
   if (mins < 1)  return '<1m'
   if (mins < 60) return `${mins}m`
   const h = Math.floor(mins / 60)
@@ -43,7 +56,7 @@ function formatDuration(mins: number | null): string {
 }
 
 function formatMapName(map: string): string {
-  return map?.replace('_WP', '').replace(/([a-z])([A-Z])/g, '$1 $2') || '—'
+  return map?.replace('_WP', '').replace(/([a-z])([A-Z])/g, '$1 $2') || ''
 }
 
 interface Props {
@@ -59,6 +72,7 @@ export default function OnlinePlayersPage(_props: Props) {
   const [serversOnline, setServersOnline] = useState(0)
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [error, setError]         = useState('')
   const [filterServer, setFilterServer] = useState<string>('all')
   const [lastUpdate, setLastUpdate]     = useState<Date | null>(null)
   const [autoRefresh, setAutoRefresh]   = useState(true)
@@ -68,7 +82,7 @@ export default function OnlinePlayersPage(_props: Props) {
     else setRefreshing(true)
     try {
       // Always fetch the whole cluster: total_online is counted after the
-      // server_key filter, so a filtered fetch made the "All servers" card
+      // server_key filter, so a filtered fetch made the "All servers" tile
       // show one server's count.  filteredPlayers narrows the list below.
       const res = await arkmaniaApi.getOnlinePlayers()
       setPlayers(res.data.players)
@@ -76,9 +90,14 @@ export default function OnlinePlayersPage(_props: Props) {
       setTotalOnline(res.data.total_online)
       setServersOnline(res.data.servers_online)
       setLastUpdate(new Date())
-    } catch { /* silently handle */ }
+      setError('')
+    } catch (err) {
+      // A failed poll used to be swallowed, so an unreachable plugin DB read
+      // as "the cluster is empty".  Keep the last good rows and say so.
+      setError(extractError(err, t('onlinePlayers.loadFailed')))
+    }
     finally { setLoading(false); setRefreshing(false) }
-  }, [])
+  }, [t])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -102,163 +121,125 @@ export default function OnlinePlayersPage(_props: Props) {
     : players.filter(p => p.server_key === filterServer)
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><Users size={22} /> {t('onlinePlayers.heading')}</h1>
-          <p className="page-subtitle">
+    <div className="l-page">
+      <PageHeader
+        title={t('onlinePlayers.heading')}
+        icon={Users}
+        description={
+          <>
             {t('onlinePlayers.subtitle', { count: totalOnline, servers: serversOnline })}
             {lastUpdate && (
-              <span style={{ marginLeft: '0.75rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('onlinePlayers.updatedLabel')} {lastUpdate.toLocaleTimeString(undefined)}
-              </span>
+              <span className="u-muted"> · {t('onlinePlayers.updatedLabel')} {lastUpdate.toLocaleTimeString(undefined)}</span>
             )}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem',
-                          fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
-            {t('onlinePlayers.autoRefreshLabel')}
-          </label>
-          <button onClick={() => loadData(true)} className="btn btn-ghost" disabled={refreshing} style={{ fontSize: '0.8rem' }}>
-            <RefreshCw size={14} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} /> {t('onlinePlayers.refreshButton')}
-          </button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Switch
+              label={t('onlinePlayers.autoRefreshLabel')}
+              checked={autoRefresh}
+              onChange={setAutoRefresh}
+            />
+            <Button
+              icon={RefreshCw}
+              loading={refreshing}
+              loadingLabel={t('onlinePlayers.refreshing')}
+              onClick={() => loadData(true)}
+            >
+              {t('onlinePlayers.refreshButton')}
+            </Button>
+          </>
+        }
+      />
 
-      {/* Server filter cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.5rem', marginBottom: '1.25rem' }}>
-        {/* "All" card */}
-        <button
-          onClick={() => setFilterServer('all')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.75rem',
-            padding: '0.75rem 1rem', borderRadius: 'var(--radius-lg)',
-            border: filterServer === 'all' ? '2px solid var(--accent)' : '1px solid var(--border)',
-            background: filterServer === 'all' ? 'var(--accent-glow)' : 'var(--bg-card)',
-            cursor: 'pointer', boxShadow: 'var(--shadow-sm)', textAlign: 'left',
-          }}
+      {error && (
+        <Alert
+          tone="danger"
+          title={t('onlinePlayers.loadFailed')}
+          actions={<Button size="sm" icon={RefreshCw} onClick={() => loadData(true)}>{t('common.retry')}</Button>}
         >
-          <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--accent)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Globe size={18} color="#fff" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{totalOnline}</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>{t('onlinePlayers.allServersLabel')}</div>
-          </div>
-        </button>
+          {error}
+        </Alert>
+      )}
 
-        {/* Per-server cards */}
+      <div className="l-grid--stats">
+        <StatTile
+          label={t('onlinePlayers.allServersLabel')}
+          value={totalOnline}
+          icon={Globe}
+          meta={t('onlinePlayers.serversOnline', { count: serversOnline })}
+          onClick={() => setFilterServer('all')}
+          pressed={filterServer === 'all'}
+        />
         {servers.filter(s => s.is_online).map(srv => (
-          <button
+          <StatTile
             key={srv.server_key}
+            label={srv.display_name}
+            value={srv.session_count}
+            meta={formatMapName(srv.map_name) || undefined}
             onClick={() => setFilterServer(srv.server_key === filterServer ? 'all' : srv.server_key)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.65rem',
-              padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-lg)',
-              border: filterServer === srv.server_key ? '2px solid var(--accent)' : '1px solid var(--border)',
-              background: filterServer === srv.server_key ? 'var(--accent-glow)' : 'var(--bg-card)',
-              cursor: 'pointer', boxShadow: 'var(--shadow-sm)', textAlign: 'left', transition: 'all 0.15s',
-            }}
-          >
-            <div style={{
-              width: 32, height: 32, borderRadius: 4,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: srv.session_count > 0 ? 'var(--success-bg)' : 'var(--bg-card-muted)',
-              border: `1px solid ${srv.session_count > 0 ? 'var(--success)' : 'var(--border)'}`,
-            }}>
-              <span style={{ fontSize: '0.95rem', fontWeight: 800,
-                             color: srv.session_count > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-                {srv.session_count}
-              </span>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {srv.display_name}
-              </div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                {formatMapName(srv.map_name)}
-              </div>
-            </div>
-          </button>
+            pressed={filterServer === srv.server_key}
+          />
         ))}
       </div>
 
-      {/* Player table */}
-      {loading ? (
-        <div className="pl-loading">{t('onlinePlayers.loading')}</div>
-      ) : filteredPlayers.length === 0 ? (
-        <div className="pl-empty" style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-          <Users size={48} style={{ opacity: 0.15 }} />
-          <p style={{ fontSize: '0.92rem', fontWeight: 500 }}>{t('onlinePlayers.emptyTitle')}</p>
-          <p style={{ fontSize: '0.78rem' }}>
-            {filterServer !== 'all' ? t('onlinePlayers.emptyServer') : t('onlinePlayers.emptyCluster')}
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'var(--border)',
-                      borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
-          {/* Header */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 100px 140px',
-            padding: '0.55rem 1rem', background: 'var(--bg-card-muted)',
-            fontSize: '0.72rem', fontWeight: 700,
-            letterSpacing: '0.06em', color: 'var(--text-secondary)',
-          }}>
-            <span>{t('onlinePlayers.table.player')}</span><span>{t('onlinePlayers.table.server')}</span><span>{t('onlinePlayers.table.map')}</span>
-            <span style={{ textAlign: 'center' }}>{t('onlinePlayers.table.duration')}</span>
-            <span style={{ textAlign: 'right' }}>{t('onlinePlayers.table.connectedAt')}</span>
-          </div>
-
-          {filteredPlayers.map((p) => (
-            <div key={p.eos_id} style={{
-              display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 100px 140px',
-              padding: '0.6rem 1rem', background: 'var(--bg-card)', alignItems: 'center',
-            }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                background: 'var(--success)', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
-                  <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)',
-                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.player_name || t('onlinePlayers.unknownPlayer')}
-                  </span>
-                </div>
-                <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
-                              marginLeft: '1.1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {p.eos_id}
-                </div>
-              </div>
-              <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                {p.server_name}
-              </span>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
-                fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)',
-                background: 'var(--accent-glow)', padding: '0.1rem 0.5rem', borderRadius: 4, width: 'fit-content',
-              }}>
-                {formatMapName(p.map_name)}
-              </span>
-              <div style={{ textAlign: 'center' }}>
-                <span style={{
-                  fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 600,
-                  color: (p.duration_min ?? 0) > 60 ? 'var(--accent)' : 'var(--text-secondary)',
-                }}>
-                  {formatDuration(p.duration_min)}
-                </span>
-              </div>
-              <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {p.login_time
-                  ? new Date(p.login_time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-                  : '—'}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <Card
+        title={t('onlinePlayers.listTitle')}
+        flush
+        actions={refreshing ? <Spinner /> : undefined}
+      >
+        <Table label={t('onlinePlayers.listTitle')} minWidth={760}>
+          <thead>
+            <tr>
+              <th scope="col">{t('onlinePlayers.table.player')}</th>
+              <th scope="col">{t('onlinePlayers.table.server')}</th>
+              <th scope="col">{t('onlinePlayers.table.map')}</th>
+              <th scope="col" className="u-text-end">{t('onlinePlayers.table.duration')}</th>
+              <th scope="col" className="u-text-end">{t('onlinePlayers.table.connectedAt')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <TableMessageRow colSpan={5}>
+                <Spinner block label={t('onlinePlayers.loading')} />
+              </TableMessageRow>
+            ) : filteredPlayers.length === 0 ? (
+              <TableMessageRow colSpan={5}>
+                <EmptyState
+                  icon={Users}
+                  title={t('onlinePlayers.emptyTitle')}
+                  description={
+                    error
+                      ? t('onlinePlayers.emptyAfterError')
+                      : filterServer !== 'all'
+                        ? t('onlinePlayers.emptyServer')
+                        : t('onlinePlayers.emptyCluster')
+                  }
+                />
+              </TableMessageRow>
+            ) : filteredPlayers.map(p => (
+              <tr key={p.eos_id}>
+                <td>
+                  <div className="ui-cell-2">
+                    <span>{p.player_name || t('onlinePlayers.unknownPlayer')}</span>
+                    <span className="u-mono">{p.eos_id}</span>
+                  </div>
+                </td>
+                <td>{p.server_name}</td>
+                <td>{formatMapName(p.map_name) || <NotAvailable />}</td>
+                <td className="u-text-end u-num u-mono">
+                  {p.duration_min == null ? <NotAvailable /> : formatDuration(p.duration_min)}
+                </td>
+                <td className="u-text-end u-num">
+                  {p.login_time
+                    ? new Date(p.login_time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                    : <NotAvailable />}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
     </div>
   )
 }

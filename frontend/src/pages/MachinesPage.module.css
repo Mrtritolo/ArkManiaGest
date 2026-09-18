@@ -1,0 +1,33 @@
+/* Page-only layout for the SSH machines page. Tokens only, @layer page. */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* "IP: x · SSH: 22 · OS: linux" under a ServerForge preview row */
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .importRow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+  }
+
+  /* The credential row of an importable machine: fields, then the button. */
+  .importCreds {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    gap: var(--space-3);
+    align-items: end;
+  }
+}

@@ -1,0 +1,256 @@
+/*
+ * MarketPage.module.css -- layout that belongs to the market page only.
+ *
+ * Tokens only (MASTER section 3/4): no hex, no rgba, no bare px except the
+ * 1px hairlines. Everything reusable lives in utilities.css / content.css.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* ----------------------------------------------------------- page head */
+  /* Wallet balance, shown next to the title in both render modes. */
+  .wallet {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-3);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-lg);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--weight-semibold);
+    font-variant-ligatures: none;
+  }
+  .wallet > svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-text-secondary);
+  }
+
+  /* --------------------------------------------------------------- price */
+  .price {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    font-variant-numeric: tabular-nums;
+    font-variant-ligatures: none;
+    font-weight: var(--weight-semibold);
+    white-space: nowrap;
+  }
+  .priceLg { font-size: var(--text-lg); }
+  .price > svg {
+    align-self: center;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-text-secondary);
+  }
+  .unit {
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-regular);
+  }
+
+  /* ----------------------------------------------------------- item card */
+  /* Static: only the Buy button is clickable, so the card never hovers. */
+  .card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .cardMedia {
+    position: relative;
+  }
+  .cardBadges {
+    position: absolute;
+    inset-block-start: var(--space-2);
+    inset-inline: var(--space-2);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+    pointer-events: none;
+  }
+  .cardBody {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .cardTitle {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
+    overflow-wrap: anywhere;
+  }
+  .cardFooter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-block-start: auto;
+    padding-block-start: var(--space-2);
+    border-block-start: 1px solid var(--color-border);
+  }
+  .sellerLine {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+  }
+
+  /* Why Buy is unavailable, as words next to the button. */
+  .buyNote {
+    flex: 1 1 100%;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  /* Dino stat distribution of a cryopod listing. */
+  .statGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(2.25rem, 1fr));
+    gap: var(--space-1);
+  }
+  .stat {
+    padding: var(--space-1) var(--space-0-5);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-sunken);
+    text-align: center;
+  }
+  .statLabel {
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1;
+  }
+  .statValue {
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
+  }
+
+  /* ----------------------------------------------------- shop catalogue */
+  .groupHeading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-2);
+    padding-block-end: var(--space-1);
+    border-block-end: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+  }
+
+  .shopCard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+  .shopCardHead {
+    display: flex;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .shopThumb {
+    flex-shrink: 0;
+    width: 4.5rem;
+    border-radius: var(--radius-sm);
+  }
+  .shopCardText { min-width: 0; flex: 1; }
+  .shopCardName {
+    font-size: var(--text-body);
+    font-weight: var(--weight-semibold);
+    overflow-wrap: anywhere;
+  }
+
+  .packList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    max-height: 12rem;
+    overflow-y: auto;
+    padding-block-start: var(--space-1);
+    border-block-start: 1px solid var(--color-border);
+  }
+  .packLine {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    font-size: var(--text-sm);
+  }
+  .packLineName { flex: 1; min-width: 0; }
+  .lineThumb {
+    flex-shrink: 0;
+    width: var(--icon-md);
+    height: var(--icon-md);
+    object-fit: contain;
+  }
+
+  /* --------------------------------------------------------------- forge */
+  .forgeCard { max-width: var(--modal-lg); }
+  .colorRow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+    gap: var(--space-2);
+  }
+  .traitChips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .traitChip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding-inline-start: var(--space-2);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    font-size: var(--text-sm);
+  }
+
+  /* ------------------------------------------------------------- tables */
+  .cellItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .cellThumb {
+    flex-shrink: 0;
+    width: var(--space-8);
+    border-radius: var(--radius-sm);
+  }
+  .rowForm {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+  .priceCell { width: 7rem; }
+  .rowError {
+    display: block;
+    color: var(--color-danger);
+    font-size: var(--text-sm);
+  }
+}

@@ -1,0 +1,88 @@
+/*
+ * DiscordTabs.module.css -- layout shared by the Accounts, Members and
+ * Config tabs of Settings -> Discord. Tokens only (MASTER §2).
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* Avatar + two-line identity in a table cell. */
+  .identity {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  /* Guild banner line: icon, name, counts. */
+  .guildRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  /* A link chip plus its unlink / copy actions. */
+  .linkCell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  /* Role chips in the members table: badge + its remove action. */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-0-5);
+  }
+
+  /* The role picker opens inside the cell and pushes the row taller. */
+  .rolePicker {
+    flex-basis: 14rem;
+    min-width: 0;
+  }
+  .roleOption {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .swatch {
+    flex-shrink: 0;
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: var(--radius-full);
+  }
+
+  /* Two-line combobox option (name + muted meta). */
+  .option {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+  }
+
+  /* Config tab: value + copy action inside a dd, and ID chip lists. */
+  .kvValue {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .idList {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+}

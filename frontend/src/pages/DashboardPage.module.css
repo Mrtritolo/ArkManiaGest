@@ -1,0 +1,9 @@
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* An Alert inside a full-width table message row needs the cell padding
+     the table strips for Spinner / EmptyState. */
+  .messagePad {
+    padding: var(--space-3);
+  }
+}

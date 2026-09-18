@@ -5,11 +5,16 @@
  * before the auth state machine), because the notice must be readable
  * BEFORE the user logs in with Discord or panel credentials.
  *
+ * It renders outside the router and outside the toast / confirm providers,
+ * so the back link is a plain <a> and the page paints its own canvas.
+ *
  * All copy lives in i18n (en + it) under the `privacy.page.*` keys so
  * the operator's players read it in their own language.
  */
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { Card } from "../components/ui";
+import styles from "./PrivacyPage.module.css";
 
 const SECTION_KEYS = ["controller", "data", "purposes", "retention", "rights", "cookies"] as const;
 
@@ -17,33 +22,34 @@ export default function PrivacyPage() {
   const { t } = useTranslation();
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "var(--bg, var(--bg-card-muted))",
-      padding: "clamp(0.75rem, 3vw, 1.5rem)",
-    }}>
-      <div style={{ maxWidth: 820, margin: "0 auto" }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
-          <ArrowLeft size={14} /> {t("privacy.page.back")}
+    <div className={styles.root}>
+      <main id="main-content" tabIndex={-1} className={styles.page}>
+        <a href="/" className={styles.back}>
+          <ArrowLeft size={16} strokeWidth={1.75} aria-hidden="true" />
+          {t("privacy.page.back")}
         </a>
 
-        <div className="card" style={{ marginTop: "0.75rem", padding: "clamp(1rem, 3vw, 2rem)" }}>
-          <h1 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.4rem" }}>
-            <ShieldCheck size={22} /> {t("privacy.page.title")}
-          </h1>
-          <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>{t("privacy.page.updated")}</p>
-          <p style={{ whiteSpace: "pre-line", lineHeight: 1.6 }}>{t("privacy.page.intro")}</p>
+        <Card>
+          <div className="l-stack">
+            <div className="l-stack l-stack--sm">
+              <h1 className={styles.title}>
+                <ShieldCheck size={20} strokeWidth={1.75} aria-hidden="true" />
+                {t("privacy.page.title")}
+              </h1>
+              <p className="u-muted u-text-sm">{t("privacy.page.updated")}</p>
+            </div>
 
-          {SECTION_KEYS.map((key) => (
-            <section key={key} style={{ marginTop: "1.25rem" }}>
-              <h2 style={{ fontSize: "1.05rem" }}>{t(`privacy.page.${key}.title`)}</h2>
-              <p style={{ whiteSpace: "pre-line", lineHeight: 1.6 }}>
-                {t(`privacy.page.${key}.body`)}
-              </p>
-            </section>
-          ))}
-        </div>
-      </div>
+            <p className={styles.prose}>{t("privacy.page.intro")}</p>
+
+            {SECTION_KEYS.map(key => (
+              <section key={key} className={styles.section}>
+                <h2>{t(`privacy.page.${key}.title`)}</h2>
+                <p className={styles.prose}>{t(`privacy.page.${key}.body`)}</p>
+              </section>
+            ))}
+          </div>
+        </Card>
+      </main>
     </div>
   );
 }

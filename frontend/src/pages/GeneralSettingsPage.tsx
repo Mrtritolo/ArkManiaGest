@@ -1,16 +1,50 @@
 /**
  * GeneralSettingsPage.tsx — Global application settings.
  *
- * Covers: application name, log level, auto-backup configuration.
- * Changes are persisted to the database via the settings API.
+ * Covers: application name, log level, auto-backup configuration, the
+ * release check and the in-UI self-updater.
+ *
+ * A failed settings load blocks Save: the form is never shown filled with
+ * placeholder defaults, because saving them would overwrite every setting.
  */
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, ExternalLink, RefreshCw, CheckCircle, AlertCircle, DownloadCloud, AlertTriangle } from 'lucide-react'
+import {
+  AppWindow,
+  Archive,
+  CircleAlert,
+  CircleCheck,
+  Download,
+  DownloadCloud,
+  ExternalLink,
+  Info,
+  RefreshCw,
+  RotateCw,
+  Settings,
+} from 'lucide-react'
 import { settingsApi, systemApi, systemUpdateApi } from '../services/api'
 import type { SystemUpdatePreflight, SystemUpdateStatus } from '../services/api'
 import { extractError } from '../utils/errors'
+import { fmtLocaleDateTime } from '../utils/format'
 import type { AppSettings, AuthUser, VersionCheckResult } from '../types'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Field,
+  Input,
+  Meter,
+  NotAvailable,
+  PageHeader,
+  Select,
+  Spinner,
+  buttonClass,
+  useConfirm,
+  useToast,
+} from '../components/ui'
+import styles from './GeneralSettingsPage.module.css'
 
 interface HealthInfo {
   version: string
@@ -18,6 +52,9 @@ interface HealthInfo {
 }
 
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] as const
+
+/** The save bar sits outside the <form>, so its button points back at it. */
+const FORM_ID = 'general-settings-form'
 
 interface Props {
   // Nothing to gate here: App.tsx mounts this route for admins only, and
@@ -27,7 +64,12 @@ interface Props {
 
 export default function GeneralSettingsPage(_props: Props) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
+  const toast = useToast()
+
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [form, setForm] = useState({
     app_name:               'ArkManiaGest',
     log_level:              'INFO',
@@ -36,14 +78,12 @@ export default function GeneralSettingsPage(_props: Props) {
     backup_retention:       10,
   })
   const [saving, setSaving]   = useState(false)
-  const [message, setMessage] = useState('')
-  const [isError, setIsError] = useState(false)
   const [health, setHealth]   = useState<HealthInfo | null>(null)
 
   const [versionInfo, setVersionInfo]   = useState<VersionCheckResult | null>(null)
   const [versionLoading, setVersionLoading] = useState(false)
 
-  // Self-update state (button, preflight banner, progress drawer).
+  // Self-update state (button, preflight banner, progress panel).
   const [preflight, setPreflight]     = useState<SystemUpdatePreflight | null>(null)
   const [installing, setInstalling]   = useState(false)
   const [updateStatus, setUpdateStatus] = useState<SystemUpdateStatus | null>(null)
@@ -54,14 +94,6 @@ export default function GeneralSettingsPage(_props: Props) {
 
   // Stop polling when the component unmounts.
   useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current) }, [])
-
-  // Auto-clear the success message.  An effect (not a bare setTimeout) so a
-  // stale timer from an earlier save cannot wipe a newer error.
-  useEffect(() => {
-    if (!message || isError) return
-    const timer = window.setTimeout(() => setMessage(''), 3000)
-    return () => window.clearTimeout(timer)
-  }, [message, isError])
 
   async function loadPreflight(): Promise<void> {
     try {
@@ -94,12 +126,20 @@ export default function GeneralSettingsPage(_props: Props) {
   async function handleInstallUpdate(): Promise<void> {
     setInstallError('')
     if (!preflight?.can_self_update) {
-      setInstallError(preflight?.hint || 'Self-update is not available on this host.')
+      setInstallError(preflight?.hint || t('generalSettings.updates.installDisabled'))
       return
     }
-    if (!window.confirm(t('generalSettings.updates.confirmInstall', {
-      version: versionInfo?.latest ?? '?',
-    }))) return
+    const version = versionInfo?.latest ?? '?'
+    const ok = await confirm({
+      title: t('generalSettings.updates.confirmTitle', { version }),
+      description: (
+        <span className={styles.preLine}>
+          {t('generalSettings.updates.confirmInstall', { version })}
+        </span>
+      ),
+      confirmLabel: t('generalSettings.updates.installNow'),
+    })
+    if (!ok) return
 
     setInstalling(true)
     setUpdateStatus({
@@ -122,8 +162,7 @@ export default function GeneralSettingsPage(_props: Props) {
       // Kick one immediate poll so the UI updates right away.
       pollUpdateStatus()
     } catch (err: unknown) {
-      const detail = extractError(err, 'install failed')
-      setInstallError(detail)
+      setInstallError(extractError(err, t('generalSettings.updates.installFailed')))
       setInstalling(false)
     }
   }
@@ -134,7 +173,7 @@ export default function GeneralSettingsPage(_props: Props) {
       const res = await settingsApi.checkVersion(force)
       setVersionInfo(res.data)
     } catch (err: unknown) {
-      const detail = extractError(err, 'error')
+      const detail = extractError(err, t('generalSettings.updates.checkFailed'))
       setVersionInfo({
         current: health?.version ?? '',
         current_commit: null,
@@ -161,6 +200,8 @@ export default function GeneralSettingsPage(_props: Props) {
   }
 
   async function loadSettings(): Promise<void> {
+    setSettingsLoading(true)
+    setLoadError('')
     try {
       const res = await settingsApi.get()
       setSettings(res.data)
@@ -172,10 +213,11 @@ export default function GeneralSettingsPage(_props: Props) {
         backup_retention:       res.data.backup_retention,
       })
     } catch (err: unknown) {
-      // Save stays disabled until this succeeds: the form still holds the
-      // placeholder defaults, and saving them would overwrite every setting.
-      setIsError(true)
-      setMessage(`${t('generalSettings.errorPrefix')}: ${extractError(err, t('generalSettings.loadFailed'))}`)
+      // Save stays blocked until this succeeds: the placeholder defaults
+      // below would overwrite every setting if they were ever sent.
+      setLoadError(extractError(err, t('generalSettings.loadFailed')))
+    } finally {
+      setSettingsLoading(false)
     }
   }
 
@@ -190,332 +232,293 @@ export default function GeneralSettingsPage(_props: Props) {
     }))
   }
 
-  async function handleSave(): Promise<void> {
+  async function handleSave(e: React.FormEvent): Promise<void> {
+    e.preventDefault()
+    if (!settings) return
     setSaving(true)
-    setMessage('')
-    setIsError(false)
     try {
       const res = await settingsApi.update(form)
       setSettings(res.data)
-      setMessage(t('generalSettings.saved'))
+      toast.success(t('generalSettings.saved'))
     } catch (err: unknown) {
-      const detail = extractError(err, t('generalSettings.saveFailed'))
-      setIsError(true)
-      setMessage(`${t('generalSettings.errorPrefix')}: ${detail}`)
+      toast.error(extractError(err, t('generalSettings.saveFailed')), {
+        title: t('generalSettings.errorPrefix'),
+      })
     } finally {
       setSaving(false)
     }
   }
 
+  const state = updateStatus?.state
+  const installDisabledReason = preflight?.can_self_update
+    ? undefined
+    : preflight?.hint || t('generalSettings.updates.installDisabled')
+
   return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">{t('generalSettings.title')}</h1>
-        <p className="page-subtitle">{t('generalSettings.subtitle')}</p>
-      </div>
+    <div className="l-page">
+      <PageHeader
+        title={t('generalSettings.title')}
+        icon={Settings}
+        description={t('generalSettings.subtitle')}
+      />
 
-      {/* Application */}
-      <div className="card">
-        <h2 className="card-title">
-          <span className="card-title-icon">⬢</span>
-          {t('generalSettings.section.app')}
-        </h2>
-        <div className="form-grid">
-          <div className="form-group form-group-3">
-            <label className="form-label">{t('generalSettings.field.appName')}</label>
-            <input
-              type="text" name="app_name" value={form.app_name}
-              onChange={handleChange} className="form-input"
-            />
-            <span className="form-hint">{t('generalSettings.hint.appName')}</span>
-          </div>
-          <div className="form-group form-group-2">
-            <label className="form-label">{t('generalSettings.field.logLevel')}</label>
-            <select name="log_level" value={form.log_level} onChange={handleChange} className="form-input">
-              {LOG_LEVELS.map(level => (
-                <option key={level} value={level}>{level}</option>
-              ))}
-            </select>
-            <span className="form-hint">{t('generalSettings.hint.logLevel')}</span>
-          </div>
-        </div>
-      </div>
+      {loadError && (
+        <Alert
+          tone="danger"
+          title={t('generalSettings.loadFailed')}
+          actions={
+            <Button size="sm" icon={RotateCw} onClick={loadSettings}>
+              {t('common.retry')}
+            </Button>
+          }
+        >
+          {loadError}
+        </Alert>
+      )}
 
-      {/* Auto-backup */}
-      <div className="card mt-6">
-        <h2 className="card-title">
-          <span className="card-title-icon">⟲</span>
-          {t('generalSettings.section.backup')}
-        </h2>
-        <div className="form-grid">
-          <div className="form-group form-group-full">
-            <label className="form-label form-label-inline">
-              <input
-                type="checkbox" name="auto_backup" checked={form.auto_backup}
-                onChange={handleChange} className="form-checkbox"
+      {settingsLoading && !settings && (
+        <Card>
+          <Spinner block label={t('common.loading')} />
+        </Card>
+      )}
+
+      {settings && (
+        <form id={FORM_ID} className="l-stack" onSubmit={handleSave} noValidate>
+          <Card title={t('generalSettings.section.app')} icon={AppWindow}>
+            <div className="l-grid--form">
+              <Field label={t('generalSettings.field.appName')} hint={t('generalSettings.hint.appName')}>
+                <Input name="app_name" value={form.app_name} onChange={handleChange} />
+              </Field>
+              <Field label={t('generalSettings.field.logLevel')} hint={t('generalSettings.hint.logLevel')}>
+                <Select name="log_level" value={form.log_level} onChange={handleChange}>
+                  {LOG_LEVELS.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </Card>
+
+          <Card title={t('generalSettings.section.backup')} icon={Archive}>
+            <div className="l-grid--form">
+              <Checkbox
+                className="u-span-full"
+                name="auto_backup"
+                label={t('generalSettings.field.autoBackup')}
+                description={t('generalSettings.hint.autoBackup')}
+                checked={form.auto_backup}
+                onChange={handleChange}
               />
-              {t('generalSettings.field.autoBackup')}
-            </label>
-            <span className="form-hint">{t('generalSettings.hint.autoBackup')}</span>
-          </div>
 
-          {form.auto_backup && (
-            <>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('generalSettings.field.interval')}</label>
-                <input
-                  type="number" name="backup_interval_hours" value={form.backup_interval_hours}
-                  onChange={handleChange} className="form-input" min={1} max={168}
-                />
-                <span className="form-hint">{t('generalSettings.hint.interval')}</span>
-              </div>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('generalSettings.field.retention')}</label>
-                <input
-                  type="number" name="backup_retention" value={form.backup_retention}
-                  onChange={handleChange} className="form-input" min={1} max={100}
-                />
-                <span className="form-hint">{t('generalSettings.hint.retention')}</span>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+              {form.auto_backup && (
+                <>
+                  <Field label={t('generalSettings.field.interval')} hint={t('generalSettings.hint.interval')}>
+                    <Input
+                      type="number" name="backup_interval_hours" min={1} max={168}
+                      value={form.backup_interval_hours} onChange={handleChange}
+                    />
+                  </Field>
+                  <Field label={t('generalSettings.field.retention')} hint={t('generalSettings.hint.retention')}>
+                    <Input
+                      type="number" name="backup_retention" min={1} max={100}
+                      value={form.backup_retention} onChange={handleChange}
+                    />
+                  </Field>
+                </>
+              )}
+            </div>
+          </Card>
+        </form>
+      )}
 
       {/* Updates */}
-      <div className="card mt-6">
-        <h2 className="card-title">
-          <span className="card-title-icon"><Download size={14} /></span>
-          {t('generalSettings.updates.section')}
-        </h2>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 180 }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {t('generalSettings.updates.current')}
-            </span>
-            <span style={{ fontSize: '1rem', fontWeight: 700 }}>
-              {versionInfo?.current || health?.version || '…'}
-            </span>
-            {versionInfo?.current_commit && (
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                {t('generalSettings.updates.commit')}: {versionInfo.current_commit.substring(0, 8)}
-              </span>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 180 }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {t('generalSettings.updates.latest')}
-            </span>
-            <span
-              style={{
-                fontSize: '1rem',
-                fontWeight: 700,
-                color: versionInfo?.update_available ? 'var(--warning, var(--warning))' : 'var(--success, var(--success))',
-              }}
-            >
-              {versionInfo?.latest || (versionInfo?.error ? '—' : '…')}
-            </span>
-            {versionInfo?.release_published_at && (
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('generalSettings.updates.publishedAt', {
-                  when: new Date(versionInfo.release_published_at).toLocaleString(undefined),
-                })}
-              </span>
-            )}
-          </div>
-
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button
+      <Card
+        title={t('generalSettings.updates.section')}
+        icon={Download}
+        actions={
+          <>
+            <Button
+              size="sm"
+              icon={RotateCw}
               onClick={() => loadVersion(true)}
-              disabled={versionLoading || installing}
-              className="btn btn-secondary"
+              loading={versionLoading}
+              loadingLabel={t('generalSettings.updates.checking')}
+              disabled={installing}
             >
-              <RefreshCw size={14} style={{ animation: versionLoading ? 'spin 1s linear infinite' : 'none' }} />
-              {versionLoading ? t('generalSettings.updates.checking') : t('generalSettings.updates.checkNow')}
-            </button>
+              {t('generalSettings.updates.checkNow')}
+            </Button>
             {versionInfo?.update_available && (
-              <button
+              <Button
+                size="sm"
+                variant="primary"
+                icon={DownloadCloud}
                 onClick={handleInstallUpdate}
-                disabled={installing || !preflight?.can_self_update}
-                className="btn btn-primary"
-                aria-label={preflight?.can_self_update
-                  ? ''
-                  : preflight?.hint || t('generalSettings.updates.installDisabled')} title={preflight?.can_self_update
-                  ? ''
-                  : preflight?.hint || t('generalSettings.updates.installDisabled')}
+                loading={installing}
+                loadingLabel={t('generalSettings.updates.installing')}
+                disabled={!preflight?.can_self_update}
+                title={installDisabledReason}
               >
-                <DownloadCloud size={14} />
-                {installing
-                  ? t('generalSettings.updates.installing')
-                  : t('generalSettings.updates.installNow')}
-              </button>
+                {t('generalSettings.updates.installNow')}
+              </Button>
             )}
             {versionInfo?.release_url && (
               <a
                 href={versionInfo.release_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-secondary"
+                className={buttonClass({ variant: 'secondary', size: 'sm' })}
               >
-                <ExternalLink size={14} /> {t('generalSettings.updates.viewRelease')}
+                <ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" />
+                {t('generalSettings.updates.viewRelease')}
               </a>
             )}
-          </div>
-        </div>
+          </>
+        }
+      >
+        <div className="l-stack">
+          <dl className="ui-dl">
+            <dt>{t('generalSettings.updates.current')}</dt>
+            <dd className="u-mono">
+              {versionInfo?.current || health?.version || <NotAvailable />}
+            </dd>
+            {versionInfo?.current_commit && (
+              <>
+                <dt>{t('generalSettings.updates.commit')}</dt>
+                <dd className="u-mono">{versionInfo.current_commit.substring(0, 8)}</dd>
+              </>
+            )}
+            <dt>{t('generalSettings.updates.latest')}</dt>
+            <dd className="u-mono">{versionInfo?.latest || <NotAvailable />}</dd>
+          </dl>
 
-        {/* Status line */}
-        <div style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
+          {versionInfo?.release_published_at && (
+            <p className="u-muted u-text-sm">
+              {t('generalSettings.updates.publishedAt', {
+                when: fmtLocaleDateTime(versionInfo.release_published_at),
+              })}
+            </p>
+          )}
+
           {versionInfo?.error ? (
-            <span style={{ color: 'var(--danger, var(--danger))', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              <AlertCircle size={14} />
+            <Alert tone="danger">
               {t('generalSettings.updates.error', { message: versionInfo.error })}
-            </span>
+            </Alert>
           ) : versionInfo?.update_available && versionInfo.latest ? (
-            <span style={{ color: 'var(--warning, var(--warning))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              <Download size={14} />
-              {t('generalSettings.updates.updateAvailable', { version: versionInfo.latest })}
-            </span>
+            <p>
+              <Badge tone="warning" icon={Download}>
+                {t('generalSettings.updates.updateAvailable', { version: versionInfo.latest })}
+              </Badge>
+            </p>
           ) : versionInfo?.latest ? (
-            <span style={{ color: 'var(--success, var(--success))', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              <CheckCircle size={14} /> {t('generalSettings.updates.upToDate')}
-            </span>
+            <p>
+              <Badge tone="success" icon={CircleCheck}>
+                {t('generalSettings.updates.upToDate')}
+              </Badge>
+            </p>
           ) : null}
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-            {t('generalSettings.updates.cacheHint')}
-          </p>
-        </div>
 
-        {/* Preflight banner -- shown only when the in-UI installer is NOT
-            usable on this host (no sudoers, missing script, no repo). */}
-        {preflight && !preflight.can_self_update && (
-          <div
-            style={{
-              marginTop: '0.75rem',
-              padding: '0.6rem 0.85rem',
-              borderRadius: 'var(--radius-sm, 4px)',
-              border: '1px solid var(--warning, var(--warning))',
-              background: 'color-mix(in srgb, var(--warning, var(--warning)) 10%, transparent)',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '0.5rem',
-              fontSize: '0.82rem',
-            }}
-          >
-            <AlertTriangle size={15} style={{ marginTop: 2, color: 'var(--warning, var(--warning))', flexShrink: 0 }} />
-            <div>
-              <strong>{t('generalSettings.updates.inUpdaterUnavailable')}</strong>
-              <div style={{ marginTop: '0.2rem', color: 'var(--text-muted)' }}>
-                {preflight.hint || t('generalSettings.updates.inUpdaterGenericFix')}
+          <p className="u-muted u-text-sm">{t('generalSettings.updates.cacheHint')}</p>
+
+          {/* Shown only when the in-UI installer is NOT usable on this host
+              (no sudoers, missing script, no repo). */}
+          {preflight && !preflight.can_self_update && (
+            <Alert tone="warning" title={t('generalSettings.updates.inUpdaterUnavailable')}>
+              {preflight.hint || t('generalSettings.updates.inUpdaterGenericFix')}
+            </Alert>
+          )}
+
+          {installError && <Alert tone="danger">{installError}</Alert>}
+
+          {/* Live progress -- visible while an install is running, and after
+              it finished until the page is reloaded. */}
+          {updateStatus && state && state !== 'idle' && (
+            <div className="l-stack l-stack--sm">
+              <div className="l-cluster">
+                <Badge
+                  tone={state === 'success' ? 'success' : state === 'failed' ? 'danger' : 'info'}
+                  icon={state === 'success' ? CircleCheck : state === 'failed' ? CircleAlert : RefreshCw}
+                >
+                  {t(`generalSettings.updates.stateLabel.${state}`)}
+                </Badge>
+                {updateStatus.target_version && (
+                  <span className="u-mono u-secondary u-text-sm">v{updateStatus.target_version}</span>
+                )}
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Install error (one-off, immediate) */}
-        {installError && (
-          <div
-            style={{
-              marginTop: '0.75rem',
-              padding: '0.6rem 0.85rem',
-              borderRadius: 'var(--radius-sm, 4px)',
-              border: '1px solid var(--danger, var(--danger))',
-              background: 'color-mix(in srgb, var(--danger, var(--danger)) 10%, transparent)',
-              color: 'var(--danger, var(--danger))',
-              fontSize: '0.82rem',
-            }}
-          >
-            {installError}
-          </div>
-        )}
-
-        {/* Live progress drawer -- visible while an install is running or
-            after it finished, until the user refreshes the page. */}
-        {updateStatus && updateStatus.state !== 'idle' && (
-          <div
-            style={{
-              marginTop: '0.75rem',
-              padding: '0.75rem 0.9rem',
-              borderRadius: 'var(--radius-sm, 4px)',
-              background: 'var(--bg-subtle, rgba(0,0,0,0.2))',
-              border: '1px solid var(--border)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-              {updateStatus.state === 'success' && <CheckCircle size={14} style={{ color: 'var(--success, var(--success))' }} />}
-              {updateStatus.state === 'failed'  && <AlertCircle size={14} style={{ color: 'var(--danger, var(--danger))' }} />}
-              {(updateStatus.state === 'downloading' || updateStatus.state === 'running' || updateStatus.state === 'verifying') && (
-                <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
-              )}
-              <span>{t(`generalSettings.updates.stateLabel.${updateStatus.state}`)}</span>
-              {updateStatus.target_version && (
-                <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>
-                  → v{updateStatus.target_version}
-                </span>
-              )}
               {typeof updateStatus.progress_pct === 'number' && (
-                <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  {updateStatus.progress_pct}%
-                </span>
+                <div className="l-cluster">
+                  <Meter
+                    className={styles.meter}
+                    kind="progress"
+                    value={updateStatus.progress_pct}
+                    label={t('generalSettings.updates.progressLabel')}
+                    valueText={t('generalSettings.updates.progressValue', { pct: updateStatus.progress_pct })}
+                    tone={state === 'success' ? 'success' : state === 'failed' ? 'danger' : 'accent'}
+                  />
+                  <span className="u-num u-text-sm u-secondary">
+                    {t('generalSettings.updates.progressValue', { pct: updateStatus.progress_pct })}
+                  </span>
+                </div>
+              )}
+
+              {updateStatus.message && (
+                <p className="u-secondary u-text-sm">{updateStatus.message}</p>
+              )}
+
+              {updateStatus.log_tail && (
+                <pre
+                  className={`ui-log ${styles.logTail}`}
+                  role="log"
+                  aria-label={t('generalSettings.updates.logLabel')}
+                  tabIndex={0}
+                >
+                  {updateStatus.log_tail}
+                </pre>
+              )}
+
+              {state === 'running' && (
+                <p className="u-muted u-text-sm">{t('generalSettings.updates.duringRestartHint')}</p>
               )}
             </div>
-            {updateStatus.message && (
-              <div style={{ marginTop: '0.35rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                {updateStatus.message}
-              </div>
-            )}
-            {updateStatus.log_tail && (
-              <pre
-                style={{
-                  marginTop: '0.5rem',
-                  padding: '0.5rem',
-                  background: 'var(--bg-code, rgba(0,0,0,0.3))',
-                  borderRadius: 'var(--radius-sm, 4px)',
-                  maxHeight: 260,
-                  overflow: 'auto',
-                  fontSize: '0.72rem',
-                  lineHeight: 1.4,
-                }}
-              >
-                {updateStatus.log_tail}
-              </pre>
-            )}
-            {updateStatus.state === 'running' && (
-              <p style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('generalSettings.updates.duringRestartHint')}
-              </p>
-            )}
-          </div>
-        )}
-
-        <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
-      </div>
+          )}
+        </div>
+      </Card>
 
       {/* System info */}
-      <div className="card mt-6 card-muted">
-        <h2 className="card-title">
-          <span className="card-title-icon">ℹ</span>
-          {t('generalSettings.section.system')}
-        </h2>
-        <div className="info-grid">
-          <div className="info-item"><span className="info-label">{t('generalSettings.info.version')}</span><span className="info-value">{health?.version || '...'}</span></div>
-          <div className="info-item"><span className="info-label">{t('generalSettings.info.database')}</span><span className="info-value">{health?.db_ready ? t('generalSettings.info.dbConnected') : t('generalSettings.info.dbOffline')}</span></div>
-          <div className="info-item"><span className="info-label">{t('generalSettings.info.backend')}</span><span className="info-value">FastAPI + Python</span></div>
-          <div className="info-item"><span className="info-label">{t('generalSettings.info.configStorage')}</span><span className="info-value">DB + .env (AES-256-GCM)</span></div>
-        </div>
-      </div>
+      <Card title={t('generalSettings.section.system')} icon={Info}>
+        <dl className="ui-dl">
+          <dt>{t('generalSettings.info.version')}</dt>
+          <dd className="u-mono">{health?.version || <NotAvailable />}</dd>
+          <dt>{t('generalSettings.info.database')}</dt>
+          <dd>
+            {health
+              ? health.db_ready
+                ? t('generalSettings.info.dbConnected')
+                : t('generalSettings.info.dbOffline')
+              : <NotAvailable />}
+          </dd>
+          <dt>{t('generalSettings.info.backend')}</dt>
+          <dd>FastAPI + Python</dd>
+          <dt>{t('generalSettings.info.configStorage')}</dt>
+          <dd>DB + .env (AES-256-GCM)</dd>
+        </dl>
+      </Card>
 
       {/* Save bar */}
-      <div className="form-actions-sticky">
-        <button onClick={handleSave} disabled={saving || !settings} className="btn btn-primary">
-          {saving ? t('generalSettings.saving') : t('generalSettings.save')}
-        </button>
-        {message && (
-          <span className={`form-message ${isError ? 'form-message-error' : 'form-message-success'}`}>
-            {message}
-          </span>
-        )}
+      <div className="ui-actionbar">
+        <Button
+          className="u-push"
+          type="submit"
+          form={FORM_ID}
+          variant="primary"
+          loading={saving}
+          loadingLabel={t('generalSettings.saving')}
+          disabled={!settings}
+          // Saving the placeholder defaults would overwrite every setting.
+          title={!settings && loadError ? loadError : undefined}
+        >
+          {t('generalSettings.save')}
+        </Button>
       </div>
     </div>
   )

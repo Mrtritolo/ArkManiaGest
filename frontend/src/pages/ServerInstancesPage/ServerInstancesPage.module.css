@@ -1,0 +1,54 @@
+/* Page-only layout for the ARK instances page. Tokens only, @layer page. */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* machine · container · ports, and the same line on an orphan row */
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .drawerTitle {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--color-text-secondary);
+  }
+
+  .logSummary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    min-width: 0;
+  }
+
+  /* Lifecycle toolbar of an instance card: wraps instead of overflowing. */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+  }
+
+  .orphanRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: flex-start;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+  }
+
+  .orphanRow > :first-child {
+    flex: 1 1 18rem;
+    min-width: 0;
+  }
+}

@@ -1,0 +1,21 @@
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* The progress bar shares its row with the percentage readout. */
+  .meter {
+    flex: 1 1 var(--measure-empty);
+  }
+
+  /* The update log arrives as one plain blob, not as parsed .ui-log__line
+     rows, so it needs the horizontal padding and wrapping itself. */
+  .logTail {
+    padding-inline: var(--space-3);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* The install confirmation text carries its own paragraph break. */
+  .preLine {
+    white-space: pre-line;
+  }
+}

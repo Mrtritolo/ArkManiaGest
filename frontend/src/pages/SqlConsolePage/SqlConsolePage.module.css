@@ -1,0 +1,184 @@
+/*
+ * SqlConsolePage.module.css -- layout for the SQL console only (MASTER §2).
+ * Tokens only; the side column and the browser/history lists are the page's
+ * own composition, everything else is a primitive.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* ------------------------------------------------------------- editor */
+  .editor {
+    resize: vertical;
+    max-block-size: 60vh;
+  }
+
+  .editorActions {
+    margin-block-start: var(--space-3);
+  }
+
+  .summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    min-width: 0;
+  }
+  .summary[data-tone="success"] {
+    color: var(--color-success);
+  }
+  .summary[data-tone="danger"] {
+    color: var(--color-danger);
+  }
+
+  /* ------------------------------------------------------------ results */
+  .errorText {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .capNotice {
+    margin-block-end: var(--space-3);
+  }
+
+  .cell {
+    max-width: 38ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cell[data-null] {
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+
+  .dmlLine {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    margin: 0;
+    color: var(--color-success);
+  }
+
+  /* --------------------------------------------------------- side panel */
+  .aside {
+    min-width: 0;
+  }
+
+  .sidePanel {
+    max-block-size: 50vh;
+    overflow: auto;
+  }
+
+  .tableList,
+  .historyList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tableRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    border-radius: var(--radius-sm);
+  }
+  .tableRow[data-expanded] {
+    background: var(--color-surface-active);
+  }
+
+  .tableToggle,
+  .columnRow,
+  .historyEntry {
+    min-width: 0;
+    border: 0;
+    background: none;
+    color: var(--color-text-secondary);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .tableToggle {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-1-5);
+    min-height: max(var(--control-sm), var(--hit-min));
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+  }
+  .tableToggle:hover,
+  .columnRow:hover,
+  .historyEntry:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+  .tableToggle:focus-visible,
+  .columnRow:focus-visible,
+  .historyEntry:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .columnList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    padding-block-end: var(--space-1);
+    padding-inline-start: var(--space-5);
+  }
+
+  .columnRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    min-height: max(var(--control-sm), var(--hit-min));
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+  }
+
+  .keyMark {
+    flex-shrink: 0;
+    color: var(--color-text);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* ------------------------------------------------------------ history */
+  .historyEntry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    width: 100%;
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+  }
+
+  .historyQuery {
+    display: block;
+    max-width: 100%;
+    color: var(--color-text);
+  }
+
+  .historyMeta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    min-width: 0;
+    font-size: var(--text-xs);
+  }
+  .historyMeta[data-tone="success"] {
+    color: var(--color-success);
+  }
+  .historyMeta[data-tone="danger"] {
+    color: var(--color-danger);
+  }
+}

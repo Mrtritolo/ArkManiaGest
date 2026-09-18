@@ -5,11 +5,26 @@
  * connectivity at a glance.  Auto-refreshes every 30 seconds.
  */
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Database, Monitor, Users, Server, RefreshCw } from 'lucide-react'
+import { Database, LayoutDashboard, Monitor, Users, Server, RotateCw } from 'lucide-react'
 import { machinesApi, databaseApi, arkmaniaApi } from '../services/api'
 import type { AuthUser } from '../types'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  NotAvailable,
+  PageHeader,
+  Spinner,
+  StatTile,
+  Table,
+  TableMessageRow,
+  buttonClass,
+} from '../components/ui'
+import styles from './DashboardPage.module.css'
 
 interface OnlinePlayer {
   eos_id:     string
@@ -27,20 +42,12 @@ interface ServerStat {
   session_count:number
 }
 
-function formatDuration(mins: number | null): string {
-  if (mins == null) return '—'
-  if (mins < 1)  return '<1m'
-  if (mins < 60) return `${mins}m`
-  return `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}`
-}
-
 interface Props {
   currentUser?: AuthUser | null
 }
 
 export default function DashboardPage({ currentUser }: Props) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   // POST /settings/database/test-current is require_admin: for any other
   // role it can only answer 403, which read as "Database offline".
   const isAdmin = currentUser?.role === 'admin'
@@ -54,6 +61,17 @@ export default function DashboardPage({ currentUser }: Props) {
   const [totalOnline, setTotalOnline] = useState(0)
   const [serversOnline, setServersOnline] = useState(0)
   const [onlineFailed, setOnlineFailed] = useState(false)
+
+  /** '<1m' / '42m' / '3h' / '3h 20m', localised. */
+  function formatDuration(mins: number): string {
+    if (mins < 1) return t('dashboard.duration.lessThanMinute')
+    if (mins < 60) return t('dashboard.duration.minutes', { m: mins })
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0
+      ? t('dashboard.duration.hoursMinutes', { h, m })
+      : t('dashboard.duration.hours', { h })
+  }
 
   async function loadAll(silent = false): Promise<void> {
     if (!silent) setLoading(true)
@@ -107,161 +125,121 @@ export default function DashboardPage({ currentUser }: Props) {
     }
   }, [isAdmin])
 
-
-  const statCards = [
-    { label: t('dashboard.stat.onlinePlayers'), value: onlineFailed ? '—' : totalOnline,                          icon: Users,   color: 'var(--accent)',         nav: '/online' },
-    { label: t('dashboard.stat.serversOnline'), value: onlineFailed ? '—' : `${serversOnline}/${servers.length}`, icon: Server,  color: 'var(--success)',        nav: '/serverforge' },
-    { label: t('dashboard.stat.sshMachines'),   value: `${machineCount.online}/${machineCount.total}`, icon: Monitor, color: 'var(--text-secondary)', nav: '/settings/machines' },
-    {
-      label: t('dashboard.stat.database'),
-      value: dbOk === null ? '—' : dbOk ? t('dashboard.stat.dbOk') : t('dashboard.stat.dbOffline'),
-      icon: Database,
-      color: dbOk === null ? 'var(--text-muted)' : dbOk ? 'var(--success)' : 'var(--danger)',
-      // /settings/db is registered for admins only in App.tsx.
-      nav: isAdmin ? '/settings/db' : null,
-      title: isAdmin ? undefined : t('dashboard.stat.dbAdminOnly'),
-    },
-  ]
+  const dbValue = dbOk === null
+    ? <NotAvailable />
+    : dbOk ? t('dashboard.stat.dbOk') : t('dashboard.stat.dbOffline')
 
   return (
-    <div className="page-container">
-      {/* Hero */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '1rem',
-        padding: '1rem 1.25rem', marginBottom: '1.25rem',
-        // Banner con testo bianco sopra: resta scuro in entrambi i temi,
-        // quindi i colori sono letterali per scelta e non token.
-        background: 'linear-gradient(135deg, #16210f 0%, #2c3d1c 50%, #16210f 100%)',
-        borderRadius: 'var(--radius-lg)', border: '1px solid rgba(143,206,90,0.18)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: -40, right: -40, width: 160, height: 160,
-          background: 'radial-gradient(circle, rgba(143,206,90,0.16) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        }} />
-        <img
-          src="/logo.png" alt="ArkMania"
-          style={{ width: 56, height: 56, objectFit: 'contain', flexShrink: 0,
-                   filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))' }}
-        />
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff',
-                       letterSpacing: '-0.02em', lineHeight: 1.2, margin: 0 }}>
-            ArkMania<span style={{ color: '#b6e084', fontWeight: 600 }}>Gest</span>
-          </h1>
-          <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.55)', margin: '0.15rem 0 0' }}>
-            {t('dashboard.subtitle')}
-          </p>
-        </div>
-        <button
-          onClick={() => loadAll(true)} disabled={refreshing}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.35rem',
-            padding: '0.4rem 0.75rem',
-            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: 6, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '0.78rem',
-          }}
-        >
-          <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-          {t('common.refresh')}
-        </button>
-      </div>
-
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.65rem', marginBottom: '1.25rem' }}>
-        {statCards.map(s => (
-          <div
-            key={s.label}
-            onClick={s.nav ? () => navigate(s.nav!) : undefined}
-            title={s.title}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.7rem',
-              padding: '0.75rem 1rem',
-              background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', cursor: s.nav ? 'pointer' : 'default',
-            }}
+    <div className="l-page">
+      <PageHeader
+        title={t('nav.dashboard')}
+        icon={LayoutDashboard}
+        description={t('dashboard.subtitle')}
+        actions={
+          <Button
+            icon={RotateCw}
+            onClick={() => loadAll(true)}
+            loading={refreshing}
+            loadingLabel={t('common.loading')}
           >
-            <div style={{
-              width: 38, height: 38, borderRadius: 4, flexShrink: 0,
-              background: `color-mix(in srgb, ${s.color} 12%, transparent)`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <s.icon size={18} color={s.color} />
-            </div>
-            <div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>
-                {loading ? '…' : s.value}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{s.label}</div>
-            </div>
-          </div>
-        ))}
+            {t('common.refresh')}
+          </Button>
+        }
+      />
+
+      <div className="l-grid--stats">
+        <StatTile
+          label={t('dashboard.stat.onlinePlayers')}
+          icon={Users}
+          value={onlineFailed ? <NotAvailable /> : totalOnline}
+          meta={onlineFailed ? t('dashboard.card.loadFailed') : undefined}
+          metaTone={onlineFailed ? 'danger' : undefined}
+          loading={loading}
+          href="/online"
+        />
+        <StatTile
+          label={t('dashboard.stat.serversOnline')}
+          icon={Server}
+          value={onlineFailed ? <NotAvailable /> : serversOnline}
+          unit={onlineFailed ? undefined : `/ ${servers.length}`}
+          meta={onlineFailed ? t('dashboard.card.loadFailed') : undefined}
+          metaTone={onlineFailed ? 'danger' : undefined}
+          loading={loading}
+          href="/serverforge"
+        />
+        <StatTile
+          label={t('dashboard.stat.sshMachines')}
+          icon={Monitor}
+          value={machineCount.online}
+          unit={`/ ${machineCount.total}`}
+          loading={loading}
+          href="/settings/machines"
+        />
+        <StatTile
+          label={t('dashboard.stat.database')}
+          icon={Database}
+          value={dbValue}
+          meta={
+            dbOk === null
+              ? t('dashboard.stat.dbAdminOnly')
+              : dbOk === false ? t('dashboard.stat.dbOfflineHint') : undefined
+          }
+          metaTone={dbOk === false ? 'danger' : undefined}
+          loading={loading}
+          // /settings/db is registered for admins only in App.tsx.
+          href={isAdmin ? '/settings/db' : undefined}
+        />
       </div>
 
-      {/* The right-hand "Server status" box has been removed -- it was
-          showing inconsistent server count / name / status data that
-          duplicated what the Servers / ServerForge pages already cover.
-          The Online Players card now spans the full width. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
-
-        {/* Online players */}
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '0.65rem 1rem', borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-card-muted)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Users size={16} color="var(--accent)" />
-              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{t('dashboard.card.onlinePlayers')}</span>
-              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)' }}>{totalOnline}</span>
-            </div>
-            <button onClick={() => navigate('/online')} className="btn btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}>
-              {t('dashboard.card.viewAll')}
-            </button>
-          </div>
-          <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+      <Card
+        title={t('dashboard.card.onlinePlayers')}
+        icon={Users}
+        flush
+        actions={
+          <>
+            <span className="ui-count">{totalOnline}</span>
+            {refreshing && <Spinner />}
+            <Link to="/online" className={buttonClass({ variant: 'ghost', size: 'sm' })}>
+              {t('common.showAll')}
+            </Link>
+          </>
+        }
+      >
+        <Table label={t('dashboard.card.onlinePlayers')} minWidth={420} maxHeight="26rem">
+          <thead>
+            <tr>
+              <th scope="col">{t('dashboard.card.colPlayer')}</th>
+              <th scope="col">{t('dashboard.card.colServer')}</th>
+              <th scope="col" className="u-text-end">{t('dashboard.card.colDuration')}</th>
+            </tr>
+          </thead>
+          <tbody>
             {loading ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                {t('common.loading')}
-              </div>
+              <TableMessageRow colSpan={3}>
+                <Spinner block label={t('common.loading')} />
+              </TableMessageRow>
             ) : onlineFailed ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)', fontSize: '0.85rem' }}>
-                {t('dashboard.card.loadFailed')}
-              </div>
+              <TableMessageRow colSpan={3}>
+                <div className={styles.messagePad}>
+                  <Alert tone="danger">{t('dashboard.card.loadFailed')}</Alert>
+                </div>
+              </TableMessageRow>
             ) : players.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                <Users size={32} style={{ opacity: 0.15, display: 'block', margin: '0 auto 0.5rem' }} />
-                {t('dashboard.card.noPlayers')}
-              </div>
-            ) : players.map((p) => (
-              <div key={p.eos_id} style={{
-                display: 'flex', alignItems: 'center', gap: '0.6rem',
-                padding: '0.45rem 1rem', borderBottom: '1px solid var(--border)',
-              }}>
-                <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                              background: 'var(--success)', boxShadow: '0 0 4px rgba(34,197,94,0.5)' }} />
-                <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)',
-                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {p.player_name || t('dashboard.card.unknown')}
-                </span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 600,
-                               background: 'var(--accent-glow)', padding: '0.1rem 0.45rem',
-                               borderRadius: 4, flexShrink: 0 }}>
-                  {p.server_name}
-                </span>
-                <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
-                               flexShrink: 0, minWidth: 42, textAlign: 'right' }}>
-                  {formatDuration(p.duration_min)}
-                </span>
-              </div>
+              <TableMessageRow colSpan={3}>
+                <EmptyState icon={Users} title={t('dashboard.card.noPlayers')} />
+              </TableMessageRow>
+            ) : players.map(p => (
+              <tr key={p.eos_id}>
+                <td>{p.player_name || t('dashboard.card.unknown')}</td>
+                <td><Badge>{p.server_name}</Badge></td>
+                <td className="u-text-end u-num u-mono">
+                  {p.duration_min == null ? <NotAvailable /> : formatDuration(p.duration_min)}
+                </td>
+              </tr>
             ))}
-          </div>
-        </div>
-
-      </div>
+          </tbody>
+        </Table>
+      </Card>
     </div>
   )
 }

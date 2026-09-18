@@ -1,0 +1,52 @@
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  .brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    text-align: center;
+  }
+
+  .logo {
+    width: var(--avatar-lg);
+    height: var(--avatar-lg);
+    object-fit: contain;
+  }
+
+  .block {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* "or" separator between the credential form and the Discord button. */
+  .separator {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .separator::before,
+  .separator::after {
+    content: "";
+    flex: 1 1 0;
+    height: 1px;
+    background: var(--color-border);
+  }
+
+  /* The Discord mark rides inside the button label (it is not a Lucide
+     icon, so it cannot go through the Button icon slot). */
+  .withIcon {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+  }
+
+  .footerLink {
+    text-align: center;
+    font-size: var(--text-sm);
+  }
+}

@@ -50,6 +50,18 @@
       "main": "Principale",
       "plugins": "Plugin",
       "settings": "Impostazioni"
+    },
+    "brand": "ArkManiaGest",
+    "brandSub": "Ark: Survival Ascended",
+    "menu": "Menu",
+    "mainNav": "Navigazione principale",
+    "openMenu": "Apri il menu di navigazione",
+    "closeMenu": "Chiudi il menu di navigazione",
+    "version": "v {{version}}",
+    "role": {
+      "admin": "Admin",
+      "operator": "Operatore",
+      "viewer": "Viewer"
     }
   },
   "auth": {
@@ -86,6 +98,17 @@
       "displayName": "es. Alessio",
       "password": "Password di accesso…",
       "passwordConfirm": "Ripeti la password…"
+    },
+    "field": {
+      "password": "Password"
+    },
+    "hint": {
+      "password": "Almeno 12 caratteri, con lettere e numeri."
+    },
+    "error": {
+      "username": "Inserisci un nome utente di almeno 2 caratteri.",
+      "displayName": "Inserisci un nome visualizzato.",
+      "password": "Usa almeno 12 caratteri, con lettere e numeri."
     }
   },
   "privacy": {
@@ -124,7 +147,12 @@
         "title": "6. Cookie e archiviazione locale",
         "body": "Il pannello usa solo cookie strettamente necessari: \"disc_oauth_state\" (10 minuti, protegge l'accesso Discord da attacchi CSRF) e \"disc_session\" (24 ore, mantiene la sessione). Entrambi sono HttpOnly, Secure e SameSite=Lax.\n\nIl browser memorizza inoltre le preferenze d'interfaccia (tema, lingua) in localStorage e il token di sessione admin in sessionStorage (cancellato alla chiusura della scheda). Non sono usati cookie di tracciamento, pubblicità o analytics, quindi non è richiesto alcun banner di consenso ai sensi della normativa ePrivacy."
       }
-    }
+    },
+    "deleteTitle": "Eliminare il tuo account?",
+    "deleteWord": "ELIMINA",
+    "deleting": "Eliminazione…",
+    "exporting": "Esportazione…",
+    "exportDone": "I tuoi dati sono stati scaricati."
   },
   "dashboard": {
     "subtitle": "Pannello gestione cluster · Ark: Survival Ascended",
@@ -135,14 +163,18 @@
       "database": "Database",
       "dbOk": "OK",
       "dbOffline": "Offline",
-      "dbAdminOnly": "Lo stato del database è disponibile solo per gli amministratori."
+      "dbAdminOnly": "Lo stato del database è disponibile solo per gli amministratori.",
+      "dbOfflineHint": "Il pannello non riesce a contattare il database."
     },
     "card": {
       "onlinePlayers": "Giocatori online",
       "viewAll": "Vedi tutti →",
       "noPlayers": "Nessun giocatore connesso",
       "unknown": "Sconosciuto",
-      "loadFailed": "Impossibile caricare i giocatori online."
+      "loadFailed": "Impossibile caricare i giocatori online.",
+      "colPlayer": "Giocatore",
+      "colServer": "Server",
+      "colDuration": "Online da"
     },
     "errors": {
       "load": "Caricamento della dashboard fallito."
@@ -167,7 +199,10 @@
       "noTribe": "Senza tribù",
       "lastSeen": "ultimo accesso {{r}}",
       "timedShort": "Permessi a tempo",
-      "expires": "scade {{r}}"
+      "expires": "scade {{r}}",
+      "tribeLabel": "Tribù",
+      "presenceLabel": "Presenza",
+      "groupsLabel": "Gruppi"
     },
     "shop": {
       "title": "ArkShop",
@@ -178,7 +213,10 @@
     "leaderboard": {
       "title": "Classifica",
       "empty": "Nessun punto in classifica ancora.",
-      "rankLine": "#{{rank}} su {{total}} ({{type}})"
+      "rankLine": "#{{rank}} su {{total}} ({{type}})",
+      "points": "{{n}} pt",
+      "percentile": "Top {{n}}%",
+      "percentileLabel": "Posizione in classifica"
     },
     "lb": {
       "killWild": "Kill wild",
@@ -215,7 +253,14 @@
       "title": "Rare dino (30g)",
       "kills": "Kill",
       "tames": "Tame",
-      "empty": "Nessun rare dino interagito di recente."
+      "empty": "Nessun rare dino interagito di recente.",
+      "level": "(lv {{n}})",
+      "unknownDino": "Creatura sconosciuta",
+      "recentLabel": "Eventi recenti sui dino rari",
+      "event": {
+        "KILLED": "Uccisione",
+        "TAMED": "Addomesticato"
+      }
     },
     "homes": {
       "title": "Home salvate",
@@ -227,7 +272,9 @@
       "gps": "Lat {{lat}} · Lon {{lon}}",
       "rawUnits": "X {{x}} · Y {{y}} (unità di gioco)",
       "savedOn": "salvata {{v}}",
-      "noCalibration": "Mappa non calibrata: coordinate in unità di gioco, non GPS."
+      "noCalibration": "Mappa non calibrata: coordinate in unità di gioco, non GPS.",
+      "deleteTitle": "Eliminare \"{{n}}\"?",
+      "deleteNamed": "Elimina il punto casa {{n}}"
     },
     "tools": {
       "title": "Strumenti personaggio",
@@ -250,11 +297,21 @@
         "rejected": "rifiutata",
         "expired": "scaduta",
         "superseded": "sostituita"
-      }
+      },
+      "kickTitle": "Disconnettere il personaggio?",
+      "sending": "Invio…",
+      "requestsLabel": "Richieste recenti"
     },
     "activity": {
       "title": "Attività recente",
-      "empty": "Nessuna attività recente."
+      "empty": "Nessuna attività recente.",
+      "points": "+{{n}}"
+    },
+    "duration": {
+      "lessThanMinute": "<1m",
+      "minutes": "{{m}}m",
+      "hours": "{{h}}h",
+      "hoursMinutes": "{{h}}h {{m}}m"
     }
   },
   "machines": {
@@ -339,7 +396,8 @@
     "errors": {
       "load": "Impossibile caricare le macchine",
       "save": "Errore durante il salvataggio",
-      "delete": "Errore durante l'eliminazione"
+      "delete": "Errore durante l'eliminazione",
+      "test": "Il test di connessione è fallito."
     },
     "messages": {
       "created": "Macchina \"{{name}}\" creata",
@@ -374,7 +432,13 @@
         "passwordRequired": "Inserisci la password SSH per importare",
         "generic": "Errore durante l'importazione"
       },
-      "containersCount": "{{count}} container"
+      "containersCount": "{{count}} container",
+      "fallbackName": "SF-Machine-{{id}}",
+      "meta": {
+        "ip": "IP: {{value}}",
+        "ssh": "Porta SSH: {{value}}",
+        "os": "SO: {{value}}"
+      }
     },
     "runtime": {
       "pok": "POK-manager + Docker (Proton)",
@@ -387,7 +451,14 @@
       "syncthing": "Syncthing",
       "smb": "Condivisione SMB (copia unica autoritativa)"
     },
-    "clusterSyncHint": "Come la directory cluster di questo host resta allineata alle altre. Il pannello non la replica, segnala solo quando gli host smettono di concordare."
+    "clusterSyncHint": "Come la directory cluster di questo host resta allineata alle altre. Il pannello non la replica, segnala solo quando gli host smettono di concordare.",
+    "deleteTitle": "Eliminare la macchina {{name}}?",
+    "deleteConfirm": "Elimina macchina",
+    "osLong": {
+      "wsl": "Windows + WSL ({{distro}})"
+    },
+    "testResponseTime": "({{ms}} ms)",
+    "toggleDetails": "Dettagli di {{name}}"
   },
   "validation": {
     "required": "Obbligatorio",
@@ -425,20 +496,27 @@
       "active": "Attivo",
       "disabled": "Disattivato",
       "enable": "Abilita",
-      "disable": "Disabilita"
+      "disable": "Disabilita",
+      "enableName": "Abilita {{username}}",
+      "disableName": "Disabilita {{username}}"
     },
     "column": {
       "user": "Utente",
       "role": "Ruolo",
       "status": "Stato",
       "lastLogin": "Ultimo accesso",
-      "created": "Creato"
+      "created": "Creato",
+      "actions": "Azioni"
     },
     "action": {
       "save": "Salva",
       "create": "Crea",
       "edit": "Modifica",
-      "delete": "Elimina"
+      "delete": "Elimina",
+      "saving": "Salvataggio…",
+      "deleteUser": "Elimina utente",
+      "editName": "Modifica {{username}}",
+      "deleteName": "Elimina {{username}}"
     },
     "lastLoginNever": "Mai",
     "loading": "Caricamento…",
@@ -456,8 +534,13 @@
       "load": "Impossibile caricare gli utenti",
       "save": "Salvataggio fallito",
       "update": "Aggiornamento fallito",
-      "delete": "Eliminazione fallita"
-    }
+      "delete": "Eliminazione fallita",
+      "usernameRequired": "Inserisci un nome utente.",
+      "passwordRequired": "Inserisci una password."
+    },
+    "list": "Account",
+    "empty": "Nessun utente",
+    "confirmDeleteBody": "L'account viene rimosso definitivamente. Le voci del registro audit restano."
   },
   "generalSettings": {
     "title": "Impostazioni generali",
@@ -522,7 +605,13 @@
         "running": "Applicazione aggiornamento",
         "success": "Aggiornamento installato",
         "failed": "Aggiornamento fallito"
-      }
+      },
+      "confirmTitle": "Installare la versione {{version}}?",
+      "installFailed": "Impossibile avviare l'aggiornamento.",
+      "checkFailed": "Impossibile verificare gli aggiornamenti.",
+      "logLabel": "Log dell'aggiornamento",
+      "progressLabel": "Avanzamento dell'aggiornamento",
+      "progressValue": "{{pct}} %"
     },
     "loadFailed": "Caricamento impostazioni fallito"
   },
@@ -578,7 +667,14 @@
     "pagination": {
       "page": "Pagina <strong>{{page}}</strong> di <strong>{{total}}</strong>",
       "resultsCount": "({{count}} risultati)"
-    }
+    },
+    "listTitle": "Eventi",
+    "filtersTitle": "Filtri",
+    "loadFailed": "Impossibile caricare il log eventi.",
+    "purgeFailed": "Impossibile eliminare gli eventi.",
+    "purgeTitleAll": "Eliminare tutti gli eventi?",
+    "purgeTitleOlder": "Eliminare gli eventi più vecchi di {{days}} giorni?",
+    "purgeConfirmWord": "DELETE"
   },
   "onlinePlayers": {
     "heading": "Giocatori online",
@@ -598,7 +694,12 @@
       "map": "Mappa",
       "duration": "Durata",
       "connectedAt": "Connesso alle"
-    }
+    },
+    "emptyAfterError": "L'ultimo aggiornamento non è riuscito: l'elenco potrebbe non essere aggiornato.",
+    "listTitle": "Giocatori connessi",
+    "loadFailed": "Impossibile caricare i giocatori online",
+    "refreshing": "Aggiornamento…",
+    "serversOnline": "{{count}} server online"
   },
   "bans": {
     "heading": "Ban Manager",
@@ -656,9 +757,23 @@
       "cancel": "Annulla",
       "submit": "Banna giocatore",
       "submitting": "Creazione…",
-      "expireInvalid": "Un ban temporaneo richiede una data di scadenza futura."
+      "expireInvalid": "Un ban temporaneo richiede una data di scadenza futura.",
+      "eosRequired": "Inserisci l'EOS ID del giocatore."
     },
-    "defaultReason": "Nessun motivo"
+    "defaultReason": "Nessun motivo",
+    "activeBadge": "Attivo",
+    "confirmUnbanTitle": "Revocare il ban?",
+    "createDone": "{{name}} bannato.",
+    "createFailed": "Impossibile creare il ban.",
+    "detailsFor": "Dettagli di {{name}}",
+    "listTitle": "Ban",
+    "loadFailed": "Impossibile caricare i ban",
+    "scopeLabel": "Ambito dei ban",
+    "searchLabel": "Cerca nei ban",
+    "shownCount": "{{count}} mostrati",
+    "unbanDone": "Ban di {{name}} revocato.",
+    "unbanFailed": "Impossibile revocare il ban.",
+    "unbanName": "Revoca il ban di {{name}}"
   },
   "decay": {
     "adminOnly": "Le azioni sul gioco (purge, comandi per mappa, scadenze, distruzione di un singolo oggetto) richiedono un account amministratore. La consultazione e la coda di purge restano aperte a tutti gli operatori.",
@@ -680,13 +795,18 @@
       "expiring": "In scadenza",
       "safe": "Sicure",
       "pending": "Pending",
-      "purged7d": "Purge 7gg"
+      "purged7d": "Purge 7gg",
+      "meta": {
+        "danger": "{{count}} già scadute",
+        "warning": "{{count}} in scadenza"
+      }
     },
     "filter": {
       "all": "Tutte",
       "expired": "Scadute",
       "expiring": "In scadenza",
-      "safe": "Sicure"
+      "safe": "Sicure",
+      "label": "Filtro stato"
     },
     "searchPlaceholder": "Cerca tribù…",
     "searchButton": "Cerca",
@@ -749,7 +869,8 @@
         "lastLogin": "Ultimo login"
       },
       "never": "mai",
-      "daysAgo": "{{d}}g fa"
+      "daysAgo": "{{d}}g fa",
+      "heavyStructures": "{{count}} strutture"
     },
     "log": {
       "table": {
@@ -776,7 +897,13 @@
       "showLabel": "Mostra",
       "visibleCount": "{{shown}} di {{total}} visibili",
       "scanHere": "Scansiona ora",
-      "scanHereTitle": "Esegue lo scan del decay su {{server}} e ricarica questo dettaglio"
+      "scanHereTitle": "Esegue lo scan del decay su {{server}} e ricarica questo dettaglio",
+      "destroyOneTitle": "Distruggere questo oggetto?",
+      "destroyOneAction": "Distruggi l'oggetto",
+      "destroyOneLabel": "Distruggi {{what}} su {{server}}",
+      "copyTpLabel": "Copia il comando di teletrasporto per {{what}}",
+      "emptyHint": "Lo snapshot esiste solo dopo una scansione di questa mappa.",
+      "allHidden": "Tutti i tipi sono nascosti"
     },
     "cmd": {
       "pickServer": "Scegli un server...",
@@ -796,8 +923,33 @@
       "dinosTitle": "Distruggi tutti i dino di questa tribu' sulla mappa selezionata",
       "confirmDinos": "Distruggere TUTTI i dino della tribu' {{team}} su {{server}}?",
       "noTarget": "Nessun server risolto per questa mappa: scegline uno nella barra in alto.",
-      "rconFailed": "Comando RCON fallito, nessuna risposta dal server."
-    }
+      "rconFailed": "Comando RCON fallito, nessuna risposta dal server.",
+      "title": "Comandi per mappa",
+      "replyTitle": "Risposta del plugin",
+      "purgeMapAction": "Purga questa mappa",
+      "unclaimedAction": "Distruggi i dino non reclamati",
+      "structsAction": "Distruggi le strutture",
+      "structsRowTitle": "Distruggi le strutture di questa tribù su {{server}}",
+      "dinosAction": "Distruggi i dino",
+      "dinosRowTitle": "Distruggi i dino di questa tribù su {{server}}",
+      "grantRowTitle": "Concedi altri giorni su {{server}}",
+      "grantSubtitle": "Tribù #{{id}} su {{server}}",
+      "grantAction": "Concedi i giorni",
+      "granting": "Concessione in corso...",
+      "grantHint": "Da 0 a {{max}} giorni.",
+      "grantRange": "Inserisci un numero intero di giorni tra 0 e {{max}}.",
+      "onServer": "Server bersaglio: {{server}}."
+    },
+    "loadFailed": "Impossibile caricare i dati del decay.",
+    "tabsLabel": "Viste decay",
+    "scheduleAction": "Programma la purge",
+    "scheduleTribeTitle": "Programma la purge della tribù #{{id}} ({{name}})",
+    "purgeNowAction": "Purga la tribù adesso",
+    "purgeTribeTitle": "Purga adesso la tribù #{{id}} ({{name}})",
+    "runPurgeAction": "Esegui la purge",
+    "purgeConfirmWord": "PURGE",
+    "cancelAction": "Annulla la purge",
+    "cancelRowTitle": "Annulla la purge pending della tribù #{{id}} su {{server}}"
   },
   "leaderboard": {
     "heading": "Classifica",
@@ -828,7 +980,8 @@
       "deaths": "Morti"
     },
     "filter": {
-      "allServers": "Tutti"
+      "allServers": "Tutti",
+      "scopeLabel": "Tipo di server"
     },
     "tabs": {
       "ranking": "Classifica",
@@ -849,7 +1002,8 @@
       "crafts": "Craft",
       "destroyed": "Distrutti",
       "deaths": "Morti",
-      "last": "Ultimo"
+      "last": "Ultimo",
+      "rank": "Pos."
     },
     "events": {
       "typeLabel": "Tipo:",
@@ -868,7 +1022,11 @@
       "killDino": "Kill dino nemico",
       "structDestroyed": "Struttura distrutta",
       "death": "Morte"
-    }
+    },
+    "loadFailed": "Impossibile caricare la classifica.",
+    "tabsLabel": "Viste classifica",
+    "clearTitle": "Svuotare la classifica {{type}}?",
+    "clearAction": "Svuota la classifica {{type}}"
   },
   "rareDinos": {
     "heading": "Dino rari",
@@ -908,17 +1066,26 @@
       "replaceAll": "Sostituisci tutti",
       "confirmReplace": "Questo ELIMINERÀ tutti i dino esistenti e li sostituirà con questi. Continuare?",
       "errorGeneration": "Generazione fallita",
-      "errorBulkInsert": "Inserimento di massa fallito"
+      "errorBulkInsert": "Inserimento di massa fallito",
+      "previewTitle": "Anteprima",
+      "emptyPreview": "Nessun risultato generato",
+      "applying": "Applicazione in corso...",
+      "addedDone": "{{count}} dino aggiunti al pool.",
+      "replacedDone": "Pool sostituito con {{count}} dino.",
+      "replaceAction": "Sostituisci il pool",
+      "replaceWord": "REPLACE"
     },
     "searchPlaceholder": "Cerca dino…",
     "filterMap": {
       "all": "Tutte le mappe",
-      "global": "Globale (*)"
+      "global": "Globale (*)",
+      "label": "Filtro mappa"
     },
     "filterEnabled": {
       "all": "Tutti",
       "on": "Attivi",
-      "off": "Disattivi"
+      "off": "Disattivi",
+      "label": "Filtro stato"
     },
     "resultsCount": "{{count}} risultati",
     "loading": "Caricamento…",
@@ -933,7 +1100,11 @@
     "tooltip": {
       "edit": "Modifica",
       "copyBp": "Copia BP",
-      "delete": "Elimina"
+      "delete": "Elimina",
+      "toggle": "Fai comparire {{name}}",
+      "editName": "Modifica {{name}}",
+      "copyBpName": "Copia il blueprint di {{name}}",
+      "deleteName": "Rimuovi {{name}} dal pool"
     },
     "confirmDelete": "Eliminare \"{{name}}\" dal pool?",
     "errorBpRequired": "Blueprint obbligatorio",
@@ -955,7 +1126,11 @@
       "maxLabel": "Max",
       "cancel": "Annulla",
       "save": "Salva modifiche",
-      "add": "Aggiungi al pool"
+      "add": "Aggiungi al pool",
+      "saving": "Salvataggio...",
+      "enabledLabel": "Fai comparire questo dino",
+      "errorMinMax": "Il minimo non può superare il massimo.",
+      "statsHint": "Una statistica disattivata lascia il tiro del gioco."
     },
     "stats": {
       "health": "Salute",
@@ -966,7 +1141,31 @@
       "melee": "Mischia",
       "speed": "Velocità"
     },
-    "operatorOnly": "Modificare il pool dei dino rari richiede un account operatore o amministratore."
+    "operatorOnly": "Modificare il pool dei dino rari richiede un account operatore o amministratore.",
+    "loadFailed": "Impossibile caricare il pool dei dino rari.",
+    "listTitle": "Pool",
+    "confirmDeleteTitle": "Rimuovere questo dino?",
+    "confirmDeleteAction": "Rimuovi dal pool",
+    "deletedDone": "{{name}} rimosso dal pool.",
+    "deleteFailed": "Impossibile rimuovere il dino.",
+    "toggleFailed": "Impossibile cambiare lo stato di {{name}}.",
+    "clearSpawnsAction": "Svuota il log eventi",
+    "saveFailed": "Impossibile salvare il dino.",
+    "savedNew": "Dino aggiunto al pool.",
+    "savedEdit": "{{name}} salvato.",
+    "maps": {
+      "TheIsland_WP": "The Island",
+      "TheCenter_WP": "The Center",
+      "ScorchedEarth_WP": "Scorched Earth",
+      "Aberration_WP": "Aberration",
+      "Extinction_WP": "Extinction",
+      "Ragnarok_WP": "Ragnarok",
+      "Valguero_WP": "Valguero",
+      "Astraeos_WP": "Astraeos",
+      "LostCity_WP": "Lost City",
+      "LostColony_WP": "Lost Colony",
+      "Genesis_WP": "Genesis 1"
+    }
   },
   "transferRules": {
     "heading": "Regole transfer",
@@ -1005,7 +1204,12 @@
       "selectPlaceholder": "Seleziona…",
       "notesPlaceholder": "Note opzionali…",
       "create": "Crea",
-      "cancel": "Annulla"
+      "cancel": "Annulla",
+      "notesLabel": "Nota",
+      "creating": "Creazione in corso...",
+      "createFailed": "Impossibile creare la regola.",
+      "errorSameServer": "Scegli una destinazione diversa dall'origine.",
+      "errorRequired": "Scegli un server."
     },
     "loading": "Caricamento…",
     "empty": {
@@ -1016,15 +1220,24 @@
       "source": "Sorgente",
       "dest": "Destinazione",
       "level": "Livello",
-      "notes": "Note"
+      "notes": "Note",
+      "actions": "Azioni"
     },
     "notesPlaceholder": "Note…",
     "tooltip": {
       "save": "Salva",
       "cancel": "Annulla",
       "edit": "Modifica",
-      "delete": "Elimina"
-    }
+      "delete": "Elimina",
+      "editPair": "Modifica la regola da {{source}} a {{dest}}",
+      "deletePair": "Elimina la regola da {{source}} a {{dest}}"
+    },
+    "loadFailed": "Impossibile caricare le regole di trasferimento.",
+    "listTitle": "Regole",
+    "confirmDeletePair": "I trasferimenti da {{source}} a {{dest}} tornano al comportamento predefinito.",
+    "confirmDeleteAction": "Elimina la regola",
+    "deleteFailed": "Impossibile eliminare la regola.",
+    "updateFailed": "Impossibile salvare la regola."
   },
   "players": {
     "heading": "Giocatori",
@@ -1049,16 +1262,19 @@
         "server": "Server",
         "map": "Mappa",
         "host": "Host",
-        "profiles": "Profili"
+        "profiles": "Profili",
+        "action": "Sincronizza"
       },
-      "empty": "Nessun container con SavedArks trovato. Esegui prima una scansione dalla pagina Container."
+      "empty": "Nessun container con SavedArks trovato. Esegui prima una scansione dalla pagina Container.",
+      "syncOne": "Sincronizza i nomi da {{container}}"
     },
     "syncResult": {
       "scanned": "Scansionati {{count}} profili",
       "matched": "{{count}} match",
       "updated": "{{count}} aggiornati",
       "errors": "{{count}} errori",
-      "noMatch": "{{count}} senza match"
+      "noMatch": "{{count}} senza match",
+      "title": "Sincronizzazione nomi completata"
     },
     "stats": {
       "players": "Giocatori",
@@ -1094,7 +1310,10 @@
     "detail": {
       "spentLabel": "Spesi:",
       "banTooltip": "Banna giocatore",
-      "wipeTooltip": "Elimina personaggio cluster-wide (.arkprofile)"
+      "wipeTooltip": "Elimina personaggio cluster-wide (.arkprofile)",
+      "closeTooltip": "Chiudi il pannello del giocatore",
+      "copyEos": "Copia l'EOS ID",
+      "loadingTitle": "Giocatore"
     },
     "ban": {
       "sectionTitle": "Banna giocatore",
@@ -1115,7 +1334,8 @@
     },
     "points": {
       "sectionTitle": "Punti Shop",
-      "setButton": "Imposta"
+      "setButton": "Imposta",
+      "inputLabel": "Nuovo saldo"
     },
     "perms": {
       "sectionTitle": "Permessi Fissi",
@@ -1127,7 +1347,14 @@
       "expired": "Scaduto",
       "flagLabel": "Flag",
       "expiresLabel": "Scadenza",
-      "readOnlyRole": "La modifica dei permessi richiede un account operatore o amministratore."
+      "readOnlyRole": "La modifica dei permessi richiede un account operatore o amministratore.",
+      "addTimed": "Aggiungi il permesso temporaneo {{group}}",
+      "extend7d": "+7g",
+      "extend1m": "+1m",
+      "extend3m": "+3m",
+      "extend12m": "+12m",
+      "extendTitle": "Estendi {{group}} di {{amount}}",
+      "removeTimed": "Rimuovi il permesso temporaneo {{group}}"
     },
     "bulkAlign": {
       "headerButton": "Allinea ({{count}})",
@@ -1138,15 +1365,23 @@
       "familyLabel": "Famiglia di gruppi correlati",
       "addPlaceholder": "Aggiungi nome gruppo custom…",
       "addHint": "Premi Invio",
-      "semanticsHint": "Regole per ogni giocatore:\n  • Trova la scadenza più alta tra le entry attive della famiglia.\n  • Porta ogni altra entry attiva della famiglia a quella data.\n  • Le entry SCADUTE NON vengono mai toccate.\n  • Giocatori con 0 o 1 entry attive nella famiglia vengono saltati.",
       "cancel": "Annulla",
       "apply": "Allinea {{count}} giocatori",
       "applying": "Allineamento…",
-      "confirm": "Allineare le scadenze dei permessi temporanei per {{count}} giocatori sulla famiglia [{{groups}}]?\n\nPer ogni giocatore portiamo tutte le entry ATTIVE della famiglia alla data attiva più alta presente. Le entry scadute NON vengono toccate.",
       "done": "Allineamento completato: {{aligned}} giocatori aggiornati ({{entries}} entry), {{skipped}} saltati, {{missing}} non trovati.",
       "failed": "Allineamento fallito.",
       "errorNoneSelected": "Nessun giocatore selezionato.",
-      "errorTooFewGroups": "Scegli almeno 2 gruppi da allineare."
+      "errorTooFewGroups": "Scegli almeno 2 gruppi da allineare.",
+      "addButton": "Aggiungi",
+      "addLabel": "Aggiungi un gruppo",
+      "noFamilyOptions": "Nessun gruppo temporaneo tra i giocatori caricati. Aggiungine uno per nome.",
+      "rules": {
+        "title": "Regole per ogni giocatore",
+        "latest": "Trova la scadenza più alta tra le entry attive della famiglia.",
+        "bump": "Porta ogni altra entry attiva della famiglia a quella data.",
+        "expired": "Le entry SCADUTE NON vengono mai toccate.",
+        "skipped": "I giocatori con 0 o 1 entry attive nella famiglia vengono saltati."
+      }
     },
     "filterPopup": {
       "tabActive": "Attivi",
@@ -1159,8 +1394,10 @@
       "selectAll": "(Seleziona tutto)",
       "clear": "Azzera",
       "noMatches": "Nessun risultato.",
-      "filterAria": "Filtra {{col}}",
-      "filterActiveAria": "Filtro attivo ({{col}})"
+      "filtersLabel": "Filtra per",
+      "panelLabel": "Filtro {{col}}",
+      "timedScope": "Permessi temporanei da filtrare",
+      "triggerActive": "{{col}} ({{count}})"
     },
     "bulkPerm": {
       "headerButton": "Assegna massivo ({{count}})",
@@ -1179,15 +1416,12 @@
       "applying": "Applicazione…",
       "selectAllAria": "Seleziona / deseleziona tutti i giocatori visibili",
       "selectRowAria": "Seleziona {{name}}",
-      "confirm": "Assegnare il permesso '{{group}}' a {{count}} giocatore/i per altri {{duration}}?\n\nChi ha già il gruppo si vede estendere la scadenza della durata scelta; chi non ce l'ha riceve una nuova entry con la stessa durata. Gli altri permessi temporanei NON vengono toccati.",
       "done": "Assegnazione massiva completata: {{updated}} aggiornati ({{extended}} estesi, {{added}} aggiunti), {{missing}} non trovati.",
       "failed": "Assegnazione massiva fallita.",
       "errorNoneSelected": "Nessun giocatore selezionato.",
       "errorNoGroup": "Scegli prima un gruppo.",
       "errorBadDuration": "Scegli una durata valida (almeno 1 minuto).",
-      "fmtDays": "{{n}} giorni",
-      "fmtMonths": "{{n}} mesi",
-      "fmtYears": "{{n}} anni"
+      "customDaysInvalid": "Inserisci un numero intero di giorni tra 1 e 3650."
     },
     "kits": {
       "sectionTitle": "Kits"
@@ -1202,7 +1436,8 @@
       "sourceTooltipSelect": "Seleziona come sorgente",
       "sourceTooltipDeselect": "Deseleziona sorgente",
       "sourceSelectLabel": "Sorgente",
-      "sourceCancelLabel": "Annulla"
+      "sourceCancelLabel": "Annulla",
+      "errorsTitle": "Alcuni container non sono stati analizzati"
     },
     "copy": {
       "fromLabel": "Da:",
@@ -1260,7 +1495,9 @@
       "checkAll": "Seleziona tutti",
       "uncheckAll": "Deseleziona tutti",
       "importing": "Importo…",
-      "confirm": "Importa ({{n}})"
+      "confirm": "Importa ({{n}})",
+      "bannerTitle": "Trovati profili orfani",
+      "selectedCount": "{{n}} selezionati su {{total}}"
     },
     "wipe": {
       "errors": {
@@ -1269,13 +1506,19 @@
       },
       "done": "Eliminati {{n}} file personaggio sul cluster.",
       "title": "Elimina personaggio cluster-wide",
-      "intro": "Verranno cancellati tutti i file `.arkprofile` di questo EOS dai SavedArks di ogni container.  Il giocatore al prossimo login spawn-erà come personaggio nuovo.  La riga in `Players` (permessi) NON viene toccata.",
+      "intro": "Verranno cancellati tutti i file `.arkprofile` di questo EOS dai SavedArks di ogni container.  Il giocatore al prossimo login spawn-erà come personaggio nuovo.  Viene eliminata anche la riga in `Players` (permessi); il saldo ArkShop resta.",
       "player": "Giocatore:",
       "scanning": "Scansiono i container…",
       "noFiles": "Nessun file .arkprofile trovato per questo EOS.  Il personaggio è già pulito.",
       "found": "{{n}} file da eliminare:",
       "deleting": "Elimino…",
-      "confirm": "Elimina {{n}} file"
+      "confirm": "Elimina {{n}} file",
+      "confirmTitle": "Cancellare il personaggio su tutto il cluster?",
+      "confirmBody": "Verranno cancellati {{n}} file .arkprofile di {{name}} da ogni container. L'operazione non è reversibile.",
+      "confirmWord": "WIPE",
+      "doneWithRow": "Cancellati {{n}} file del personaggio; rimossa anche la riga in Players.",
+      "previewErrors": "Alcuni container non sono stati analizzati",
+      "introV2": "Verranno cancellati tutti i file `.arkprofile` di questo EOS dai SavedArks di ogni container. Il giocatore al prossimo login spawnerà come personaggio nuovo. Viene rimossa anche la riga in `Players` (permessi, nome visualizzato): la ricrea il plugin Permissions al login successivo, con il gruppo di default. La riga in `ArkShopPlayers` (punti shop) resta."
     },
     "discord": {
       "chipTitle": "Discord collegato — clicca per inviare un DM",
@@ -1286,7 +1529,23 @@
       "openSettings": "Apri impostazioni Discord",
       "dmSent": "DM inviato.",
       "dmFailed": "Invio del DM fallito.",
-      "dmSend": "Invia DM"
+      "dmSend": "Invia DM",
+      "chipAria": "Scrivi a {{name}} su Discord",
+      "dmRemaining": "{{n}} caratteri rimasti su {{max}}",
+      "dmSending": "Invio…"
+    },
+    "emptyFiltered": "Nessun giocatore corrisponde ai filtri di colonna attivi.",
+    "groupFilterLabel": "Filtra per gruppo di permessi",
+    "listTitle": "Giocatori",
+    "loadingDetail": "Caricamento del giocatore…",
+    "searchLabel": "Cerca giocatori",
+    "truncatedTitle": "Elenco troncato",
+    "truncatedBody": "L'elenco si ferma ai primi {{shown}} giocatori, dai più recenti. Affina la ricerca per raggiungere gli altri.",
+    "unsaved": {
+      "title": "Scartare i permessi non salvati?",
+      "description": "Le modifiche ai permessi di questo giocatore non sono ancora state salvate.",
+      "discard": "Scarta le modifiche",
+      "keepEditing": "Continua a modificare"
     }
   },
   "arkmaniaConfig": {
@@ -1298,12 +1557,16 @@
     "server": {
       "global": "Globale (tutti i server)",
       "onlinePrefix": "● ",
-      "offlinePrefix": "○ "
+      "offlinePrefix": "○ ",
+      "label": "Ambito",
+      "offlineOption": "{{name}} (offline)",
+      "onlineOption": "{{name}} (online)"
     },
     "toolbar": {
       "override": "Override: {{name}}",
       "keysCount": "{{count}} chiavi",
-      "filterPlaceholder": "Filtra..."
+      "filterPlaceholder": "Filtra...",
+      "filterLabel": "Filtra le chiavi di {{module}}"
     },
     "actions": {
       "exportTooltip": "Esporta configurazione modulo corrente come JSON",
@@ -1311,7 +1574,8 @@
       "discard": "Annulla",
       "saving": "Salvataggio...",
       "saved": "Salvato",
-      "save": "Salva ({{count}})"
+      "save": "Salva ({{count}})",
+      "savedCount": "{{count}} impostazioni salvate"
     },
     "badges": {
       "ovr": "OVR",
@@ -1319,7 +1583,8 @@
     },
     "empty": {
       "noResults": "Nessun risultato",
-      "noSettings": "Nessuna impostazione"
+      "noSettings": "Nessuna impostazione",
+      "noResultsHint": "Cancella il filtro per vedere tutte le chiavi di questo plugin."
     },
     "editors": {
       "selectPlaceholder": "Seleziona...",
@@ -1358,7 +1623,24 @@
       "jsonLabel": "JSON ({{count}} car)",
       "missingGroup": "{{group}} (non presente nei gruppi permessi)",
       "duplicateKey": "Chiave duplicata: le modifiche non vengono applicate finché ogni chiave non è unica",
-      "invalidJson": "JSON non valido (o è passato da lista a oggetto): correggilo prima di salvare"
+      "invalidJson": "JSON non valido (o è passato da lista a oggetto): correggilo prima di salvare",
+      "alreadyAdded": "Già nell'elenco",
+      "closePaste": "Chiudi il campo di incolla",
+      "closeSearch": "Chiudi la ricerca blueprint",
+      "collapseRule": "Comprimi {{name}}",
+      "daysFor": "Giorni di decay per {{group}}",
+      "expandRule": "Espandi {{name}}",
+      "jsonFieldLabel": "Valore JSON di {{key}}",
+      "maxFor": "Numero massimo per {{group}}",
+      "moveDown": "Sposta {{group}} in basso",
+      "moveUp": "Sposta {{group}} in alto",
+      "removeBlueprint": "Rimuovi {{name}} dall'elenco",
+      "removeEntry": "Rimuovi la voce {{key}}",
+      "removeGroup": "Rimuovi il gruppo {{group}}",
+      "removeRule": "Rimuovi la regola per {{group}}",
+      "removeRuleNamed": "Rimuovi la regola {{name}}",
+      "speedFor": "Velocità di crafting per {{group}}",
+      "typeFilterLabel": "Tipo di blueprint"
     },
     "typeBadge": {
       "dino": "Dino",
@@ -1409,7 +1691,12 @@
       "speed": "Velocità"
     },
     "unsavedConfirm": "Ci sono modifiche non salvate. Scartarle?",
-    "readOnlyRole": "Per salvare la configurazione dei plugin serve un account operatore o amministratore."
+    "readOnlyRole": "Per salvare la configurazione dei plugin serve un account operatore o amministratore.",
+    "discardChanges": "Scarta le modifiche",
+    "loadFailed": "Impossibile caricare la configurazione del plugin.",
+    "saveFailed": "Impossibile salvare la configurazione.",
+    "unsavedCount": "{{count}} modifiche non salvate",
+    "unsavedTitle": "Modifiche non salvate"
   },
   "arkshop": {
     "heading": "ArkShop",
@@ -1427,13 +1714,17 @@
       "empty": "Nessun container con ArkShop trovato. Esegui prima una scansione dalla pagina Container.",
       "manualHint": "Oppure carica manualmente:",
       "uploadButton": "Carica file JSON",
-      "uploading": "Caricamento..."
+      "uploading": "Caricamento...",
+      "emptyTitle": "Nessun container con ArkShop",
+      "manualTitle": "Carica un file di configurazione"
     },
     "actions": {
       "reset": "Reset",
       "reload": "Ricarica",
       "export": "Esporta",
-      "deploy": "Deploy"
+      "deploy": "Deploy",
+      "exportMaskedHint": "L'export che puoi scaricare nasconde la password MySQL, quindi non è un backup completo. Chiedilo a un amministratore.",
+      "exportMaskedTitle": "Esporta (la password MySQL è nascosta ai non amministratori)"
     },
     "deploy": {
       "title": "Deploy su Server",
@@ -1460,7 +1751,21 @@
       "resultSuffix": "/ {{total}} totali",
       "resultDeployed": "{{count}} deployati",
       "resultSkipped": ", {{count}} saltati (attivi)",
-      "resultFailed": ", {{count}} errori"
+      "resultFailed": ", {{count}} errori",
+      "confirmAll": "La configurazione salvata viene scritta su tutti i {{count}} container fermi.",
+      "confirmOne": "La configurazione salvata viene scritta su {{container}}.",
+      "confirmTitle": "Distribuisci la configurazione",
+      "deleteNamed": "Elimina la versione {{label}}",
+      "noVersions": "Nessuna versione salvata",
+      "restoreConfirmAction": "Ripristina la versione",
+      "restoreNamed": "Ripristina la versione {{label}} come configurazione corrente",
+      "resultColumn": "Esito",
+      "selectForDeployNamed": "Distribuisci la versione {{label}}",
+      "unsavedConfirm": "Distribuisci comunque",
+      "unsavedDescription": "Generale, MySQL o Messaggi hanno modifiche non salvate. Il deploy invia gli ultimi valori salvati, non quelli a schermo.",
+      "unsavedTitle": "Impostazioni non salvate",
+      "versionsToggle": "Versioni ({{count}})",
+      "deleteConfirmNamed": "La versione \"{{label}}\" viene eliminata definitivamente."
     },
     "tabs": {
       "shop": "Shop Items",
@@ -1482,7 +1787,17 @@
       "editTooltip": "Modifica",
       "deleteTooltip": "Elimina",
       "bpCommandTag": "CMD",
-      "bpAdminTag": "Admin"
+      "bpAdminTag": "Admin",
+      "collapseNamed": "Nascondi il contenuto di {{name}}",
+      "contentColumn": "Contenuto",
+      "deleteNamed": "Elimina {{name}}",
+      "editNamed": "Modifica {{name}}",
+      "empty": "Nessun articolo configurato",
+      "expandNamed": "Mostra il contenuto di {{name}}",
+      "filterLabel": "Filtra per tipo",
+      "noLines": "Questa voce non consegna ancora nulla",
+      "emptyFiltered": "Nessun articolo corrispondente",
+      "emptyFilteredHint": "Cancella la ricerca o il filtro per tipo per vedere tutte le voci."
     },
     "kits": {
       "new": "Nuovo Kit",
@@ -1490,11 +1805,13 @@
       "itemsShort": "{{count}} items",
       "qty": "Qty: {{count}}",
       "maxLv": "MaxLv: {{level}}",
-      "onlyFromSpawn": "Solo spawn"
+      "onlyFromSpawn": "Solo spawn",
+      "empty": "Nessun kit configurato"
     },
     "sell": {
       "new": "Nuovo",
-      "pricePts": "{{price}} pts"
+      "pricePts": "{{price}} pts",
+      "empty": "Nessun oggetto vendibile configurato"
     },
     "general": {
       "title": "Impostazioni Generali",
@@ -1530,10 +1847,14 @@
       "port": "Porta",
       "database": "Database",
       "user": "Utente",
-      "password": "Password"
+      "password": "Password",
+      "adminOnly": "Il blocco MySQL può essere modificato solo da un amministratore.",
+      "passwordHidden": "Non disponibile",
+      "passwordHiddenHint": "La password non viene mai inviata a un account non amministratore."
     },
     "messages": {
-      "title": "Messaggi"
+      "title": "Messaggi",
+      "empty": "Nessun messaggio in questa configurazione"
     },
     "dialog": {
       "newShop": "Nuovo Shop Item",
@@ -1562,7 +1883,10 @@
       "cancel": "Annulla",
       "delete": "Elimina",
       "selectNo": "No",
-      "selectYes": "Si"
+      "selectYes": "Si",
+      "discardConfirm": "Scarta le modifiche",
+      "discardDescription": "Questa voce è stata modificata. Chiudendo ora le modifiche andranno perse.",
+      "discardTitle": "Voce non salvata"
     },
     "sub": {
       "command": "Command",
@@ -1575,7 +1899,8 @@
       "no": "No",
       "yes": "Si",
       "addItem": "Item",
-      "addCmd": "Comando"
+      "addCmd": "Comando",
+      "removeLine": "Rimuovi la riga {{num}}"
     },
     "bpSearch": {
       "placeholder": "Cerca o incolla blueprint..."
@@ -1612,8 +1937,33 @@
       "mysqlSaved": "MySQL salvato",
       "generalSaved": "Generali salvate",
       "messagesSaved": "Messaggi salvati",
-      "keyExists": "Esiste già una voce con chiave \"{{key}}\""
-    }
+      "keyExists": "Esiste già una voce con chiave \"{{key}}\"",
+      "pullConfirm": "La configurazione salvata nel pannello, comprese le modifiche mai distribuite, viene sostituita con quella di {{container}}.",
+      "statusError": "Impossibile leggere lo stato della configurazione ArkShop.",
+      "statusErrorHint": "Finché non risponde, il pannello non sa se una configurazione è già salvata: un pull adesso la sostituirebbe.",
+      "uploadConfirm": "Il file caricato sostituisce l'intera configurazione salvata.",
+      "versionRestoreConfirm": "Ogni articolo, kit, oggetto in vendita e blocco di impostazioni torna allo snapshot \"{{label}}\". Le modifiche fatte da allora vanno perse."
+    },
+    "confirmWord": "SOSTITUISCI",
+    "roles": {
+      "adminRequired": "Questa modifica richiede un account amministratore.",
+      "operatorRequired": "Questa modifica richiede un account operatore o amministratore."
+    },
+    "rowActions": "Azioni",
+    "tabsLabel": "Sezioni ArkShop",
+    "unsaved": {
+      "confirm": "Scarta le modifiche",
+      "description": "Generale, MySQL o Messaggi hanno modifiche non salvate. Il caricamento di una configurazione le sostituisce.",
+      "marker": "Modifiche non salvate",
+      "title": "Impostazioni non salvate"
+    },
+    "blockLoad": {
+      "error": "Impossibile caricare questa sezione.",
+      "hint": "I valori qui sotto sono predefiniti, non quelli salvati. Salvarli sovrascriverebbe la sezione memorizzata.",
+      "saveBlocked": "Il salvataggio resta non disponibile finché la sezione non viene caricata."
+    },
+    "resetWord": "RESET",
+    "restoreWord": "RIPRISTINA"
   },
   "blueprints": {
     "heading": "Database Blueprint",
@@ -1649,19 +1999,26 @@
       "searchPlaceholder": "Cerca nome, blueprint, GFI...",
       "allCategories": "Tutte le categorie",
       "categoryOption": "{{name}} ({{count}})",
-      "searchButton": "Cerca"
+      "searchButton": "Cerca",
+      "searchLabel": "Cerca nel catalogo",
+      "title": "Filtri",
+      "typeChip": "{{name}} ({{count}})",
+      "typeGroup": "Filtra per tipo"
     },
     "bulk": {
       "selected": "{{count}} selezionati",
       "setCategory": "Imposta categoria...",
       "apply": "Applica",
-      "clear": "Pulisci"
+      "clear": "Pulisci",
+      "pickCategoryFirst": "Scegli prima una categoria"
     },
     "results": {
       "count": "{{count}} risultati",
       "prev": "« Prec",
       "next": "Succ »",
-      "pageInfo": "Pagina {{page}} / {{total}}"
+      "pageInfo": "Pagina {{page}} / {{total}}",
+      "pagination": "Pagine dei risultati",
+      "title": "Risultati"
     },
     "table": {
       "selectAll": "Seleziona tutto",
@@ -1670,7 +2027,15 @@
       "category": "Categoria",
       "blueprintPath": "Percorso Blueprint",
       "changeCategoryTip": "Clicca per cambiare categoria",
-      "copyTip": "Copia blueprint"
+      "copyTip": "Copia blueprint",
+      "actions": "Azioni",
+      "categoryFor": "Categoria di {{name}}",
+      "emptyAll": "Sincronizza il catalogo o importa un file per popolarlo.",
+      "emptyFiltered": "Cambia i filtri o cancella la ricerca.",
+      "emptyTitle": "Nessun blueprint",
+      "label": "Catalogo blueprint",
+      "saveCategory": "Salva la categoria",
+      "selectRow": "Seleziona {{name}}"
     },
     "importDialog": {
       "title": "Importa Blueprint",
@@ -1680,7 +2045,14 @@
       "replaceWarning": "Questo eliminerà tutti i blueprint esistenti!",
       "cancel": "Annulla",
       "importing": "Importazione...",
-      "importEntries": "Importa {{count}} elementi"
+      "importEntries": "Importa {{count}} elementi",
+      "entries": "Voci",
+      "fileName": "File",
+      "modeLabel": "Modalità di importazione",
+      "modeMerge": "Unisci",
+      "modeMergeHint": "I nuovi blueprint vengono aggiunti e quelli esistenti aggiornati.",
+      "modeReplace": "Sostituisci",
+      "modeReplaceHint": "Il catalogo viene svuotato e ricostruito da questo file."
     },
     "messages": {
       "loadError": "Caricamento blueprint fallito",
@@ -1724,7 +2096,11 @@
       "pruneTitle": "Rimuovi tutte le voci che NON sono vanilla/DLC/ASA",
       "prune": "Rimuovi non ufficiali",
       "deleteSelected": "Elimina selezionati",
-      "deleteOneTitle": "Elimina questo blueprint"
+      "deleteOneTitle": "Elimina questo blueprint",
+      "confirmWord": "ELIMINA",
+      "deleteOneNamed": "Elimina {{name}}",
+      "deleteSelectedTitle": "Elimina {{count}} blueprint",
+      "deleteSourceAction": "Elimina la sorgente"
     }
   },
   "gameConfig": {
@@ -1765,7 +2141,10 @@
       "colMaxQty": "Qta Max",
       "colIgnoreMulti": "Ignora Moltip.",
       "empty": "Nessun override stack",
-      "emptyMatching": "Nessun override stack corrispondente alla ricerca"
+      "emptyMatching": "Nessun override stack corrispondente alla ricerca",
+      "deleteRow": "Elimina l'override di stack {{name}}",
+      "ignoreMultiFor": "Ignora il moltiplicatore di stack per {{name}}",
+      "tableLabel": "Override delle dimensioni di stack"
     },
     "crafting": {
       "count": "{{count}} override costi craft",
@@ -1774,14 +2153,21 @@
       "requiredResources": "Risorse richieste:",
       "resourcePlaceholder": "ResourceItemTypeString",
       "addResource": "Aggiungi risorsa",
-      "empty": "Nessun override costi craft"
+      "empty": "Nessun override costi craft",
+      "amountLabel": "Quantità",
+      "deleteEntry": "Elimina l'override di crafting {{name}}",
+      "newEntry": "Nuovo override #{{num}}",
+      "noResources": "Nessuna risorsa: il server rifiuta un override senza risorse.",
+      "removeResource": "Rimuovi la risorsa {{num}}"
     },
     "npc": {
       "count": "{{count}} sostituzioni NPC",
       "add": "Aggiungi",
       "colFrom": "Classe Origine",
       "colTo": "Classe Destinazione",
-      "empty": "Nessuna sostituzione NPC configurata"
+      "empty": "Nessuna sostituzione NPC configurata",
+      "deleteRow": "Elimina la sostituzione {{name}}",
+      "tableLabel": "Sostituzioni NPC"
     },
     "supply": {
       "count": "{{count}} override supply crate",
@@ -1789,7 +2175,9 @@
       "warn": "I supply crate hanno una struttura complessa. Modifica l'entry raw di ogni crate qui sotto.",
       "newLabel": "Nuovo",
       "metaCounts": "{{sets}} set, {{entries}} entry",
-      "empty": "Nessun override supply crate"
+      "empty": "Nessun override supply crate",
+      "deleteEntry": "Elimina la cassa {{name}}",
+      "rawLabel": "Voce grezza di {{name}}"
     },
     "spawn": {
       "warn": "Le spawn entries hanno una struttura complessa. Ogni riga è un'entry raw completa.",
@@ -1797,7 +2185,10 @@
       "overrideDesc": "Sovrascrivi creature nelle spawn zone",
       "subtractDesc": "Rimuovi creature dalle spawn zone",
       "count": "{{count}} entry",
-      "entryTitle": "Entry #{{num}}"
+      "entryTitle": "Entry #{{num}}",
+      "deleteEntry": "Elimina la voce {{name}}",
+      "noEntries": "Nessuna voce",
+      "rawLabel": "Voce grezza {{name}}"
     },
     "mods": {
       "empty": "Nessuna sezione mod rilevata"
@@ -1844,7 +2235,14 @@
     },
     "passwordMasked": "Nascosta: solo gli admin possono vedere questa password. Lasciala invariata per mantenere quella attuale.",
     "rawOnlyHint": "Questa riga non è stata interpretata e viene mantenuta così com'è. Modificala dall'Editor Raw.",
-    "readOnlyRole": "Per salvare le modifiche agli INI serve un account operatore o amministratore."
+    "readOnlyRole": "Per salvare le modifiche agli INI serve un account operatore o amministratore.",
+    "changed": "Modificato",
+    "containerLabel": "Container",
+    "discardChanges": "Scarta le modifiche",
+    "navLabel": "Sezioni della configurazione",
+    "resetTo": "Reimposta {{label}} su {{value}}",
+    "rowActions": "Azioni",
+    "unsavedTitle": "Modifiche non salvate"
   },
   "serversPage": {
     "heading": "Gestione Server",
@@ -1855,7 +2253,8 @@
       "online": "Online",
       "offline": "Offline",
       "players": "Giocatori",
-      "total": "Totali"
+      "total": "Totali",
+      "offlineMeta": "{{count}} server non raggiungibile/i"
     },
     "form": {
       "title": "Nuovo Server",
@@ -1870,7 +2269,9 @@
       "cancel": "Annulla",
       "keyPlaceholder": "es. Ragnarok_abc123",
       "namePlaceholder": "es. Ragnarok",
-      "mapPlaceholder": "es. Ragnarok_WP"
+      "mapPlaceholder": "es. Ragnarok_WP",
+      "creating": "Creazione…",
+      "maxPlayersHint": "Un numero intero tra 1 e 500."
     },
     "table": {
       "name": "Nome",
@@ -1879,7 +2280,11 @@
       "type": "Tipo",
       "cluster": "Cluster",
       "max": "Max",
-      "online": "Online"
+      "online": "Online",
+      "status": "Stato",
+      "players": "Giocatori",
+      "lastSeen": "Ultimo contatto",
+      "actions": "Azioni"
     },
     "loading": "Caricamento...",
     "empty": "Nessun server registrato",
@@ -1887,16 +2292,27 @@
       "save": "Salva",
       "cancel": "Annulla",
       "edit": "Modifica",
-      "delete": "Elimina"
+      "delete": "Elimina",
+      "saving": "Salvataggio…"
     },
     "messages": {
       "missingRequired": "Server key, nome e mappa sono obbligatori.",
       "created": "Server creato",
       "updated": "Server aggiornato",
       "deleted": "Server eliminato",
-      "invalidMaxPlayers": "Max giocatori deve essere un numero intero tra 1 e 500."
+      "invalidMaxPlayers": "Max giocatori deve essere un numero intero tra 1 e 500.",
+      "createFailed": "Non è stato possibile creare il server.",
+      "updateFailed": "Non è stato possibile aggiornare il server.",
+      "deleteFailed": "Non è stato possibile eliminare il server."
     },
-    "confirmDelete": "Eliminare il server \"{{name}}\"?\nVerranno rimossi anche tutti gli override di configurazione."
+    "confirmDelete": "Eliminare il server \"{{name}}\"?\nVerranno rimossi anche tutti gli override di configurazione.",
+    "tableTitle": "Server registrati",
+    "loadError": "Impossibile caricare l'elenco dei server",
+    "neverSeen": "Mai",
+    "deleteTitle": "Eliminare il server {{name}}?",
+    "deleteConfirm": "Elimina server",
+    "deleteNamed": "Elimina {{name}}",
+    "editNamed": "Modifica {{name}}"
   },
   "serverForge": {
     "heading": "ServerForge",
@@ -1920,7 +2336,9 @@
       "clusters": "Cluster ({{count}})"
     },
     "empty": {
-      "noServers": "Nessun server trovato"
+      "noServers": "Nessun server trovato",
+      "noMachines": "Nessuna macchina su questo account ServerForge",
+      "noClusters": "Nessun cluster su questo account ServerForge"
     },
     "machine": {
       "locationCount": "{{location}} · {{count}} container",
@@ -1941,7 +2359,11 @@
       "start": "▶ Avvia",
       "restart": "↻ Restart",
       "stop": "■ Stop",
-      "pending": "..."
+      "pending": "...",
+      "startLabel": "Avvia",
+      "restartLabel": "Riavvia",
+      "stopLabel": "Arresta",
+      "working": "In corso…"
     },
     "cluster": {
       "serverCount": "{{count}} server",
@@ -1951,12 +2373,19 @@
     "editTokenBtn": "Modifica Token ServerForge",
     "gauge": {
       "placeholder": "--",
-      "disk": "Disco"
+      "disk": "Disco",
+      "percent": "{{value}} %",
+      "aria": {
+        "cpu": "Utilizzo CPU di {{host}}",
+        "ram": "Utilizzo RAM di {{host}}",
+        "disk": "Utilizzo disco di {{host}}"
+      }
     },
     "confirm": {
       "start": "Avviare il server \"{{label}}\"?",
       "stop": "Fermare il server \"{{label}}\"?",
-      "restart": "Riavviare il server \"{{label}}\"?"
+      "restart": "Riavviare il server \"{{label}}\"?",
+      "body": "Tutti i giocatori connessi a \"{{label}}\" vengono disconnessi."
     },
     "action": {
       "startSent": "Avvio inviato per \"{{label}}\"",
@@ -1965,7 +2394,16 @@
     },
     "errorPrefix": "Errore: {{detail}}",
     "ipFallback": "N/D",
-    "tokenAdminOnly": "Solo un amministratore può configurare il token ServerForge."
+    "tokenAdminOnly": "Solo un amministratore può configurare il token ServerForge.",
+    "loadFailed": "ServerForge non è raggiungibile",
+    "actionFailed": "Non è stato possibile inviare il comando a ServerForge.",
+    "tokenSaveFailed": "Non è stato possibile salvare il token.",
+    "tabsLabel": "Sezioni di ServerForge",
+    "tab": {
+      "containers": "Server di gioco",
+      "machines": "Macchine",
+      "clusters": "Cluster"
+    }
   },
   "sqlConsole": {
     "heading": "Console SQL",
@@ -1974,7 +2412,8 @@
       "panel": "DB Pannello",
       "plugin": "DB Plugin",
       "panelTitle": "Interroga il database del pannello ArkManiaGest",
-      "pluginTitle": "Interroga il database del plugin ArkMania"
+      "pluginTitle": "Interroga il database del plugin ArkMania",
+      "legend": "Database di destinazione"
     },
     "toggle": {
       "tables": "Tabelle",
@@ -1989,14 +2428,18 @@
       "executing": "Esecuzione...",
       "execute": "Esegui",
       "clear": "Pulisci",
-      "clearTitle": "Pulisci editor e risultati"
+      "clearTitle": "Pulisci editor e risultati",
+      "label": "Istruzione SQL",
+      "tabHint": "· Tab indenta, Esc poi Tab esce dall'editor"
     },
     "results": {
       "title": "Risultati",
       "summarySuccess": "{{message}} — {{time}} ms",
       "summaryFailure": "Query fallita",
       "dmlSuccess": "{{message}} — {{time}} ms",
-      "truncated": "Vengono mostrate solo le prime {{n}} righe. Aggiungi una clausola WHERE o un LIMIT per restringere il risultato."
+      "truncated": "Vengono mostrate solo le prime {{n}} righe. Aggiungi una clausola WHERE o un LIMIT per restringere il risultato.",
+      "errorTitle": "L'istruzione è fallita",
+      "rowNumber": "Numero di riga"
     },
     "browser": {
       "title": "Tabelle",
@@ -2004,7 +2447,12 @@
       "selectTitle": "Doppio click per SELECT da {{name}}",
       "colTitle": "{{type}}{{suffix}}. Click per inserire.",
       "pkSuffix": " — PRIMARY KEY",
-      "autoIncSuffix": " AUTO_INCREMENT"
+      "autoIncSuffix": " AUTO_INCREMENT",
+      "empty": "Nessuna tabella in questo database.",
+      "selectAction": "SELECT da {{name}}",
+      "primaryKey": "chiave primaria",
+      "indexedKey": "colonna indicizzata",
+      "uniqueKey": "chiave univoca"
     },
     "history": {
       "title": "Cronologia",
@@ -2014,9 +2462,12 @@
       "ms": "{{n}} ms"
     },
     "errors": {
-      "executeFailed": "Esecuzione query fallita."
+      "executeFailed": "Esecuzione query fallita.",
+      "timeout": "La richiesta è scaduta. L'istruzione potrebbe comunque essere stata completata sul server: verifica prima di rieseguirla."
     },
-    "confirmDestructive": "Eseguire {{verbs}} su {{database}}?\n\nL'istruzione viene applicata subito e non si può annullare."
+    "confirmDestructive": "Eseguire {{verbs}} su {{database}}?\n\nL'istruzione viene applicata subito e non si può annullare.",
+    "confirmDestructiveTitle": "Eseguire {{verbs}}?",
+    "confirmDestructiveRun": "Esegui l'istruzione"
   },
   "database": {
     "title": "Configurazione Database",
@@ -2124,7 +2575,11 @@
       "save": "Salva",
       "saving": "Salvataggio…",
       "cancel": "Annulla",
-      "clearServerPassword": "Rimuovi la password del server (chiunque può entrare)"
+      "clearServerPassword": "Rimuovi la password del server (chiunque può entrare)",
+      "machinePlaceholder": "Scegli una macchina",
+      "noDoubleQuote": "Rimuovi le virgolette doppie (\"): il server le rifiuta in questo campo.",
+      "pokBaseDirEditHint": "Non modificabile dopo la creazione dell'istanza.",
+      "quoteBlocked": "Alcuni campi contengono virgolette doppie (\"), rifiutate dal server. Correggi i campi segnalati qui sotto."
     },
     "errors": {
       "load": "Caricamento istanze fallito.",
@@ -2132,7 +2587,10 @@
       "update": "Aggiornamento istanza fallito.",
       "delete": "Eliminazione istanza fallita.",
       "action": "Azione fallita.",
-      "import": "Importazione container fallita."
+      "import": "Importazione container fallita.",
+      "cancelRestart": "Non è stato possibile annullare il riavvio programmato.",
+      "provisionInvalid": "{{detail}} Apri Modifica su questa istanza, correggi il campo ed esegui di nuovo il provisioning.",
+      "scan": "Non è stato possibile scansionare la macchina."
     },
     "confirmDelete": "Eliminare l'istanza '{{name}}'? Verrà rimosso solo il record dal pannello. I file del container sull'host NON vengono cancellati.",
     "confirmDeleteWithPurge": "Fermare il container sull'host prima di eliminare?",
@@ -2140,13 +2598,51 @@
     "log": {
       "title": "Azioni recenti per {{name}}",
       "empty": "Nessuna azione registrata per questa istanza.",
-      "noStdout": "(nessun output)"
+      "noStdout": "(nessun output)",
+      "exitCode": "uscita {{rc}}",
+      "duration": "{{ms}} ms",
+      "toggle": "Azioni recenti di {{name}}",
+      "status": {
+        "pending": "In attesa",
+        "running": "In corso",
+        "success": "Riuscita",
+        "failed": "Fallita"
+      }
     },
     "actionOk": "Completato (codice di uscita {{rc}}, {{ms}} ms).",
     "actionFailed": "Codice di uscita {{rc}}: {{output}}",
     "saved": "Istanza salvata.",
     "deleted": "Istanza '{{name}}' eliminata.",
-    "clusterTag": "cluster: {{id}}"
+    "clusterTag": "cluster: {{id}}",
+    "actionOn": "{{action}} {{name}}",
+    "cancelRestart": "Annulla il riavvio",
+    "cancellingRestart": "Annullamento…",
+    "confirm": {
+      "stopTitle": "Arrestare {{name}}?",
+      "stopBody": "Tutti i giocatori connessi a {{name}} vengono disconnessi. Il mondo viene salvato prima dell'arresto del server.",
+      "restartTitle": "Riavviare {{name}}?",
+      "restartBody": "Tutti i giocatori connessi a {{name}} vengono disconnessi durante il riavvio.",
+      "updateTitle": "Aggiornare i binari ARK su {{name}}?",
+      "updateBody": "Il server viene arrestato mentre Steam scarica la nuova build. Servono da 5 a 15 minuti su un host veloce, di più su dischi o connessioni lente. Lascia la pagina aperta fino al termine."
+    },
+    "delete": {
+      "title": "Eliminare l'istanza {{name}}?",
+      "confirm": "Elimina istanza",
+      "deleting": "Eliminazione…",
+      "purge": "Arresta anche il container sull'host",
+      "purgeHint": "Esegue uno stop sull'host prima di rimuovere il record del pannello. Lascialo disattivato per rimuovere solo il record: i file sull'host non vengono mai eliminati."
+    },
+    "empty": {
+      "title": "Nessuna istanza"
+    },
+    "inactiveTag": "disattivata",
+    "mapUnknown": "Mappa sconosciuta",
+    "noMachinesHint": "Aggiungi prima una macchina SSH.",
+    "refreshing": "Aggiornamento dell'elenco…",
+    "restartCancelled": "Il riavvio programmato di {{name}} è stato annullato.",
+    "restartScheduledTitle": "Riavvio di {{name}} programmato",
+    "restartScheduled": "Il riavvio parte fra {{count}} minuto/i. I giocatori vengono avvisati in gioco. Annullalo da qui se è stato un errore.",
+    "scanFailed": "Impossibile scansionare {{count}} macchina/e"
   },
   "discord": {
     "title": "Discord",
@@ -2199,7 +2695,20 @@
         "clear": "Cancella",
         "show": "Mostra",
         "hide": "Nascondi"
-      }
+      },
+      "saving": "Salvataggio…",
+      "confirmClearTitle": "Cancellare il segreto memorizzato?",
+      "confirmClearBody": "{{fields}} verrà svuotato nel file .env. Il pannello non può più mostrare il valore precedente, andrà reincollato da Discord.",
+      "confirmClearConfirm": "Cancella e salva",
+      "discardTitle": "Annullare le modifiche?",
+      "discardBody": "Il modulo torna ai valori caricati dal server.",
+      "discardConfirm": "Annulla modifiche",
+      "refreshTitle": "Ricaricare e annullare le modifiche?",
+      "refreshBody": "Il ricaricamento rilegge i valori dal server e scarta le modifiche non salvate.",
+      "refreshConfirm": "Ricarica",
+      "leaveTitle": "Uscire con modifiche non salvate?",
+      "leaveBody": "Cambiando scheda il modulo viene chiuso e le modifiche vengono perse.",
+      "leaveConfirm": "Esci dalla scheda"
     },
     "config": {
       "toast": {
@@ -2254,7 +2763,8 @@
         "viewer": "Viewer",
         "empty": "(vuota)",
         "idCount_one": "{{count}} ID",
-        "idCount_other": "{{count}} ID"
+        "idCount_other": "{{count}} ID",
+        "idCount": "{{count}} in totale"
       },
       "whitelistsEditHint": "Per modificare una whitelist: modifica /opt/arkmaniagest/backend/.env ed esegui 'systemctl restart arkmaniagest'.",
       "vipSync": {
@@ -2279,6 +2789,18 @@
           "noop": "invariati",
           "errors": "errori",
           "strangers": "VIP non collegati"
+        },
+        "confirmTitle": "Eseguire la sincronizzazione VIP?",
+        "confirmBody": "Lo stato VIP di ogni giocatore collegato viene letto dal database del plugin e riportato sul ruolo Discord. I ruoli vengono assegnati e rimossi su Discord immediatamente.",
+        "hasErrors": "vedi le azioni per riga",
+        "partial": "elenco parziale",
+        "scanFailed": "Scansione dei membri del server fallita, l'elenco dei VIP non collegati è incompleto: {{error}}",
+        "scanCapped": "Scansione dei membri interrotta al limite, l'elenco dei VIP non collegati è parziale",
+        "action": {
+          "assigned": "assegnato",
+          "removed": "rimosso",
+          "noop": "invariato",
+          "error": "errore"
         }
       },
       "copy": "Copia",
@@ -2306,7 +2828,24 @@
       "syncing": "Sync in corso…",
       "sync": "Sync ruoli ora",
       "lastRun": "{{s}}s · {{n}} collegati, {{c}} cambiati, {{e}} errori",
-      "details": "Dettaglio cambi ({{n}})"
+      "details": "Dettaglio cambi ({{n}})",
+      "col": {
+        "role": "Ruolo Discord",
+        "group": "Gruppo ARK",
+        "actions": "Azioni"
+      },
+      "adding": "Aggiunta…",
+      "unknownRole": "Ruolo sconosciuto ({{id}})",
+      "groupFor": "Gruppo ARK per {{role}}",
+      "enabledFor": "Abilita la regola per {{role}}",
+      "deleteFor": "Elimina la regola per {{role}}",
+      "confirmDeleteTitle": "Eliminare questa regola?",
+      "confirmDeleteBody": "{{role}} non assegnerà più il gruppo ARK {{group}}. I gruppi già applicati ai giocatori restano invariati.",
+      "confirmDeleteConfirm": "Elimina regola",
+      "deleted": "Regola eliminata.",
+      "confirmSyncTitle": "Eseguire la sincronizzazione dei ruoli?",
+      "confirmSyncBody": "I gruppi permessi ARK di ogni giocatore collegato vengono riscritti in base ai suoi ruoli Discord. I gruppi vengono aggiunti e rimossi nel database del plugin immediatamente.",
+      "syncDisabled": "Nessuna regola attiva da sincronizzare"
     },
     "members": {
       "errors": {
@@ -2335,7 +2874,8 @@
       "col": {
         "user": "Utente",
         "roles": "Ruoli",
-        "joined": "Iscritto il"
+        "joined": "Iscritto il",
+        "actions": "Azioni"
       },
       "loadMore": "Carica altri",
       "action": {
@@ -2361,8 +2901,25 @@
         "purge1d": "Ultime 24 ore",
         "purge3d": "Ultimi 3 giorni",
         "purge7d": "Ultimi 7 giorni",
-        "banConfirm": "Banna"
-      }
+        "banConfirm": "Banna",
+        "dmSending": "Invio…",
+        "remaining": "{{n}} caratteri rimasti su {{max}}",
+        "banWarning": "Il ban tiene l'utente fuori dal server finché non viene revocato su Discord.",
+        "banning": "Ban in corso…"
+      },
+      "listTitle": "Membri del server",
+      "emptyTitle": "Nessun membro caricato",
+      "loadingMore": "Caricamento…",
+      "assignRoleTo": "Assegna un ruolo a {{user}}",
+      "rolePickerPlaceholder": "Cerca un ruolo…",
+      "removeRoleFrom": "Rimuovi {{role}} da {{user}}",
+      "confirmRemoveRoleTitle": "Rimuovere questo ruolo?",
+      "confirmRemoveRoleBody": "{{role}} viene tolto a {{user}} su Discord immediatamente. Se è il ruolo VIP, la prossima sincronizzazione potrebbe riassegnarlo.",
+      "removeRoleConfirm": "Rimuovi ruolo",
+      "dmTo": "Invia un messaggio diretto a {{user}}",
+      "kickUser": "Espelli {{user}}",
+      "banUser": "Banna {{user}}",
+      "confirmKickTitle": "Espellere questo membro?"
     },
     "accounts": {
       "errors": {
@@ -2407,8 +2964,20 @@
         "searchPh": "min. 2 caratteri…",
         "searching": "Ricerca in corso…",
         "noHits": "Nessun giocatore corrisponde.",
-        "noName": "(senza nome)"
-      }
+        "noName": "(senza nome)",
+        "linking": "Collegamento…",
+        "chosenUser": "Selezionato: {{user}}",
+        "chosenPlayer": "Selezionato: {{player}} ({{eos}})"
+      },
+      "listTitle": "Account Discord collegati",
+      "emptyTitle": "Nessun account Discord",
+      "appUserWithRole": "{{user}} ({{role}})",
+      "copyEos": "Copia l'EOS ID di {{user}}",
+      "unlinkAppUserFrom": "Scollega l'utente del pannello da {{user}}",
+      "unlinkEosFrom": "Scollega il giocatore ARK da {{user}}"
+    },
+    "common": {
+      "eosShort": "EOS {{id}}…"
     }
   },
   "market": {
@@ -2438,7 +3007,14 @@
         "INVALID_STATE": "Operazione non valida nello stato corrente.",
         "NOT_OWNER": "Solo il proprietario può farlo.",
         "CANNOT_BUY_OWN_ITEM": "Non puoi acquistare un tuo item."
-      }
+      },
+      "loadTitle": "Impossibile caricare il mercato",
+      "notSignedIn": "Accedi con Discord per vedere il mercato.",
+      "notLinked": "Il tuo account Discord non è ancora collegato a un personaggio ARK. Chiedi a un amministratore di collegarlo da Impostazioni -> Discord -> Account.",
+      "loadShop": "Impossibile caricare il catalogo del negozio.",
+      "loadPrices": "Impossibile caricare il listino.",
+      "savePrices": "Impossibile salvare i prezzi.",
+      "import": "Importazione da ArkShop non riuscita."
     },
     "bought": "Acquistato! Nuovo saldo: {{b}}. Usa /market claim in-game per ritirarlo.",
     "listed": "Item pubblicato sul mercato.",
@@ -2472,7 +3048,8 @@
       "status": "Stato",
       "price": "Prezzo",
       "when": "Quando",
-      "counter": "Controparte"
+      "counter": "Controparte",
+      "actions": "Azioni"
     },
     "publish": "Pubblica",
     "cancel": "Annulla",
@@ -2525,20 +3102,20 @@
         "structures": "Strutture",
         "other": "Altro"
       },
-      "errors": {
-        "forgeNotSupported": "Lo shop uova/embrioni non e' ancora attivo: i server di gioco devono avere ARKM-Marketplace 7.5.0 o successivo.",
-        "shopDisabled": "Questo shop e' disabilitato.",
-        "speciesRequired": "Scegli una specie.",
-        "speciesNotForSale": "Questa specie non e' in vendita in questo shop.",
-        "tooManyTraits": "Troppi tratti selezionati.",
-        "traitMalformed": "Tratto non valido.",
-        "traitNotFound": "Tratto non trovato.",
-        "itemNotFound": "Oggetto non trovato o non piu' in vendita.",
-        "wrongKind": "Questa voce non e' del tipo selezionato.",
-        "noPrice": "Questa voce non ha un prezzo.",
-        "insufficientFunds": "Punti insufficienti.",
-        "nothingToDeliver": "Questa voce non ha nulla da consegnare.",
-        "orderFailed": "Non e' stato possibile registrare l'ordine. Nessun punto e' stato scalato."
+      "tier": "T{{n}}",
+      "tierFor": "Livello di {{name}}",
+      "geneTierLabel": "{{name}} T{{tier}}",
+      "catFilter": "Filtra per categoria",
+      "clearFilters": "Azzera i filtri",
+      "importing": "Importazione…",
+      "lastError": "Errore: {{v}}",
+      "noPriceSet": "Nessun prezzo impostato per questo livello.",
+      "kind": {
+        "item": "Oggetto",
+        "dino": "Creatura",
+        "gene": "Gene",
+        "egg": "Uovo",
+        "embryo": "Embrione"
       }
     },
     "forge": {
@@ -2559,11 +3136,15 @@
       "traitsMax": "max {{n}}",
       "traitPick": "Scegli un tratto…",
       "traitAdd": "Aggiungi",
-      "points": "punti",
       "buy": "Forgia e acquista",
       "claimHint": "L'uovo/embrione arriva con /ritiro in gioco: il baby avra' stat, mutazioni, colori e tratti scelti qui.",
       "levelNote": "Livello fisso {{lvl}}: le stat selvatiche vengono distribuite casualmente dal server, come in natura.",
-      "emptyList": "Nessuna specie in vendita al momento."
+      "emptyList": "Nessuna specie in vendita al momento.",
+      "modeLabel": "Negozio",
+      "speciesOption": "{{label}} — {{price}} pt",
+      "traitPickLabel": "Tratto",
+      "traitTierLabel": "Livello",
+      "traitRemove": "Rimuovi {{n}}"
     },
     "prices": {
       "geneTitle": "Prezzi geni (per categoria e tier)",
@@ -2585,7 +3166,16 @@
       "removeSpecies": "Rimuovi dal listino",
       "saveForge": "Salva listino",
       "saveHint": "Il salvataggio sostituisce l'intero listino.",
-      "saved": "Prezzi salvati."
+      "saved": "Prezzi salvati.",
+      "readOnly": "Sola lettura: per cambiare i prezzi serve il ruolo operatore.",
+      "saving": "Salvataggio…",
+      "colActions": "Azioni",
+      "cellLabel": "Prezzo {{category}}, livello {{tier}}",
+      "eggPriceFor": "Prezzo uovo di {{name}}",
+      "eggOnFor": "Vendi {{name}} come uovo",
+      "embryoPriceFor": "Prezzo embrione di {{name}}",
+      "embryoOnFor": "Vendi {{name}} come embrione",
+      "removeSpeciesNamed": "Rimuovi {{name}} dal listino"
     },
     "buyModal": {
       "title": "Conferma acquisto",
@@ -2594,7 +3184,7 @@
       "after": "Dopo l'acquisto",
       "insufficient": "Punti insufficienti per questo acquisto.",
       "confirm": "Conferma",
-      "cancel": "Annulla"
+      "buying": "Acquisto in corso…"
     },
     "pointsHint": "Punti ArkShop: la moneta unica di tutti gli shop e del mercato giocatori.",
     "stats": {
@@ -2615,7 +3205,41 @@
     },
     "qty": "Qta: {{n}}",
     "walletUnavailable": "Saldo punti non disponibile",
-    "loadMore": "Carica altri ({{n}} di {{total}})"
+    "loadMore": "Carica altri ({{n}} di {{total}})",
+    "tabsLabel": "Sezioni del mercato",
+    "backToDashboard": "Torna alla dashboard",
+    "walletLabel": "I tuoi punti:",
+    "pointsUnit": "pt",
+    "pointsUnitLong": "punti",
+    "sortLabel": "Ordina le inserzioni",
+    "unknownItem": "Oggetto sconosciuto",
+    "buyAria": "Compra {{item}} per {{price}} punti",
+    "publishing": "Pubblicazione…",
+    "cancelling": "Annullamento…",
+    "confirmCancelTitle": "Annullare l'inserzione?",
+    "priceForItem": "Prezzo di {{name}}",
+    "gender": {
+      "male": "Maschio",
+      "female": "Femmina"
+    },
+    "card": {
+      "blueprintShort": "BP",
+      "level": "Lv {{n}}",
+      "quantity": "x{{n}}",
+      "quality": "Q{{n}}",
+      "durability": "Durabilità {{n}}%",
+      "rating": "Valutazione {{v}}",
+      "speciesLevel": "{{s}} · Lv {{lvl}}"
+    },
+    "stat": {
+      "hp": "HP",
+      "stamina": "St",
+      "oxygen": "Ox",
+      "food": "Fd",
+      "weight": "Wt",
+      "damage": "Dm",
+      "speed": "Sp"
+    }
   },
   "auditLog": {
     "title": "Registro Audit",
@@ -2637,7 +3261,10 @@
       "action": "Azione",
       "detail": "Dettaglio",
       "ip": "Indirizzo IP"
-    }
+    },
+    "entries": "Voci",
+    "filters": "Filtri",
+    "pagination": "Pagine del registro audit"
   },
   "playerMap": {
     "lat": "Lat",
@@ -2693,7 +3320,26 @@
       "structure": "Struttura",
       "dino": "Dino"
     },
-    "sameMapUnattributed": "Anche un altro server attivo esegue {{map}} e questa scansione non ha lasciato righe attribuibili solo al server selezionato. La mappa resta vuota, così nessuna azione può colpire la tribù dell'altro server. Se il giocatore ha qualcosa su questo server, ripeti la scansione completa."
+    "sameMapUnattributed": "Anche un altro server attivo esegue {{map}} e questa scansione non ha lasciato righe attribuibili solo al server selezionato. La mappa resta vuota, così nessuna azione può colpire la tribù dell'altro server. Se il giocatore ha qualcosa su questo server, ripeti la scansione completa.",
+    "loadFailed": "Impossibile caricare gli elenchi di giocatori e server.",
+    "scanTitle": "Scansione",
+    "mapTitle": "Mappa",
+    "rowsTitle": "Oggetti scansionati",
+    "pickServer": "Scegli un server...",
+    "pickPlayerHint": "Cerca per nome o EOS id, poi scegli un giocatore.",
+    "selectedPlayer": "Selezionato: {{name}}",
+    "clearPlayer": "Deseleziona il giocatore",
+    "layerHidden": "(nascosto)",
+    "mapAria": "Mappa di {{map}} con {{count}} oggetti",
+    "zoomLevel": "Zoom {{zoom}}x",
+    "copyTp": "Copia il comando di teletrasporto per {{what}}",
+    "emptyTitle": "Nessuna scansione",
+    "emptyHint": "Scegli un giocatore e un server, poi avvia una scansione.",
+    "confirmDestroyTitle": "Distruggere {{what}} nel raggio?",
+    "confirmDestroyAction": "Distruggi {{what}}",
+    "destroyAllWord": "ALL",
+    "confirmDestroyOneAction": "Distruggi questo oggetto",
+    "confirmKillAction": "Uccidi il personaggio"
   },
   "clusterSync": {
     "title": "Sincronia cluster",
@@ -2720,10 +3366,15 @@
       "absent": "non installato",
       "present": "attivo",
       "wrongFolder": "cartella errata",
-      "copyId": "Copia device ID"
+      "copyId": "Copia device ID",
+      "copyIdFor": "Copia l'ID dispositivo Syncthing di {{machine}}"
     },
     "hintTitle": "Se un host mostra la cartella errata",
-    "hintBody": "ARK aggiunge da solo clusters/<ClusterID> a -ClusterDirOverride. Punta la replica alla directory mostrata in questa tabella, o al suo genitore - mai un livello piu in alto, altrimenti ottieni una directory verosimile in cui nessun server scrive mai."
+    "hintBody": "ARK aggiunge da solo clusters/<ClusterID> a -ClusterDirOverride. Punta la replica alla directory mostrata in questa tabella, o al suo genitore - mai un livello piu in alto, altrimenti ottieni una directory verosimile in cui nessun server scrive mai.",
+    "lastChecked": "Ultimo controllo alle {{time}}.",
+    "tableLabel": "Host del cluster {{id}}",
+    "noMembers": "Nessun host riporta questo cluster",
+    "probeFailed": "Verifica fallita"
   },
   "hardening": {
     "title": "Hardening Windows",
@@ -2764,7 +3415,31 @@
       "accounts": "Account",
       "platform": "Piattaforma",
       "preflight": "Pre-verifica"
-    }
+    },
+    "applyTitle": "Applica i controlli",
+    "applying": "Applicazione…",
+    "applyConfirm": "Applica {{count}} controllo/i",
+    "applyDone": "{{count}} controllo/i applicati. Il report qui sotto è un nuovo audit.",
+    "confirmApplyTitle": "Applicare {{count}} controllo/i a questo host?",
+    "confirmRiskyTitle": "Applicare {{count}} controllo/i a rischio blocco?",
+    "column": {
+      "select": "Selezione",
+      "state": "Stato",
+      "control": "Controllo",
+      "risk": "Rischio",
+      "detail": "Dettaglio",
+      "result": "Esito"
+    },
+    "state": {
+      "compliant": "Conforme",
+      "failing": "Non conforme"
+    },
+    "failingLabel": "Non conformi",
+    "failingMeta": "{{count}} controllo/i da correggere",
+    "lockoutLabel": "Rischio blocco",
+    "noControls": "Nessun controllo in questa categoria",
+    "selectControl": "Seleziona {{title}}",
+    "selectFailingHint": "{{count}} controllo/i non conformi possono essere applicati con le opzioni attuali."
   },
   "time": {
     "underMinute": "< 1m",

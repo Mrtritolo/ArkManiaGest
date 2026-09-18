@@ -2,61 +2,72 @@
  * ConfigTab.tsx — Settings -> Discord -> Configuration.
  *
  * Diagnostic-only view of the Discord integration's environment-driven
- * configuration.  Shows:
+ * configuration:
  *
  *   1. OAuth readiness   -- public Client ID + redirect URI + which .env
  *                           keys are still empty.
  *   2. Bot readiness     -- public guild ID + which .env keys are still
- *                           empty.  When populated, also surfaces the
- *                           bot's view of the guild (name + member count
- *                           + the GUILD_MEMBERS intent verdict).
- *   3. Auto-promotion whitelists -- the three CSV lists of Discord IDs
- *                                   that get an AppUser auto-created at
- *                                   admin/operator/viewer role on first
- *                                   Discord login.
+ *                           empty.  When populated, also the bot's view of
+ *                           the guild (name + member count).
+ *   3. VIP sync          -- the configured role plus the manual run and its
+ *                           last report.
+ *   4. Auto-promotion whitelists -- the three CSV lists of Discord IDs that
+ *                           get an AppUser auto-created at admin/operator/
+ *                           viewer role on first Discord login.
  *
- * Editing happens at the .env layer (with a service restart).  This tab
- * is intentionally read-only -- a future feature can promote the
- * whitelists to the panel `arkmaniagest_settings` table for runtime
- * editing if/when the operator asks for it.
+ * Editing happens on the Edit tab (and takes a service restart); everything
+ * here is read-only apart from the VIP sync trigger.
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Loader2, AlertCircle, CheckCircle, RefreshCw,
-  ShieldAlert, ShieldCheck, KeyRound, Bot, Users as UsersIcon, Copy,
-  Star, ArrowDownUp,
+  ArrowDownUp,
+  Bot,
+  KeyRound,
+  RotateCw,
+  ShieldAlert,
+  ShieldCheck,
+  Star,
+  Users as UsersIcon,
+  type LucideIcon,
 } from "lucide-react";
 import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  CopyButton,
+  NotAvailable,
+  Spinner,
+  StatTile,
+  Table,
+  useConfirm,
+} from "../../components/ui";
+import {
   discordApi,
-  type DiscordConfigStatus, type DiscordGuildInfo,
+  type DiscordConfigStatus,
+  type DiscordGuildInfo,
   type VipSyncReport,
 } from "../../services/api";
 import { extractError } from "../../utils/errors";
-import { copyText } from "../../utils/clipboard";
+import { fmtLocaleDateTime } from "../../utils/format";
+import styles from "./DiscordTabs.module.css";
+
+const ACTIONS_PREVIEW = 50;
 
 export default function ConfigTab() {
   const { t } = useTranslation();
   const [config, setConfig] = useState<DiscordConfigStatus | null>(null);
-  const [guild,  setGuild]  = useState<DiscordGuildInfo | null>(null);
+  const [guild, setGuild] = useState<DiscordGuildInfo | null>(null);
   const [guildErr, setGuildErr] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState("");
-  const [copied, setCopied]   = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(""), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-
-  useEffect(() => { loadAll(); }, []);
-
-  // Only confirm when the write worked: the Clipboard API is unavailable
-  // over plain HTTP, and the toast must not claim a copy that never happened.
-  async function copy(text: string, key: string): Promise<void> {
-    if (await copyText(text)) setCopied(key);
-  }
+    void loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadAll(): Promise<void> {
     setLoading(true);
@@ -67,16 +78,13 @@ export default function ConfigTab() {
       const cfg = await discordApi.config();
       setConfig(cfg.data);
       // Only attempt the guild probe when bot creds look complete --
-      // otherwise we'd 503 on every render.
+      // otherwise we'd 409 on every render.
       if (cfg.data.bot_ready) {
         try {
           const g = await discordApi.guildInfo();
           setGuild(g.data);
         } catch (err: unknown) {
-          setGuildErr(extractError(
-            err,
-            t("discord.config.errors.guildProbe"),
-          ));
+          setGuildErr(extractError(err, t("discord.config.errors.guildProbe")));
         }
       }
     } catch (err: unknown) {
@@ -87,124 +95,113 @@ export default function ConfigTab() {
   }
 
   if (loading) {
-    return (
-      <div className="pl-loading">
-        <Loader2 size={20} className="pl-spin" />{" "}
-        {t("discord.config.loading")}
-      </div>
-    );
+    return <Spinner block label={t("discord.config.loading")} />;
   }
+
   if (error || !config) {
     return (
-      <div className="alert alert-error">
-        <AlertCircle size={14} /> {error || "?"}
-      </div>
+      <Alert
+        tone="danger"
+        title={t("discord.config.errors.load")}
+        actions={
+          <Button size="sm" icon={RotateCw} onClick={() => void loadAll()}>
+            {t("common.retry")}
+          </Button>
+        }
+      >
+        {error || t("common.pageLoadError")}
+      </Alert>
     );
   }
 
+  const whitelistTotal =
+    config.admin_user_ids.length + config.operator_user_ids.length + config.viewer_user_ids.length;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button onClick={loadAll} className="btn btn-secondary btn-sm">
-          <RefreshCw size={12} /> {t("common.refresh")}
-        </button>
+    <div className="l-stack">
+      <div className="l-cluster l-cluster--end">
+        <Button size="sm" icon={RotateCw} onClick={() => void loadAll()}>
+          {t("common.refresh")}
+        </Button>
       </div>
 
       {/* OAuth readiness */}
       <Section
         title={t("discord.config.section.oauth")}
+        icon={KeyRound}
         ready={config.oauth_ready}
         readyLabel={t("discord.config.ready.oauth")}
         notReadyLabel={t("discord.config.notReady.oauth")}
-        icon={<KeyRound size={14} />}
       >
-        <KV label={t("discord.config.field.clientId")}
-            value={config.client_id || "—"}
-            onCopy={config.client_id ? () => copy(config.client_id, "client_id") : undefined}
-            copied={copied === "client_id"}
-        />
-        <KV label={t("discord.config.field.publicKey")}
-            value={config.public_key ? config.public_key.slice(0, 16) + "…" : "—"}
-        />
-        <KV label={t("discord.config.field.redirectUri")}
-            value={config.redirect_uri || "—"}
-            hint={!config.redirect_uri
-              ? t("discord.config.hint.redirectMissing")
-              : t("discord.config.hint.redirectRegister")
+        <dl className="ui-dl">
+          <KV label={t("discord.config.field.clientId")} value={config.client_id} copyable />
+          <KV
+            label={t("discord.config.field.publicKey")}
+            value={config.public_key ? `${config.public_key.slice(0, 16)}…` : ""}
+          />
+          <KV
+            label={t("discord.config.field.redirectUri")}
+            value={config.redirect_uri}
+            copyable
+            hint={
+              config.redirect_uri
+                ? t("discord.config.hint.redirectRegister")
+                : t("discord.config.hint.redirectMissing")
             }
-            onCopy={config.redirect_uri
-              ? () => copy(config.redirect_uri, "redirect_uri")
-              : undefined}
-            copied={copied === "redirect_uri"}
-        />
-        <KV label={t("discord.config.field.clientSecret")}
-            value={config.has_client_secret
-              ? t("discord.config.placeholder.set")
-              : t("discord.config.placeholder.notSet")}
-        />
-        {config.missing_for_oauth.length > 0 && (
-          <MissingHint keys={config.missing_for_oauth} />
-        )}
+          />
+          <KV
+            label={t("discord.config.field.clientSecret")}
+            value={
+              config.has_client_secret
+                ? t("discord.config.placeholder.set")
+                : t("discord.config.placeholder.notSet")
+            }
+          />
+        </dl>
+        <MissingKeys keys={config.missing_for_oauth} />
       </Section>
 
       {/* Bot readiness */}
       <Section
         title={t("discord.config.section.bot")}
+        icon={Bot}
         ready={config.bot_ready}
         readyLabel={t("discord.config.ready.bot")}
         notReadyLabel={t("discord.config.notReady.bot")}
-        icon={<Bot size={14} />}
       >
-        <KV label={t("discord.config.field.guildId")}
-            value={config.guild_id || "—"}
-            onCopy={config.guild_id ? () => copy(config.guild_id, "guild_id") : undefined}
-            copied={copied === "guild_id"}
-        />
-        <KV label={t("discord.config.field.botToken")}
-            value={config.has_bot_token
-              ? t("discord.config.placeholder.set")
-              : t("discord.config.placeholder.notSet")}
-        />
-        {config.missing_for_bot.length > 0 && (
-          <MissingHint keys={config.missing_for_bot} />
-        )}
+        <dl className="ui-dl">
+          <KV label={t("discord.config.field.guildId")} value={config.guild_id} copyable />
+          <KV
+            label={t("discord.config.field.botToken")}
+            value={
+              config.has_bot_token
+                ? t("discord.config.placeholder.set")
+                : t("discord.config.placeholder.notSet")
+            }
+          />
+        </dl>
+        <MissingKeys keys={config.missing_for_bot} />
 
         {/* Live guild probe */}
-        {config.bot_ready && (
-          <div style={{ marginTop: "0.6rem" }}>
-            {guildErr && (
-              <div className="alert alert-error" style={{ marginBottom: 0 }}>
-                <AlertCircle size={14} /> {guildErr}
-              </div>
-            )}
-            {guild && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: "0.55rem",
-                padding: "0.55rem 0.7rem", borderRadius: 6,
-                background: "var(--accent-50, color-mix(in srgb, var(--success) 8%, transparent))",
-                border: "1px solid color-mix(in srgb, var(--success) 25%, transparent)",
-              }}>
-                {guild.icon && (
-                  <img
-                    src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64`}
-                    alt=""
-                    style={{ width: 28, height: 28, borderRadius: 4 }}
-                  />
-                )}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{guild.name}</div>
-                  <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-                    {t(
-                      "discord.config.guildProbe",
-                      {
-                        m: guild.approximate_member_count ?? "?",
-                        p: guild.approximate_presence_count ?? "?",
-                      },
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+        {config.bot_ready && guildErr && <Alert tone="danger">{guildErr}</Alert>}
+        {config.bot_ready && guild && (
+          <div className={styles.guildRow}>
+            <Avatar
+              name={guild.name}
+              src={
+                guild.icon
+                  ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64`
+                  : null
+              }
+              size="sm"
+            />
+            <span>{guild.name}</span>
+            <span className="u-secondary u-text-sm">
+              {t("discord.config.guildProbe", {
+                m: guild.approximate_member_count ?? "?",
+                p: guild.approximate_presence_count ?? "?",
+              })}
+            </span>
           </div>
         )}
       </Section>
@@ -215,43 +212,31 @@ export default function ConfigTab() {
       {/* Auto-promotion whitelists */}
       <Section
         title={t("discord.config.section.whitelists")}
-        ready={
-          config.admin_user_ids.length
-          + config.operator_user_ids.length
-          + config.viewer_user_ids.length > 0
-        }
+        icon={UsersIcon}
+        ready={whitelistTotal > 0}
         readyLabel={t("discord.config.ready.whitelists")}
         notReadyLabel={t("discord.config.notReady.whitelists")}
-        icon={<UsersIcon size={14} />}
       >
-        <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
-          {t("discord.config.whitelistsExplain")}
-        </p>
-        <WhitelistRow
-          label={t("discord.config.whitelist.admin")}
-          ids={config.admin_user_ids}
-          envKey="DISCORD_ADMIN_USER_IDS"
-        />
-        <WhitelistRow
-          label={t("discord.config.whitelist.operator")}
-          ids={config.operator_user_ids}
-          envKey="DISCORD_OPERATOR_USER_IDS"
-        />
-        <WhitelistRow
-          label={t("discord.config.whitelist.viewer")}
-          ids={config.viewer_user_ids}
-          envKey="DISCORD_VIEWER_USER_IDS"
-        />
-        <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.45rem" }}>
-          {t("discord.config.whitelistsEditHint")}
-        </div>
+        <p className="u-secondary u-text-sm">{t("discord.config.whitelistsExplain")}</p>
+        <dl className="ui-dl">
+          <WhitelistRow
+            label={t("discord.config.whitelist.admin")}
+            envKey="DISCORD_ADMIN_USER_IDS"
+            ids={config.admin_user_ids}
+          />
+          <WhitelistRow
+            label={t("discord.config.whitelist.operator")}
+            envKey="DISCORD_OPERATOR_USER_IDS"
+            ids={config.operator_user_ids}
+          />
+          <WhitelistRow
+            label={t("discord.config.whitelist.viewer")}
+            envKey="DISCORD_VIEWER_USER_IDS"
+            ids={config.viewer_user_ids}
+          />
+        </dl>
+        <p className="u-muted u-text-sm">{t("discord.config.whitelistsEditHint")}</p>
       </Section>
-
-      {copied && (
-        <div className="alert alert-success" style={{ marginTop: 0 }}>
-          <CheckCircle size={14} /> {t("discord.config.toast.copySuccess")}
-        </div>
-      )}
     </div>
   );
 }
@@ -260,12 +245,19 @@ export default function ConfigTab() {
 
 function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [running, setRunning] = useState(false);
-  const [report,  setReport]  = useState<VipSyncReport | null>(null);
-  const [error,   setError]   = useState("");
+  const [report, setReport] = useState<VipSyncReport | null>(null);
+  const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
 
   async function runSync(): Promise<void> {
+    const ok = await confirm({
+      title: t("discord.config.vipSync.confirmTitle"),
+      description: t("discord.config.vipSync.confirmBody"),
+      confirmLabel: t("discord.config.vipSync.run"),
+    });
+    if (!ok) return;
     setRunning(true);
     setError("");
     setShowAll(false);
@@ -279,341 +271,254 @@ function VipSyncSection({ config }: { config: DiscordConfigStatus }) {
     }
   }
 
+  const actions = report
+    ? showAll
+      ? report.actions
+      : report.actions.slice(0, ACTIONS_PREVIEW)
+    : [];
+  // The stranger list is built from a guild member walk: when that walk
+  // failed or stopped at its page cap the list is a sample, not the truth.
+  const scanIncomplete = report !== null && !report.member_scan_complete;
+
   return (
     <Section
       title={t("discord.config.section.vipSync")}
+      icon={Star}
       ready={config.vip_sync_ready}
       readyLabel={t("discord.config.ready.vipSync")}
       notReadyLabel={t("discord.config.notReady.vipSync")}
-      icon={<Star size={14} />}
-    >
-      <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", margin: "0 0 0.55rem 0" }}>
-        {t("discord.config.vipSync.explain")}
-      </p>
-      <KV
-        label={t("discord.config.field.vipRoleId")}
-        value={config.vip_role_id || "—"}
-        hint={!config.vip_role_id
-          ? t("discord.config.hint.vipRoleMissing")
-          : undefined}
-      />
-
-      {error && (
-        <div className="alert alert-error" style={{ marginTop: "0.5rem" }}>
-          <AlertCircle size={14} /> {error}
-        </div>
-      )}
-
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.6rem" }}>
-        <button
-          onClick={runSync}
-          disabled={running || !config.vip_sync_ready}
-          className="btn btn-primary btn-sm"
+      action={
+        <Button
+          size="sm"
+          icon={ArrowDownUp}
+          loading={running}
+          loadingLabel={t("discord.config.vipSync.running")}
+          disabled={!config.vip_sync_ready}
+          title={config.vip_sync_ready ? undefined : t("discord.config.notReady.vipSync")}
+          onClick={() => void runSync()}
         >
-          {running
-            ? <Loader2 size={12} className="pl-spin" />
-            : <ArrowDownUp size={12} />}
-          {" "}
-          {running
-            ? t("discord.config.vipSync.running")
-            : t("discord.config.vipSync.run")}
-        </button>
-        {report && (
-          <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-            {t(
-              "discord.config.vipSync.lastRun",
-              {
-                d: new Date(report.finished_at_iso).toLocaleString(),
-                s: report.duration_seconds.toFixed(1),
-                n: report.linked_total,
-              },
-            )}
-          </span>
-        )}
-      </div>
+          {t("discord.config.vipSync.run")}
+        </Button>
+      }
+    >
+      <p className="u-secondary u-text-sm">{t("discord.config.vipSync.explain")}</p>
+      <dl className="ui-dl">
+        <KV
+          label={t("discord.config.field.vipRoleId")}
+          value={config.vip_role_id}
+          hint={config.vip_role_id ? undefined : t("discord.config.hint.vipRoleMissing")}
+        />
+      </dl>
+
+      {error && <Alert tone="danger">{error}</Alert>}
 
       {report && (
-        <div style={{
-          marginTop: "0.5rem",
-          padding: "0.55rem 0.7rem",
-          background: "var(--bg-card-muted, var(--bg-card-muted))",
-          borderRadius: 6,
-          fontSize: "0.8rem",
-          display: "flex", flexDirection: "column", gap: "0.3rem",
-        }}>
-          <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
-            <Metric value={report.assigned_count} label={t("discord.config.vipSync.metric.assigned")} color="var(--success)" />
-            <Metric value={report.removed_count}  label={t("discord.config.vipSync.metric.removed")}  color="var(--warning)" />
-            <Metric value={report.noop_count}     label={t("discord.config.vipSync.metric.noop")}     color="var(--text-muted)" />
-            <Metric value={report.error_count}    label={t("discord.config.vipSync.metric.errors")}   color={report.error_count > 0 ? "var(--danger)" : "var(--text-muted)"} />
-            <Metric value={report.unmapped_with_vip.length} label={t("discord.config.vipSync.metric.strangers")} color="var(--text-muted)" />
+        <>
+          <p className="u-secondary u-text-sm">
+            {t("discord.config.vipSync.lastRun", {
+              d: fmtLocaleDateTime(report.finished_at_iso),
+              s: report.duration_seconds.toFixed(1),
+              n: report.linked_total,
+            })}
+          </p>
+
+          <div className="l-grid--stats">
+            <StatTile
+              label={t("discord.config.vipSync.metric.assigned")}
+              value={report.assigned_count}
+            />
+            <StatTile label={t("discord.config.vipSync.metric.removed")} value={report.removed_count} />
+            <StatTile label={t("discord.config.vipSync.metric.noop")} value={report.noop_count} />
+            <StatTile
+              label={t("discord.config.vipSync.metric.errors")}
+              value={report.error_count}
+              meta={report.error_count > 0 ? t("discord.config.vipSync.hasErrors") : undefined}
+              metaTone={report.error_count > 0 ? "danger" : undefined}
+            />
+            <StatTile
+              label={t("discord.config.vipSync.metric.strangers")}
+              value={report.unmapped_with_vip.length}
+              meta={scanIncomplete ? t("discord.config.vipSync.partial") : undefined}
+              metaTone={scanIncomplete ? "warning" : undefined}
+            />
           </div>
 
+          {scanIncomplete && (
+            <Alert tone="warning">
+              {report.member_scan_error
+                ? t("discord.config.vipSync.scanFailed", { error: report.member_scan_error })
+                : t("discord.config.vipSync.scanCapped")}
+            </Alert>
+          )}
+
           {report.unmapped_with_vip.length > 0 && (
-            <details style={{ fontSize: "0.75rem" }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
-                {t(
-                  "discord.config.vipSync.strangerVips",
-                  {
-                    n: report.unmapped_with_vip.length,
-                  },
-                )}
+            <details className="ui-details">
+              <summary>
+                {t("discord.config.vipSync.strangerVips", { n: report.unmapped_with_vip.length })}
               </summary>
-              <div style={{
-                marginTop: "0.3rem", display: "flex", flexWrap: "wrap", gap: "0.25rem",
-              }}>
-                {report.unmapped_with_vip.map(id => (
-                  <span key={id} className="pl-chip" style={{ fontFamily: "monospace", fontSize: "0.7rem" }}>
-                    {id}
-                  </span>
+              <div className={`ui-details__body ${styles.idList}`}>
+                {report.unmapped_with_vip.map((id) => (
+                  <Badge key={id}>
+                    <span className="u-mono">{id}</span>
+                  </Badge>
                 ))}
               </div>
             </details>
           )}
 
           {report.actions.length > 0 && (
-            <details style={{ fontSize: "0.75rem" }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
-                {t(
-                  "discord.config.vipSync.perRow",
-                  {
-                    n: report.actions.length,
-                  },
-                )}
-              </summary>
-              <div style={{ marginTop: "0.3rem", maxHeight: 240, overflowY: "auto" }}>
-                <table className="pl-table" style={{ fontSize: "0.72rem" }}>
+            <details className="ui-details">
+              <summary>{t("discord.config.vipSync.perRow", { n: report.actions.length })}</summary>
+              <div className="ui-details__body">
+                <Table label={t("discord.config.vipSync.perRow", { n: report.actions.length })} maxHeight="30vh" minWidth={640}>
                   <thead>
                     <tr>
-                      <th>{t("discord.config.vipSync.col.player")}</th>
-                      <th>{t("discord.config.vipSync.col.discord")}</th>
-                      <th>{t("discord.config.vipSync.col.action")}</th>
-                      <th>{t("discord.config.vipSync.col.detail")}</th>
+                      <th scope="col">{t("discord.config.vipSync.col.player")}</th>
+                      <th scope="col">{t("discord.config.vipSync.col.discord")}</th>
+                      <th scope="col">{t("discord.config.vipSync.col.action")}</th>
+                      <th scope="col">{t("discord.config.vipSync.col.detail")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(showAll ? report.actions : report.actions.slice(0, 50)).map((a, i) => (
+                    {actions.map((a, i) => (
                       <tr key={`${a.discord_user_id}-${i}`}>
-                        <td>{a.player_name || a.eos_id.slice(0, 8) + "…"}</td>
-                        <td style={{ fontFamily: "monospace", fontSize: "0.68rem" }}>
-                          {a.discord_user_id}
-                        </td>
                         <td>
-                          <span
-                            className="pl-chip"
-                            style={{
-                              background: actionBg(a.action),
-                              color:      actionColor(a.action),
-                              borderColor: actionBorder(a.action),
-                            }}
-                          >
-                            {a.action}
-                          </span>
+                          {a.player_name || t("discord.common.eosShort", { id: a.eos_id.slice(0, 8) })}
                         </td>
-                        <td style={{ color: "var(--text-secondary)" }}>{a.detail || ""}</td>
+                        <td className="u-mono">{a.discord_user_id}</td>
+                        <td>
+                          <Badge tone={a.action === "error" ? "danger" : "neutral"}>
+                            {t(`discord.config.vipSync.action.${a.action}`)}
+                          </Badge>
+                        </td>
+                        <td className="ui-cell-wrap u-secondary">{a.detail || ""}</td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
-                {!showAll && report.actions.length > 50 && (
-                  <div style={{ textAlign: "center", marginTop: "0.3rem" }}>
-                    <button onClick={() => setShowAll(true)} className="btn btn-secondary btn-sm">
-                      {t("common.showAll")}
-                      {" "}({report.actions.length})
-                    </button>
+                </Table>
+                {!showAll && report.actions.length > ACTIONS_PREVIEW && (
+                  <div className="l-cluster">
+                    <Button size="sm" onClick={() => setShowAll(true)}>
+                      {t("common.showAll")} ({report.actions.length})
+                    </Button>
                   </div>
                 )}
               </div>
             </details>
           )}
-        </div>
+        </>
       )}
     </Section>
   );
 }
 
-function Metric({ value, label, color }: { value: number; label: string; color: string }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 64 }}>
-      <div style={{ fontSize: "1.1rem", fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: "0.65rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function actionBg(a: string): string {
-  if (a === "assigned") return "color-mix(in srgb, var(--success) 8%, transparent)";
-  if (a === "removed")  return "color-mix(in srgb, var(--warning) 8%, transparent)";
-  if (a === "error")    return "color-mix(in srgb, var(--danger) 8%, transparent)";
-  return "color-mix(in srgb, var(--text-muted) 8%, transparent)";
-}
-function actionColor(a: string): string {
-  if (a === "assigned") return "var(--success)";
-  if (a === "removed")  return "var(--warning)";
-  if (a === "error")    return "var(--danger)";
-  return "var(--text-muted)";
-}
-function actionBorder(a: string): string {
-  if (a === "assigned") return "color-mix(in srgb, var(--success) 25%, transparent)";
-  if (a === "removed")  return "color-mix(in srgb, var(--warning) 25%, transparent)";
-  if (a === "error")    return "color-mix(in srgb, var(--danger) 25%, transparent)";
-  return "color-mix(in srgb, var(--text-muted) 25%, transparent)";
-}
-
 // ── Layout helpers ───────────────────────────────────────────────────────────
 
 function Section({
-  title, ready, readyLabel, notReadyLabel, icon, children,
+  title,
+  icon,
+  ready,
+  readyLabel,
+  notReadyLabel,
+  action,
+  children,
 }: {
   title: string;
+  icon: LucideIcon;
   ready: boolean;
   readyLabel: string;
   notReadyLabel: string;
-  icon: React.ReactNode;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="pl-sync-panel">
-      <div className="pl-sync-header">
-        <span className="pl-sync-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          {icon} {title}
-        </span>
-        <span
-          className="pl-chip"
-          style={{
-            background: ready ? "color-mix(in srgb, var(--success) 8%, transparent)" : "color-mix(in srgb, var(--danger) 8%, transparent)",
-            color:      ready ? "var(--success)"   : "var(--danger)",
-            borderColor: ready ? "color-mix(in srgb, var(--success) 25%, transparent)" : "color-mix(in srgb, var(--danger) 25%, transparent)",
-          }}
-        >
-          {ready ? <ShieldCheck size={9} /> : <ShieldAlert size={9} />}
-          {ready ? readyLabel : notReadyLabel}
-        </span>
-      </div>
-      <div className="pl-sync-body" style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-        {children}
-      </div>
-    </div>
+    <Card
+      title={title}
+      icon={icon}
+      actions={
+        <>
+          <Badge tone={ready ? "success" : "danger"} icon={ready ? ShieldCheck : ShieldAlert}>
+            {ready ? readyLabel : notReadyLabel}
+          </Badge>
+          {action}
+        </>
+      }
+    >
+      <div className="l-stack">{children}</div>
+    </Card>
   );
 }
 
+/** One label/value pair of a `dl.ui-dl`, with an optional copy action. */
 function KV({
-  label, value, hint, onCopy, copied,
+  label,
+  value,
+  hint,
+  copyable,
 }: {
   label: string;
   value: string;
   hint?: string;
-  onCopy?: () => void;
-  copied?: boolean;
+  copyable?: boolean;
 }) {
   const { t } = useTranslation();
+  const empty = value === "";
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-        <span style={{
-          fontSize: "0.72rem", color: "var(--text-secondary)",
-          minWidth: 110, textTransform: "uppercase", letterSpacing: 0.4,
-        }}>
-          {label}
+    <>
+      <dt>{label}</dt>
+      <dd>
+        <span className={styles.kvValue}>
+          {/* The kit's "--" + screen-reader "not available"; the whitelist's
+              own "(empty)" is written for a list and does not fit here. */}
+          {empty ? <NotAvailable /> : <span className="u-mono">{value}</span>}
+          {copyable && !empty && (
+            <CopyButton value={value} label={`${t("discord.config.copy")}: ${label}`} />
+          )}
         </span>
-        <span style={{
-          fontFamily: "monospace", fontSize: "0.85rem", flex: 1,
-          wordBreak: "break-all",
-        }}>
-          {value}
+        {hint && <span className="u-muted u-text-sm">{hint}</span>}
+      </dd>
+    </>
+  );
+}
+
+function MissingKeys({ keys }: { keys: string[] }) {
+  const { t } = useTranslation();
+  if (keys.length === 0) return null;
+  return (
+    <Alert tone="danger" title={t("discord.config.missingKeys")}>
+      <code className="ui-code">{keys.join(", ")}</code>
+    </Alert>
+  );
+}
+
+function WhitelistRow({ label, envKey, ids }: { label: string; envKey: string; ids: string[] }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <dt>
+        <span className={styles.kvValue}>
+          <span>{label}</span>
+          <code className="ui-code">{envKey}</code>
         </span>
-        {onCopy && (
-          <button
-            onClick={onCopy}
-            className="btn btn-secondary btn-sm"
-            style={{ padding: "0.15rem 0.35rem" }}
-            aria-label={t("discord.config.copy")} title={t("discord.config.copy")}
-          >
-            {copied ? <CheckCircle size={11} color="var(--success)" /> : <Copy size={11} />}
-          </button>
-        )}
-      </div>
-      {hint && (
-        <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginLeft: 110 + 8 }}>
-          {hint}
+      </dt>
+      <dd>
+        <div className={styles.idList}>
+          {ids.length === 0 ? (
+            <span className="u-muted">{t("discord.config.whitelist.empty")}</span>
+          ) : (
+            <>
+              {ids.map((id) => (
+                <Badge key={id}>
+                  <span className="u-mono">{id}</span>
+                </Badge>
+              ))}
+              <span className="u-muted u-text-sm">
+                {t("discord.config.whitelist.idCount", { count: ids.length })}
+              </span>
+            </>
+          )}
         </div>
-      )}
-    </div>
-  );
-}
-
-function MissingHint({ keys }: { keys: string[] }) {
-  const { t } = useTranslation();
-  return (
-    <div
-      style={{
-        marginTop: "0.4rem",
-        padding: "0.45rem 0.6rem",
-        background: "color-mix(in srgb, var(--danger) 6%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--danger) 25%, transparent)",
-        borderRadius: 6,
-        fontSize: "0.78rem",
-      }}
-    >
-      <div style={{ fontWeight: 600, color: "var(--danger)", marginBottom: "0.2rem" }}>
-        {t("discord.config.missingKeys")}
-      </div>
-      <code style={{ fontFamily: "monospace", fontSize: "0.78rem" }}>
-        {keys.join(", ")}
-      </code>
-    </div>
-  );
-}
-
-function WhitelistRow({
-  label, ids, envKey,
-}: {
-  label: string;
-  ids: string[];
-  envKey: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
-        <span style={{
-          fontSize: "0.72rem", color: "var(--text-secondary)",
-          minWidth: 80, textTransform: "uppercase", letterSpacing: 0.4,
-        }}>
-          {label}
-        </span>
-        <span style={{
-          fontFamily: "monospace", fontSize: "0.7rem", color: "var(--text-secondary)",
-        }}>
-          {envKey}
-        </span>
-        <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginLeft: "auto" }}>
-          {t("discord.config.whitelist.idCount", { count: ids.length })}
-        </span>
-      </div>
-      <div style={{
-        marginTop: "0.25rem",
-        display: "flex", flexWrap: "wrap", gap: "0.25rem",
-        marginLeft: 80 + 8,
-      }}>
-        {ids.length === 0
-          ? (
-            <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
-              {t("discord.config.whitelist.empty")}
-            </span>
-          )
-          : ids.map(id => (
-            <span
-              key={id}
-              className="pl-chip"
-              style={{ fontFamily: "monospace", fontSize: "0.72rem" }}
-            >
-              {id}
-            </span>
-          ))}
-      </div>
-    </div>
+      </dd>
+    </>
   );
 }

@@ -1,0 +1,78 @@
+/*
+ * Page-only layout for the plugin config editor. Tokens only; the editors used
+ * to hard-code rgba(255,255,255,.05) inputs and green mono section labels.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* One key: label, description and its editor. */
+  .itemGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+  .itemWide {
+    grid-column: 1 / -1;
+  }
+
+  /* Boolean keys: the same grid, one Switch per cell. */
+  .boolGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+    gap: var(--space-3);
+  }
+
+  /* The module label of a rail item takes the free space; the count stays. */
+  .navLabel {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* A list row inside an editor (blueprint, group rule, ordered group). */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+  }
+  .rowMain {
+    flex: 1;
+    min-width: 0;
+  }
+  .rowIndex {
+    flex-shrink: 0;
+    min-width: 2ch;
+    text-align: end;
+  }
+
+  /* The per-group limit table of a craft rule. */
+  .limitRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 7rem) minmax(0, 7rem) auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  @media (max-width: 599px) {
+    .limitRow {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* Key -> value rows of the map editor. */
+  .kvRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  @media (max-width: 599px) {
+    .kvRow {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+}

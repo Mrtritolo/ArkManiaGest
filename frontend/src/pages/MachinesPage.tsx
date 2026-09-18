@@ -1,11 +1,35 @@
 /**
- * MachinesPage — Full CRUD for SSH machines + ServerForge import
+ * MachinesPage -- full CRUD for the SSH machines, plus the ServerForge import.
+ *
+ * Every write here (create, edit, duplicate, delete, test, import) is
+ * admin-only in machines.py / serverforge.py; every other role reads.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ChevronDown, Plus, Server, Zap } from 'lucide-react'
+
 import { machinesApi, sfApi } from '../services/api'
-import StatusBadge from '../components/StatusBadge'
+import { extractError } from '../utils/errors'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  PageHeader,
+  Select,
+  Spinner,
+  StatusBadge,
+  useConfirm,
+  useToast,
+  type RuntimeStatus,
+} from '../components/ui'
 import type { AuthUser, SSHMachine, SSHMachineCreate, SSHTestResult, SFImportPreview } from '../types'
+import styles from './MachinesPage.module.css'
 
 const emptyMachine: SSHMachineCreate = {
   name: '',
@@ -29,39 +53,54 @@ const emptyMachine: SSHMachineCreate = {
   is_active: true,
 }
 
+/** last_status is a free-form string from the backend; map it to the kit. */
+const RUNTIME_STATUS: Record<string, RuntimeStatus> = {
+  online: 'online',
+  offline: 'offline',
+  error: 'error',
+  testing: 'testing',
+  unknown: 'unknown',
+}
+const toRuntimeStatus = (value: string): RuntimeStatus => RUNTIME_STATUS[value] ?? 'unknown'
+
+type ImportCreds = { ssh_user: string; ssh_password: string; auth_method: string; ssh_key_path: string }
+
 interface Props {
   currentUser?: AuthUser | null
 }
 
 export default function MachinesPage({ currentUser }: Props) {
   const { t } = useTranslation()
-  // Every write on this page (create, edit, duplicate, delete, test, import)
-  // is admin-only in machines.py / serverforge.py; other roles only read.
+  const toast = useToast()
+  const confirm = useConfirm()
   const isAdmin = currentUser?.role === 'admin'
+
   const [machines, setMachines] = useState<SSHMachine[]>([])
   const [loading, setLoading] = useState(true)
+  // null = loaded; a string (possibly empty) = the last load failed.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<SSHMachineCreate>({ ...emptyMachine })
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [testResults, setTestResults] = useState<Record<number, SSHTestResult>>({})
   const [testingId, setTestingId] = useState<number | null>(null)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const formRef = useRef<HTMLDivElement>(null)
+  const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({})
 
-  // Import ServerForge
+  // Import from ServerForge (admin only: POST /sf/machines/import is require_admin)
   const [showImport, setShowImport] = useState(false)
   const [sfMachines, setSfMachines] = useState<SFImportPreview[]>([])
   const [sfLoading, setSfLoading] = useState(false)
+  const [sfError, setSfError] = useState('')
   const [sfHasToken, setSfHasToken] = useState<boolean | null>(null)
   const [importingId, setImportingId] = useState<number | null>(null)
-  const [importForm, setImportForm] = useState<Record<number, { ssh_user: string; ssh_password: string; auth_method: string; ssh_key_path: string }>>({})
+  const [importForm, setImportForm] = useState<Record<number, ImportCreds>>({})
 
   useEffect(() => { loadMachines(); checkSfToken() }, [])
-  useEffect(() => { if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) } }, [success])
 
   async function checkSfToken() {
     try {
@@ -72,59 +111,60 @@ export default function MachinesPage({ currentUser }: Props) {
 
   async function loadMachines() {
     setLoading(true)
-    try { const res = await machinesApi.list(); setMachines(res.data) }
-    catch { setError(t('machines.errors.load')) }
-    finally { setLoading(false) }
+    try {
+      const res = await machinesApi.list()
+      setMachines(res.data)
+      setLoadError(null)
+    } catch (err) {
+      setLoadError(extractError(err, ''))
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // ========== Import da ServerForge ==========
+  // ========== Import from ServerForge ==========
 
   async function handleOpenImport() {
     setShowImport(true)
     setShowForm(false)
     setSfLoading(true)
-    setError('')
+    setSfError('')
     try {
       const res = await sfApi.previewImport()
       setSfMachines(res.data.machines)
-      // Init form per ogni macchina non importata
-      const forms: typeof importForm = {}
+      const forms: Record<number, ImportCreds> = {}
       for (const m of res.data.machines) {
         if (!m.already_imported) {
           forms[m.sf_id] = { ssh_user: 'root', ssh_password: '', auth_method: 'key', ssh_key_path: '/home/arkmania/.ssh/id_ed25519' }
         }
       }
       setImportForm(forms)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || t('machines.errors.load'))
-      setShowImport(false)
+    } catch (err) {
+      setSfError(extractError(err, t('machines.errors.load')))
     } finally {
       setSfLoading(false)
     }
   }
 
-  function handleImportFormChange(sfId: number, field: string, value: string) {
-    setImportForm(prev => ({
-      ...prev,
-      [sfId]: { ...prev[sfId], [field]: value },
-    }))
+  function handleImportFormChange(sfId: number, field: keyof ImportCreds, value: string) {
+    setImportForm(prev => ({ ...prev, [sfId]: { ...prev[sfId], [field]: value } }))
   }
 
   async function handleImportMachine(sfm: SFImportPreview) {
     const creds = importForm[sfm.sf_id]
     if (!creds?.ssh_user) {
-      setError(t('machines.import.errors.userRequired'))
+      setSfError(t('machines.import.errors.userRequired'))
       return
     }
     if (creds.auth_method === 'password' && !creds.ssh_password) {
-      setError(t('machines.import.errors.passwordRequired'))
+      setSfError(t('machines.import.errors.passwordRequired'))
       return
     }
 
     setImportingId(sfm.sf_id)
-    setError('')
+    setSfError('')
     try {
-      const name = sfm.hostname || sfm.ip_address || `SF-Machine-${sfm.sf_id}`
+      const name = sfm.hostname || sfm.ip_address || t('machines.import.fallbackName', { id: sfm.sf_id })
       await sfApi.importMachine({
         sf_machine_id: sfm.sf_id,
         name,
@@ -139,32 +179,26 @@ export default function MachinesPage({ currentUser }: Props) {
         ark_config_path: '/opt/ark/ShooterGame/Saved/Config/LinuxServer',
         ark_plugins_path: '/opt/ark/ShooterGame/Binaries/Linux/Plugins',
       })
-      setSuccess(t('machines.import.imported', { name }))
-      // Refresh list and import status
+      toast.success(t('machines.import.imported', { name }))
       await loadMachines()
-      setSfMachines(prev => prev.map(m =>
-        m.sf_id === sfm.sf_id ? { ...m, already_imported: true } : m
-      ))
-    } catch (err: any) {
-      setError(err.response?.data?.detail || t('machines.import.errors.generic'))
+      setSfMachines(prev => prev.map(m => (m.sf_id === sfm.sf_id ? { ...m, already_imported: true } : m)))
+    } catch (err) {
+      setSfError(extractError(err, t('machines.import.errors.generic')))
     } finally {
       setImportingId(null)
     }
   }
 
-  // ========== CRUD standard ==========
+  // ========== CRUD ==========
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
-    const { name, value, type } = e.target
-    const checked = (e.target as HTMLInputElement).checked
-    setForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : type === 'number' ? parseInt(value) || 0 : value,
-    }))
-    if (validationErrors[name]) setValidationErrors(prev => { const n = { ...prev }; delete n[name]; return n })
+  function setField<K extends keyof SSHMachineCreate>(key: K, value: SSHMachineCreate[K]) {
+    setForm(prev => ({ ...prev, [key]: value }))
+    if (validationErrors[key as string]) {
+      setValidationErrors(prev => { const next = { ...prev }; delete next[key as string]; return next })
+    }
   }
 
-  function validate(): boolean {
+  function validate(): string | null {
     const errors: Record<string, string> = {}
     if (!form.name.trim()) errors.name = t('validation.required')
     if (!form.hostname.trim()) errors.hostname = t('validation.required')
@@ -173,13 +207,23 @@ export default function MachinesPage({ currentUser }: Props) {
     if (form.auth_method === 'password' && !editingId && !form.ssh_password) errors.ssh_password = t('validation.passwordRequired')
     if ((form.auth_method === 'key' || form.auth_method === 'key_password') && !form.ssh_key_path) errors.ssh_key_path = t('validation.required')
     setValidationErrors(errors)
-    return Object.keys(errors).length === 0
+    // Order matters: the first invalid control takes focus after a failed save.
+    const order = ['name', 'hostname', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_path']
+    return order.find(key => errors[key]) ?? null
+  }
+
+  function revealForm() {
+    setTimeout(() => {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      formRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+      fieldRefs.current.name?.focus()
+    }, 50)
   }
 
   function handleNew() {
     setForm({ ...emptyMachine }); setEditingId(null); setShowForm(true); setShowImport(false)
-    setError(''); setValidationErrors({})
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    setFormError(''); setValidationErrors({})
+    revealForm()
   }
 
   function handleEdit(machine: SSHMachine) {
@@ -196,427 +240,543 @@ export default function MachinesPage({ currentUser }: Props) {
       cluster_sync_mode: machine.cluster_sync_mode || 'none',
       is_active: machine.is_active,
     })
-    setEditingId(machine.id); setShowForm(true); setShowImport(false); setError(''); setValidationErrors({})
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    setEditingId(machine.id); setShowForm(true); setShowImport(false); setFormError(''); setValidationErrors({})
+    revealForm()
   }
 
-  function handleCancel() { setShowForm(false); setEditingId(null); setError(''); setValidationErrors({}) }
+  function handleCancel() { setShowForm(false); setEditingId(null); setFormError(''); setValidationErrors({}) }
 
   async function handleSave() {
-    if (!validate()) return
-    setSaving(true); setError('')
+    const firstInvalid = validate()
+    if (firstInvalid) {
+      fieldRefs.current[firstInvalid]?.focus()
+      return
+    }
+    setSaving(true); setFormError('')
     // runtime=native only exists on Windows: a runtime picked before switching
     // the OS back to Linux must not be stored (the Hardening page reads it).
     const payload: SSHMachineCreate = form.os_type === 'windows' ? form : { ...form, runtime: 'pok' }
     try {
-      if (editingId) { await machinesApi.update(editingId, payload); setSuccess(t('machines.messages.updated', { name: form.name })) }
-      else { await machinesApi.create(payload); setSuccess(t('machines.messages.created', { name: form.name })) }
+      if (editingId) {
+        await machinesApi.update(editingId, payload)
+        toast.success(t('machines.messages.updated', { name: form.name }))
+      } else {
+        await machinesApi.create(payload)
+        toast.success(t('machines.messages.created', { name: form.name }))
+      }
       await loadMachines(); setShowForm(false); setEditingId(null)
-    } catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.save')) }
-    finally { setSaving(false) }
+    } catch (err) {
+      setFormError(extractError(err, t('machines.errors.save')))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  async function handleDelete(id: number, name: string) {
-    if (!confirm(t('machines.confirmDelete', { name }))) return
-    try { await machinesApi.delete(id); setSuccess(t('machines.messages.deleted', { name })); await loadMachines() }
-    catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.delete')) }
+  async function handleDelete(machine: SSHMachine) {
+    const ok = await confirm({
+      title: t('machines.deleteTitle', { name: machine.name }),
+      description: t('machines.confirmDelete', { name: machine.name }),
+      confirmLabel: t('machines.deleteConfirm'),
+      tone: 'danger',
+    })
+    if (!ok) return
+    try {
+      await machinesApi.delete(machine.id)
+      toast.success(t('machines.messages.deleted', { name: machine.name }))
+      await loadMachines()
+    } catch (err) {
+      toast.error(extractError(err, t('machines.errors.delete')))
+    }
   }
 
   async function handleDuplicate(id: number) {
-    try { const res = await machinesApi.duplicate(id); setSuccess(t('machines.messages.duplicated', { name: res.data.name })); await loadMachines() }
-    catch (err: any) { setError(err.response?.data?.detail || t('machines.errors.save')) }
+    try {
+      const res = await machinesApi.duplicate(id)
+      toast.success(t('machines.messages.duplicated', { name: res.data.name }))
+      await loadMachines()
+    } catch (err) {
+      toast.error(extractError(err, t('machines.errors.save')))
+    }
   }
 
   async function handleTest(id: number) {
     setTestingId(id)
-    try { const res = await machinesApi.test(id); setTestResults(prev => ({ ...prev, [id]: res.data })); await loadMachines() }
-    catch (err: any) { setTestResults(prev => ({ ...prev, [id]: { success: false, message: err.message, hostname: '', response_time_ms: null } })) }
-    finally { setTestingId(null) }
+    try {
+      const res = await machinesApi.test(id)
+      setTestResults(prev => ({ ...prev, [id]: res.data }))
+      await loadMachines()
+    } catch (err) {
+      setTestResults(prev => ({
+        ...prev,
+        [id]: { success: false, message: extractError(err, t('machines.errors.test')), hostname: '', response_time_ms: null },
+      }))
+    } finally {
+      setTestingId(null)
+    }
   }
 
-  function fieldError(name: string) { return validationErrors[name] ? <span className="form-error">{validationErrors[name]}</span> : null }
-  function inputClass(name: string) { return `form-input ${validationErrors[name] ? 'form-input-error' : ''}` }
+  const bindField = (key: string) => (el: HTMLInputElement | HTMLSelectElement | null) => {
+    fieldRefs.current[key] = el
+  }
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t('machines.title')}</h1>
-          <p className="page-subtitle">
+    <div className="l-page">
+      <PageHeader
+        title={t('machines.title')}
+        icon={Server}
+        description={
+          <>
             {t('machines.subtitle')}
-            {machines.length > 0 && <span className="page-subtitle-count"> {t('machines.subtitleCount', { count: machines.length })}</span>}
-          </p>
-        </div>
-        {isAdmin && !showForm && !showImport && (
-          <div className="page-header-actions">
-            {sfHasToken && (
-              <button onClick={handleOpenImport} className="btn btn-secondary">
-                &#x26A1; {t('machines.importServerForge')}
-              </button>
-            )}
-            <button onClick={handleNew} className="btn btn-primary">
-              + {t('machines.newMachine')}
-            </button>
-          </div>
-        )}
-      </div>
+            {machines.length > 0 && <> {t('machines.subtitleCount', { count: machines.length })}</>}
+          </>
+        }
+        actions={
+          isAdmin && !showForm && !showImport ? (
+            <>
+              {sfHasToken && (
+                <Button icon={Zap} onClick={handleOpenImport}>{t('machines.importServerForge')}</Button>
+              )}
+              <Button variant="primary" icon={Plus} onClick={handleNew}>{t('machines.newMachine')}</Button>
+            </>
+          ) : undefined
+        }
+      />
 
-      {/* Messaggi */}
-      {error && (
-        <div className="alert alert-error mb-6">
-          <span className="alert-icon">!</span>{error}
-          <button onClick={() => setError('')} className="alert-close">&times;</button>
-        </div>
-      )}
-      {success && (
-        <div className="alert alert-success mb-6">
-          <span className="alert-icon">&#10003;</span>{success}
-        </div>
+      {loadError !== null && (
+        <Alert
+          tone="danger"
+          title={t('machines.errors.load')}
+          actions={<Button size="sm" onClick={loadMachines}>{t('common.retry')}</Button>}
+        >
+          {loadError || undefined}
+        </Alert>
       )}
 
-      {/* ========== ServerForge import panel ========== */}
-      {showImport && (
-        <div className="card card-form mb-8">
-          <div className="card-title-row">
-            <h2 className="card-title">
-              <span className="card-title-icon">&#x26A1;</span>
-              {t('machines.import.title')}
-            </h2>
-            <button onClick={() => setShowImport(false)} className="btn btn-sm btn-ghost">{t('common.close')}</button>
-          </div>
-          <p className="card-text mb-6">{t('machines.import.intro')}</p>
+      {/* ===== ServerForge import panel (admin only) ===== */}
+      {isAdmin && showImport && (
+        <Card
+          title={t('machines.import.title')}
+          icon={Zap}
+          actions={<Button size="sm" variant="ghost" onClick={() => setShowImport(false)}>{t('common.close')}</Button>}
+        >
+          <div className="l-stack">
+            <p className="u-secondary u-text-sm">{t('machines.import.intro')}</p>
+            {sfError && <Alert tone="danger" onDismiss={() => setSfError('')}>{sfError}</Alert>}
 
-          {sfLoading ? (
-            <div className="loading-state">{t('machines.import.loading')}</div>
-          ) : sfMachines.length === 0 ? (
-            <div className="empty-state" style={{ padding: '2rem' }}>
-              <p className="empty-state-text">{t('machines.import.empty')}</p>
-            </div>
-          ) : (
-            <div className="sf-import-list">
-              {sfMachines.map(sfm => {
+            {sfLoading ? (
+              <Spinner block label={t('machines.import.loading')} />
+            ) : sfMachines.length === 0 ? (
+              <EmptyState icon={Server} title={t('machines.import.empty')} />
+            ) : (
+              sfMachines.map(sfm => {
                 const creds = importForm[sfm.sf_id]
+                const usesPassword = creds?.auth_method === 'password'
                 return (
-                  <div key={sfm.sf_id} className={`sf-import-item ${sfm.already_imported ? 'sf-import-done' : ''}`}>
-                    {/* Machine info */}
-                    <div className="sf-import-info">
-                      <div className="sf-import-main">
-                        <span className="sf-import-name">{sfm.hostname || sfm.ip_address}</span>
-                        <span className={`sf-status-pill sf-status-${sfm.status}`}>{sfm.status}</span>
-                        {sfm.already_imported && <span className="sf-import-tag">{t('machines.import.alreadyImported')}</span>}
-                      </div>
-                      <div className="sf-import-meta">
-                        <span>IP: {sfm.ip_address || t('machines.ipFallback')}</span>
-                        <span>SSH: {sfm.ssh_port}</span>
-                        <span>OS: {sfm.os}</span>
+                  <div key={sfm.sf_id} className={styles.importRow}>
+                    <div className="l-stack l-stack--sm">
+                      <span className="l-cluster">
+                        <strong>{sfm.hostname || sfm.ip_address}</strong>
+                        <StatusBadge status={toRuntimeStatus(sfm.status)} label={sfm.status} />
+                        {sfm.already_imported && <Badge tone="success">{t('machines.import.alreadyImported')}</Badge>}
+                      </span>
+                      <p className={styles.meta}>
+                        <span>{t('machines.import.meta.ip', { value: sfm.ip_address || t('machines.ipFallback') })}</span>
+                        <span>{t('machines.import.meta.ssh', { value: sfm.ssh_port })}</span>
+                        <span>{t('machines.import.meta.os', { value: sfm.os })}</span>
                         <span>{sfm.location}</span>
                         <span>{t('machines.import.containersCount', { count: sfm.containers_count })}</span>
-                      </div>
+                      </p>
                     </div>
 
-                    {/* Credentials form + import button */}
                     {!sfm.already_imported && creds && (
-                      <div className="sf-import-creds">
-                        <div className="sf-import-creds-row">
-                          <div className="sf-import-field">
-                            <label className="form-label">{t('machines.import.label.user')}</label>
-                            <input type="text" value={creds.ssh_user}
-                              onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_user', e.target.value)}
-                              className="form-input" placeholder="root" />
-                          </div>
-                          <div className="sf-import-field">
-                            <label className="form-label">{t('machines.import.label.auth')}</label>
-                            <select value={creds.auth_method}
-                              onChange={e => handleImportFormChange(sfm.sf_id, 'auth_method', e.target.value)}
-                              className="form-input">
-                              <option value="password">{t('machines.auth.password')}</option>
-                              <option value="key">{t('machines.auth.key')}</option>
-                            </select>
-                          </div>
-                          {creds.auth_method === 'password' ? (
-                            <div className="sf-import-field sf-import-field-wide">
-                              <label className="form-label">{t('machines.import.label.password')}</label>
-                              <input type="password" value={creds.ssh_password}
-                                onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_password', e.target.value)}
-                                className="form-input" placeholder={t('machines.import.placeholder.password')} />
-                            </div>
-                          ) : (
-                            <div className="sf-import-field sf-import-field-wide">
-                              <label className="form-label">{t('machines.import.label.keyPath')}</label>
-                              <input type="text" value={creds.ssh_key_path}
-                                onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_key_path', e.target.value)}
-                                className="form-input" placeholder={t('machines.import.placeholder.keyPath')} />
-                            </div>
-                          )}
-                          <button
-                            onClick={() => handleImportMachine(sfm)}
-                            disabled={importingId === sfm.sf_id}
-                            className="btn btn-sm sf-btn-import"
+                      <div className={styles.importCreds}>
+                        <Field label={t('machines.import.label.user')}>
+                          <Input
+                            value={creds.ssh_user}
+                            placeholder="root"
+                            onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_user', e.target.value)}
+                          />
+                        </Field>
+                        <Field label={t('machines.import.label.auth')}>
+                          <Select
+                            value={creds.auth_method}
+                            onChange={e => handleImportFormChange(sfm.sf_id, 'auth_method', e.target.value)}
                           >
-                            {importingId === sfm.sf_id ? '…' : t('machines.import.label.go')}
-                          </button>
-                        </div>
+                            <option value="password">{t('machines.auth.password')}</option>
+                            <option value="key">{t('machines.auth.key')}</option>
+                          </Select>
+                        </Field>
+                        {usesPassword ? (
+                          <Field label={t('machines.import.label.password')}>
+                            <Input
+                              type="password"
+                              revealable
+                              autoComplete="new-password"
+                              value={creds.ssh_password}
+                              placeholder={t('machines.import.placeholder.password')}
+                              onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_password', e.target.value)}
+                            />
+                          </Field>
+                        ) : (
+                          <Field label={t('machines.import.label.keyPath')}>
+                            <Input
+                              mono
+                              value={creds.ssh_key_path}
+                              placeholder={t('machines.import.placeholder.keyPath')}
+                              onChange={e => handleImportFormChange(sfm.sf_id, 'ssh_key_path', e.target.value)}
+                            />
+                          </Field>
+                        )}
+                        <Button
+                          variant="primary"
+                          loading={importingId === sfm.sf_id}
+                          loadingLabel={t('machines.form.saving')}
+                          onClick={() => handleImportMachine(sfm)}
+                        >
+                          {t('machines.import.label.go')}
+                        </Button>
                       </div>
                     )}
                   </div>
                 )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========== FORM CREAZIONE/MODIFICA ========== */}
-      {showForm && (
-        <div className="card card-form mb-8" ref={formRef}>
-          <h2 className="card-title">
-            <span className="card-title-icon">{editingId ? '~' : '+'}</span>
-            {editingId ? t('machines.form.editTitle', { name: form.name || '…' }) : t('machines.form.createTitle')}
-          </h2>
-
-          <fieldset className="form-fieldset">
-            <legend className="form-legend">{t('machines.section.identification')}</legend>
-            <div className="form-grid">
-              <div className="form-group form-group-3">
-                <label className="form-label">{t('machines.field.name')} *</label>
-                <input type="text" name="name" value={form.name} onChange={handleChange}
-                  className={inputClass('name')} placeholder={t('machines.form.namePlaceholder')} autoFocus />
-                <span className="form-hint">{t('machines.form.nameHint')}</span>
-                {fieldError('name')}
-              </div>
-              <div className="form-group form-group-3">
-                <label className="form-label">{t('machines.field.description')}</label>
-                <input type="text" name="description" value={form.description} onChange={handleChange}
-                  className="form-input" placeholder={t('machines.form.descriptionPlaceholder')} />
-              </div>
-              <div className="form-group form-group-3">
-                <label className="form-label">{t('machines.field.hostname')} *</label>
-                <input type="text" name="hostname" value={form.hostname} onChange={handleChange}
-                  className={inputClass('hostname')} placeholder={t('machines.form.hostnamePlaceholder')} />
-                {fieldError('hostname')}
-              </div>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('machines.field.ip')}</label>
-                <input type="text" name="ip_address" value={form.ip_address} onChange={handleChange}
-                  className="form-input" placeholder={t('machines.form.ipPlaceholder')} />
-              </div>
-              <div className="form-group form-group-1">
-                <label className="form-label form-label-inline">
-                  <input type="checkbox" name="is_active" checked={form.is_active} onChange={handleChange} className="form-checkbox" />
-                  {t('machines.field.active')}
-                </label>
-              </div>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('machines.field.osType')}</label>
-                <select name="os_type" value={form.os_type} onChange={handleChange} className="form-input">
-                  <option value="linux">{t('machines.os.linux')}</option>
-                  <option value="windows">{t('machines.os.windows')}</option>
-                </select>
-                <span className="form-hint">{t('machines.osHint')}</span>
-              </div>
-              {form.os_type === 'windows' && (
-                <div className="form-group form-group-2">
-                  <label className="form-label">{t('machines.field.runtime')}</label>
-                  <select name="runtime" value={form.runtime} onChange={handleChange} className="form-input">
-                    <option value="pok">{t('machines.runtime.pok')}</option>
-                    <option value="native">{t('machines.runtime.native')}</option>
-                  </select>
-                  <span className="form-hint">{t('machines.runtimeHint')}</span>
-                </div>
-              )}
-              {form.os_type === 'windows' && form.runtime === 'pok' && (
-                <div className="form-group form-group-2">
-                  <label className="form-label">{t('machines.field.wslDistro')}</label>
-                  <input type="text" name="wsl_distro" value={form.wsl_distro || ''}
-                    onChange={handleChange} className="form-input" placeholder="Ubuntu" />
-                  <span className="form-hint">
-                    {t('machines.wslHint', { cmd: 'wsl -l -q' })}
-                  </span>
-                </div>
-              )}
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('machines.field.clusterDir')}</label>
-                <input type="text" name="cluster_dir" value={form.cluster_dir || ''}
-                  onChange={handleChange} className="form-input"
-                  placeholder={form.os_type === 'windows' && form.runtime === 'native' ? 'C:\\ArkMania\\Cluster' : '/gameadmin'} />
-                <span className="form-hint">{t('machines.clusterDirHint')}</span>
-              </div>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('machines.field.clusterSyncMode')}</label>
-                <select name="cluster_sync_mode" value={form.cluster_sync_mode}
-                  onChange={handleChange} className="form-input">
-                  <option value="none">{t('machines.clusterSync.none')}</option>
-                  <option value="syncthing">{t('machines.clusterSync.syncthing')}</option>
-                  <option value="smb">{t('machines.clusterSync.smb')}</option>
-                </select>
-                <span className="form-hint">{t('machines.clusterSyncHint')}</span>
-              </div>
-            </div>
-          </fieldset>
-
-          <fieldset className="form-fieldset">
-            <legend className="form-legend">{t('machines.section.sshConnection')}</legend>
-            <div className="form-grid">
-              <div className="form-group form-group-1">
-                <label className="form-label">{t('machines.field.port')}</label>
-                <input type="number" name="ssh_port" value={form.ssh_port} onChange={handleChange}
-                  className={inputClass('ssh_port')} min={1} max={65535} />
-                {fieldError('ssh_port')}
-              </div>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('machines.field.user')} *</label>
-                <input type="text" name="ssh_user" value={form.ssh_user} onChange={handleChange}
-                  className={inputClass('ssh_user')} placeholder="root" />
-                {fieldError('ssh_user')}
-              </div>
-              <div className="form-group form-group-2">
-                <label className="form-label">{t('machines.field.auth')}</label>
-                <select name="auth_method" value={form.auth_method} onChange={handleChange} className="form-input">
-                  <option value="password">{t('machines.auth.password')}</option>
-                  <option value="key">{t('machines.auth.key')}</option>
-                  <option value="key_password">{t('machines.auth.keyPassword')}</option>
-                </select>
-              </div>
-              <div className="form-group form-group-1" />
-              {(form.auth_method === 'password' || form.auth_method === 'key_password') && (
-                <div className="form-group form-group-3">
-                  <label className="form-label">{form.auth_method === 'password' ? t('machines.field.password') : t('machines.field.passphrase')}{!editingId && ' *'}</label>
-                  <input type="password"
-                    name={form.auth_method === 'password' ? 'ssh_password' : 'ssh_passphrase'}
-                    value={form.auth_method === 'password' ? form.ssh_password : form.ssh_passphrase}
-                    onChange={handleChange}
-                    className={inputClass(form.auth_method === 'password' ? 'ssh_password' : 'ssh_passphrase')}
-                    placeholder={editingId ? t('machines.form.passwordEditPlaceholder') : ''} />
-                  {editingId && <span className="form-hint">{t('machines.form.passwordKeepHint')}</span>}
-                  {fieldError('ssh_password')}
-                </div>
-              )}
-              {(form.auth_method === 'key' || form.auth_method === 'key_password') && (
-                <div className="form-group form-group-3">
-                  <label className="form-label">{t('machines.field.keyPath')} *</label>
-                  <input type="text" name="ssh_key_path" value={form.ssh_key_path} onChange={handleChange}
-                    className={inputClass('ssh_key_path')} placeholder={t('machines.form.keyPathPlaceholder')} />
-                  {fieldError('ssh_key_path')}
-                </div>
-              )}
-            </div>
-          </fieldset>
-
-          <fieldset className="form-fieldset">
-            <legend className="form-legend">{t('machines.section.arkPaths')}</legend>
-            <div className="form-grid">
-              <div className="form-group form-group-full">
-                <label className="form-label">{t('machines.field.arkRoot')}</label>
-                <input type="text" name="ark_root_path" value={form.ark_root_path} onChange={handleChange}
-                  className="form-input" placeholder="/opt/ark" />
-              </div>
-              <div className="form-group form-group-3">
-                <label className="form-label">{t('machines.field.arkConfig')}</label>
-                <input type="text" name="ark_config_path" value={form.ark_config_path} onChange={handleChange}
-                  className="form-input" />
-              </div>
-              <div className="form-group form-group-3">
-                <label className="form-label">{t('machines.field.arkPlugins')}</label>
-                <input type="text" name="ark_plugins_path" value={form.ark_plugins_path} onChange={handleChange}
-                  className="form-input" />
-              </div>
-            </div>
-          </fieldset>
-
-          <div className="form-actions">
-            <button onClick={handleSave} disabled={saving} className="btn btn-primary">
-              {saving ? t('machines.form.saving') : editingId ? t('machines.form.update') : t('machines.form.create')}
-            </button>
-            <button onClick={handleCancel} className="btn btn-ghost">{t('common.cancel')}</button>
-          </div>
-        </div>
-      )}
-
-      {/* ========== Machines list ========== */}
-      {loading ? (
-        <div className="loading-state">{t('machines.loadingList')}</div>
-      ) : machines.length === 0 && !showForm && !showImport ? (
-        <div className="empty-state">
-          <span className="empty-state-icon">&#x29C9;</span>
-          <h3 className="empty-state-title">{t('machines.empty.title')}</h3>
-          <p className="empty-state-text">{t('machines.empty.text')}</p>
-          {isAdmin && (
-          <div className="card-actions" style={{ justifyContent: 'center', marginTop: '1rem' }}>
-            <button onClick={handleNew} className="btn btn-primary">+ {t('machines.newMachine')}</button>
-            {sfHasToken && (
-              <button onClick={handleOpenImport} className="btn btn-secondary">&#x26A1; {t('machines.importServerForge')}</button>
+              })
             )}
           </div>
-          )}
-        </div>
-      ) : (
-        <div className="machines-list">
-          {machines.map((machine) => {
-            const isExpanded = expandedId === machine.id
-            const osLong = machine.os_type === 'windows'
-              ? (machine.runtime === 'native'
-                  ? `${t('machines.os.windows')} (${t('machines.runtime.native')})`
-                  : `${t('machines.os.windows')} (WSL: ${machine.wsl_distro || 'Ubuntu'})`)
-              : t('machines.os.linux')
-            return (
-              <div key={machine.id} className={`machine-card ${!machine.is_active ? 'machine-card-inactive' : ''}`}>
-                <div className="machine-card-header" onClick={() => setExpandedId(prev => prev === machine.id ? null : machine.id)} style={{ cursor: 'pointer' }}>
-                  <div className="machine-card-info">
-                    <h3 className="machine-card-name">
-                      {machine.name}
-                      <span className="machine-card-tag" title={osLong}>
-                        {machine.os_type === 'windows' ? t('machines.tag.windows') : t('machines.tag.linux')}
-                      </span>
-                      {!machine.is_active && <span className="machine-card-tag">{t('machines.tag.inactive')}</span>}
-                    </h3>
-                    <p className="machine-card-host">{machine.ssh_user}@{machine.hostname}:{machine.ssh_port}</p>
-                    {machine.description && <p className="machine-card-desc">{machine.description}</p>}
-                  </div>
-                  <div className="machine-card-status">
-                    <StatusBadge status={testingId === machine.id ? 'testing' : machine.last_status} size="md" />
-                    <span className="machine-card-expand">{isExpanded ? '\u25B2' : '\u25BC'}</span>
-                  </div>
+        </Card>
+      )}
+
+      {/* ===== Create / edit form ===== */}
+      {isAdmin && showForm && (
+        <div ref={formRef}>
+          <Card title={editingId ? t('machines.form.editTitle', { name: form.name || '-' }) : t('machines.form.createTitle')}>
+            <form
+              className="l-stack"
+              noValidate
+              onSubmit={e => { e.preventDefault(); handleSave() }}
+            >
+              {formError && <Alert tone="danger">{formError}</Alert>}
+
+              <fieldset className="ui-fieldset">
+                <legend>{t('machines.section.identification')}</legend>
+                <div className="l-grid--form">
+                  <Field label={t('machines.field.name')} hint={t('machines.form.nameHint')} error={validationErrors.name} required>
+                    <Input
+                      ref={bindField('name')}
+                      value={form.name}
+                      placeholder={t('machines.form.namePlaceholder')}
+                      onChange={e => setField('name', e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('machines.field.description')}>
+                    <Input
+                      value={form.description ?? ''}
+                      placeholder={t('machines.form.descriptionPlaceholder')}
+                      onChange={e => setField('description', e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('machines.field.hostname')} error={validationErrors.hostname} required>
+                    <Input
+                      ref={bindField('hostname')}
+                      value={form.hostname}
+                      placeholder={t('machines.form.hostnamePlaceholder')}
+                      onChange={e => setField('hostname', e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('machines.field.ip')}>
+                    <Input
+                      mono
+                      value={form.ip_address ?? ''}
+                      placeholder={t('machines.form.ipPlaceholder')}
+                      onChange={e => setField('ip_address', e.target.value)}
+                    />
+                  </Field>
+                  <Checkbox
+                    className="u-span-full"
+                    label={t('machines.field.active')}
+                    checked={form.is_active}
+                    onChange={e => setField('is_active', e.target.checked)}
+                  />
+                  <Field label={t('machines.field.osType')} hint={t('machines.osHint')}>
+                    <Select value={form.os_type} onChange={e => setField('os_type', e.target.value as SSHMachineCreate['os_type'])}>
+                      <option value="linux">{t('machines.os.linux')}</option>
+                      <option value="windows">{t('machines.os.windows')}</option>
+                    </Select>
+                  </Field>
+                  {form.os_type === 'windows' && (
+                    <Field label={t('machines.field.runtime')} hint={t('machines.runtimeHint')}>
+                      <Select value={form.runtime} onChange={e => setField('runtime', e.target.value as SSHMachineCreate['runtime'])}>
+                        <option value="pok">{t('machines.runtime.pok')}</option>
+                        <option value="native">{t('machines.runtime.native')}</option>
+                      </Select>
+                    </Field>
+                  )}
+                  {form.os_type === 'windows' && form.runtime === 'pok' && (
+                    <Field label={t('machines.field.wslDistro')} hint={t('machines.wslHint', { cmd: 'wsl -l -q' })}>
+                      <Input
+                        value={form.wsl_distro || ''}
+                        placeholder="Ubuntu"
+                        onChange={e => setField('wsl_distro', e.target.value)}
+                      />
+                    </Field>
+                  )}
+                  <Field label={t('machines.field.clusterDir')} hint={t('machines.clusterDirHint')}>
+                    <Input
+                      mono
+                      value={form.cluster_dir || ''}
+                      placeholder={form.os_type === 'windows' && form.runtime === 'native' ? 'C:\\ArkMania\\Cluster' : '/gameadmin'}
+                      onChange={e => setField('cluster_dir', e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('machines.field.clusterSyncMode')} hint={t('machines.clusterSyncHint')}>
+                    <Select
+                      value={form.cluster_sync_mode}
+                      onChange={e => setField('cluster_sync_mode', e.target.value as SSHMachineCreate['cluster_sync_mode'])}
+                    >
+                      <option value="none">{t('machines.clusterSync.none')}</option>
+                      <option value="syncthing">{t('machines.clusterSync.syncthing')}</option>
+                      <option value="smb">{t('machines.clusterSync.smb')}</option>
+                    </Select>
+                  </Field>
                 </div>
+              </fieldset>
 
-                {isExpanded && (
-                  <div className="machine-card-body">
-                    <div className="machine-card-details">
-                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.osType')}</span>
-                        <span className="detail-value">{osLong}</span></div>
-                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.auth')}</span>
-                        <span className="detail-value">{machine.auth_method === 'password' ? t('machines.auth.password') : machine.auth_method === 'key' ? t('machines.auth.key') : t('machines.auth.keyPassword')}</span></div>
-                      {machine.ip_address && <div className="machine-card-detail"><span className="detail-label">{t('machines.field.ip')}</span><span className="detail-value detail-value-mono">{machine.ip_address}</span></div>}
-                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.arkRoot')}</span><span className="detail-value detail-value-mono">{machine.ark_root_path}</span></div>
-                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.arkConfig')}</span><span className="detail-value detail-value-mono">{machine.ark_config_path}</span></div>
-                      <div className="machine-card-detail"><span className="detail-label">{t('machines.field.arkPlugins')}</span><span className="detail-value detail-value-mono">{machine.ark_plugins_path}</span></div>
-                      {machine.last_connection && <div className="machine-card-detail"><span className="detail-label">{t('machines.lastConnection')}</span><span className="detail-value">{new Date(machine.last_connection).toLocaleString()}</span></div>}
-                    </div>
+              <fieldset className="ui-fieldset">
+                <legend>{t('machines.section.sshConnection')}</legend>
+                <div className="l-grid--form">
+                  <Field label={t('machines.field.port')} error={validationErrors.ssh_port}>
+                    <Input
+                      ref={bindField('ssh_port')}
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={form.ssh_port}
+                      onChange={e => setField('ssh_port', parseInt(e.target.value) || 0)}
+                    />
+                  </Field>
+                  <Field label={t('machines.field.user')} error={validationErrors.ssh_user} required>
+                    <Input
+                      ref={bindField('ssh_user')}
+                      value={form.ssh_user}
+                      placeholder="root"
+                      onChange={e => setField('ssh_user', e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('machines.field.auth')}>
+                    <Select value={form.auth_method} onChange={e => setField('auth_method', e.target.value as SSHMachineCreate['auth_method'])}>
+                      <option value="password">{t('machines.auth.password')}</option>
+                      <option value="key">{t('machines.auth.key')}</option>
+                      <option value="key_password">{t('machines.auth.keyPassword')}</option>
+                    </Select>
+                  </Field>
+                  {(form.auth_method === 'password' || form.auth_method === 'key_password') && (
+                    <Field
+                      label={form.auth_method === 'password' ? t('machines.field.password') : t('machines.field.passphrase')}
+                      hint={editingId ? t('machines.form.passwordKeepHint') : undefined}
+                      error={validationErrors.ssh_password}
+                      required={!editingId}
+                      className="u-span-full"
+                    >
+                      <Input
+                        ref={bindField('ssh_password')}
+                        type="password"
+                        revealable
+                        autoComplete="new-password"
+                        value={form.auth_method === 'password' ? form.ssh_password ?? '' : form.ssh_passphrase ?? ''}
+                        placeholder={editingId ? t('machines.form.passwordEditPlaceholder') : ''}
+                        onChange={e =>
+                          form.auth_method === 'password'
+                            ? setField('ssh_password', e.target.value)
+                            : setField('ssh_passphrase', e.target.value)
+                        }
+                      />
+                    </Field>
+                  )}
+                  {(form.auth_method === 'key' || form.auth_method === 'key_password') && (
+                    <Field label={t('machines.field.keyPath')} error={validationErrors.ssh_key_path} required className="u-span-full">
+                      <Input
+                        ref={bindField('ssh_key_path')}
+                        mono
+                        value={form.ssh_key_path ?? ''}
+                        placeholder={t('machines.form.keyPathPlaceholder')}
+                        onChange={e => setField('ssh_key_path', e.target.value)}
+                      />
+                    </Field>
+                  )}
+                </div>
+              </fieldset>
 
-                    {testResults[machine.id] && (
-                      <div className={`alert mt-3 ${testResults[machine.id].success ? 'alert-success' : 'alert-error'}`}>
-                        <span className="alert-icon">{testResults[machine.id].success ? '\u2713' : '!'}</span>
-                        {testResults[machine.id].message}
-                        {testResults[machine.id].response_time_ms && <span className="alert-detail">{testResults[machine.id].response_time_ms}ms</span>}
-                      </div>
-                    )}
+              <fieldset className="ui-fieldset">
+                <legend>{t('machines.section.arkPaths')}</legend>
+                <div className="l-grid--form">
+                  <Field label={t('machines.field.arkRoot')} className="u-span-full">
+                    <Input mono value={form.ark_root_path} placeholder="/opt/ark" onChange={e => setField('ark_root_path', e.target.value)} />
+                  </Field>
+                  <Field label={t('machines.field.arkConfig')} className="u-span-full">
+                    <Input mono value={form.ark_config_path} onChange={e => setField('ark_config_path', e.target.value)} />
+                  </Field>
+                  <Field label={t('machines.field.arkPlugins')} className="u-span-full">
+                    <Input mono value={form.ark_plugins_path} onChange={e => setField('ark_plugins_path', e.target.value)} />
+                  </Field>
+                </div>
+              </fieldset>
 
-                    {isAdmin && (
-                    <div className="machine-card-actions">
-                      <button onClick={() => handleTest(machine.id)} disabled={testingId === machine.id} className="btn btn-sm btn-secondary">
-                        {testingId === machine.id ? t('machines.status.testing') : t('machines.action.test')}
-                      </button>
-                      <button onClick={() => handleEdit(machine)} className="btn btn-sm btn-ghost">{t('common.edit')}</button>
-                      <button onClick={() => handleDuplicate(machine.id)} className="btn btn-sm btn-ghost">{t('common.duplicate')}</button>
-                      <button onClick={() => handleDelete(machine.id, machine.name)} className="btn btn-sm btn-danger">{t('common.delete')}</button>
-                    </div>
-                    )}
-                  </div>
-                )}
+              <div className="l-cluster">
+                <Button type="submit" variant="primary" loading={saving} loadingLabel={t('machines.form.saving')}>
+                  {editingId ? t('machines.form.update') : t('machines.form.create')}
+                </Button>
+                <Button variant="ghost" onClick={handleCancel}>{t('common.cancel')}</Button>
               </div>
-            )
-          })}
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* ===== Machines list ===== */}
+      {loading ? (
+        <Card><Spinner block label={t('machines.loadingList')} /></Card>
+      ) : machines.length === 0 && !showForm && !showImport ? (
+        <Card>
+          <EmptyState
+            icon={Server}
+            title={t('machines.empty.title')}
+            description={t('machines.empty.text')}
+            action={isAdmin ? <Button icon={Plus} onClick={handleNew}>{t('machines.newMachine')}</Button> : undefined}
+          />
+        </Card>
+      ) : (
+        <div className="l-stack">
+          {machines.map(machine => (
+            <MachineCard
+              key={machine.id}
+              machine={machine}
+              expanded={expandedId === machine.id}
+              onToggle={() => setExpandedId(prev => (prev === machine.id ? null : machine.id))}
+              isAdmin={isAdmin}
+              testing={testingId === machine.id}
+              testResult={testResults[machine.id]}
+              onTest={() => handleTest(machine.id)}
+              onEdit={() => handleEdit(machine)}
+              onDuplicate={() => handleDuplicate(machine.id)}
+              onDelete={() => handleDelete(machine)}
+            />
+          ))}
         </div>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+interface MachineCardProps {
+  machine: SSHMachine
+  expanded: boolean
+  onToggle: () => void
+  isAdmin: boolean
+  testing: boolean
+  testResult?: SSHTestResult
+  onTest: () => void
+  onEdit: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+}
+
+function MachineCard({
+  machine, expanded, onToggle, isAdmin, testing, testResult,
+  onTest, onEdit, onDuplicate, onDelete,
+}: MachineCardProps) {
+  const { t } = useTranslation()
+  const detailsId = `machine-details-${machine.id}`
+  const osLong = machine.os_type === 'windows'
+    ? (machine.runtime === 'native'
+        ? t('machines.os.windowsNative')
+        : t('machines.osLong.wsl', { distro: machine.wsl_distro || 'Ubuntu' }))
+    : t('machines.os.linux')
+  const authLabel = machine.auth_method === 'password'
+    ? t('machines.auth.password')
+    : machine.auth_method === 'key'
+      ? t('machines.auth.key')
+      : t('machines.auth.keyPassword')
+
+  return (
+    <Card
+      titleAs="h3"
+      title={
+        <span className="l-cluster">
+          <span>{machine.name}</span>
+          <Badge>{machine.os_type === 'windows' ? t('machines.tag.windows') : t('machines.tag.linux')}</Badge>
+          {!machine.is_active && <Badge tone="warning">{t('machines.tag.inactive')}</Badge>}
+        </span>
+      }
+      actions={
+        <>
+          <StatusBadge status={testing ? 'testing' : toRuntimeStatus(machine.last_status)} />
+          <IconButton
+            size="sm"
+            icon={ChevronDown}
+            label={t('machines.toggleDetails', { name: machine.name })}
+            aria-expanded={expanded}
+            aria-controls={expanded ? detailsId : undefined}
+            onClick={onToggle}
+          />
+        </>
+      }
+    >
+      <div className="l-stack l-stack--sm">
+        <p className={styles.meta}>
+          <span className="u-mono">{machine.ssh_user}@{machine.hostname}:{machine.ssh_port}</span>
+        </p>
+        {machine.description && <p className="u-muted u-text-sm">{machine.description}</p>}
+
+        {expanded && (
+          <div id={detailsId} className="l-stack l-stack--sm">
+            <dl className="ui-dl">
+              <dt>{t('machines.field.osType')}</dt>
+              <dd>{osLong}</dd>
+              <dt>{t('machines.field.auth')}</dt>
+              <dd>{authLabel}</dd>
+              {machine.ip_address && (
+                <>
+                  <dt>{t('machines.field.ip')}</dt>
+                  <dd className="u-mono">{machine.ip_address}</dd>
+                </>
+              )}
+              <dt>{t('machines.field.arkRoot')}</dt>
+              <dd className="u-mono u-wrap-anywhere">{machine.ark_root_path}</dd>
+              <dt>{t('machines.field.arkConfig')}</dt>
+              <dd className="u-mono u-wrap-anywhere">{machine.ark_config_path}</dd>
+              <dt>{t('machines.field.arkPlugins')}</dt>
+              <dd className="u-mono u-wrap-anywhere">{machine.ark_plugins_path}</dd>
+              {machine.last_connection && (
+                <>
+                  <dt>{t('machines.lastConnection')}</dt>
+                  <dd>{new Date(machine.last_connection).toLocaleString()}</dd>
+                </>
+              )}
+            </dl>
+
+            {testResult && (
+              <Alert tone={testResult.success ? 'success' : 'danger'}>
+                {testResult.message}
+                {testResult.response_time_ms !== null && (
+                  <> {t('machines.testResponseTime', { ms: testResult.response_time_ms })}</>
+                )}
+              </Alert>
+            )}
+
+            {isAdmin && (
+              <div className="l-cluster">
+                <Button size="sm" loading={testing} loadingLabel={t('machines.status.testing')} onClick={onTest}>
+                  {t('machines.action.test')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={onEdit}>{t('common.edit')}</Button>
+                <Button size="sm" variant="ghost" onClick={onDuplicate}>{t('common.duplicate')}</Button>
+                <Button size="sm" variant="danger" className="u-push" onClick={onDelete}>{t('common.delete')}</Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
   )
 }

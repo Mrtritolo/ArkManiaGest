@@ -1,0 +1,34 @@
+@layer page {
+  /* Rank chip: the number always reads, the top three add a medal icon and
+     the raised plane. No colour carries the meaning on its own. */
+  .rank {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: var(--control-sm);
+    justify-content: center;
+    padding: 0 var(--space-1-5);
+    height: var(--badge-h);
+    border-radius: var(--radius-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+  }
+
+  .rank[data-top] {
+    background: var(--color-surface-active);
+    color: var(--color-text);
+    font-weight: var(--weight-semibold);
+  }
+
+  .rank svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  /* Player cell: name over its server type, inside the two-line row box. */
+  .playerMeta {
+    display: block;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+}

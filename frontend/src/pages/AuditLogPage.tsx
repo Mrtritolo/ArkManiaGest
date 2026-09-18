@@ -7,21 +7,44 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ShieldCheck, RotateCw } from 'lucide-react'
 import { auditApi } from '../services/api'
 import type { AuditEntry } from '../services/api'
+import { extractError } from '../utils/errors'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { AuthUser } from '../types'
 import {
-  ShieldCheck, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, Search,
-} from 'lucide-react'
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  NotAvailable,
+  PageHeader,
+  Pagination,
+  Spinner,
+  Table,
+  TableMessageRow,
+} from '../components/ui'
 
 const PAGE_SIZE = 50
 
-const GRID_COLUMNS = '150px 1fr 1.2fr 2.4fr 130px'
+/** dd/MM/yy HH:mm:ss -- the audit trail needs the seconds. */
+function fmtAuditTime(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleString(undefined, {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+}
 
-const labelStyle: React.CSSProperties = {
-  fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.05em', color: 'var(--text-secondary)',
-  display: 'block', marginBottom: 3,
+/** Everything one request depends on: a filter change resets the page. */
+interface Query {
+  action: string
+  username: string
+  page: number
 }
 
 interface Props {
@@ -35,6 +58,11 @@ export default function AuditLogPage(_props: Props) {
   const [items, setItems] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  // Whether a request has ever settled.  Inferring "first load" from an
+  // empty `items` would put the full-width spinner row back every time a
+  // filter legitimately returns zero rows; the settled state must stay on
+  // screen while a refetch runs.
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState('')
 
   // Filters.  The inputs feed the query only after a short pause: the
@@ -42,18 +70,19 @@ export default function AuditLogPage(_props: Props) {
   // SELECT that could only return an empty page.
   const [actionInput, setActionInput] = useState('')
   const [usernameInput, setUsernameInput] = useState('')
-  const [action, setAction] = useState('')
-  const [username, setUsername] = useState('')
-  const [page, setPage] = useState(0)
+  const action = useDebouncedValue(actionInput)
+  const username = useDebouncedValue(usernameInput)
+  const [query, setQuery] = useState<Query>({ action: '', username: '', page: 0 })
 
+  // One state object, so a settled filter change moves back to page 1 in the
+  // same update and the table fetches once, not twice.
   useEffect(() => {
-    const id = setTimeout(() => {
-      setAction(actionInput)
-      setUsername(usernameInput)
-      setPage(0)
-    }, 300)
-    return () => clearTimeout(id)
-  }, [actionInput, usernameInput])
+    setQuery(prev =>
+      prev.action === action && prev.username === username
+        ? prev
+        : { action, username, page: 0 },
+    )
+  }, [action, username])
 
   // Only the latest request may update the table, so a slow response for
   // an older filter cannot overwrite the current one.
@@ -65,145 +94,138 @@ export default function AuditLogPage(_props: Props) {
     setError('')
     try {
       const res = await auditApi.list({
-        action: action || undefined,
-        username: username || undefined,
+        action: query.action || undefined,
+        username: query.username || undefined,
         limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
+        offset: query.page * PAGE_SIZE,
       })
       if (req !== loadReq.current) return
       setItems(res.data.items)
       setTotal(res.data.total)
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (req !== loadReq.current) return
-      setError(e?.response?.data?.detail || t('auditLog.errors.load'))
+      setError(extractError(e, t('auditLog.errors.load')))
     } finally {
-      if (req === loadReq.current) setLoading(false)
+      if (req === loadReq.current) {
+        setLoading(false)
+        setHasLoaded(true)
+      }
     }
-  }, [action, username, page, t])
+  }, [query, t])
 
   useEffect(() => { load() }, [load])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const firstLoad = loading && !hasLoaded
 
   return (
-    <div className="page-container">
-      {/* Header */}
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><ShieldCheck size={22} /> {t('auditLog.title')}</h1>
-          <p className="page-subtitle">
-            {t('auditLog.subtitle', { total: total.toLocaleString(), page: page + 1, totalPages })}
-          </p>
-        </div>
-        <button onClick={load} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
-          <RefreshCw size={14} />
-        </button>
-      </div>
+    <div className="l-page">
+      <PageHeader
+        title={t('auditLog.title')}
+        icon={ShieldCheck}
+        description={t('auditLog.subtitle', {
+          total: total.toLocaleString(),
+          page: query.page + 1,
+          totalPages,
+        })}
+        actions={
+          <Button
+            icon={RotateCw}
+            onClick={load}
+            loading={loading}
+            loadingLabel={t('auditLog.loading')}
+          >
+            {t('common.refresh')}
+          </Button>
+        }
+      />
 
-      {/* Error */}
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
-          <AlertCircle size={14} /> {error}
-          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>×</button>
-        </div>
+        <Alert
+          tone="danger"
+          title={t('auditLog.errors.load')}
+          onDismiss={() => setError('')}
+          actions={
+            <Button size="sm" icon={RotateCw} onClick={load}>
+              {t('common.retry')}
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
       )}
 
-      {/* Filters */}
-      <div className="card" style={{ padding: '0.6rem 1rem', marginBottom: '0.75rem', display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 160 }}>
-          <label style={labelStyle}>{t('auditLog.filter.action')}</label>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="input" placeholder={t('auditLog.filter.actionPlaceholder')}
-              value={actionInput} onChange={e => setActionInput(e.target.value)}
-              style={{ fontSize: '0.82rem', paddingLeft: 28 }} />
-          </div>
+      <Card title={t('auditLog.filters')}>
+        <div className="l-grid--form">
+          <Field label={t('auditLog.filter.action')}>
+            <Input
+              type="search"
+              value={actionInput}
+              onChange={e => setActionInput(e.target.value)}
+              placeholder={t('auditLog.filter.actionPlaceholder')}
+            />
+          </Field>
+          <Field label={t('auditLog.filter.username')}>
+            <Input
+              type="search"
+              value={usernameInput}
+              onChange={e => setUsernameInput(e.target.value)}
+              placeholder={t('auditLog.filter.usernamePlaceholder')}
+            />
+          </Field>
         </div>
-        <div style={{ minWidth: 160 }}>
-          <label style={labelStyle}>{t('auditLog.filter.username')}</label>
-          <input className="input" placeholder={t('auditLog.filter.usernamePlaceholder')}
-            value={usernameInput} onChange={e => setUsernameInput(e.target.value)}
-            style={{ fontSize: '0.82rem' }} />
-        </div>
-      </div>
+      </Card>
 
-      {/* Table */}
-      <div className="card" style={{ minHeight: 200, padding: 0 }}>
-        {loading ? (
-          <div className="pl-loading" style={{ padding: '3rem' }}>{t('auditLog.loading')}</div>
-        ) : items.length === 0 ? (
-          <div className="pl-empty" style={{ padding: '3rem' }}>
-            <ShieldCheck size={40} style={{ opacity: 0.12 }} />
-            <p>{t('auditLog.empty')}</p>
-          </div>
-        ) : (
-          <>
-            {/* Header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: GRID_COLUMNS,
-              padding: '0.5rem 1rem', fontSize: '0.65rem', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              color: 'var(--text-secondary)', background: 'var(--bg-card-muted)',
-              borderBottom: '2px solid var(--border)',
-            }}>
-              <span>{t('auditLog.column.datetime')}</span>
-              <span>{t('auditLog.column.username')}</span>
-              <span>{t('auditLog.column.action')}</span>
-              <span>{t('auditLog.column.detail')}</span>
-              <span>{t('auditLog.column.ip')}</span>
-            </div>
-
-            {/* Rows */}
-            {items.map(it => (
-              <div key={it.id} style={{
-                display: 'grid',
-                gridTemplateColumns: GRID_COLUMNS,
-                padding: '0.45rem 1rem', alignItems: 'center',
-                borderBottom: '1px solid var(--border)',
-              }}>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                  {it.created_at ? new Date(it.created_at).toLocaleString(undefined, {
-                    day: '2-digit', month: '2-digit', year: '2-digit',
-                    hour: '2-digit', minute: '2-digit', second: '2-digit',
-                  }) : '—'}
-                </span>
-                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                  {it.username || <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>—</span>}
-                </span>
-                <span style={{ fontSize: '0.74rem', fontFamily: 'monospace', color: 'var(--accent)' }}>
-                  {it.action}
-                </span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {it.detail || <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                </span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                  {it.ip_address || '—'}
-                </span>
-              </div>
+      <Card
+        title={t('auditLog.entries')}
+        flush
+        actions={loading && !firstLoad ? <Spinner /> : undefined}
+        footer={
+          totalPages > 1 ? (
+            <Pagination
+              label={t('auditLog.pagination')}
+              page={query.page}
+              pageCount={totalPages}
+              onPageChange={page => setQuery(prev => ({ ...prev, page }))}
+            />
+          ) : undefined
+        }
+      >
+        <Table label={t('auditLog.entries')} minWidth={880}>
+          <thead>
+            <tr>
+              <th scope="col">{t('auditLog.column.datetime')}</th>
+              <th scope="col">{t('auditLog.column.username')}</th>
+              <th scope="col">{t('auditLog.column.action')}</th>
+              <th scope="col">{t('auditLog.column.detail')}</th>
+              <th scope="col">{t('auditLog.column.ip')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {firstLoad ? (
+              <TableMessageRow colSpan={5}>
+                <Spinner block label={t('auditLog.loading')} />
+              </TableMessageRow>
+            ) : items.length === 0 ? (
+              <TableMessageRow colSpan={5}>
+                <EmptyState icon={ShieldCheck} title={t('auditLog.empty')} />
+              </TableMessageRow>
+            ) : items.map(it => (
+              <tr key={it.id}>
+                <td className="u-mono u-num">
+                  {it.created_at ? fmtAuditTime(it.created_at) : <NotAvailable />}
+                </td>
+                <td>{it.username || <NotAvailable />}</td>
+                <td className="u-mono">{it.action}</td>
+                {/* The audit trail has no detail view: the full text has to
+                    be readable here, so it wraps instead of being clipped. */}
+                <td className="ui-cell-wrap">{it.detail || <NotAvailable />}</td>
+                <td className="u-mono">{it.ip_address || <NotAvailable />}</td>
+              </tr>
             ))}
-          </>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', padding: '0.6rem' }}>
-            <button className="btn btn-secondary" style={{ padding: '0.3rem 0.5rem' }}
-              disabled={page === 0 || loading}
-              onClick={() => setPage(p => Math.max(0, p - 1))}>
-              <ChevronLeft size={14} />
-            </button>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              {page + 1} / {totalPages}
-            </span>
-            <button className="btn btn-secondary" style={{ padding: '0.3rem 0.5rem' }}
-              disabled={page + 1 >= totalPages || loading}
-              onClick={() => setPage(p => p + 1)}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        )}
-      </div>
+          </tbody>
+        </Table>
+      </Card>
     </div>
   )
 }

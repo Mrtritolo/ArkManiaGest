@@ -1,0 +1,94 @@
+/*
+ * Sidebar.module.css -- the navigation panel shared by the desktop sidebar
+ * and the mobile drawer. The surrounding chrome (sticky column, drawer,
+ * scrim) lives in App.module.css; this file styles only the panel itself.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-height: 100%;
+    padding: var(--space-3);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding-inline: var(--space-2);
+  }
+
+  .brandLogo {
+    width: var(--avatar-md);
+    height: var(--avatar-md);
+    object-fit: contain;
+  }
+
+  .brandText {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .brandTitle {
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+  }
+
+  .brandSub {
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+  }
+
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+  }
+
+  .footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-block-start: auto;
+    padding-block-start: var(--space-3);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .user {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .userText {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  .userName {
+    font-weight: var(--weight-medium);
+    overflow-wrap: anywhere;
+  }
+
+  /* The language select shares its row with the theme toggle. */
+  .lang {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .version {
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+}

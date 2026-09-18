@@ -3,11 +3,18 @@
  *
  * Creates the initial admin account.
  * Database credentials are pre-configured in the .env file on the server.
+ *
+ * Rendered as the whole canvas (App.tsx shows it instead of the panel), so it
+ * owns the centred `.ui-auth` layout.  It is a real <form>: Enter in any
+ * field submits, and a failed submit keeps the inline errors and focuses the
+ * first invalid control.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { settingsApi } from '../services/api'
 import { extractError } from '../utils/errors'
+import { Alert, Button, Card, Field, Input } from '../components/ui'
+import styles from './SetupWizard.module.css'
 
 interface SetupWizardProps {
   /** Called when setup completes successfully. */
@@ -22,6 +29,17 @@ interface FormState {
   app_name:              string
 }
 
+/** The fields that can be invalid, in tab order. */
+const VALIDATED = [
+  'admin_username',
+  'admin_display_name',
+  'admin_password',
+  'admin_password_confirm',
+] as const
+type ValidatedField = typeof VALIDATED[number]
+
+type Errors = Partial<Record<ValidatedField, string>>
+
 export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const { t } = useTranslation()
   const [form, setForm]       = useState<FormState>({
@@ -33,27 +51,64 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   })
   const [creating, setCreating] = useState(false)
   const [error, setError]       = useState('')
+  const [touched, setTouched]   = useState<Partial<Record<ValidatedField, true>>>({})
+  const [submitted, setSubmitted] = useState(false)
+  const inputs = useRef<Partial<Record<ValidatedField, HTMLInputElement | null>>>({})
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const { name, value } = e.target
     setForm(prev => ({ ...prev, [name]: value }))
   }
 
-  function isValid(): boolean {
-    // Mirror the backend policy (12+ chars, letters + digits).  Username and
-    // display name are checked trimmed: the backend strips them after its
-    // length check, so 'a ' would create admin 'a', which login rejects.
-    return (
-      form.admin_username.trim().length >= 2 &&
-      form.admin_password.length >= 12 &&
-      /[a-zA-Z]/.test(form.admin_password) &&
-      /[0-9]/.test(form.admin_password) &&
-      form.admin_password === form.admin_password_confirm &&
-      form.admin_display_name.trim().length >= 1
-    )
+  function handleBlur(e: React.FocusEvent<HTMLInputElement>): void {
+    const name = e.target.name as ValidatedField
+    if ((VALIDATED as readonly string[]).includes(name)) {
+      setTouched(prev => ({ ...prev, [name]: true }))
+    }
   }
 
-  async function handleCreate(): Promise<void> {
+  /**
+   * Mirror of the backend policy (12+ chars, letters + digits).  Username and
+   * display name are checked trimmed: the backend strips them after its
+   * length check, so 'a ' would create admin 'a', which login rejects.
+   */
+  function validate(state: FormState): Errors {
+    const errors: Errors = {}
+    if (state.admin_username.trim().length < 2) {
+      errors.admin_username = t('setup.error.username')
+    }
+    if (state.admin_display_name.trim().length < 1) {
+      errors.admin_display_name = t('setup.error.displayName')
+    }
+    if (
+      state.admin_password.length < 12 ||
+      !/[a-zA-Z]/.test(state.admin_password) ||
+      !/[0-9]/.test(state.admin_password)
+    ) {
+      errors.admin_password = t('setup.error.password')
+    }
+    if (state.admin_password !== state.admin_password_confirm) {
+      errors.admin_password_confirm = t('setup.passwordMismatch')
+    }
+    return errors
+  }
+
+  const errors = validate(form)
+
+  /** Shown once the field was left, or once a submit was attempted. */
+  function errorFor(field: ValidatedField): string | undefined {
+    return submitted || touched[field] ? errors[field] : undefined
+  }
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault()
+    setSubmitted(true)
+    const firstInvalid = VALIDATED.find(field => errors[field])
+    if (firstInvalid) {
+      inputs.current[firstInvalid]?.focus()
+      return
+    }
+
     setCreating(true)
     setError('')
     try {
@@ -65,92 +120,106 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       })
       onComplete()
     } catch (err: unknown) {
-      const detail = extractError(err, t('setup.errorGeneric'))
-      setError(detail)
+      setError(extractError(err, t('setup.errorGeneric')))
     } finally {
       setCreating(false)
     }
   }
 
-  const passwordMismatch =
-    form.admin_password_confirm.length > 0 &&
-    form.admin_password !== form.admin_password_confirm
-
   return (
-    <div className="setup-overlay">
-      <div className="setup-container">
-        <div className="setup-header">
-          <img src="/logo.png" alt="ArkMania" className="setup-logo" />
-          <h1 className="setup-title">ArkManiaGest</h1>
-          <p className="setup-subtitle">{t('setup.title')}</p>
+    <div className="ui-auth">
+      <div className={`${styles.card} l-stack`}>
+        <div className={styles.brand}>
+          <img src="/logo.png" alt="" className={styles.logo} />
+          <h1>{t('nav.brand')}</h1>
+          <p className={styles.lead}>{t('setup.title')}</p>
         </div>
 
-        <div className="setup-step">
-          <h2 className="setup-step-title">{t('setup.stepTitle')}</h2>
-          <p className="setup-step-desc">{t('setup.stepDesc')}</p>
+        <Card title={t('setup.stepTitle')}>
+          <form onSubmit={handleSubmit} className="l-stack" noValidate>
+            <p className={styles.lead}>{t('setup.stepDesc')}</p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
-            <div className="setup-field">
-              <label className="form-label">{t('setup.username')}</label>
-              <input
-                type="text" name="admin_username" value={form.admin_username}
-                onChange={handleChange} className="form-input"
-                placeholder={t('setup.placeholder.username')} autoFocus
-              />
-            </div>
-            <div className="setup-field">
-              <label className="form-label">{t('setup.displayName')}</label>
-              <input
-                type="text" name="admin_display_name" value={form.admin_display_name}
-                onChange={handleChange} className="form-input"
-                placeholder={t('setup.placeholder.displayName')}
-              />
-            </div>
-            <div className="setup-field">
-              <label className="form-label">{t('setup.password')}</label>
-              <input
-                type="password" name="admin_password" value={form.admin_password}
-                onChange={handleChange} className="form-input"
-                placeholder={t('setup.placeholder.password')}
-              />
-            </div>
-            <div className="setup-field">
-              <label className="form-label">{t('setup.passwordConfirm')}</label>
-              <input
-                type="password" name="admin_password_confirm" value={form.admin_password_confirm}
-                onChange={handleChange} className="form-input"
-                placeholder={t('setup.placeholder.passwordConfirm')}
-              />
-              {passwordMismatch && (
-                <span className="form-message form-message-error">{t('setup.passwordMismatch')}</span>
-              )}
-            </div>
-            <div className="setup-field">
-              <label className="form-label">{t('setup.appName')}</label>
-              <input
-                type="text" name="app_name" value={form.app_name}
-                onChange={handleChange} className="form-input"
-              />
-            </div>
-          </div>
+            {error && <Alert tone="danger">{error}</Alert>}
 
-          {error && (
-            <div className="alert alert-error mt-3">
-              <span className="alert-icon">!</span>
-              {error}
-            </div>
-          )}
+            <div className="l-grid--form">
+              <Field label={t('setup.username')} error={errorFor('admin_username')} required>
+                <Input
+                  name="admin_username"
+                  value={form.admin_username}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder={t('setup.placeholder.username')}
+                  autoComplete="username"
+                  autoFocus
+                  ref={el => { inputs.current.admin_username = el }}
+                />
+              </Field>
 
-          <div className="setup-actions">
-            <button
-              onClick={handleCreate}
-              disabled={creating || !isValid()}
-              className="btn btn-primary"
-            >
-              {creating ? t('setup.submitting') : t('setup.submit')}
-            </button>
-          </div>
-        </div>
+              <Field label={t('setup.displayName')} error={errorFor('admin_display_name')} required>
+                <Input
+                  name="admin_display_name"
+                  value={form.admin_display_name}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder={t('setup.placeholder.displayName')}
+                  ref={el => { inputs.current.admin_display_name = el }}
+                />
+              </Field>
+
+              <Field
+                label={t('setup.field.password')}
+                hint={t('setup.hint.password')}
+                error={errorFor('admin_password')}
+                required
+              >
+                <Input
+                  type="password"
+                  revealable
+                  name="admin_password"
+                  value={form.admin_password}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder={t('setup.placeholder.password')}
+                  autoComplete="new-password"
+                  ref={el => { inputs.current.admin_password = el }}
+                />
+              </Field>
+
+              <Field
+                label={t('setup.passwordConfirm')}
+                error={errorFor('admin_password_confirm')}
+                required
+              >
+                <Input
+                  type="password"
+                  revealable
+                  name="admin_password_confirm"
+                  value={form.admin_password_confirm}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder={t('setup.placeholder.passwordConfirm')}
+                  autoComplete="new-password"
+                  ref={el => { inputs.current.admin_password_confirm = el }}
+                />
+              </Field>
+
+              <Field label={t('setup.appName')}>
+                <Input name="app_name" value={form.app_name} onChange={handleChange} />
+              </Field>
+            </div>
+
+            <div className="l-cluster l-cluster--end">
+              <Button
+                type="submit"
+                variant="primary"
+                loading={creating}
+                loadingLabel={t('setup.submitting')}
+              >
+                {t('setup.submit')}
+              </Button>
+            </div>
+          </form>
+        </Card>
       </div>
     </div>
   )

@@ -18,15 +18,19 @@
  *                                                       (dashboard only)
  *   4. Otherwise                                      → "login".
  *
- * The overlay (setup / login / loading / error) is rendered on top of the
- * main layout.  Once the state reaches "ready" the admin sidebar + route
- * tree becomes interactive; "player" renders the PlayerDashboardPage with
- * no admin sidebar.
+ * The overlay (setup / login / loading / error) replaces the panel entirely
+ * and uses the centred `.ui-auth` layout.  Once the state reaches "ready" the
+ * shell below takes over; "player" renders the PlayerDashboardPage with no
+ * admin navigation.
+ *
+ * Shell (MASTER section 4.7): a sticky 240px sidebar at 900px and up, a
+ * sticky 56px top bar plus a 280px navigation drawer below it.
  */
 
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Menu, RotateCw } from "lucide-react";
 import {
   settingsApi,
   authApi,
@@ -42,7 +46,10 @@ import Sidebar from "./components/Sidebar";
 // Design-system providers: toasts and confirm dialogs are rendered in
 // portals, so they must sit above every route (and inside the router, so a
 // confirm description can hold a <Link>).
-import { ToastProvider, ConfirmProvider } from "./components/ui";
+import { ToastProvider, ConfirmProvider, Alert, Button, IconButton, Spinner } from "./components/ui";
+import { useDialogFocus } from "./hooks/useDialogFocus";
+import { getCurrentTheme, toggleTheme, type Theme } from "./theme";
+import styles from "./App.module.css";
 
 // Auth / setup overlays
 import SetupWizard from "./pages/SetupWizard";
@@ -140,25 +147,232 @@ function PageBoundary({ children }: { children: React.ReactNode }) {
     <PageErrorBoundary
       resetKey={pathname}
       fallback={
-        <div style={{ padding: "1.5rem" }}>
-          <div className="alert alert-error" role="alert">
-            <span>{t("common.pageLoadError")}</span>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ marginLeft: "auto" }}
-              onClick={() => window.location.reload()}
-            >
-              {t("common.retry")}
-            </button>
-          </div>
+        <div className={styles.boundary}>
+          <Alert
+            tone="danger"
+            title={t("common.pageLoadError")}
+            actions={
+              <Button size="sm" icon={RotateCw} onClick={() => window.location.reload()}>
+                {t("common.retry")}
+              </Button>
+            }
+          />
         </div>
       }
     >
-      <Suspense fallback={<div className="loading-state">{t("common.loading")}</div>}>
+      <Suspense
+        fallback={
+          <div className={styles.boundary}>
+            <Spinner block label={t("common.loading")} />
+          </div>
+        }
+      >
         {children}
       </Suspense>
     </PageErrorBoundary>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shell
+// ---------------------------------------------------------------------------
+
+interface ShellProps {
+  currentUser: AuthUser | null;
+  onLogout: () => void;
+}
+
+/**
+ * The authenticated panel: navigation plus the route tree.
+ *
+ * Below 900px the navigation lives in a drawer, which is a dialog WRAPPING
+ * the <nav> (the landmark is never replaced by role="dialog"); useDialogFocus
+ * gives it Escape, an inert background, the scroll lock and focus restored to
+ * the menu button.
+ *
+ * The shell also owns the active-theme mirror.  `theme.ts` writes
+ * <html data-theme> and broadcasts nothing, so the two Sidebar instances
+ * cannot each keep their own copy -- the one that did not handle the click
+ * would keep showing the wrong icon.  One piece of state here drives both.
+ */
+function AppShell({ currentUser, onLogout }: ShellProps) {
+  const { t } = useTranslation();
+  const { pathname } = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  // The drawer opens on its close button. Without this the hook picks the
+  // first form control, which is the language select at the very bottom, so
+  // the drawer opened scrolled past every navigation entry.
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const { panelProps } = useDialogFocus(menuOpen, {
+    onClose: closeMenu,
+    rootRef: drawerRef,
+    initialFocusRef: drawerCloseRef,
+  });
+  const firstRoute = useRef(true);
+  const [theme, setTheme] = useState<Theme>(getCurrentTheme);
+  const handleToggleTheme = useCallback(() => setTheme(toggleTheme()), []);
+
+  // Route change: close the drawer and hand focus to the new page. The
+  // timeout lets the drawer's own focus restore (it runs in the commit that
+  // unmounts it) finish first, so the content wins the last word.
+  useEffect(() => {
+    if (firstRoute.current) {
+      firstRoute.current = false;
+      return;
+    }
+    setMenuOpen(false);
+    const id = window.setTimeout(() => document.getElementById("main-content")?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [pathname]);
+
+  // The drawer exists below 900px only: growing past the breakpoint while it
+  // is open would leave the page scroll-locked behind an invisible dialog.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const query = window.matchMedia("(min-width: 900px)");
+    const onChange = () => {
+      if (query.matches) setMenuOpen(false);
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, [menuOpen]);
+
+  return (
+    <div className={styles.shell}>
+      {/* First focusable element of the page: skips the ~20 navigation
+          entries, which would otherwise have to be tabbed through on every
+          page change before reaching the content. */}
+      <a href="#main-content" className="ui-skip-link">
+        {t("nav.skipToContent")}
+      </a>
+
+      <div className={styles.sidebar}>
+        <Sidebar
+          currentUser={currentUser}
+          onLogout={onLogout}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
+      </div>
+
+      <div className={styles.content}>
+        <header className={styles.topbar}>
+          <IconButton
+            icon={Menu}
+            label={t("nav.openMenu")}
+            aria-expanded={menuOpen}
+            aria-controls={menuOpen ? "app-nav-drawer" : undefined}
+            onClick={() => setMenuOpen(true)}
+          />
+          <span className={styles.brand}>
+            <img src="/logo.png" alt="" className={styles.brandLogo} />
+            <span className={styles.brandName}>{t("nav.brand")}</span>
+          </span>
+        </header>
+
+        <main className={styles.main} id="main-content" tabIndex={-1}>
+          {/* Every page gets currentUser so it can hide or disable the
+              controls the role cannot use; the backend stays the
+              authority. */}
+          <PageBoundary>
+            <Routes>
+              {/* Main navigation */}
+              <Route path="/" element={<DashboardPage currentUser={currentUser} />} />
+              {/* 'My dashboard' inside the admin layout -- same component
+                  as the standalone player view, mounted with embedded=true
+                  so it inherits the admin navigation instead of taking over
+                  the canvas.  Authenticated by the Discord cookie, not by
+                  the panel role, so it takes no currentUser. */}
+              <Route path="/me" element={<PlayerDashboardPage embedded />} />
+              {/* Marketplace inside admin layout (embedded) */}
+              <Route path="/market" element={<MarketPage embedded currentUser={currentUser} />} />
+              <Route path="/serverforge" element={<ServerForgePage currentUser={currentUser} />} />
+              <Route path="/online" element={<OnlinePlayersPage currentUser={currentUser} />} />
+              <Route path="/players" element={<PlayersPage currentUser={currentUser} />} />
+              {/* /containers is no longer a sidebar entry; the new
+                  Instances page subsumes container discovery + import.
+                  We keep a redirect for old bookmarks. */}
+              <Route path="/containers" element={<Navigate to="/instances" replace />} />
+              <Route path="/game-config" element={<GameConfigPage currentUser={currentUser} />} />
+              <Route path="/servers-manager" element={<ServersPage currentUser={currentUser} />} />
+              <Route path="/instances" element={<ServerInstancesPage currentUser={currentUser} />} />
+              <Route path="/cluster-sync" element={<ClusterSyncPage currentUser={currentUser} />} />
+              <Route path="/event-log" element={<EventLogPage currentUser={currentUser} />} />
+
+              {/* Plugin management */}
+              <Route path="/plugins/arkshop" element={<ArkShopPage currentUser={currentUser} />} />
+              <Route path="/plugins/config" element={<ArkManiaConfigPage currentUser={currentUser} />} />
+              <Route
+                path="/plugins/config/:module"
+                element={<ArkManiaConfigPage currentUser={currentUser} />}
+              />
+              <Route path="/plugins/bans" element={<BansPage currentUser={currentUser} />} />
+              <Route path="/plugins/rare-dinos" element={<RareDinosPage currentUser={currentUser} />} />
+              <Route
+                path="/plugins/transfer-rules"
+                element={<TransferRulesPage currentUser={currentUser} />}
+              />
+              <Route path="/plugins/decay" element={<DecayPage currentUser={currentUser} />} />
+              <Route path="/plugins/player-map" element={<PlayerMapPage currentUser={currentUser} />} />
+              <Route path="/plugins/leaderboard" element={<LeaderboardPage currentUser={currentUser} />} />
+
+              {/* Settings */}
+              <Route path="/settings/blueprints" element={<BlueprintsPage currentUser={currentUser} />} />
+              <Route path="/settings/machines" element={<MachinesPage currentUser={currentUser} />} />
+              <Route path="/settings/hardening" element={<HardeningPage currentUser={currentUser} />} />
+              {/* Admin-only pages: rendered conditionally so the routes
+                  simply do not exist for non-admin users.  Same set as the
+                  sidebar's adminOnly entries. */}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/db" element={<DatabaseSettingsPage currentUser={currentUser} />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/general" element={<GeneralSettingsPage currentUser={currentUser} />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/users" element={<UsersPage currentUser={currentUser} />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/sql" element={<SqlConsolePage currentUser={currentUser} />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/discord" element={<DiscordSettingsPage currentUser={currentUser} />} />
+              )}
+              {currentUser?.role === "admin" && (
+                <Route path="/settings/audit" element={<AuditLogPage currentUser={currentUser} />} />
+              )}
+
+              {/* Catch-all: redirect unknown paths to the dashboard */}
+              <Route path="*" element={<DashboardPage currentUser={currentUser} />} />
+            </Routes>
+          </PageBoundary>
+        </main>
+      </div>
+
+      {menuOpen && (
+        <div ref={drawerRef} className={styles.drawer}>
+          <div className={styles.scrim} onClick={closeMenu} />
+          <div
+            {...panelProps}
+            id="app-nav-drawer"
+            className={styles.drawerPanel}
+            aria-label={t("nav.menu")}
+          >
+            <Sidebar
+              currentUser={currentUser}
+              onLogout={onLogout}
+              onNavigate={closeMenu}
+              onClose={closeMenu}
+              closeButtonRef={drawerCloseRef}
+              theme={theme}
+              onToggleTheme={handleToggleTheme}
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -292,18 +506,16 @@ function App() {
   // ---------------------------------------------------------------------------
 
   function renderAuthOverlay(): React.ReactNode {
-    // The player state has its OWN full-page render (no admin sidebar);
+    // The player state has its OWN full-page render (no admin navigation);
     // skip the overlay entirely so the dashboard takes over the canvas.
     if (authState === "ready" || authState === "player") return null;
 
     if (authState === "loading") {
       return (
-        <div className="auth-overlay">
-          <div className="unlock-container" style={{ textAlign: "center" }}>
-            <img src="/logo.png" alt="ArkMania" className="setup-logo" />
-            <p className="setup-subtitle" style={{ marginTop: "1rem" }}>
-              {t("common.loading")}
-            </p>
+        <div className="ui-auth">
+          <div className={`ui-auth__card ${styles.authBrand}`}>
+            <img src="/logo.png" alt="" className={styles.authLogo} />
+            <Spinner label={t("common.loading")} />
           </div>
         </div>
       );
@@ -311,44 +523,32 @@ function App() {
 
     if (authState === "error") {
       return (
-        <div className="auth-overlay">
-          <div className="unlock-container">
-            <div className="setup-header">
-              <img
-                src="/logo.png"
-                alt="ArkMania"
-                className="setup-logo"
-                style={{ opacity: 0.5 }}
-              />
-              <h1 className="setup-title">{t("auth.connectionError")}</h1>
+        <div className="ui-auth">
+          <div className="ui-auth__card l-stack">
+            <div className={styles.authBrand}>
+              <img src="/logo.png" alt="" className={styles.authLogo} />
+              <h1>{t("auth.connectionError")}</h1>
             </div>
-            <div className="alert alert-error">
-              {errorMessage || t("auth.login.errorNetwork")}
-            </div>
-            <div className="setup-actions" style={{ marginTop: "1rem" }}>
-              <button onClick={checkStatus} className="btn btn-primary">
-                {t("common.retry")}
-              </button>
-            </div>
+            <Alert tone="danger">{errorMessage || t("auth.login.errorNetwork")}</Alert>
+            <Button
+              variant="primary"
+              icon={RotateCw}
+              onClick={checkStatus}
+              className={styles.authAction}
+            >
+              {t("common.retry")}
+            </Button>
           </div>
         </div>
       );
     }
 
     if (authState === "setup") {
-      return (
-        <div className="auth-overlay">
-          <SetupWizard onComplete={() => setAuthState("login")} />
-        </div>
-      );
+      return <SetupWizard onComplete={() => setAuthState("login")} />;
     }
 
     if (authState === "login") {
-      return (
-        <div className="auth-overlay">
-          <LoginPage onLoggedIn={handleLoggedIn} />
-        </div>
-      );
+      return <LoginPage onLoggedIn={handleLoggedIn} />;
     }
 
     return null;
@@ -368,143 +568,28 @@ function App() {
     <BrowserRouter>
       <ToastProvider>
         <ConfirmProvider>
-      {renderAuthOverlay()}
+          {renderAuthOverlay()}
 
-      {/* Discord-only players see the dashboard with no admin sidebar.
-          The PlayerDashboardPage manages its own logout (clears the
-          Discord session cookie and reloads the page).  Routes are
-          scoped to the player surface area: dashboard + marketplace,
-          everything else falls back to the dashboard. */}
-      {authState === "player" && (
-        <PageBoundary>
-          <Routes>
-            <Route path="/market" element={<MarketPage />} />
-            <Route
-              path="*"
-              element={
-                <PlayerDashboardPage onLogout={() => setAuthState("login")} />
-              }
-            />
-          </Routes>
-        </PageBoundary>
-      )}
-
-      {authState === "ready" && (
-        <div className="app-layout">
-          {/* First focusable element of the page: skips the ~20 sidebar
-              entries, which would otherwise have to be tabbed through on
-              every page change before reaching the content. */}
-          <a href="#main-content" className="skip-link">
-            {t("nav.skipToContent")}
-          </a>
-          <Sidebar currentUser={currentUser} onLogout={handleLogout} />
-
-          <main className="app-main" id="main-content" tabIndex={-1}>
-            {/* Every page gets currentUser so it can hide or disable the
-                controls the role cannot use; the backend stays the
-                authority. */}
+          {/* Discord-only players see the dashboard with no admin navigation.
+              The PlayerDashboardPage manages its own logout (clears the
+              Discord session cookie and reloads the page).  Routes are
+              scoped to the player surface area: dashboard + marketplace,
+              everything else falls back to the dashboard. */}
+          {authState === "player" && (
             <PageBoundary>
               <Routes>
-                {/* Main navigation */}
-                <Route path="/" element={<DashboardPage currentUser={currentUser} />} />
-                {/* 'My dashboard' inside the admin layout -- same component
-                    as the standalone player view, mounted with embedded=true
-                    so it inherits the admin sidebar instead of taking over
-                    the canvas.  Authenticated by the Discord cookie, not by
-                    the panel role, so it takes no currentUser. */}
+                <Route path="/market" element={<MarketPage />} />
                 <Route
-                  path="/me"
-                  element={<PlayerDashboardPage embedded />}
+                  path="*"
+                  element={<PlayerDashboardPage onLogout={() => setAuthState("login")} />}
                 />
-                {/* Marketplace inside admin layout (embedded) */}
-                <Route
-                  path="/market"
-                  element={<MarketPage embedded currentUser={currentUser} />}
-                />
-                <Route path="/serverforge" element={<ServerForgePage currentUser={currentUser} />} />
-                <Route path="/online" element={<OnlinePlayersPage currentUser={currentUser} />} />
-                <Route path="/players" element={<PlayersPage currentUser={currentUser} />} />
-                {/* /containers is no longer a sidebar entry; the new
-                    Instances page subsumes container discovery + import.
-                    We keep a redirect for old bookmarks. */}
-                <Route path="/containers" element={<Navigate to="/instances" replace />} />
-                <Route path="/game-config" element={<GameConfigPage currentUser={currentUser} />} />
-                <Route path="/servers-manager" element={<ServersPage currentUser={currentUser} />} />
-                <Route
-                  path="/instances"
-                  element={<ServerInstancesPage currentUser={currentUser} />}
-                />
-                <Route path="/cluster-sync" element={<ClusterSyncPage currentUser={currentUser} />} />
-                <Route path="/event-log" element={<EventLogPage currentUser={currentUser} />} />
-
-                {/* Plugin management */}
-                <Route path="/plugins/arkshop" element={<ArkShopPage currentUser={currentUser} />} />
-                <Route path="/plugins/config" element={<ArkManiaConfigPage currentUser={currentUser} />} />
-                <Route
-                  path="/plugins/config/:module"
-                  element={<ArkManiaConfigPage currentUser={currentUser} />}
-                />
-                <Route path="/plugins/bans" element={<BansPage currentUser={currentUser} />} />
-                <Route path="/plugins/rare-dinos" element={<RareDinosPage currentUser={currentUser} />} />
-                <Route
-                  path="/plugins/transfer-rules"
-                  element={<TransferRulesPage currentUser={currentUser} />}
-                />
-                <Route path="/plugins/decay" element={<DecayPage currentUser={currentUser} />} />
-                <Route
-                  path="/plugins/player-map"
-                  element={<PlayerMapPage currentUser={currentUser} />}
-                />
-                <Route
-                  path="/plugins/leaderboard"
-                  element={<LeaderboardPage currentUser={currentUser} />}
-                />
-
-                {/* Settings */}
-                <Route
-                  path="/settings/blueprints"
-                  element={<BlueprintsPage currentUser={currentUser} />}
-                />
-                <Route path="/settings/machines" element={<MachinesPage currentUser={currentUser} />} />
-                <Route
-                  path="/settings/hardening"
-                  element={<HardeningPage currentUser={currentUser} />}
-                />
-                {/* Admin-only pages: rendered conditionally so the routes
-                    simply do not exist for non-admin users.  Same set as the
-                    sidebar's adminOnly entries. */}
-                {currentUser?.role === "admin" && (
-                  <Route
-                    path="/settings/db"
-                    element={<DatabaseSettingsPage currentUser={currentUser} />}
-                  />
-                )}
-                {currentUser?.role === "admin" && (
-                  <Route
-                    path="/settings/general"
-                    element={<GeneralSettingsPage currentUser={currentUser} />}
-                  />
-                )}
-                {currentUser?.role === "admin" && (
-                  <Route path="/settings/users" element={<UsersPage currentUser={currentUser} />} />
-                )}
-                {currentUser?.role === "admin" && (
-                  <Route path="/settings/sql" element={<SqlConsolePage currentUser={currentUser} />} />
-                )}
-                {currentUser?.role === "admin" && (
-                  <Route path="/settings/discord" element={<DiscordSettingsPage currentUser={currentUser} />} />
-                )}
-                {currentUser?.role === "admin" && (
-                  <Route path="/settings/audit" element={<AuditLogPage currentUser={currentUser} />} />
-                )}
-
-                {/* Catch-all: redirect unknown paths to the dashboard */}
-                <Route path="*" element={<DashboardPage currentUser={currentUser} />} />
               </Routes>
             </PageBoundary>
-          </main>
-        </div>
-      )}
+          )}
+
+          {authState === "ready" && (
+            <AppShell currentUser={currentUser} onLogout={handleLogout} />
+          )}
         </ConfirmProvider>
       </ToastProvider>
     </BrowserRouter>

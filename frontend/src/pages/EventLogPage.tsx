@@ -1,19 +1,26 @@
 /**
- * EventLogPage - Read-only viewer for ARKM_event_log.
+ * EventLogPage — Read-only viewer for ARKM_event_log.
  *
- * Displays all server events (LOGIN, RARE_SPAWN, RARE_DESPAWN, RARE_KILLED,
- * RARE_TAMED, DECAY_SCAN) in a filterable, paginated table with aggregate
- * stats cards.  Follows the same design patterns as TransferRulesPage.
+ * Every server event (LOGIN, RARE_SPAWN, RARE_DESPAWN, RARE_KILLED,
+ * RARE_TAMED, DECAY_SCAN) in a filterable, paginated table, with the
+ * aggregate counts doubling as type filters. Purging the log is
+ * require_admin and irreversible, so the panel is admin-only and the
+ * "delete everything" case asks the admin to type the word out.
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkmaniaApi } from '../services/api'
+import { extractError } from '../utils/errors'
 import type { AuthUser } from '../types'
 import {
-  ScrollText, RefreshCw, AlertCircle, Search, ChevronLeft, ChevronRight,
-  LogIn, Skull, Heart, Eye, Timer, Sparkles, Trash2, CheckCircle
+  Eye, Heart, LogIn, RefreshCw, RotateCw, ScrollText, Skull, Sparkles, Timer, Trash2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import {
+  Alert, Badge, Button, Card, EmptyState, Field, IconButton, Input, PageHeader,
+  Pagination, Select, Spinner, StatTile, Table, TableMessageRow, useConfirm, useToast,
+} from '../components/ui'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,34 +46,28 @@ interface ServerItem {
   display_name: string
 }
 
-// ── Event type styling map ────────────────────────────────────────────────────
+// ── Event type icons ──────────────────────────────────────────────────────────
 
-// Visual styling only — labels are resolved via i18n using the key
-// `eventLog.types.<EVENT_TYPE>` (see locales/*.json).
-const EVENT_STYLES: Record<string, { color: string; bg: string; icon: LucideIcon }> = {
-  LOGIN:        { color: 'var(--cyan)', bg: 'rgba(59,130,246,0.08)',   icon: LogIn },
-  RARE_SPAWN:   { color: 'var(--violet)', bg: 'rgba(139,92,246,0.08)',   icon: Sparkles },
-  RARE_DESPAWN: { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)',  icon: Eye },
-  RARE_KILLED:  { color: 'var(--danger)', bg: 'rgba(220,38,38,0.08)',    icon: Skull },
-  RARE_TAMED:   { color: 'var(--success)', bg: 'rgba(22,163,74,0.08)',    icon: Heart },
-  DECAY_SCAN:   { color: 'var(--warning)', bg: 'rgba(202,138,4,0.08)',    icon: Timer },
+// Event types are categories, so each one is told apart by its glyph and its
+// written label; labels are resolved via `eventLog.types.<EVENT_TYPE>`.
+const EVENT_ICONS: Record<string, LucideIcon> = {
+  LOGIN: LogIn,
+  RARE_SPAWN: Sparkles,
+  RARE_DESPAWN: Eye,
+  RARE_KILLED: Skull,
+  RARE_TAMED: Heart,
+  DECAY_SCAN: Timer,
 }
 
-const DEFAULT_STYLE = { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)', icon: ScrollText }
+const EVENT_TYPES = Object.keys(EVENT_ICONS)
 
-function getStyle(type: string) {
-  return EVENT_STYLES[type] || DEFAULT_STYLE
+function iconFor(type: string): LucideIcon {
+  return EVENT_ICONS[type] || ScrollText
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50
-
-const labelStyle: React.CSSProperties = {
-  fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.05em', color: 'var(--text-secondary)',
-  display: 'block', marginBottom: 3,
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,8 @@ interface Props {
 
 export default function EventLogPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  const toast = useToast()
+  const confirm = useConfirm()
   // Purging the log is irreversible and Depends(require_admin) server side.
   const isAdmin = currentUser?.role === 'admin'
   const [events, setEvents] = useState<EventItem[]>([])
@@ -91,8 +94,16 @@ export default function EventLogPage({ currentUser }: Props) {
   const [search, setSearch] = useState('')
   // What the query actually uses: every keystroke used to fire a COUNT(*)
   // plus a LIKE '%q%' scan of the whole log.
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(0)
+  // A new query text invalidates the page index. Adjusted during render (not
+  // in an effect) so the fetch below runs once, for page 0, instead of firing
+  // for the old page first and having its answer thrown away.
+  const [pagedSearch, setPagedSearch] = useState(debouncedSearch)
+  if (pagedSearch !== debouncedSearch) {
+    setPagedSearch(debouncedSearch)
+    setPage(0)
+  }
   // Only the latest request may write the table: an older, slower response
   // (the one for "Re" while the box says "Rexy") is dropped.
   const eventsReq = useRef(0)
@@ -102,14 +113,13 @@ export default function EventLogPage({ currentUser }: Props) {
   const [purgeDays, setPurgeDays] = useState(30)
   const [purgeType, setPurgeType] = useState('')
   const [purging, setPurging] = useState(false)
-  const [success, setSuccess] = useState('')
 
   // ── Data loading ────────────────────────────────────────────────────────
   const loadEvents = useCallback(async () => {
     const req = ++eventsReq.current
     setLoading(true)
     try {
-      const params: Record<string, any> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+      const params: Record<string, unknown> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE }
       if (eventType) params.event_type = eventType
       if (serverKey) params.server_key = serverKey
       if (debouncedSearch) params.search = debouncedSearch
@@ -117,12 +127,12 @@ export default function EventLogPage({ currentUser }: Props) {
       if (req !== eventsReq.current) return
       setEvents(res.data.events)
       setTotal(res.data.total)
-    } catch (e: any) {
-      if (req === eventsReq.current) setError(e.response?.data?.detail || e.message)
+    } catch (e: unknown) {
+      if (req === eventsReq.current) setError(extractError(e, t('eventLog.loadFailed')))
     } finally {
       if (req === eventsReq.current) setLoading(false)
     }
-  }, [eventType, serverKey, debouncedSearch, page])
+  }, [eventType, serverKey, debouncedSearch, page, t])
 
   const loadMeta = useCallback(async () => {
     try {
@@ -137,14 +147,6 @@ export default function EventLogPage({ currentUser }: Props) {
 
   useEffect(() => { loadMeta() }, [loadMeta])
   useEffect(() => { loadEvents() }, [loadEvents])
-  useEffect(() => {
-    if (search === debouncedSearch) return
-    const timer = setTimeout(() => { setDebouncedSearch(search); setPage(0) }, 300)
-    return () => clearTimeout(timer)
-  }, [search, debouncedSearch])
-  useEffect(() => {
-    if (success) { const timer = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(timer) }
-  }, [success])
 
   function eventLabel(type: string): string {
     return t(`eventLog.types.${type}`, { defaultValue: type })
@@ -152,22 +154,31 @@ export default function EventLogPage({ currentUser }: Props) {
 
   async function handlePurge() {
     const typeLabel = purgeType ? eventLabel(purgeType) : t('eventLog.purgeAllTypes')
-    const msg = purgeDays === 0
-      ? t('eventLog.purgeConfirmAll',   { type: typeLabel })
-      : t('eventLog.purgeConfirmOlder', { type: typeLabel, days: purgeDays })
-    if (!confirm(msg)) return
+    const everything = purgeDays === 0
+    const ok = await confirm({
+      title: everything ? t('eventLog.purgeTitleAll') : t('eventLog.purgeTitleOlder', { days: purgeDays }),
+      description: everything
+        ? t('eventLog.purgeConfirmAll', { type: typeLabel })
+        : t('eventLog.purgeConfirmOlder', { type: typeLabel, days: purgeDays }),
+      confirmLabel: t('eventLog.purgeGo'),
+      // Deleting the whole log is unbounded and cannot be undone: make the
+      // admin write it out. A dated prune keeps the plain confirmation.
+      confirmText: everything ? t('eventLog.purgeConfirmWord') : undefined,
+      tone: 'danger',
+    })
+    if (!ok) return
     setPurging(true)
     try {
       const res = await arkmaniaApi.purgeEvents(purgeDays, purgeType || undefined)
-      setSuccess(t('eventLog.purgeDeleted', { count: res.data.deleted.toLocaleString() }))
+      toast.success(t('eventLog.purgeDeleted', { count: res.data.deleted.toLocaleString() }))
       setShowPurge(false)
       loadMeta()
       // Back to page one: the old page index can now lie past the end, and
       // the table would read "no events" while events remain.
       if (page !== 0) setPage(0)
       else loadEvents()
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+    } catch (e: unknown) {
+      setError(extractError(e, t('eventLog.purgeFailed')))
     } finally {
       setPurging(false)
     }
@@ -187,266 +198,200 @@ export default function EventLogPage({ currentUser }: Props) {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const totalEvents = stats.reduce((s, e) => s + e.count, 0)
+  const firstLoad = loading && events.length === 0
+  const refreshing = loading && !firstLoad
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div className="page-container">
-      {/* Header */}
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><ScrollText size={22} /> {t('eventLog.title')}</h1>
-          <p className="page-subtitle">
-            {t('eventLog.subtitleStats', {
-              total: totalEvents.toLocaleString(),
-              page: page + 1,
-              totalPages: totalPages || 1,
-            })}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {isAdmin && (
-            <button onClick={() => setShowPurge(!showPurge)} className="btn btn-secondary" style={{ fontSize: '0.82rem' }}>
-              <Trash2 size={14} /> {t('eventLog.purge')}
-            </button>
-          )}
-          <button onClick={() => { loadMeta(); loadEvents() }} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
-          <AlertCircle size={14} /> {error}
-          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>×</button>
-        </div>
-      )}
-
-      {/* Success message */}
-      {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--success)' }}>
-          <CheckCircle size={14} /> {success}
-        </div>
-      )}
-
-      {/* Purge panel */}
-      {isAdmin && showPurge && (
-        <div className="card" style={{ padding: '1rem', marginBottom: '0.75rem', borderLeft: '3px solid var(--danger)' }}>
-          <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--danger)' }}>
-            <Trash2 size={14} style={{ verticalAlign: -2 }} /> {t('eventLog.purgeTitle')}
-          </h3>
-          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
-            <div>
-              <label style={labelStyle}>{t('eventLog.purgeKeep')}</label>
-              <select className="input" value={purgeDays} onChange={e => setPurgeDays(Number(e.target.value))} style={{ fontSize: '0.82rem' }}>
-                <option value={7}>{t('eventLog.days.d7')}</option>
-                <option value={14}>{t('eventLog.days.d14')}</option>
-                <option value={30}>{t('eventLog.days.d30')}</option>
-                <option value={60}>{t('eventLog.days.d60')}</option>
-                <option value={90}>{t('eventLog.days.d90')}</option>
-                <option value={180}>{t('eventLog.days.m6')}</option>
-                <option value={365}>{t('eventLog.days.y1')}</option>
-                <option value={0}>{t('eventLog.days.all')}</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>{t('eventLog.purgeType')}</label>
-              <select className="input" value={purgeType} onChange={e => setPurgeType(e.target.value)} style={{ fontSize: '0.82rem' }}>
-                <option value="">{t('eventLog.filter.allTypes')}</option>
-                {Object.keys(EVENT_STYLES).map((k) => (
-                  <option key={k} value={k}>{eventLabel(k)}</option>
-                ))}
-              </select>
-            </div>
-            <button onClick={handlePurge} disabled={purging} className="btn btn-primary"
-              style={{ fontSize: '0.82rem', background: 'var(--danger)', borderColor: 'var(--danger)' }}>
-              {purging ? t('eventLog.purging') : t('eventLog.purgeGo')}
-            </button>
-            <button onClick={() => setShowPurge(false)} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('common.cancel')}</button>
-          </div>
-          <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            {t('eventLog.purgeFootnote')}
-          </p>
-        </div>
-      )}
-
-      {/* Stats cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
-        {stats.map(s => {
-          const st = getStyle(s.event_type)
-          const Icon = st.icon
-          return (
-            <button key={s.event_type} onClick={() => applyFilter(setEventType, eventType === s.event_type ? '' : s.event_type)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem',
-                background: eventType === s.event_type ? st.bg : 'var(--bg-card)',
-                border: `1px solid ${eventType === s.event_type ? st.color : 'var(--border)'}`,
-                borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)',
-                cursor: 'pointer', transition: 'all 0.15s', textAlign: 'left',
-              }}>
-              <div style={{ width: 28, height: 28, borderRadius: 6, background: st.bg, border: `1px solid ${st.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon size={13} color={st.color} />
-              </div>
-              <div>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: st.color, lineHeight: 1 }}>{s.count.toLocaleString()}</div>
-                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{eventLabel(s.event_type)}</div>
-              </div>
-            </button>
-          )
+    <div className="l-page">
+      <PageHeader
+        title={t('eventLog.title')}
+        icon={ScrollText}
+        description={t('eventLog.subtitleStats', {
+          total: totalEvents.toLocaleString(),
+          page: page + 1,
+          totalPages: totalPages || 1,
         })}
-      </div>
-
-      {/* Filters */}
-      <div className="card" style={{ padding: '0.6rem 1rem', marginBottom: '0.75rem', display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 140 }}>
-          <label style={labelStyle}>{t('eventLog.filter.type')}</label>
-          <select className="input" value={eventType} onChange={e => applyFilter(setEventType, e.target.value)}
-            style={{ fontSize: '0.82rem' }}>
-            <option value="">{t('eventLog.filter.allTypes')}</option>
-            {Object.keys(EVENT_STYLES).map((k) => (
-              <option key={k} value={k}>{eventLabel(k)}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ minWidth: 140 }}>
-          <label style={labelStyle}>{t('eventLog.filter.server')}</label>
-          <select className="input" value={serverKey} onChange={e => applyFilter(setServerKey, e.target.value)}
-            style={{ fontSize: '0.82rem' }}>
-            <option value="">{t('eventLog.filter.allServers')}</option>
-            {servers.map(s => (
-              <option key={s.server_key} value={s.server_key}>{s.display_name}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ flex: 1, minWidth: 180 }}>
-          <label style={labelStyle}>{t('eventLog.filter.search')}</label>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="input" placeholder={t('eventLog.filter.searchPlaceholder')}
-              value={search} onChange={e => setSearch(e.target.value)}
-              style={{ fontSize: '0.82rem', paddingLeft: 28 }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="card" style={{ minHeight: 200 }}>
-        {loading ? (
-          <div className="pl-loading" style={{ padding: '3rem' }}>{t('eventLog.loading')}</div>
-        ) : events.length === 0 ? (
-          <div className="pl-empty" style={{ padding: '3rem' }}>
-            <ScrollText size={40} style={{ opacity: 0.12 }} />
-            <p>{t('eventLog.empty')}</p>
-          </div>
-        ) : (
+        actions={
           <>
-            {/* Header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '110px 1.2fr 0.8fr 2fr 130px',
-              padding: '0.5rem 1rem', fontSize: '0.65rem', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              color: 'var(--text-secondary)', background: 'var(--bg-card-muted)',
-              borderBottom: '2px solid var(--border)',
-            }}>
-              <span>{t('eventLog.column.type')}</span>
-              <span>{t('eventLog.column.player')}</span>
-              <span>{t('eventLog.column.server')}</span>
-              <span>{t('eventLog.column.details')}</span>
-              <span>{t('eventLog.column.datetime')}</span>
-            </div>
-
-            {/* Rows */}
-            {events.map(ev => {
-              const st = getStyle(ev.event_type)
-              const Icon = st.icon
-              return (
-                <div key={ev.id} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '110px 1.2fr 0.8fr 2fr 130px',
-                  padding: '0.45rem 1rem', alignItems: 'center',
-                  borderBottom: '1px solid var(--border)',
-                  borderLeft: `3px solid ${st.color}`,
-                  transition: 'background 0.1s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.04)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '')}
-                >
-                  {/* Event type badge */}
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
-                    padding: '0.12rem 0.45rem', borderRadius: 4, fontSize: '0.68rem', fontWeight: 700,
-                    background: st.bg, color: st.color, border: `1px solid color-mix(in srgb, ${st.color} 13%, transparent)`,
-                    whiteSpace: 'nowrap',
-                  }}>
-                    <Icon size={11} /> {eventLabel(ev.event_type)}
-                  </span>
-
-                  {/* Player name */}
-                  <div>
-                    {ev.player_name ? (
-                      <>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>{ev.player_name}</span>
-                        {ev.eos_id && (
-                          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                            {ev.eos_id.substring(0, 12)}...
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>—</span>
-                    )}
-                  </div>
-
-                  {/* Server */}
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    {resolveServer(ev.server_key)}
-                  </span>
-
-                  {/* Details */}
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {ev.details}
-                  </span>
-
-                  {/* Timestamp */}
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    {ev.event_time ? new Date(ev.event_time).toLocaleString(undefined, {
-                      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-                    }) : '—'}
-                  </span>
-                </div>
-              )
-            })}
-          </>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
-            padding: '0.6rem 1rem', borderTop: '1px solid var(--border)',
-            fontSize: '0.82rem', color: 'var(--text-secondary)',
-          }}>
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-              className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }}>
-              <ChevronLeft size={16} />
-            </button>
-            <span
-              dangerouslySetInnerHTML={{
-                __html: t('eventLog.pagination.page', { page: page + 1, total: totalPages }),
-              }}
+            {/* aria-expanded alone: the panel only exists while it is open,
+                and aria-controls pointing at a missing id costs some AT the
+                expander semantics altogether. */}
+            {isAdmin && (
+              <Button
+                icon={Trash2}
+                aria-expanded={showPurge}
+                onClick={() => setShowPurge(v => !v)}
+              >
+                {t('eventLog.purge')}
+              </Button>
+            )}
+            <IconButton
+              icon={RefreshCw}
+              label={t('common.refresh')}
+              loading={loading}
+              onClick={() => { loadMeta(); loadEvents() }}
             />
-            <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-              className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }}>
-              <ChevronRight size={16} />
-            </button>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {t('eventLog.pagination.resultsCount', { count: total.toLocaleString() })}
-            </span>
+          </>
+        }
+      />
+
+      {error && (
+        <Alert
+          tone="danger"
+          actions={<Button size="sm" icon={RotateCw} onClick={loadEvents}>{t('common.retry')}</Button>}
+          onDismiss={() => setError('')}
+        >
+          {error}
+        </Alert>
+      )}
+
+      {isAdmin && showPurge && (
+        <Card title={t('eventLog.purgeTitle')} icon={Trash2}>
+          <div className="l-stack">
+            <Alert tone="warning">{t('eventLog.purgeFootnote')}</Alert>
+            <div className="l-grid--form">
+              <Field label={t('eventLog.purgeKeep')}>
+                <Select value={purgeDays} onChange={e => setPurgeDays(Number(e.target.value))}>
+                  <option value={7}>{t('eventLog.days.d7')}</option>
+                  <option value={14}>{t('eventLog.days.d14')}</option>
+                  <option value={30}>{t('eventLog.days.d30')}</option>
+                  <option value={60}>{t('eventLog.days.d60')}</option>
+                  <option value={90}>{t('eventLog.days.d90')}</option>
+                  <option value={180}>{t('eventLog.days.m6')}</option>
+                  <option value={365}>{t('eventLog.days.y1')}</option>
+                  <option value={0}>{t('eventLog.days.all')}</option>
+                </Select>
+              </Field>
+              <Field label={t('eventLog.purgeType')}>
+                <Select value={purgeType} onChange={e => setPurgeType(e.target.value)}>
+                  <option value="">{t('eventLog.filter.allTypes')}</option>
+                  {EVENT_TYPES.map(k => <option key={k} value={k}>{eventLabel(k)}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <div className="l-cluster l-cluster--end">
+              <Button variant="ghost" onClick={() => setShowPurge(false)}>{t('common.cancel')}</Button>
+              <Button
+                variant="danger"
+                icon={Trash2}
+                loading={purging}
+                loadingLabel={t('eventLog.purging')}
+                onClick={handlePurge}
+              >
+                {t('eventLog.purgeGo')}
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
+        </Card>
+      )}
+
+      {stats.length > 0 && (
+        <div className="l-grid--stats">
+          {stats.map(s => (
+            <StatTile
+              key={s.event_type}
+              label={eventLabel(s.event_type)}
+              value={s.count.toLocaleString()}
+              icon={iconFor(s.event_type)}
+              pressed={eventType === s.event_type}
+              onClick={() => applyFilter(setEventType, eventType === s.event_type ? '' : s.event_type)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Card title={t('eventLog.filtersTitle')}>
+        <div className="l-grid--form">
+          <Field label={t('eventLog.filter.type')}>
+            <Select value={eventType} onChange={e => applyFilter(setEventType, e.target.value)}>
+              <option value="">{t('eventLog.filter.allTypes')}</option>
+              {EVENT_TYPES.map(k => <option key={k} value={k}>{eventLabel(k)}</option>)}
+            </Select>
+          </Field>
+          <Field label={t('eventLog.filter.server')}>
+            <Select value={serverKey} onChange={e => applyFilter(setServerKey, e.target.value)}>
+              <option value="">{t('eventLog.filter.allServers')}</option>
+              {servers.map(s => (
+                <option key={s.server_key} value={s.server_key}>{s.display_name}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label={t('eventLog.filter.search')}>
+            <Input
+              type="search"
+              placeholder={t('eventLog.filter.searchPlaceholder')}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </Field>
+        </div>
+      </Card>
+
+      <Card
+        title={t('eventLog.listTitle')}
+        flush
+        actions={refreshing ? <Spinner /> : undefined}
+        footer={
+          totalPages > 1 ? (
+            <div className="l-cluster l-cluster--between">
+              <Pagination
+                label={t('eventLog.listTitle')}
+                page={page}
+                pageCount={totalPages}
+                onPageChange={setPage}
+              />
+              <span className="u-muted u-text-sm">
+                {t('eventLog.pagination.resultsCount', { count: total.toLocaleString() })}
+              </span>
+            </div>
+          ) : undefined
+        }
+      >
+        <Table label={t('eventLog.listTitle')} minWidth={960}>
+          <thead>
+            <tr>
+              <th scope="col">{t('eventLog.column.type')}</th>
+              <th scope="col">{t('eventLog.column.player')}</th>
+              <th scope="col">{t('eventLog.column.server')}</th>
+              <th scope="col">{t('eventLog.column.details')}</th>
+              <th scope="col">{t('eventLog.column.datetime')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {firstLoad ? (
+              <TableMessageRow colSpan={5}><Spinner block label={t('eventLog.loading')} /></TableMessageRow>
+            ) : events.length === 0 ? (
+              <TableMessageRow colSpan={5}>
+                <EmptyState icon={ScrollText} title={t('eventLog.empty')} />
+              </TableMessageRow>
+            ) : events.map(ev => (
+              <tr key={ev.id}>
+                <td>
+                  <Badge icon={iconFor(ev.event_type)}>{eventLabel(ev.event_type)}</Badge>
+                </td>
+                <td className={ev.player_name && ev.eos_id ? 'ui-cell-2' : undefined}>
+                  {ev.player_name ? (
+                    <>
+                      <span>{ev.player_name}</span>
+                      {ev.eos_id && <span className="u-mono u-text-sm u-muted">{ev.eos_id.substring(0, 12)}…</span>}
+                    </>
+                  ) : (
+                    <span className="u-muted">—</span>
+                  )}
+                </td>
+                <td>{resolveServer(ev.server_key)}</td>
+                <td className="ui-cell-wrap">{ev.details}</td>
+                <td className="u-mono u-text-sm u-muted">
+                  {ev.event_time ? new Date(ev.event_time).toLocaleString(undefined, {
+                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+                  }) : <span className="u-muted">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
     </div>
   )
 }

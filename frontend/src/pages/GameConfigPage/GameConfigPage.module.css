@@ -1,0 +1,77 @@
+/*
+ * Page-only layout for the INI editor. Tokens only: the old GameConfigPage.css
+ * hard-coded #0d1117 and rgba(255,255,255,.5), which made the container select
+ * unreadable in light theme and the nav hover unreadable in dark theme.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* Group of settings: auto-filling cards, never a fixed column count. */
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+
+  /* Boolean settings: the same grid, tighter because a Switch is one row. */
+  .toggles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+    gap: var(--space-3);
+  }
+
+  /* A number input plus its "reset to default" button. */
+  .inputRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .inputRow > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Raw INI editors, side by side from 900px. */
+  .rawGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  @media (min-width: 900px) {
+    .rawGrid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .rawEditor {
+    min-height: 22rem;
+    resize: vertical;
+  }
+  .entryEditor {
+    min-height: 6rem;
+    resize: vertical;
+  }
+
+  /* Key = value listing of mod sections and uncategorised keys. */
+  .kvList {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+  }
+  .kvList > dt {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+  .kvList > dd {
+    margin: 0;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+}

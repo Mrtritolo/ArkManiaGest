@@ -1,0 +1,68 @@
+@layer page {
+  /* Map beside the actions and the object list; one column until there is
+     room for both. */
+  .layout {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  @media (min-width: 1200px) {
+    .layout {
+      grid-template-columns: minmax(0, 34rem) minmax(0, 1fr);
+    }
+  }
+
+  /* The SVG keeps its own 0..SIZE coordinate space; the rendered size comes
+     from here, so the map follows the column instead of a fixed 560px box. */
+  .map {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 1;
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .map[data-dragging] {
+    cursor: grabbing;
+  }
+
+  .map :global(circle[data-dot]) {
+    cursor: pointer;
+  }
+
+  /* Legend: a swatch, an icon and the written layer name, so the colour is
+     never the only thing that identifies a dot. */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: center;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .legendItem {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+  }
+
+  .legendItem[data-hidden] {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+  }
+
+  .swatch {
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border-strong);
+    flex: none;
+  }
+}

@@ -1,15 +1,28 @@
 /**
  * TransferRulesPage — Transfer rule management (ARKM_transfer_rules).
- * Design aligned with other ArkMania pages (DecayPage, BansPage, etc.)
+ *
+ * One rule per source/destination pair, with a transfer level from "full"
+ * to "blocked". Rules are edited in place: the level select and the note
+ * input replace the cells of the row being edited, Enter saves and Escape
+ * cancels. Every write is require_operator server side, so viewers see the
+ * table without the create/edit/delete controls.
  */
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkTransferRulesApi, arkmaniaApi } from '../services/api'
+import { extractError } from '../utils/errors'
 import type { AuthUser } from '../types'
 import {
-  ArrowRightLeft, Plus, Trash2, Edit2, Save, X, AlertCircle,
-  CheckCircle, Shield, ArrowRight, RefreshCw
+  ArrowRight, ArrowRightLeft, Edit2, Plus, RefreshCw, RotateCw, Save,
+  Shield, ShieldAlert, ShieldBan, ShieldCheck, Trash2, X,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import {
+  Alert, Badge, Button, Card, EmptyState, Field, IconButton, Input, PageHeader,
+  Select, Spinner, StatTile, Table, TableMessageRow, useConfirm, useToast,
+  type BadgeTone,
+} from '../components/ui'
+import { usePending } from '../hooks/usePending'
 
 interface TransferRule {
   id: number; source_server: string; dest_server: string
@@ -21,11 +34,16 @@ interface ServerItem {
   is_online: boolean
 }
 
-const TRANSFER_LEVEL_META = [
-  { value: 0, color: 'var(--success)', bg: 'rgba(22,163,74,0.08)', tkey: 'full' },
-  { value: 1, color: 'var(--warning)', bg: 'rgba(202,138,4,0.08)', tkey: 'survivorInv' },
-  { value: 2, color: 'var(--warning)', bg: 'rgba(234,88,12,0.08)', tkey: 'survivorOnly' },
-  { value: 3, color: 'var(--danger)', bg: 'rgba(220,38,38,0.08)', tkey: 'blocked' },
+/**
+ * Levels are a severity ramp, not a category: allowed -> blocked. Each one
+ * carries its own icon and its written label, so the tone is never the only
+ * thing telling them apart.
+ */
+const TRANSFER_LEVEL_META: { value: number; tone: BadgeTone; icon: LucideIcon; tkey: string }[] = [
+  { value: 0, tone: 'success', icon: ShieldCheck, tkey: 'full' },
+  { value: 1, tone: 'info', icon: Shield, tkey: 'survivorInv' },
+  { value: 2, tone: 'warning', icon: ShieldAlert, tkey: 'survivorOnly' },
+  { value: 3, tone: 'danger', icon: ShieldBan, tkey: 'blocked' },
 ]
 
 interface Props {
@@ -34,19 +52,30 @@ interface Props {
 
 export default function TransferRulesPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  const toast = useToast()
+  const confirm = useConfirm()
   // Creating, editing and deleting rules are require_operator server side.
   const canOperate = currentUser?.role === 'admin' || currentUser?.role === 'operator'
-  const TRANSFER_LEVELS = TRANSFER_LEVEL_META.map(m => ({
+  const pending = usePending<number>()
+
+  const TRANSFER_LEVELS = useMemo(() => TRANSFER_LEVEL_META.map(m => ({
     ...m,
     label: t(`transferRules.levels.${m.tkey}.label`),
     desc: t(`transferRules.levels.${m.tkey}.desc`),
-  }))
+  })), [t])
+
   const [rules, setRules] = useState<TransferRule[]>([])
   const [servers, setServers] = useState<ServerItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [addError, setAddError] = useState('')
+  // Per-picker rejections: the form is noValidate, so nothing else stops an
+  // empty or self-referencing rule before the POST.
+  const [addFieldErrors, setAddFieldErrors] = useState<{ source?: string; dest?: string }>({})
+  const [adding, setAdding] = useState(false)
+  const sourceRef = useRef<HTMLSelectElement>(null)
+  const destRef = useRef<HTMLSelectElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editLevel, setEditLevel] = useState(0)
   const [editNotes, setEditNotes] = useState('')
@@ -61,13 +90,13 @@ export default function TransferRulesPage({ currentUser }: Props) {
       ])
       setRules(rulesRes.data.rules)
       setServers(serversRes.data.servers)
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+      setLoadError('')
+    } catch (e: unknown) {
+      setLoadError(extractError(e, t('transferRules.loadFailed')))
     } finally { setLoading(false) }
   }
 
   useEffect(() => { loadData() }, [])
-  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 3000); return () => clearTimeout(t) } }, [success])
 
   const serverOptions = [
     { value: 'PvP', label: t('transferRules.serverTypePrefix', { type: 'PvP' }) },
@@ -77,16 +106,30 @@ export default function TransferRulesPage({ currentUser }: Props) {
 
   function resolveServerName(key: string): string {
     if (key === 'PvP' || key === 'PvE') return t('transferRules.serverTypePrefix', { type: key })
-    const s = servers.find(s => s.server_key === key)
+    const s = servers.find(sv => sv.server_key === key)
     return s?.display_name || key.split('_')[0]
   }
 
   function getLevelInfo(level: number) {
-    return TRANSFER_LEVELS.find(t => t.value === level) || TRANSFER_LEVELS[3]
+    return TRANSFER_LEVELS.find(l => l.value === level) || TRANSFER_LEVELS[3]
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: FormEvent) {
     e.preventDefault()
+    // Both pickers are required and a rule from a server to itself can never
+    // fire, but the backend validates only transfer_level: it would store a
+    // '' -> '' row and answer {created: true}. Reject both here.
+    const errors: { source?: string; dest?: string } = {}
+    if (!newRule.source_server) errors.source = t('transferRules.form.errorRequired')
+    if (!newRule.dest_server) errors.dest = t('transferRules.form.errorRequired')
+    if (!errors.source && !errors.dest && newRule.source_server === newRule.dest_server) {
+      errors.dest = t('transferRules.form.errorSameServer')
+    }
+    setAddFieldErrors(errors)
+    if (errors.source) { sourceRef.current?.focus(); return }
+    if (errors.dest) { destRef.current?.focus(); return }
+    setAddError('')
+    setAdding(true)
     try {
       await arkTransferRulesApi.create({
         source_server: newRule.source_server,
@@ -96,9 +139,14 @@ export default function TransferRulesPage({ currentUser }: Props) {
       })
       setShowAdd(false)
       setNewRule({ source_server: '', dest_server: '', transfer_level: 3, notes: '' })
-      setSuccess(t('transferRules.success.created'))
+      setAddFieldErrors({})
+      toast.success(t('transferRules.success.created'))
       await loadData()
-    } catch (e: any) { setError(e.response?.data?.detail || e.message) }
+    } catch (e: unknown) {
+      setAddError(extractError(e, t('transferRules.form.createFailed')))
+    } finally {
+      setAdding(false)
+    }
   }
 
   function startEdit(rule: TransferRule) {
@@ -109,203 +157,266 @@ export default function TransferRulesPage({ currentUser }: Props) {
 
   async function saveEdit() {
     if (editingId == null) return
+    const id = editingId
     try {
       // Always send notes: an empty string is how a note gets cleared
       // (the backend skips the column only when notes is omitted).
-      await arkTransferRulesApi.update(editingId, { transfer_level: editLevel, notes: editNotes })
+      await pending.run(id, () => arkTransferRulesApi.update(id, { transfer_level: editLevel, notes: editNotes }))
       setEditingId(null)
-      setSuccess(t('transferRules.success.updated'))
+      toast.success(t('transferRules.success.updated'))
       await loadData()
-    } catch (e: any) { setError(e.message) }
+    } catch (e: unknown) {
+      toast.error(extractError(e, t('transferRules.updateFailed')))
+    }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm(t('transferRules.confirmDelete'))) return
+  async function handleDelete(rule: TransferRule) {
+    const ok = await confirm({
+      title: t('transferRules.confirmDelete'),
+      description: t('transferRules.confirmDeletePair', {
+        source: resolveServerName(rule.source_server),
+        dest: resolveServerName(rule.dest_server),
+      }),
+      confirmLabel: t('transferRules.confirmDeleteAction'),
+      tone: 'danger',
+    })
+    if (!ok) return
     try {
-      await arkTransferRulesApi.delete(id)
-      setSuccess(t('transferRules.success.deleted'))
+      await pending.run(rule.id, () => arkTransferRulesApi.delete(rule.id))
+      toast.success(t('transferRules.success.deleted'))
       await loadData()
-    } catch (e: any) { setError(e.message) }
+    } catch (e: unknown) {
+      toast.error(extractError(e, t('transferRules.deleteFailed')))
+    }
   }
 
-  // Stats
+  /** Enter commits the inline edit, Escape abandons it. */
+  function onEditKeyDown(e: KeyboardEvent<HTMLElement>) {
+    if (e.key === 'Enter') { e.preventDefault(); void saveEdit() }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditingId(null) }
+  }
+
   const levelCounts = TRANSFER_LEVELS.map(l => ({
     ...l,
     count: rules.filter(r => r.transfer_level === l.value).length,
   }))
 
   return (
-    <div className="page-container">
-      {/* Header */}
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><ArrowRightLeft size={22} /> {t('transferRules.heading')}</h1>
-          <p className="page-subtitle">{t('transferRules.subtitle', { count: rules.length })}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {canOperate && (
-            <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
-              <Plus size={14} /> {t('transferRules.newButton')}
-            </button>
-          )}
-          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }}>
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
+    <div className="l-page">
+      <PageHeader
+        title={t('transferRules.heading')}
+        icon={ArrowRightLeft}
+        description={t('transferRules.subtitle', { count: rules.length })}
+        actions={
+          <>
+            {canOperate && (
+              <Button
+                variant="primary"
+                icon={Plus}
+                aria-expanded={showAdd}
+                onClick={() => { setShowAdd(v => !v); setAddError(''); setAddFieldErrors({}) }}
+              >
+                {t('transferRules.newButton')}
+              </Button>
+            )}
+            <IconButton icon={RefreshCw} label={t('common.refresh')} loading={loading} onClick={loadData} />
+          </>
+        }
+      />
 
-      {/* Messaggi */}
-      {error && (
-        <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
-          <AlertCircle size={14} /> {error}
-          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>×</button>
-        </div>
-      )}
-      {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--success)' }}>
-          <CheckCircle size={14} /> {success}
-        </div>
+      {loadError && (
+        <Alert
+          tone="danger"
+          title={t('transferRules.loadFailed')}
+          actions={<Button size="sm" icon={RotateCw} onClick={loadData}>{t('common.retry')}</Button>}
+          onDismiss={() => setLoadError('')}
+        >
+          {loadError}
+        </Alert>
       )}
 
-      {/* Stats mini */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
+      <div className="l-grid--stats">
         {levelCounts.map(l => (
-          <div key={l.value} style={{
-            display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem',
-            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
-            boxShadow: 'var(--shadow-sm)',
-          }}>
-            <div style={{ width: 28, height: 28, borderRadius: 6, background: l.bg, border: `1px solid ${l.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Shield size={13} color={l.color} />
-            </div>
-            <div>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: l.color, lineHeight: 1 }}>{l.count}</div>
-              <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{l.label}</div>
-            </div>
-          </div>
+          <StatTile key={l.value} label={l.label} value={l.count} icon={l.icon} meta={l.desc} loading={loading} />
         ))}
       </div>
 
-      {/* Form nuova regola */}
       {showAdd && canOperate && (
-        <div className="card" style={{ padding: '1rem', marginBottom: '1rem', borderLeft: '3px solid var(--accent)' }}>
-          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700 }}>
-            <Plus size={14} style={{ verticalAlign: -2 }} /> {t('transferRules.form.heading')}
-          </h3>
-          <form onSubmit={handleAdd}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr 1fr', gap: '0.6rem', alignItems: 'end' }}>
-              <div>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.sourceLabel')}</label>
-                <select className="input" required value={newRule.source_server} onChange={e => setNewRule({ ...newRule, source_server: e.target.value })} style={{ fontSize: '0.82rem' }}>
+        <Card title={t('transferRules.form.heading')} icon={Plus}>
+          <form className="l-stack" onSubmit={handleAdd} noValidate>
+            {addError && <Alert tone="danger">{addError}</Alert>}
+            <div className="l-grid--form">
+              <Field label={t('transferRules.form.sourceLabel')} error={addFieldErrors.source} required>
+                <Select
+                  ref={sourceRef}
+                  required
+                  value={newRule.source_server}
+                  onChange={e => {
+                    setNewRule({ ...newRule, source_server: e.target.value })
+                    setAddFieldErrors({})
+                  }}
+                >
                   <option value="">{t('transferRules.form.selectPlaceholder')}</option>
                   {serverOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <ArrowRight size={18} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
-              <div>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.destLabel')}</label>
-                <select className="input" required value={newRule.dest_server} onChange={e => setNewRule({ ...newRule, dest_server: e.target.value })} style={{ fontSize: '0.82rem' }}>
+                </Select>
+              </Field>
+              <Field label={t('transferRules.form.destLabel')} error={addFieldErrors.dest} required>
+                <Select
+                  ref={destRef}
+                  required
+                  value={newRule.dest_server}
+                  onChange={e => {
+                    setNewRule({ ...newRule, dest_server: e.target.value })
+                    setAddFieldErrors({})
+                  }}
+                >
                   <option value="">{t('transferRules.form.selectPlaceholder')}</option>
                   {serverOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('transferRules.form.levelLabel')}</label>
-                <select className="input" value={newRule.transfer_level} onChange={e => setNewRule({ ...newRule, transfer_level: Number(e.target.value) })} style={{ fontSize: '0.82rem' }}>
-                  {TRANSFER_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label} — {l.desc}</option>)}
-                </select>
-              </div>
+                </Select>
+              </Field>
+              <Field label={t('transferRules.form.levelLabel')}>
+                <Select
+                  value={newRule.transfer_level}
+                  onChange={e => setNewRule({ ...newRule, transfer_level: Number(e.target.value) })}
+                >
+                  {TRANSFER_LEVELS.map(l => (
+                    <option key={l.value} value={l.value}>{l.label} — {l.desc}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t('transferRules.form.notesLabel')} className="u-span-full">
+                <Input
+                  placeholder={t('transferRules.form.notesPlaceholder')}
+                  value={newRule.notes}
+                  onChange={e => setNewRule({ ...newRule, notes: e.target.value })}
+                />
+              </Field>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', alignItems: 'center' }}>
-              <input className="input" placeholder={t('transferRules.form.notesPlaceholder')} value={newRule.notes} onChange={e => setNewRule({ ...newRule, notes: e.target.value })} style={{ flex: 1, fontSize: '0.82rem' }} />
-              <button type="submit" className="btn btn-primary" style={{ fontSize: '0.82rem' }}>{t('transferRules.form.create')}</button>
-              <button type="button" onClick={() => setShowAdd(false)} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('transferRules.form.cancel')}</button>
+            <div className="l-cluster l-cluster--end">
+              <Button variant="ghost" onClick={() => { setShowAdd(false); setAddFieldErrors({}) }}>
+                {t('transferRules.form.cancel')}
+              </Button>
+              <Button type="submit" variant="primary" loading={adding} loadingLabel={t('transferRules.form.creating')}>
+                {t('transferRules.form.create')}
+              </Button>
             </div>
           </form>
-        </div>
+        </Card>
       )}
 
-      {/* Tabella regole */}
-      <div className="card" style={{ minHeight: 200 }}>
-        {loading ? (
-          <div className="pl-loading" style={{ padding: '3rem' }}>{t('transferRules.loading')}</div>
-        ) : rules.length === 0 ? (
-          <div className="pl-empty" style={{ padding: '3rem' }}>
-            <ArrowRightLeft size={40} style={{ opacity: 0.12 }} />
-            <p>{t('transferRules.empty.title')}</p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('transferRules.empty.hint')}</p>
-          </div>
-        ) : (
-          <>
-            {/* Header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 30px 1.2fr 140px 1fr 80px', padding: '0.5rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
-              <span>{t('transferRules.table.source')}</span><span></span><span>{t('transferRules.table.dest')}</span><span>{t('transferRules.table.level')}</span><span>{t('transferRules.table.notes')}</span><span></span>
-            </div>
-            {/* Rows */}
-            {rules.map(rule => {
+      <Card title={t('transferRules.listTitle')} flush>
+        <Table label={t('transferRules.listTitle')} minWidth={880}>
+          <thead>
+            <tr>
+              <th scope="col">{t('transferRules.table.source')}</th>
+              <th scope="col">{t('transferRules.table.dest')}</th>
+              <th scope="col">{t('transferRules.table.level')}</th>
+              <th scope="col">{t('transferRules.table.notes')}</th>
+              <th scope="col" className="u-text-end">{t('transferRules.table.actions')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <TableMessageRow colSpan={5}><Spinner block label={t('transferRules.loading')} /></TableMessageRow>
+            ) : rules.length === 0 ? (
+              <TableMessageRow colSpan={5}>
+                <EmptyState
+                  icon={ArrowRightLeft}
+                  title={t('transferRules.empty.title')}
+                  description={t('transferRules.empty.hint')}
+                />
+              </TableMessageRow>
+            ) : rules.map(rule => {
               const isEditing = editingId === rule.id
               const lvl = getLevelInfo(rule.transfer_level)
               return (
-                <div key={rule.id} style={{
-                  display: 'grid', gridTemplateColumns: '1.2fr 30px 1.2fr 140px 1fr 80px',
-                  padding: '0.55rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
-                  borderLeft: `3px solid ${lvl.color}`,
-                  transition: 'background 0.1s',
-                }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                  {/* Sorgente */}
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {resolveServerName(rule.source_server)}
-                  </span>
-                  {/* Freccia */}
-                  <ArrowRight size={14} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
-                  {/* Destinazione */}
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <tr key={rule.id}>
+                  <td>{resolveServerName(rule.source_server)}</td>
+                  <td>
+                    <ArrowRight size={16} strokeWidth={1.75} aria-hidden="true" className="u-muted" />
+                    {' '}
                     {resolveServerName(rule.dest_server)}
-                  </span>
-                  {/* Livello */}
-                  <div>
+                  </td>
+                  <td>
                     {isEditing ? (
-                      <select className="input" value={editLevel} onChange={e => setEditLevel(Number(e.target.value))} style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem' }}>
+                      <Select
+                        size="sm"
+                        aria-label={t('transferRules.table.level')}
+                        value={editLevel}
+                        onChange={e => setEditLevel(Number(e.target.value))}
+                        onKeyDown={onEditKeyDown}
+                      >
                         {TRANSFER_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                      </select>
+                      </Select>
                     ) : (
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
-                        padding: '0.12rem 0.5rem', borderRadius: 4, fontSize: '0.72rem', fontWeight: 700,
-                        background: lvl.bg, color: lvl.color, border: `1px solid color-mix(in srgb, ${lvl.color} 13%, transparent)`,
-                      }}>
-                        {lvl.label}
-                      </span>
+                      <Badge tone={lvl.tone} icon={lvl.icon}>{lvl.label}</Badge>
                     )}
-                  </div>
-                  {/* Note */}
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  </td>
+                  <td className="ui-cell-wrap">
                     {isEditing ? (
-                      <input className="input" value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder={t('transferRules.notesPlaceholder')} style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem' }} />
+                      <Input
+                        size="sm"
+                        aria-label={t('transferRules.table.notes')}
+                        value={editNotes}
+                        onChange={e => setEditNotes(e.target.value)}
+                        onKeyDown={onEditKeyDown}
+                        placeholder={t('transferRules.notesPlaceholder')}
+                      />
                     ) : (
-                      rule.notes || '—'
+                      rule.notes || <span className="u-muted">—</span>
                     )}
-                  </div>
-                  {/* Azioni */}
-                  <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'flex-end' }}>
-                    {isEditing ? (
-                      <>
-                        <button onClick={saveEdit} aria-label={t('transferRules.tooltip.save')} title={t('transferRules.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
-                        <button onClick={() => setEditingId(null)} aria-label={t('transferRules.tooltip.cancel')} title={t('transferRules.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
-                      </>
-                    ) : canOperate && (
-                      <>
-                        <button onClick={() => startEdit(rule)} aria-label={t('transferRules.tooltip.edit')} title={t('transferRules.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(rule.id)} aria-label={t('transferRules.tooltip.delete')} title={t('transferRules.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>
-                      </>
-                    )}
-                  </div>
-                </div>
+                  </td>
+                  <td>
+                    <div className="ui-row-actions">
+                      {isEditing ? (
+                        <>
+                          <IconButton
+                            size="sm"
+                            icon={Save}
+                            label={t('transferRules.tooltip.save')}
+                            loading={pending.isPending(rule.id)}
+                            onClick={saveEdit}
+                          />
+                          <IconButton
+                            size="sm"
+                            icon={X}
+                            label={t('transferRules.tooltip.cancel')}
+                            onClick={() => setEditingId(null)}
+                          />
+                        </>
+                      ) : canOperate ? (
+                        <>
+                          <IconButton
+                            size="sm"
+                            icon={Edit2}
+                            label={t('transferRules.tooltip.editPair', {
+                              source: resolveServerName(rule.source_server),
+                              dest: resolveServerName(rule.dest_server),
+                            })}
+                            disabled={editingId !== null}
+                            onClick={() => startEdit(rule)}
+                          />
+                          <IconButton
+                            size="sm"
+                            icon={Trash2}
+                            tone="danger"
+                            label={t('transferRules.tooltip.deletePair', {
+                              source: resolveServerName(rule.source_server),
+                              dest: resolveServerName(rule.dest_server),
+                            })}
+                            loading={pending.isPending(rule.id)}
+                            onClick={() => handleDelete(rule)}
+                          />
+                        </>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
               )
             })}
-          </>
-        )}
-      </div>
+          </tbody>
+        </Table>
+      </Card>
     </div>
   )
 }

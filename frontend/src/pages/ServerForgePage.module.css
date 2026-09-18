@@ -1,0 +1,45 @@
+/* Page-only layout for the ServerForge dashboard. Tokens only, @layer page. */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  .gauges {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+    gap: var(--space-3);
+  }
+
+  .gauge {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .gaugeHead {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .gaugeValue {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+  }
+
+  .gaugeDetail {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+}

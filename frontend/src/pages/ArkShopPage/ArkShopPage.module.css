@@ -1,0 +1,41 @@
+/*
+ * Page-only layout for the ArkShop editor. Tokens only.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* Dialog body: the entry fields, then the lines of the entry. */
+  .dialogGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+
+  /* One line of an entry: fields that shrink, a remove button that does not. */
+  .subRow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+    gap: var(--space-3);
+    align-items: end;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+  }
+
+  /* The contents of an expanded shop item or kit. */
+  .lineList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) 0;
+  }
+  .line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+  }
+}

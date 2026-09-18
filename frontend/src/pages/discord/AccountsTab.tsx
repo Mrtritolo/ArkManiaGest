@@ -2,38 +2,52 @@
  * AccountsTab.tsx — Settings -> Discord -> Accounts.
  *
  * One row per known Discord identity (anyone who has signed in via Discord
- * at least once).  Per row:
+ * at least once). Per row: the Discord identity, the panel AppUser link, the
+ * ARK player link and when the pair was bound, plus the inline unlink
+ * actions for the two link kinds.
  *
- *   - Discord identity (avatar + global_name + @username + snowflake)
- *   - AppUser link  (badge + username + role; or "— Link AppUser —" button)
- *   - ARK player link (EOS_Id + ARK character name; or "— Link player —" button)
- *   - Linked at / last sync timestamps
- *   - Inline unlink buttons for the two link kinds
+ * Two dialog flows:
+ *   Link AppUser — combobox over /users (panel AppUsers, filtered locally).
+ *   Link player  — debounced combobox over /discord/players/search.
  *
- * Two modal flows:
- *
- *   Link AppUser  — searchable dropdown over /users (panel AppUsers).
- *   Link EOS      — debounced autocomplete via /discord/players/search.
- *
- * All write paths refresh the table in-place via `loadAccounts()` so the
- * UI stays consistent with the database after every action.
+ * Both keep their error inside the dialog and leave the chosen value in
+ * place, so a rejected link can be corrected without starting over. Every
+ * write refreshes the table so the UI matches the database afterwards.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useModalA11y } from "../../hooks/useModalA11y";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Database, Link2, Link2Off, RotateCw, Save, UserCog, Users } from "lucide-react";
 import {
-  Loader2, AlertCircle, CheckCircle, Link2, Link2Off,
-  UserCog, Search, Database, X, Save,
-} from "lucide-react";
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  Combobox,
+  CopyButton,
+  EmptyState,
+  Field,
+  IconButton,
+  Modal,
+  NotAvailable,
+  Spinner,
+  Table,
+  TableMessageRow,
+  useConfirm,
+  useToast,
+} from "../../components/ui";
 import {
-  discordApi, usersApi,
-  type DiscordAccount, type DiscordPlayerSearchHit,
+  discordApi,
+  usersApi,
+  type DiscordAccount,
+  type DiscordPlayerSearchHit,
 } from "../../services/api";
 import { extractError } from "../../utils/errors";
 import { fmtDateTime } from "../../utils/format";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { usePending } from "../../hooks/usePending";
 import type { AuthUser } from "../../types";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
+import styles from "./DiscordTabs.module.css";
 
 /** Build the CDN URL for a Discord user avatar (or null when unset). */
 function avatarUrl(userId: string, hash: string | null): string | null {
@@ -43,32 +57,27 @@ function avatarUrl(userId: string, hash: string | null): string | null {
   return `https://cdn.discordapp.com/avatars/${userId}/${hash}.${ext}?size=64`;
 }
 
-const ROLE_COLORS: Record<string, string> = {
-  admin:    "var(--danger)",
-  operator: "var(--cyan)",
-  viewer:   "var(--text-muted)",
-};
-
-// ── Component ────────────────────────────────────────────────────────────────
+function discordName(acc: DiscordAccount): string {
+  return acc.discord_global_name || acc.discord_username || acc.discord_user_id;
+}
 
 export default function AccountsTab() {
   const { t } = useTranslation();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const pending = usePending<string>();
+
   const [accounts, setAccounts] = useState<DiscordAccount[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState("");
-  const [success, setSuccess]   = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const [linkAppUserFor, setLinkAppUserFor] = useState<DiscordAccount | null>(null);
-  const [linkEosFor,    setLinkEosFor]    = useState<DiscordAccount | null>(null);
+  const [linkEosFor, setLinkEosFor] = useState<DiscordAccount | null>(null);
 
-  // Auto-clear success toast after 3 s.
   useEffect(() => {
-    if (!success) return;
-    const t = setTimeout(() => setSuccess(""), 3000);
-    return () => clearTimeout(t);
-  }, [success]);
-
-  useEffect(() => { loadAccounts(); }, []);
+    void loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadAccounts(): Promise<void> {
     setLoading(true);
@@ -84,512 +93,479 @@ export default function AccountsTab() {
   }
 
   async function handleUnlinkAppUser(acc: DiscordAccount): Promise<void> {
-    if (!confirm(
-      t("discord.accounts.confirmUnlinkAppUser",
-        { u: acc.app_user_username ?? "?", d: acc.discord_username ?? acc.discord_user_id }),
-    )) return;
-    try {
-      await discordApi.unlinkAppUser(acc.discord_user_id);
-      setSuccess(t("discord.accounts.toast.appUserUnlinked"));
-      loadAccounts();
-    } catch (err: unknown) {
-      setError(extractError(err, t("discord.accounts.errors.unlinkAppUser")));
-    }
+    const ok = await confirm({
+      title: t("discord.accounts.action.unlinkAppUser"),
+      description: t("discord.accounts.confirmUnlinkAppUser", {
+        u: acc.app_user_username ?? "?",
+        d: discordName(acc),
+      }),
+      confirmLabel: t("discord.accounts.action.unlinkAppUser"),
+      tone: "danger",
+    });
+    if (!ok) return;
+    await pending.run(`${acc.discord_user_id}:appuser`, async () => {
+      try {
+        await discordApi.unlinkAppUser(acc.discord_user_id);
+        toast.success(t("discord.accounts.toast.appUserUnlinked"));
+        await loadAccounts();
+      } catch (err: unknown) {
+        toast.error(extractError(err, t("discord.accounts.errors.unlinkAppUser")));
+      }
+    });
   }
 
   async function handleUnlinkEos(acc: DiscordAccount): Promise<void> {
-    if (!confirm(
-      t("discord.accounts.confirmUnlinkEos",
-        { e: acc.eos_id ?? "?", d: acc.discord_username ?? acc.discord_user_id }),
-    )) return;
-    try {
-      await discordApi.unlinkEos(acc.discord_user_id);
-      setSuccess(t("discord.accounts.toast.eosUnlinked"));
-      loadAccounts();
-    } catch (err: unknown) {
-      setError(extractError(err, t("discord.accounts.errors.unlinkEos")));
-    }
+    const ok = await confirm({
+      title: t("discord.accounts.action.unlinkEos"),
+      description: t("discord.accounts.confirmUnlinkEos", {
+        e: acc.eos_id ?? "?",
+        d: discordName(acc),
+      }),
+      confirmLabel: t("discord.accounts.action.unlinkEos"),
+      tone: "danger",
+    });
+    if (!ok) return;
+    await pending.run(`${acc.discord_user_id}:eos`, async () => {
+      try {
+        await discordApi.unlinkEos(acc.discord_user_id);
+        toast.success(t("discord.accounts.toast.eosUnlinked"));
+        await loadAccounts();
+      } catch (err: unknown) {
+        toast.error(extractError(err, t("discord.accounts.errors.unlinkEos")));
+      }
+    });
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div>
+    <div className="l-stack">
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: "0.5rem" }}>
-          <AlertCircle size={14} /> {error}
-        </div>
-      )}
-      {success && (
-        <div className="alert alert-success" style={{ marginBottom: "0.5rem" }}>
-          <CheckCircle size={14} /> {success}
-        </div>
+        <Alert
+          tone="danger"
+          title={t("discord.accounts.errors.load")}
+          actions={
+            <Button size="sm" icon={RotateCw} onClick={() => void loadAccounts()}>
+              {t("common.retry")}
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
       )}
 
-      {loading ? (
-        <div className="pl-loading">
-          <Loader2 size={20} className="pl-spin" />{" "}
-          {t("discord.accounts.loading")}
-        </div>
-      ) : accounts.length === 0 ? (
-        <div className="pl-loading" style={{ textAlign: "left" }}>
-          {t("discord.accounts.empty")}
-        </div>
-      ) : (
-        <table className="pl-table">
+      <Card
+        title={t("discord.accounts.listTitle")}
+        flush
+        actions={
+          <Button size="sm" icon={RotateCw} onClick={() => void loadAccounts()}>
+            {t("common.refresh")}
+          </Button>
+        }
+      >
+        <Table label={t("discord.accounts.listTitle")} minWidth={900}>
           <thead>
             <tr>
-              <th>{t("discord.accounts.col.discord")}</th>
-              <th>{t("discord.accounts.col.appUser")}</th>
-              <th>{t("discord.accounts.col.player")}</th>
-              <th>{t("discord.accounts.col.linkedAt")}</th>
-              <th style={{ width: 60 }}></th>
+              <th scope="col">{t("discord.accounts.col.discord")}</th>
+              <th scope="col">{t("discord.accounts.col.appUser")}</th>
+              <th scope="col">{t("discord.accounts.col.player")}</th>
+              <th scope="col">{t("discord.accounts.col.linkedAt")}</th>
             </tr>
           </thead>
           <tbody>
-            {accounts.map(acc => {
-              const av = avatarUrl(acc.discord_user_id, acc.discord_avatar);
-              const display = acc.discord_global_name || acc.discord_username || acc.discord_user_id;
-              const roleColor = acc.app_user_role
-                ? ROLE_COLORS[acc.app_user_role] ?? ROLE_COLORS.viewer
-                : "var(--text-muted)";
-              return (
-                <tr key={acc.discord_user_id}>
-                  {/* Discord identity */}
-                  <td>
-                    <div className="pl-cell-player">
-                      {av ? (
-                        <img
-                          src={av}
-                          alt=""
-                          className="pl-avatar"
-                          style={{ objectFit: "cover" }}
+            {loading ? (
+              <TableMessageRow colSpan={4}>
+                <Spinner block label={t("discord.accounts.loading")} />
+              </TableMessageRow>
+            ) : accounts.length === 0 ? (
+              <TableMessageRow colSpan={4}>
+                <EmptyState
+                  icon={Users}
+                  title={t("discord.accounts.emptyTitle")}
+                  description={t("discord.accounts.empty")}
+                />
+              </TableMessageRow>
+            ) : (
+              accounts.map((acc) => {
+                const display = discordName(acc);
+                return (
+                  <tr key={acc.discord_user_id}>
+                    <td>
+                      <div className={styles.identity}>
+                        <Avatar
+                          name={display}
+                          src={avatarUrl(acc.discord_user_id, acc.discord_avatar)}
+                          size="sm"
                         />
-                      ) : (
-                        <div className="pl-avatar" style={{ background: "#5865F2" }}>
-                          {display[0]?.toUpperCase() ?? "?"}
+                        <span className="ui-cell-2">
+                          <span>{display}</span>
+                          <span>
+                            {acc.discord_username
+                              ? `@${acc.discord_username} · ${acc.discord_user_id}`
+                              : acc.discord_user_id}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+
+                    <td>
+                      {acc.app_user_username ? (
+                        <div className={styles.linkCell}>
+                          <Badge icon={UserCog}>
+                            {acc.app_user_role
+                              ? t("discord.accounts.appUserWithRole", {
+                                  user: acc.app_user_username,
+                                  role: acc.app_user_role,
+                                })
+                              : acc.app_user_username}
+                          </Badge>
+                          <IconButton
+                            size="sm"
+                            icon={Link2Off}
+                            tone="danger"
+                            loading={pending.isPending(`${acc.discord_user_id}:appuser`)}
+                            label={t("discord.accounts.unlinkAppUserFrom", { user: display })}
+                            onClick={() => void handleUnlinkAppUser(acc)}
+                          />
                         </div>
+                      ) : (
+                        <Button size="sm" icon={Link2} onClick={() => setLinkAppUserFor(acc)}>
+                          {t("discord.accounts.action.linkAppUser")}
+                        </Button>
                       )}
-                      <div>
-                        <span className="pl-cell-name">{display}</span>
-                        <span className="pl-cell-tribe" style={{ fontSize: "0.7rem" }}>
-                          {acc.discord_username
-                            ? `@${acc.discord_username}  ·  ${acc.discord_user_id}`
-                            : acc.discord_user_id}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* AppUser link */}
-                  <td>
-                    {acc.app_user_username ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                        <span
-                          className="pl-chip"
-                          style={{
-                            background: `color-mix(in srgb, ${roleColor} 8%, transparent)`,
-                            color: roleColor,
-                            borderColor: `color-mix(in srgb, ${roleColor} 19%, transparent)`,
-                          }}
-                        >
-                          <UserCog size={9} /> {acc.app_user_username}
-                          {acc.app_user_role ? ` · ${acc.app_user_role}` : ""}
-                        </span>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: "0.15rem 0.35rem" }}
-                          aria-label={t("discord.accounts.action.unlinkAppUser")} title={t("discord.accounts.action.unlinkAppUser")}
-                          onClick={() => handleUnlinkAppUser(acc)}
-                        >
-                          <Link2Off size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setLinkAppUserFor(acc)}
-                      >
-                        <Link2 size={12} /> {t("discord.accounts.action.linkAppUser")}
-                      </button>
-                    )}
-                  </td>
+                    <td>
+                      {acc.eos_id ? (
+                        <div className={styles.linkCell}>
+                          <Badge icon={Database}>
+                            {/* Truncated, so the marker and the full value in
+                                the tooltip say so (MASTER §9). */}
+                            <span className="u-mono" title={acc.eos_id}>
+                              {t("discord.common.eosShort", { id: acc.eos_id.slice(0, 8) })}
+                            </span>
+                          </Badge>
+                          <CopyButton
+                            value={acc.eos_id}
+                            label={t("discord.accounts.copyEos", { user: display })}
+                          />
+                          <IconButton
+                            size="sm"
+                            icon={Link2Off}
+                            tone="danger"
+                            loading={pending.isPending(`${acc.discord_user_id}:eos`)}
+                            label={t("discord.accounts.unlinkEosFrom", { user: display })}
+                            onClick={() => void handleUnlinkEos(acc)}
+                          />
+                        </div>
+                      ) : (
+                        <Button size="sm" icon={Link2} onClick={() => setLinkEosFor(acc)}>
+                          {t("discord.accounts.action.linkEos")}
+                        </Button>
+                      )}
+                    </td>
 
-                  {/* ARK player link */}
-                  <td>
-                    {acc.eos_id ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                        <span
-                          className="pl-chip"
-                          title={acc.eos_id}
-                          style={{ background: "color-mix(in srgb, var(--success) 8%, transparent)", color: "var(--success)", borderColor: "color-mix(in srgb, var(--success) 19%, transparent)" }}
-                        >
-                          <Database size={9} /> {acc.eos_id.slice(0, 8)}…
-                        </span>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: "0.15rem 0.35rem" }}
-                          aria-label={t("discord.accounts.action.unlinkEos")} title={t("discord.accounts.action.unlinkEos")}
-                          onClick={() => handleUnlinkEos(acc)}
-                        >
-                          <Link2Off size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setLinkEosFor(acc)}
-                      >
-                        <Link2 size={12} /> {t("discord.accounts.action.linkEos")}
-                      </button>
-                    )}
-                  </td>
-
-                  <td style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-                    {fmtDateTime(acc.linked_at)}
-                  </td>
-
-                  <td></td>
-                </tr>
-              );
-            })}
+                    <td className="u-secondary">
+                      {acc.linked_at ? fmtDateTime(acc.linked_at) : <NotAvailable />}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
-        </table>
-      )}
+        </Table>
+      </Card>
 
-      {/* Modal: link AppUser */}
-      {linkAppUserFor && (
-        <LinkAppUserModal
-          account={linkAppUserFor}
-          onClose={() => setLinkAppUserFor(null)}
-          onLinked={() => {
-            setLinkAppUserFor(null);
-            setSuccess(t("discord.accounts.toast.appUserLinked"));
-            loadAccounts();
-          }}
-          onError={msg => setError(msg)}
-        />
-      )}
-
-      {/* Modal: link EOS player */}
-      {linkEosFor && (
-        <LinkEosModal
-          account={linkEosFor}
-          onClose={() => setLinkEosFor(null)}
-          onLinked={() => {
-            setLinkEosFor(null);
-            setSuccess(t("discord.accounts.toast.eosLinked"));
-            loadAccounts();
-          }}
-          onError={msg => setError(msg)}
-        />
-      )}
+      <LinkAppUserModal
+        account={linkAppUserFor}
+        onClose={() => setLinkAppUserFor(null)}
+        onLinked={() => {
+          setLinkAppUserFor(null);
+          toast.success(t("discord.accounts.toast.appUserLinked"));
+          void loadAccounts();
+        }}
+      />
+      <LinkEosModal
+        account={linkEosFor}
+        onClose={() => setLinkEosFor(null)}
+        onLinked={() => {
+          setLinkEosFor(null);
+          toast.success(t("discord.accounts.toast.eosLinked"));
+          void loadAccounts();
+        }}
+      />
     </div>
   );
 }
 
-// ── Link AppUser modal ───────────────────────────────────────────────────────
+// ── Link AppUser dialog ──────────────────────────────────────────────────────
 
 function LinkAppUserModal({
-  account, onClose, onLinked, onError,
+  account,
+  onClose,
+  onLinked,
 }: {
-  account: DiscordAccount;
+  account: DiscordAccount | null;
   onClose: () => void;
   onLinked: () => void;
-  onError: (msg: string) => void;
 }) {
   const { t } = useTranslation();
-  const [users, setUsers]       = useState<AuthUser[]>([]);
-  const [filter, setFilter]     = useState("");
-  const [chosenId, setChosenId] = useState<number | null>(null);
-  const [saving, setSaving]     = useState(false);
+  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [filter, setFilter] = useState("");
+  const [chosen, setChosen] = useState<AuthUser | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!account) return;
+    setFilter("");
+    setChosen(null);
+    setError("");
+    let alive = true;
     (async () => {
       try {
         const res = await usersApi.list();
-        setUsers(res.data);
+        if (alive) setUsers(res.data);
       } catch (err: unknown) {
-        onError(extractError(err, t("discord.accounts.errors.loadUsers")));
+        if (alive) setError(extractError(err, t("discord.accounts.errors.loadUsers")));
       }
     })();
-    // We intentionally re-run only on mount; onError is captured by closure.
+    return () => {
+      alive = false;
+    };
+    // The list is re-read each time the dialog opens for an account.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [account]);
 
-  const visible = useMemo(() => {
+  const options = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter(u =>
-      u.username.toLowerCase().includes(q)
-      || u.display_name.toLowerCase().includes(q)
-      || u.role.toLowerCase().includes(q),
-    );
+    const matches = !q
+      ? users
+      : users.filter(
+          (u) =>
+            u.username.toLowerCase().includes(q) ||
+            u.display_name.toLowerCase().includes(q) ||
+            u.role.toLowerCase().includes(q),
+        );
+    return matches.slice(0, 50);
   }, [users, filter]);
 
   async function save(): Promise<void> {
-    if (chosenId == null) return;
+    if (!account || !chosen || saving) return;
     setSaving(true);
+    setError("");
     try {
-      await discordApi.linkAppUser(account.discord_user_id, { app_user_id: chosenId });
+      await discordApi.linkAppUser(account.discord_user_id, { app_user_id: chosen.id });
       onLinked();
     } catch (err: unknown) {
-      onError(extractError(err, t("discord.accounts.errors.linkAppUser")));
+      // 409 "already linked to another Discord ID" belongs here, next to the
+      // choice that caused it, not behind the overlay.
+      setError(extractError(err, t("discord.accounts.errors.linkAppUser")));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <ModalShell onClose={onClose} title={
-      t("discord.accounts.modal.linkAppUserTitle",
-        { d: account.discord_global_name || account.discord_username || account.discord_user_id })
-    }>
-      <div className="form-group">
-        <label className="form-label">
-          <Search size={11} /> {t("discord.accounts.modal.filter")}
-        </label>
-        <input
-          autoFocus
-          className="form-input"
-          value={filter}
-          onChange={e => setFilter(e.target.value)}
-          placeholder={t("discord.accounts.modal.filterPh")}
-        />
-      </div>
-      <div
-        style={{
-          maxHeight: 280, overflowY: "auto",
-          border: "1px solid var(--border)", borderRadius: 6, padding: "0.25rem 0",
-        }}
-      >
-        {visible.length === 0 && (
-          <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-            {t("discord.accounts.modal.noUsers")}
-          </div>
-        )}
-        {visible.map(u => {
-          const color = ROLE_COLORS[u.role] ?? ROLE_COLORS.viewer;
-          const active = chosenId === u.id;
-          return (
-            <div
-              key={u.id}
-              onClick={() => setChosenId(u.id)}
-              style={{
-                display: "flex", alignItems: "center", gap: "0.5rem",
-                padding: "0.4rem 0.55rem", cursor: "pointer",
-                background: active ? "var(--accent-50, color-mix(in srgb, var(--cyan) 13%, transparent))" : "transparent",
-                borderLeft: active ? "3px solid var(--accent, var(--cyan))" : "3px solid transparent",
-              }}
-            >
-              <div className="pl-avatar" style={{ width: 26, height: 26, fontSize: 11 }}>
-                {u.display_name[0]?.toUpperCase()}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>{u.display_name}</div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>@{u.username}</div>
-              </div>
-              <span
-                className="pl-chip"
-                style={{ background: `color-mix(in srgb, ${color} 8%, transparent)`, color, borderColor: `color-mix(in srgb, ${color} 19%, transparent)` }}
-              >
-                {u.role}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel")}</button>
-        <button
-          onClick={save}
-          disabled={saving || chosenId == null}
-          className="btn btn-primary btn-sm"
+    <Modal
+      open={account !== null}
+      onClose={onClose}
+      dismissible={!saving}
+      title={t("discord.accounts.modal.linkAppUserTitle", {
+        d: account ? discordName(account) : "",
+      })}
+      onSubmit={() => void save()}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            icon={Save}
+            loading={saving}
+            loadingLabel={t("discord.accounts.modal.linking")}
+            disabled={!chosen}
+          >
+            {t("discord.accounts.modal.linkBtn")}
+          </Button>
+        </>
+      }
+    >
+      <div className="l-stack">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field
+          label={t("discord.accounts.modal.filter")}
+          hint={chosen ? t("discord.accounts.modal.chosenUser", { user: chosen.display_name }) : undefined}
         >
-          {saving ? <Loader2 size={14} className="pl-spin" /> : <Save size={14} />}
-          {" "}{t("discord.accounts.modal.linkBtn")}
-        </button>
+          <Combobox
+            inputValue={filter}
+            onInputChange={(value) => {
+              setChosen(null);
+              setFilter(value);
+            }}
+            options={options}
+            placeholder={t("discord.accounts.modal.filterPh")}
+            emptyText={t("discord.accounts.modal.noUsers")}
+            getKey={(u) => String(u.id)}
+            renderOption={(u) => (
+              <span className={styles.option}>
+                <span>{u.display_name}</span>
+                <span className="u-muted u-text-sm">
+                  @{u.username} · {u.role}
+                </span>
+              </span>
+            )}
+            onSelect={(u) => {
+              setChosen(u);
+              setFilter(u.display_name);
+            }}
+          />
+        </Field>
       </div>
-    </ModalShell>
+    </Modal>
   );
 }
 
-// ── Link EOS modal ───────────────────────────────────────────────────────────
+// ── Link EOS player dialog ───────────────────────────────────────────────────
 
 function LinkEosModal({
-  account, onClose, onLinked, onError,
+  account,
+  onClose,
+  onLinked,
 }: {
-  account: DiscordAccount;
+  account: DiscordAccount | null;
   onClose: () => void;
   onLinked: () => void;
-  onError: (msg: string) => void;
 }) {
   const { t } = useTranslation();
-  const [query, setQuery]     = useState("");
-  const [hits, setHits]       = useState<DiscordPlayerSearchHit[]>([]);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<DiscordPlayerSearchHit[]>([]);
   const [searching, setSearching] = useState(false);
-  const [chosen, setChosen]   = useState<DiscordPlayerSearchHit | null>(null);
-  const [saving, setSaving]   = useState(false);
-  const lastQueryRef = useRef("");
+  const [chosen, setChosen] = useState<DiscordPlayerSearchHit | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const trimmed = query.trim();
+  const debounced = useDebouncedValue(trimmed, 220);
 
-  // Debounced search.
   useEffect(() => {
-    const q = query.trim();
-    lastQueryRef.current = q;
-    if (q.length < 2) {
+    if (!account) return;
+    setQuery("");
+    setHits([]);
+    setChosen(null);
+    setError("");
+    setSearching(false);
+  }, [account]);
+
+  useEffect(() => {
+    if (account === null) return;
+    // Wait for the debounce to catch up with what is actually typed, so a
+    // dialog reopened after an earlier search never queries the old text.
+    if (debounced !== trimmed) return;
+    if (trimmed.length < 2) {
       setHits([]);
-      // A request still in flight for the previous query will skip its
-      // own reset (the query changed), so clear the spinner here.
+      // The spinner is reset here too: dropping below 2 characters while a
+      // request is in flight used to leave "Searching…" on screen forever.
       setSearching(false);
       return;
     }
-    const timer = setTimeout(async () => {
-      setSearching(true);
+    let alive = true;
+    setSearching(true);
+    (async () => {
       try {
-        const res = await discordApi.searchPlayers(q);
-        // Drop late responses if the operator typed something else meanwhile.
-        if (lastQueryRef.current === q) setHits(res.data);
+        const res = await discordApi.searchPlayers(trimmed);
+        if (alive) setHits(res.data);
       } catch (err: unknown) {
-        if (lastQueryRef.current === q) {
-          onError(extractError(err, t("discord.accounts.errors.search")));
-        }
+        if (alive) setError(extractError(err, t("discord.accounts.errors.search")));
       } finally {
-        if (lastQueryRef.current === q) setSearching(false);
+        if (alive) setSearching(false);
       }
-    }, 220);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [debounced, trimmed, account, t]);
 
   async function save(): Promise<void> {
-    if (!chosen) return;
+    if (!account || !chosen || saving) return;
     setSaving(true);
+    setError("");
     try {
       await discordApi.linkEos(account.discord_user_id, chosen.eos_id);
       onLinked();
     } catch (err: unknown) {
-      onError(extractError(err, t("discord.accounts.errors.linkEos")));
+      setError(extractError(err, t("discord.accounts.errors.linkEos")));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <ModalShell onClose={onClose} title={
-      t("discord.accounts.modal.linkEosTitle",
-        { d: account.discord_global_name || account.discord_username || account.discord_user_id })
-    }>
-      <div className="form-group">
-        <label className="form-label">
-          <Search size={11} /> {t("discord.accounts.modal.search")}
-        </label>
-        <input
-          autoFocus
-          className="form-input"
-          value={query}
-          onChange={e => { setChosen(null); setQuery(e.target.value); }}
-          placeholder={t("discord.accounts.modal.searchPh")}
-        />
-      </div>
-      <div
-        style={{
-          maxHeight: 280, overflowY: "auto",
-          border: "1px solid var(--border)", borderRadius: 6, padding: "0.25rem 0",
-          minHeight: 80,
-        }}
-      >
-        {searching && (
-          <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-            <Loader2 size={11} className="pl-spin" />{" "}
-            {t("discord.accounts.modal.searching")}
-          </div>
-        )}
-        {!searching && query.trim().length >= 2 && hits.length === 0 && (
-          <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-            {t("discord.accounts.modal.noHits")}
-          </div>
-        )}
-        {hits.map(h => {
-          const active = chosen?.eos_id === h.eos_id;
-          return (
-            <div
-              key={h.eos_id}
-              onClick={() => setChosen(h)}
-              style={{
-                display: "flex", alignItems: "center", gap: "0.5rem",
-                padding: "0.4rem 0.55rem", cursor: "pointer",
-                background: active ? "var(--accent-50, color-mix(in srgb, var(--cyan) 13%, transparent))" : "transparent",
-                borderLeft: active ? "3px solid var(--accent, var(--cyan))" : "3px solid transparent",
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-                  {h.name || <span style={{ color: "var(--text-secondary)" }}>{t("discord.accounts.modal.noName")}</span>}
-                </div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                  EOS: {h.eos_id}{h.tribe_name ? ` · ${h.tribe_name}` : ""}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-        <button onClick={onClose} className="btn btn-secondary btn-sm">{t("common.cancel")}</button>
-        <button
-          onClick={save}
-          disabled={saving || !chosen}
-          className="btn btn-primary btn-sm"
-        >
-          {saving ? <Loader2 size={14} className="pl-spin" /> : <Save size={14} />}
-          {" "}{t("discord.accounts.modal.linkBtn")}
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
-// ── Tiny modal shell + error helper ──────────────────────────────────────────
-
-function ModalShell({
-  title, onClose, children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  // La modale monta solo quando e' aperta, quindi `open` e' sempre true qui.
-  const { panelProps } = useModalA11y(true, onClose);
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 1000,
-      }}
+    <Modal
+      open={account !== null}
+      onClose={onClose}
+      dismissible={!saving}
+      title={t("discord.accounts.modal.linkEosTitle", {
+        d: account ? discordName(account) : "",
+      })}
+      onSubmit={() => void save()}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            icon={Save}
+            loading={saving}
+            loadingLabel={t("discord.accounts.modal.linking")}
+            disabled={!chosen}
+          >
+            {t("discord.accounts.modal.linkBtn")}
+          </Button>
+        </>
+      }
     >
-      <div
-        {...panelProps}
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: "var(--surface, #fff)", color: "var(--text)",
-          padding: "1rem 1.1rem", borderRadius: 4, minWidth: 420,
-          maxWidth: 560, boxShadow: "0 10px 40px rgba(0,0,0,0.35)",
-        }}
-      >
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          marginBottom: "0.6rem", borderBottom: "1px solid var(--border)",
-          paddingBottom: "0.4rem",
-        }}>
-          <span style={{ fontWeight: 600 }}>{title}</span>
-          <button onClick={onClose} className="pl-btn-icon" style={{ width: 24, height: 24 }}>
-            <X size={12} />
-          </button>
-        </div>
-        {children}
+      <div className="l-stack">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field
+          label={t("discord.accounts.modal.search")}
+          hint={
+            chosen
+              ? t("discord.accounts.modal.chosenPlayer", {
+                  player: chosen.name || t("discord.accounts.modal.noName"),
+                  eos: chosen.eos_id,
+                })
+              : t("discord.accounts.modal.searchPh")
+          }
+        >
+          <Combobox
+            inputValue={query}
+            onInputChange={(value) => {
+              setChosen(null);
+              setQuery(value);
+            }}
+            options={hits.slice(0, 50)}
+            loading={searching}
+            placeholder={t("discord.accounts.modal.searchPh")}
+            emptyText={t("discord.accounts.modal.noHits")}
+            getKey={(h) => h.eos_id}
+            renderOption={(h) => (
+              <span className={styles.option}>
+                <span>{h.name || t("discord.accounts.modal.noName")}</span>
+                <span className="u-muted u-text-sm u-mono">
+                  {h.eos_id}
+                  {h.tribe_name ? ` · ${h.tribe_name}` : ""}
+                </span>
+              </span>
+            )}
+            onSelect={(h) => {
+              setChosen(h);
+              setQuery(h.name || h.eos_id);
+            }}
+          />
+        </Field>
       </div>
-    </div>
+    </Modal>
   );
 }

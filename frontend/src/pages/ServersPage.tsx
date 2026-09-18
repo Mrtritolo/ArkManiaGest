@@ -1,18 +1,39 @@
 /**
- * ServersPage — CRUD management for ARKM_servers table.
+ * ServersPage -- CRUD for the ARKM_servers table.
  *
- * Displays all registered ARK game servers in a table with inline editing,
- * status indicators, and creation/deletion capabilities.  Follows the same
- * design patterns as TransferRulesPage and BansPage.
+ * Every registered ARK game server in one table, with inline editing, the
+ * online/offline verdict and the create/delete controls.
+ *
+ * Role gating mirrors arkmania_config.py: create and edit need an operator,
+ * delete needs an admin.
  */
-import { useState, useEffect } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Pencil, Plus, RotateCw, Server, Trash2, Users, Wifi, WifiOff, X } from 'lucide-react'
+
 import { arkmaniaApi } from '../services/api'
-import type { AuthUser } from '../types'
+import { extractError } from '../utils/errors'
+import { usePending } from '../hooks/usePending'
 import {
-  Server, Plus, Trash2, Edit2, Save, X, AlertCircle,
-  CheckCircle, RefreshCw, Users, Wifi, WifiOff
-} from 'lucide-react'
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  PageHeader,
+  Select,
+  Spinner,
+  StatTile,
+  StatusBadge,
+  Table,
+  TableMessageRow,
+  useConfirm,
+  useToast,
+} from '../components/ui'
+import type { AuthUser } from '../types'
 
 interface ServerItem {
   server_key: string
@@ -37,54 +58,57 @@ const EMPTY_NEW: ServerItem = {
 const validMaxPlayers = (n: number | undefined) =>
   n !== undefined && Number.isInteger(n) && n >= 1 && n <= 500
 
+const COLUMNS = 9
+
 interface Props {
   currentUser?: AuthUser | null
 }
 
 export default function ServersPage({ currentUser }: Props) {
   const { t } = useTranslation()
-  // arkmania_config.py: create/edit need an operator, delete an admin.
+  const toast = useToast()
+  const confirm = useConfirm()
   const isAdmin = currentUser?.role === 'admin'
   const canOperate = isAdmin || currentUser?.role === 'operator'
+
   const [servers, setServers] = useState<ServerItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  // null = loaded; a string (possibly empty) = the last load failed.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [newServer, setNewServer] = useState({ ...EMPTY_NEW })
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<ServerItem>>({})
+  const pending = usePending<string>()
 
-  // ── Data loading ──────────────────────────────────────────────────────────
+  // -- Data loading ---------------------------------------------------------
   async function loadData() {
     setLoading(true)
     try {
       const res = await arkmaniaApi.listServers()
       setServers(res.data.servers)
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+      setLoadError(null)
+    } catch (e) {
+      setLoadError(extractError(e, ''))
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => { loadData() }, [])
-  useEffect(() => {
-    if (success) { const timer = setTimeout(() => setSuccess(''), 3000); return () => clearTimeout(timer) }
-  }, [success])
 
-  // ── CRUD handlers ─────────────────────────────────────────────────────────
+  // -- CRUD -----------------------------------------------------------------
   async function handleCreate() {
     if (!newServer.server_key || !newServer.display_name || !newServer.map_name) {
-      setError(t('serversPage.messages.missingRequired'))
+      toast.error(t('serversPage.messages.missingRequired'))
       return
     }
     if (!validMaxPlayers(newServer.max_players)) {
-      setError(t('serversPage.messages.invalidMaxPlayers'))
+      toast.error(t('serversPage.messages.invalidMaxPlayers'))
       return
     }
     try {
-      await arkmaniaApi.createServer({
+      const res = await pending.run('__create__', () => arkmaniaApi.createServer({
         server_key: newServer.server_key,
         display_name: newServer.display_name,
         map_name: newServer.map_name,
@@ -92,13 +116,16 @@ export default function ServersPage({ currentUser }: Props) {
         server_type: newServer.server_type,
         cluster_group: newServer.cluster_group,
         max_players: newServer.max_players,
-      })
+      }))
+      // A second submit while the POST is in flight resolves to undefined:
+      // the first call owns the toast and the reload.
+      if (res === undefined) return
       setShowAdd(false)
       setNewServer({ ...EMPTY_NEW })
-      setSuccess(t('serversPage.messages.created'))
+      toast.success(t('serversPage.messages.created'))
       await loadData()
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+    } catch (e) {
+      toast.error(extractError(e, t('serversPage.messages.createFailed')))
     }
   }
 
@@ -117,320 +144,363 @@ export default function ServersPage({ currentUser }: Props) {
   async function saveEdit() {
     if (!editingKey) return
     if (!validMaxPlayers(editData.max_players)) {
-      setError(t('serversPage.messages.invalidMaxPlayers'))
+      toast.error(t('serversPage.messages.invalidMaxPlayers'))
       return
     }
+    const key = editingKey
     try {
-      await arkmaniaApi.updateServer(editingKey, editData)
+      const res = await pending.run(key, () => arkmaniaApi.updateServer(key, editData))
+      // Enter repeats reach saveEdit directly, with no Button loading guard in
+      // between: a run for a key already in flight resolves to undefined, and
+      // closing the editor here would claim a PUT that never ran.
+      if (res === undefined) return
       setEditingKey(null)
-      setSuccess(t('serversPage.messages.updated'))
+      toast.success(t('serversPage.messages.updated'))
       await loadData()
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+    } catch (e) {
+      toast.error(extractError(e, t('serversPage.messages.updateFailed')))
     }
   }
 
-  async function handleDelete(serverKey: string, displayName: string) {
-    if (!confirm(t('serversPage.confirmDelete', { name: displayName }))) return
+  async function handleDelete(s: ServerItem) {
+    const ok = await confirm({
+      title: t('serversPage.deleteTitle', { name: s.display_name }),
+      description: t('serversPage.confirmDelete', { name: s.display_name }),
+      confirmLabel: t('serversPage.deleteConfirm'),
+      tone: 'danger',
+    })
+    if (!ok) return
     try {
-      await arkmaniaApi.deleteServer(serverKey)
-      setSuccess(t('serversPage.messages.deleted'))
+      // Shares its key with saveEdit, so a delete asked for while a save of the
+      // same row runs is skipped -- never reported as a completed delete.
+      const res = await pending.run(s.server_key, () => arkmaniaApi.deleteServer(s.server_key))
+      if (res === undefined) return
+      toast.success(t('serversPage.messages.deleted'))
       await loadData()
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message)
+    } catch (e) {
+      toast.error(extractError(e, t('serversPage.messages.deleteFailed')))
     }
   }
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
+  /** Enter commits an inline edit, Escape abandons it. */
+  function onEditKeyDown(event: KeyboardEvent<HTMLTableRowElement>) {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      void saveEdit()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      setEditingKey(null)
+    }
+  }
+
+  // -- Stats ----------------------------------------------------------------
   const online = servers.filter(s => s.is_online).length
+  const offline = servers.length - online
   const totalPlayers = servers.reduce((sum, s) => sum + s.player_count, 0)
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="page-container">
-      {/* Header */}
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><Server size={22} /> {t('serversPage.heading')}</h1>
-          <p className="page-subtitle">{t('serversPage.subtitle', { total: servers.length, online, players: totalPlayers })}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {canOperate && (
-          <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary">
-            <Plus size={14} /> {t('serversPage.newServer')}
-          </button>
-          )}
-          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem' }} aria-label={t('serversPage.refresh')} title={t('serversPage.refresh')}>
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* Messages */}
-      {error && (
-        <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
-          <AlertCircle size={14} /> {error}
-          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>×</button>
-        </div>
-      )}
-      {success && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--success)' }}>
-          <CheckCircle size={14} /> {success}
-        </div>
-      )}
-
-      {/* Stats cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(22,163,74,0.08)', border: '1px solid var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wifi size={13} color="var(--success)" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1 }}>{online}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.online')}</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(220,38,38,0.08)', border: '1px solid var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <WifiOff size={13} color="var(--danger)" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--danger)', lineHeight: 1 }}>{servers.length - online}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.offline')}</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(59,130,246,0.08)', border: '1px solid var(--cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Users size={13} color="var(--cyan)" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--cyan)', lineHeight: 1 }}>{totalPlayers}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.players')}</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(107,114,128,0.08)', border: '1px solid var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Server size={13} color="var(--text-muted)" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{servers.length}</div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('serversPage.stats.total')}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Add form */}
-      {canOperate && showAdd && (
-        <div className="card" style={{ padding: '1rem', marginBottom: '1rem', borderLeft: '3px solid var(--accent)' }}>
-          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700 }}>
-            <Plus size={14} style={{ verticalAlign: -2 }} /> {t('serversPage.form.title')}
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem' }}>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.serverKey')}</label>
-              <input className="input" placeholder={t('serversPage.form.keyPlaceholder')} value={newServer.server_key}
-                onChange={e => setNewServer({ ...newServer, server_key: e.target.value })} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.name')}</label>
-              <input className="input" placeholder={t('serversPage.form.namePlaceholder')} value={newServer.display_name}
-                onChange={e => setNewServer({ ...newServer, display_name: e.target.value })} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.map')}</label>
-              <input className="input" placeholder={t('serversPage.form.mapPlaceholder')} value={newServer.map_name}
-                onChange={e => setNewServer({ ...newServer, map_name: e.target.value })} />
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px', gap: '0.6rem', marginTop: '0.5rem' }}>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.gameMode')}</label>
-              <select className="input" value={newServer.game_mode}
-                onChange={e => setNewServer({ ...newServer, game_mode: e.target.value })}>
-                <option value="PvE">PvE</option>
-                <option value="PvP">PvP</option>
-                <option value="PvPvE">PvPvE</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.type')}</label>
-              <select className="input" value={newServer.server_type}
-                onChange={e => setNewServer({ ...newServer, server_type: e.target.value })}>
-                <option value="PvE">PvE</option>
-                <option value="PvP">PvP</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.cluster')}</label>
-              <input className="input" value={newServer.cluster_group}
-                onChange={e => setNewServer({ ...newServer, cluster_group: e.target.value })} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 3 }}>{t('serversPage.form.maxPlayers')}</label>
-              <input className="input" type="number" value={newServer.max_players}
-                onChange={e => setNewServer({ ...newServer, max_players: Number(e.target.value) })} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
-            <button onClick={handleCreate} className="btn btn-primary" style={{ fontSize: '0.82rem' }}>{t('serversPage.form.create')}</button>
-            <button onClick={() => { setShowAdd(false); setNewServer({ ...EMPTY_NEW }) }} className="btn btn-ghost" style={{ fontSize: '0.82rem' }}>{t('serversPage.form.cancel')}</button>
-          </div>
-        </div>
-      )}
-
-      {/* Server table */}
-      <div className="card" style={{ minHeight: 200 }}>
-        {loading ? (
-          <div className="pl-loading" style={{ padding: '3rem' }}>{t('serversPage.loading')}</div>
-        ) : servers.length === 0 ? (
-          <div className="pl-empty" style={{ padding: '3rem' }}>
-            <Server size={40} style={{ opacity: 0.12 }} />
-            <p>{t('serversPage.empty')}</p>
-          </div>
-        ) : (
+    <div className="l-page">
+      <PageHeader
+        title={t('serversPage.heading')}
+        icon={Server}
+        description={t('serversPage.subtitle', { total: servers.length, online, players: totalPlayers })}
+        actions={
           <>
-            {/* Table header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '36px 1.2fr 1fr 0.7fr 0.7fr 0.8fr 70px 70px 80px',
-              padding: '0.5rem 1rem', fontSize: '0.65rem', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              color: 'var(--text-secondary)', background: 'var(--bg-card-muted)',
-              borderBottom: '2px solid var(--border)',
-            }}>
-              <span></span>
-              <span>{t('serversPage.table.name')}</span>
-              <span>{t('serversPage.table.map')}</span>
-              <span>{t('serversPage.table.mode')}</span>
-              <span>{t('serversPage.table.type')}</span>
-              <span>{t('serversPage.table.cluster')}</span>
-              <span>{t('serversPage.table.max')}</span>
-              <span>{t('serversPage.table.online')}</span>
-              <span></span>
-            </div>
-
-            {/* Table rows */}
-            {servers.map(s => {
-              const isEditing = editingKey === s.server_key
-              return (
-                <div key={s.server_key} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '36px 1.2fr 1fr 0.7fr 0.7fr 0.8fr 70px 70px 80px',
-                  padding: '0.5rem 1rem', alignItems: 'center',
-                  borderBottom: '1px solid var(--border)',
-                  borderLeft: `3px solid ${s.is_online ? 'var(--success)' : 'var(--danger)'}`,
-                  transition: 'background 0.1s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.04)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '')}
-                >
-                  {/* Status dot */}
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    {s.is_online
-                      ? <Wifi size={14} color="var(--success)" />
-                      : <WifiOff size={14} color="var(--danger)" />}
-                  </div>
-
-                  {/* Display name */}
-                  {isEditing ? (
-                    <input className="input" value={editData.display_name || ''}
-                      onChange={e => setEditData({ ...editData, display_name: e.target.value })}
-                      style={{ fontSize: '0.82rem', padding: '0.2rem 0.4rem' }} />
-                  ) : (
-                    <div>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{s.display_name}</span>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{s.server_key}</div>
-                    </div>
-                  )}
-
-                  {/* Map name */}
-                  {isEditing ? (
-                    <input className="input" value={editData.map_name || ''}
-                      onChange={e => setEditData({ ...editData, map_name: e.target.value })}
-                      style={{ fontSize: '0.82rem', padding: '0.2rem 0.4rem' }} />
-                  ) : (
-                    <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{s.map_name}</span>
-                  )}
-
-                  {/* Game mode */}
-                  {isEditing ? (
-                    <select className="input" value={editData.game_mode || 'PvE'}
-                      onChange={e => setEditData({ ...editData, game_mode: e.target.value })}
-                      style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem' }}>
-                      <option value="PvE">PvE</option>
-                      <option value="PvP">PvP</option>
-                      <option value="PvPvE">PvPvE</option>
-                    </select>
-                  ) : (
-                    <span style={{
-                      display: 'inline-flex', padding: '0.1rem 0.4rem', borderRadius: 4,
-                      fontSize: '0.72rem', fontWeight: 700,
-                      background: s.game_mode === 'PvP' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
-                      color: s.game_mode === 'PvP' ? 'var(--danger)' : 'var(--success)',
-                      border: `1px solid ${s.game_mode === 'PvP' ? 'color-mix(in srgb, var(--danger) 13%, transparent)' : 'color-mix(in srgb, var(--success) 13%, transparent)'}`,
-                    }}>{s.game_mode}</span>
-                  )}
-
-                  {/* Server type */}
-                  {isEditing ? (
-                    <select className="input" value={editData.server_type || 'PvE'}
-                      onChange={e => setEditData({ ...editData, server_type: e.target.value })}
-                      style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem' }}>
-                      <option value="PvE">PvE</option>
-                      <option value="PvP">PvP</option>
-                    </select>
-                  ) : (
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.server_type}</span>
-                  )}
-
-                  {/* Cluster */}
-                  {isEditing ? (
-                    <input className="input" value={editData.cluster_group || ''}
-                      onChange={e => setEditData({ ...editData, cluster_group: e.target.value })}
-                      style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem' }} />
-                  ) : (
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.cluster_group}</span>
-                  )}
-
-                  {/* Max players */}
-                  {isEditing ? (
-                    <input className="input" type="number" value={editData.max_players ?? ''}
-                      onChange={e => setEditData({ ...editData, max_players: e.target.value === '' ? undefined : Number(e.target.value) })}
-                      style={{ fontSize: '0.78rem', padding: '0.2rem 0.3rem', width: '100%' }} />
-                  ) : (
-                    <span style={{ fontSize: '0.82rem' }}>
-                      <span style={{ fontWeight: 700, color: s.player_count > 0 ? 'var(--cyan)' : 'var(--text-primary)' }}>
-                        {s.player_count}
-                      </span>
-                      <span style={{ color: 'var(--text-muted)' }}>/{s.max_players}</span>
-                    </span>
-                  )}
-
-                  {/* Player count (read-only) */}
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    {s.last_heartbeat ? new Date(s.last_heartbeat).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—'}
-                  </span>
-
-                  {/* Actions */}
-                  <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'flex-end' }}>
-                    {isEditing ? (
-                      <>
-                        <button onClick={saveEdit} aria-label={t('serversPage.tooltip.save')} title={t('serversPage.tooltip.save')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)', padding: 3 }}><Save size={15} /></button>
-                        <button onClick={() => setEditingKey(null)} aria-label={t('serversPage.tooltip.cancel')} title={t('serversPage.tooltip.cancel')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><X size={15} /></button>
-                      </>
-                    ) : (
-                      <>
-                        {canOperate && <button onClick={() => startEdit(s)} aria-label={t('serversPage.tooltip.edit')} title={t('serversPage.tooltip.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><Edit2 size={14} /></button>}
-                        {isAdmin && <button onClick={() => handleDelete(s.server_key, s.display_name)} aria-label={t('serversPage.tooltip.delete')} title={t('serversPage.tooltip.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 3 }}><Trash2 size={14} /></button>}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+            {canOperate && (
+              <Button variant="primary" icon={Plus} pressed={showAdd} onClick={() => setShowAdd(v => !v)}>
+                {t('serversPage.newServer')}
+              </Button>
+            )}
+            <Button icon={RotateCw} loading={loading} loadingLabel={t('serversPage.loading')} onClick={loadData}>
+              {t('serversPage.refresh')}
+            </Button>
           </>
-        )}
+        }
+      />
+
+      {loadError !== null && (
+        <Alert
+          tone="danger"
+          title={t('serversPage.loadError')}
+          actions={<Button size="sm" icon={RotateCw} onClick={loadData}>{t('common.retry')}</Button>}
+        >
+          {loadError || undefined}
+        </Alert>
+      )}
+
+      <div className="l-grid--stats">
+        <StatTile label={t('serversPage.stats.online')} value={online} icon={Wifi} />
+        <StatTile
+          label={t('serversPage.stats.offline')}
+          value={offline}
+          icon={WifiOff}
+          meta={offline > 0 ? t('serversPage.stats.offlineMeta', { count: offline }) : undefined}
+          metaTone={offline > 0 ? 'danger' : undefined}
+        />
+        <StatTile label={t('serversPage.stats.players')} value={totalPlayers} icon={Users} />
+        <StatTile label={t('serversPage.stats.total')} value={servers.length} icon={Server} />
       </div>
+
+      {canOperate && showAdd && (
+        <Card title={t('serversPage.form.title')} icon={Plus}>
+          <form className="l-stack" noValidate onSubmit={e => { e.preventDefault(); handleCreate() }}>
+            <div className="l-grid--form">
+              <Field label={t('serversPage.form.serverKey')} required>
+                <Input
+                  mono
+                  value={newServer.server_key}
+                  placeholder={t('serversPage.form.keyPlaceholder')}
+                  onChange={e => setNewServer({ ...newServer, server_key: e.target.value })}
+                />
+              </Field>
+              <Field label={t('serversPage.form.name')} required>
+                <Input
+                  value={newServer.display_name}
+                  placeholder={t('serversPage.form.namePlaceholder')}
+                  onChange={e => setNewServer({ ...newServer, display_name: e.target.value })}
+                />
+              </Field>
+              <Field label={t('serversPage.form.map')} required>
+                <Input
+                  value={newServer.map_name}
+                  placeholder={t('serversPage.form.mapPlaceholder')}
+                  onChange={e => setNewServer({ ...newServer, map_name: e.target.value })}
+                />
+              </Field>
+              <Field label={t('serversPage.form.gameMode')}>
+                <Select value={newServer.game_mode} onChange={e => setNewServer({ ...newServer, game_mode: e.target.value })}>
+                  <option value="PvE">PvE</option>
+                  <option value="PvP">PvP</option>
+                  <option value="PvPvE">PvPvE</option>
+                </Select>
+              </Field>
+              <Field label={t('serversPage.form.type')}>
+                <Select value={newServer.server_type} onChange={e => setNewServer({ ...newServer, server_type: e.target.value })}>
+                  <option value="PvE">PvE</option>
+                  <option value="PvP">PvP</option>
+                </Select>
+              </Field>
+              <Field label={t('serversPage.form.cluster')}>
+                <Input value={newServer.cluster_group} onChange={e => setNewServer({ ...newServer, cluster_group: e.target.value })} />
+              </Field>
+              <Field label={t('serversPage.form.maxPlayers')} hint={t('serversPage.form.maxPlayersHint')}>
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={newServer.max_players}
+                  onChange={e => setNewServer({ ...newServer, max_players: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+            <div className="l-cluster">
+              <Button
+                type="submit"
+                variant="primary"
+                loading={pending.isPending('__create__')}
+                loadingLabel={t('serversPage.form.creating')}
+              >
+                {t('serversPage.form.create')}
+              </Button>
+              <Button variant="ghost" onClick={() => { setShowAdd(false); setNewServer({ ...EMPTY_NEW }) }}>
+                {t('serversPage.form.cancel')}
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      <Card title={t('serversPage.tableTitle')} flush>
+        <Table label={t('serversPage.tableTitle')} minWidth={960}>
+          <thead>
+            <tr>
+              <th scope="col">{t('serversPage.table.status')}</th>
+              <th scope="col">{t('serversPage.table.name')}</th>
+              <th scope="col">{t('serversPage.table.map')}</th>
+              <th scope="col">{t('serversPage.table.mode')}</th>
+              <th scope="col">{t('serversPage.table.type')}</th>
+              <th scope="col">{t('serversPage.table.cluster')}</th>
+              <th scope="col">{t('serversPage.table.players')}</th>
+              <th scope="col">{t('serversPage.table.lastSeen')}</th>
+              <th scope="col"><span className="u-sr-only">{t('serversPage.table.actions')}</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && servers.length === 0 ? (
+              <TableMessageRow colSpan={COLUMNS}>
+                <Spinner block label={t('serversPage.loading')} />
+              </TableMessageRow>
+            ) : servers.length === 0 ? (
+              <TableMessageRow colSpan={COLUMNS}>
+                <EmptyState icon={Server} title={t('serversPage.empty')} />
+              </TableMessageRow>
+            ) : (
+              servers.map(s => {
+                const isEditing = editingKey === s.server_key
+                return (
+                  <tr key={s.server_key} onKeyDown={isEditing ? onEditKeyDown : undefined}>
+                    <td>
+                      <StatusBadge status={s.is_online ? 'online' : 'offline'} />
+                    </td>
+
+                    <td>
+                      {isEditing ? (
+                        <Input
+                          size="sm"
+                          aria-label={t('serversPage.form.name')}
+                          value={editData.display_name || ''}
+                          onChange={e => setEditData({ ...editData, display_name: e.target.value })}
+                        />
+                      ) : (
+                        <div className="ui-cell-2">
+                          <span>{s.display_name}</span>
+                          <span className="u-mono u-muted">{s.server_key}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    <td>
+                      {isEditing ? (
+                        <Input
+                          size="sm"
+                          aria-label={t('serversPage.form.map')}
+                          value={editData.map_name || ''}
+                          onChange={e => setEditData({ ...editData, map_name: e.target.value })}
+                        />
+                      ) : (
+                        <span className="u-secondary">{s.map_name}</span>
+                      )}
+                    </td>
+
+                    <td>
+                      {isEditing ? (
+                        <Select
+                          size="sm"
+                          aria-label={t('serversPage.form.gameMode')}
+                          value={editData.game_mode || 'PvE'}
+                          onChange={e => setEditData({ ...editData, game_mode: e.target.value })}
+                        >
+                          <option value="PvE">PvE</option>
+                          <option value="PvP">PvP</option>
+                          <option value="PvPvE">PvPvE</option>
+                        </Select>
+                      ) : (
+                        <Badge tone={s.game_mode === 'PvP' ? 'danger' : 'success'} dot>
+                          {s.game_mode}
+                        </Badge>
+                      )}
+                    </td>
+
+                    <td>
+                      {isEditing ? (
+                        <Select
+                          size="sm"
+                          aria-label={t('serversPage.form.type')}
+                          value={editData.server_type || 'PvE'}
+                          onChange={e => setEditData({ ...editData, server_type: e.target.value })}
+                        >
+                          <option value="PvE">PvE</option>
+                          <option value="PvP">PvP</option>
+                        </Select>
+                      ) : (
+                        <span className="u-muted">{s.server_type}</span>
+                      )}
+                    </td>
+
+                    <td>
+                      {isEditing ? (
+                        <Input
+                          size="sm"
+                          aria-label={t('serversPage.form.cluster')}
+                          value={editData.cluster_group || ''}
+                          onChange={e => setEditData({ ...editData, cluster_group: e.target.value })}
+                        />
+                      ) : (
+                        <span className="u-muted">{s.cluster_group}</span>
+                      )}
+                    </td>
+
+                    <td className="u-num">
+                      {isEditing ? (
+                        <Input
+                          size="sm"
+                          type="number"
+                          min={1}
+                          max={500}
+                          aria-label={t('serversPage.form.maxPlayers')}
+                          value={editData.max_players ?? ''}
+                          onChange={e =>
+                            setEditData({
+                              ...editData,
+                              max_players: e.target.value === '' ? undefined : Number(e.target.value),
+                            })
+                          }
+                        />
+                      ) : (
+                        <>
+                          <span>{s.player_count}</span>
+                          <span className="u-muted">/{s.max_players}</span>
+                        </>
+                      )}
+                    </td>
+
+                    <td className="u-num u-muted">
+                      {s.last_heartbeat
+                        ? new Date(s.last_heartbeat).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                        : t('serversPage.neverSeen')}
+                    </td>
+
+                    <td>
+                      <div className="ui-row-actions">
+                        {isEditing ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              loading={pending.isPending(s.server_key)}
+                              loadingLabel={t('serversPage.tooltip.saving')}
+                              onClick={() => void saveEdit()}
+                            >
+                              {t('serversPage.tooltip.save')}
+                            </Button>
+                            <IconButton
+                              size="sm"
+                              icon={X}
+                              label={t('serversPage.tooltip.cancel')}
+                              onClick={() => setEditingKey(null)}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            {canOperate && (
+                              <IconButton
+                                size="sm"
+                                icon={Pencil}
+                                label={t('serversPage.editNamed', { name: s.display_name })}
+                                onClick={() => startEdit(s)}
+                              />
+                            )}
+                            {isAdmin && (
+                              <IconButton
+                                size="sm"
+                                icon={Trash2}
+                                tone="danger"
+                                label={t('serversPage.deleteNamed', { name: s.display_name })}
+                                loading={pending.isPending(s.server_key)}
+                                onClick={() => void handleDelete(s)}
+                              />
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </Table>
+      </Card>
     </div>
   )
 }

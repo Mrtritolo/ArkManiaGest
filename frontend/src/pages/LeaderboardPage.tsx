@@ -1,16 +1,28 @@
 /**
  * LeaderboardPage — ArkMania player leaderboard.
- * Scores, PvE/PvP filters, recent event log.
+ *
+ * Two views over the same fetch: the ranking (ARKM_lb_scores, sorted by the
+ * chosen column) and the recent event log (ARKM_lb_events). The server-type
+ * filter applies to both. Wiping a leaderboard is require_admin and
+ * irreversible, so it sits behind a type-to-confirm dialog.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { arkLeaderboardApi } from '../services/api'
 import { fmtShortDateTime } from '../utils/format'
+import { extractError } from '../utils/errors'
 import type { AuthUser } from '../types'
 import {
-  Trophy, Search, Crosshair, Heart, Hammer, Skull, Users, Activity,
-  AlertCircle, RefreshCw, Trash2
+  Activity, Bomb, Crosshair, Ghost, Hammer, Heart, Medal, RefreshCw, RotateCw,
+  Skull, Swords, Trash2, Trophy, Users,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import {
+  Alert, Badge, Button, Card, EmptyState, IconButton, Input, PageHeader,
+  SegmentedControl, Select, Spinner, StatTile, Table, TableMessageRow, Tabs,
+  useConfirm, useToast,
+} from '../components/ui'
+import styles from './LeaderboardPage.module.css'
 
 interface LbScore {
   rank: number; eos_id: string; player_name: string; server_type: string
@@ -31,12 +43,12 @@ interface LbStats {
   total_events: number
 }
 
-const EVENT_COLORS: Record<number, string> = {
-  1: 'var(--danger)', 2: 'var(--warning)', 3: 'var(--danger)',
-  4: 'var(--success)', 5: 'var(--cyan)', 6: 'var(--violet)', 7: 'var(--text-muted)',
-}
-const EVENT_ICONS: Record<number, string> = {
-  1: '🗡️', 2: '⚔️', 3: '☠️', 4: '🦎', 5: '🔨', 6: '💥', 7: '💀',
+/**
+ * Event types are categories, not statuses, so each one is told apart by its
+ * own Lucide glyph and its written label rather than by a status hue.
+ */
+const EVENT_ICONS: Record<number, LucideIcon> = {
+  1: Crosshair, 2: Swords, 3: Skull, 4: Heart, 5: Hammer, 6: Bomb, 7: Ghost,
 }
 // The backend's event_label is English only; it stays the fallback for
 // event types this map does not know.
@@ -49,6 +61,8 @@ function fmtServer(key: string) {
 }
 
 type TabType = 'classifica' | 'eventi'
+type ServerScope = '' | 'PvE' | 'PvP'
+type EventScope = '' | '1' | '3' | '4' | '5'
 
 interface Props {
   currentUser?: AuthUser | null
@@ -56,6 +70,8 @@ interface Props {
 
 export default function LeaderboardPage({ currentUser }: Props) {
   const { t } = useTranslation()
+  const toast = useToast()
+  const confirm = useConfirm()
   // DELETE /arkmania/leaderboard/scores is require_admin.
   const isAdmin = currentUser?.role === 'admin'
 
@@ -76,10 +92,10 @@ export default function LeaderboardPage({ currentUser }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('classifica')
 
   // Filtri
-  const [serverType, setServerType] = useState<string>('')
+  const [serverType, setServerType] = useState<ServerScope>('')
   const [sortBy, setSortBy] = useState('total_points')
   const [search, setSearch] = useState('')
-  const [eventTypeFilter, setEventTypeFilter] = useState<number | undefined>(undefined)
+  const [eventTypeFilter, setEventTypeFilter] = useState<EventScope>('')
 
   // Only the latest request may update the page: a slower response for a
   // filter the user already left must not overwrite the current one.
@@ -100,7 +116,7 @@ export default function LeaderboardPage({ currentUser }: Props) {
         }),
         arkLeaderboardApi.events({
           server_type: serverType || undefined,
-          event_type: eventTypeFilter,
+          event_type: eventTypeFilter ? Number(eventTypeFilter) : undefined,
           limit: 50,
         }),
       ])
@@ -108,15 +124,15 @@ export default function LeaderboardPage({ currentUser }: Props) {
       setStats(statsRes.data)
       setScores(scoresRes.data.scores)
       setEvents(eventsRes.data.events)
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (req !== loadReq.current) return
-      setError(e.response?.data?.detail || e.message)
+      setError(extractError(e, t('leaderboard.loadFailed')))
     } finally { if (req === loadReq.current) setLoading(false) }
   }
 
   useEffect(() => { loadData() }, [serverType, sortBy, eventTypeFilter])
 
-  function handleSearch(e: React.FormEvent) { e.preventDefault(); loadData() }
+  function handleSearch(e: FormEvent) { e.preventDefault(); loadData() }
 
   // ── Clear leaderboard buttons ───────────────────────────────────
   // Wipes both ARKM_lb_scores AND ARKM_lb_events for the chosen
@@ -125,269 +141,271 @@ export default function LeaderboardPage({ currentUser }: Props) {
   // operators can't accidentally lose the OTHER mode's history.
   const [clearing, setClearing] = useState<'PvE' | 'PvP' | null>(null)
 
-  async function handleClear(serverType: 'PvE' | 'PvP') {
-    if (!window.confirm(t('leaderboard.clearConfirm', { type: serverType }))) return
-    setClearing(serverType); setError('')
+  async function handleClear(type: 'PvE' | 'PvP') {
+    const ok = await confirm({
+      title: t('leaderboard.clearTitle', { type }),
+      description: t('leaderboard.clearConfirm', { type }),
+      confirmLabel: t('leaderboard.clearAction', { type }),
+      confirmText: type,
+      tone: 'danger',
+    })
+    if (!ok) return
+    setClearing(type); setError('')
     try {
-      const res = await arkLeaderboardApi.clear(serverType)
-      window.alert(t('leaderboard.clearDone', {
-        type: serverType,
+      const res = await arkLeaderboardApi.clear(type)
+      toast.success(t('leaderboard.clearDone', {
+        type,
         scores: res.data.scores_deleted,
         events: res.data.events_deleted,
       }))
       await loadData()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || t('leaderboard.clearFailed'))
+      setError(extractError(err, t('leaderboard.clearFailed')))
     } finally {
       setClearing(null)
     }
   }
 
-  function getRankStyle(rank: number) {
-    if (rank === 1) return { background: 'linear-gradient(135deg, var(--warning), var(--warning))', color: '#000', fontWeight: 900 }
-    if (rank === 2) return { background: 'linear-gradient(135deg, var(--border), var(--text-muted))', color: '#000', fontWeight: 800 }
-    if (rank === 3) return { background: 'linear-gradient(135deg, var(--warning), var(--warning))', color: '#fff', fontWeight: 800 }
-    return { background: 'var(--bg-card-muted)', color: 'var(--text-muted)', fontWeight: 600 }
-  }
+  const firstLoad = loading && scores.length === 0 && events.length === 0
+  const refreshing = loading && !firstLoad
 
-  const TABS: { key: TabType; label: string }[] = [
-    { key: 'classifica', label: t('leaderboard.tabs.ranking') },
-    { key: 'eventi', label: t('leaderboard.tabs.events') },
+  const statTiles = stats ? [
+    { label: t('leaderboard.stats.players'), value: stats.total_players, icon: Users },
+    { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy },
+    { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair },
+    { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart },
+    { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer },
+    { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull },
+  ] : []
+
+  const scopeOptions: { value: ServerScope; label: string }[] = [
+    { value: '', label: t('leaderboard.filter.allServers') },
+    { value: 'PvE', label: 'PvE' },
+    { value: 'PvP', label: 'PvP' },
   ]
 
+  const eventScopeOptions: { value: EventScope; label: string }[] = [
+    { value: '', label: t('leaderboard.events.all') },
+    { value: '1', label: t('leaderboard.events.killWild') },
+    { value: '3', label: t('leaderboard.events.killPvp') },
+    { value: '4', label: t('leaderboard.events.tame') },
+    { value: '5', label: t('leaderboard.events.craft') },
+  ]
+
+  const rankingCard = (
+    <Card
+      title={t('leaderboard.tabs.ranking')}
+      flush
+      actions={
+        <>
+          {refreshing && <Spinner />}
+          <Select
+            size="sm"
+            aria-label={t('leaderboard.sortByLabel')}
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+          >
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+          <form className="l-cluster" onSubmit={handleSearch}>
+            <Input
+              type="search"
+              size="sm"
+              aria-label={t('leaderboard.searchPlaceholder')}
+              placeholder={t('leaderboard.searchPlaceholder')}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <Button type="submit" size="sm" variant="primary">{t('leaderboard.searchButton')}</Button>
+          </form>
+        </>
+      }
+    >
+      <Table label={t('leaderboard.tabs.ranking')} minWidth={980} maxHeight="calc(100vh - 380px)">
+        <thead>
+          <tr>
+            <th scope="col">{t('leaderboard.table.rank')}</th>
+            <th scope="col">{t('leaderboard.table.player')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.points')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.killsWild')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.killsPvp')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.tames')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.crafts')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.destroyed')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.deaths')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.table.last')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {firstLoad ? (
+            <TableMessageRow colSpan={10}><Spinner block label={t('leaderboard.loading')} /></TableMessageRow>
+          ) : scores.length === 0 ? (
+            <TableMessageRow colSpan={10}>
+              <EmptyState icon={Trophy} title={t('leaderboard.emptyRanking')} />
+            </TableMessageRow>
+          ) : scores.map(s => (
+            <tr key={`${s.eos_id}-${s.server_type}`}>
+              <td>
+                <span className={styles.rank} data-top={s.rank <= 3 || undefined}>
+                  {s.rank === 1 ? <Trophy aria-hidden="true" /> : s.rank <= 3 ? <Medal aria-hidden="true" /> : null}
+                  {s.rank}
+                </span>
+              </td>
+              <td className="ui-cell-2">
+                <span>{s.player_name}</span>
+                <span className={styles.playerMeta}>{s.server_type}</span>
+              </td>
+              <td className="u-num u-text-end">{s.total_points.toLocaleString(undefined)}</td>
+              <td className="u-num u-text-end">{s.kills_wild}</td>
+              <td className="u-num u-text-end">{s.kills_player}</td>
+              <td className="u-num u-text-end">{s.tames}</td>
+              <td className="u-num u-text-end">{s.crafts}</td>
+              <td className="u-num u-text-end">{s.structs_destroyed}</td>
+              <td className="u-num u-text-end">{s.deaths}</td>
+              <td className="u-text-end u-text-sm u-muted">{fmtShortDateTime(s.last_event)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
+  )
+
+  const eventsCard = (
+    <Card
+      title={t('leaderboard.tabs.events')}
+      flush
+      actions={
+        <>
+          {refreshing && <Spinner />}
+          <SegmentedControl
+            size="sm"
+            label={t('leaderboard.events.typeLabel')}
+            options={eventScopeOptions}
+            value={eventTypeFilter}
+            onChange={setEventTypeFilter}
+          />
+        </>
+      }
+    >
+      <Table label={t('leaderboard.tabs.events')} minWidth={880}>
+        <thead>
+          <tr>
+            <th scope="col">{t('leaderboard.table.player')}</th>
+            <th scope="col">{t('leaderboard.events.table.event')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.events.table.points')}</th>
+            <th scope="col">{t('leaderboard.events.table.target')}</th>
+            <th scope="col">{t('leaderboard.events.table.server')}</th>
+            <th scope="col" className="u-text-end">{t('leaderboard.events.table.date')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {firstLoad ? (
+            <TableMessageRow colSpan={6}><Spinner block label={t('leaderboard.loading')} /></TableMessageRow>
+          ) : events.length === 0 ? (
+            <TableMessageRow colSpan={6}>
+              <EmptyState icon={Activity} title={t('leaderboard.emptyEvents')} />
+            </TableMessageRow>
+          ) : events.map(ev => (
+            <tr key={ev.id}>
+              <td>{ev.player_name}</td>
+              <td>
+                <Badge icon={EVENT_ICONS[ev.event_type] ?? Activity}>
+                  {EVENT_LABEL_KEYS[ev.event_type]
+                    ? t(`leaderboard.events.${EVENT_LABEL_KEYS[ev.event_type]}`)
+                    : ev.event_label}
+                </Badge>
+              </td>
+              <td className="u-num u-text-end">+{ev.points}</td>
+              <td className="ui-cell-wrap">{ev.target_name || <span className="u-muted">—</span>}</td>
+              <td>{fmtServer(ev.server_key)}</td>
+              <td className="u-text-end u-text-sm u-muted">{fmtShortDateTime(ev.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
+  )
+
   return (
-    <div className="page-container">
-      {/* Header */}
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><Trophy size={22} /> {t('leaderboard.heading')}</h1>
-          <p className="page-subtitle">
+    <div className="l-page">
+      <PageHeader
+        title={t('leaderboard.heading')}
+        icon={Trophy}
+        description={
+          <>
             {t('leaderboard.subtitle')}
             {stats && <> {t('leaderboard.subtitleSuffix', { players: stats.total_players, events: stats.total_events })}</>}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {isAdmin && (<>
-          <button
-            onClick={() => handleClear('PvE')}
-            disabled={clearing !== null}
-            className="btn btn-ghost"
-            style={{ borderColor: 'var(--border)', padding: '0.4rem 0.7rem' }}
-            aria-label={t('leaderboard.clearPveTitle')} title={t('leaderboard.clearPveTitle')}
-          >
-            <Trash2 size={14} /> {clearing === 'PvE' ? t('leaderboard.clearing') : t('leaderboard.clearPve')}
-          </button>
-          <button
-            onClick={() => handleClear('PvP')}
-            disabled={clearing !== null}
-            className="btn btn-ghost"
-            style={{ borderColor: 'var(--border)', padding: '0.4rem 0.7rem' }}
-            aria-label={t('leaderboard.clearPvpTitle')} title={t('leaderboard.clearPvpTitle')}
-          >
-            <Trash2 size={14} /> {clearing === 'PvP' ? t('leaderboard.clearing') : t('leaderboard.clearPvp')}
-          </button>
-          </>)}
-          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }}>
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            {isAdmin && (
+              <>
+                <Button
+                  variant="danger"
+                  icon={Trash2}
+                  loading={clearing === 'PvE'}
+                  loadingLabel={t('leaderboard.clearing')}
+                  disabled={clearing !== null}
+                  title={t('leaderboard.clearPveTitle')}
+                  onClick={() => handleClear('PvE')}
+                >
+                  {t('leaderboard.clearPve')}
+                </Button>
+                <Button
+                  variant="danger"
+                  icon={Trash2}
+                  loading={clearing === 'PvP'}
+                  loadingLabel={t('leaderboard.clearing')}
+                  disabled={clearing !== null}
+                  title={t('leaderboard.clearPvpTitle')}
+                  onClick={() => handleClear('PvP')}
+                >
+                  {t('leaderboard.clearPvp')}
+                </Button>
+              </>
+            )}
+            <IconButton icon={RefreshCw} label={t('common.refresh')} loading={loading} onClick={loadData} />
+          </>
+        }
+      />
 
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>
-          <AlertCircle size={14} /> {error}
-          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>×</button>
-        </div>
+        <Alert
+          tone="danger"
+          actions={<Button size="sm" icon={RotateCw} onClick={loadData}>{t('common.retry')}</Button>}
+          onDismiss={() => setError('')}
+        >
+          {error}
+        </Alert>
       )}
 
-      {/* Stats cards */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>
-          {[
-            { label: t('leaderboard.stats.players'), value: stats.total_players, icon: Users, color: 'var(--accent)' },
-            { label: t('leaderboard.stats.totalPoints'), value: stats.total_points, icon: Trophy, color: 'var(--warning)' },
-            { label: t('leaderboard.stats.killsWild'), value: stats.total_kills_wild, icon: Crosshair, color: 'var(--danger)' },
-            { label: t('leaderboard.stats.tames'), value: stats.total_tames, icon: Heart, color: 'var(--success)' },
-            { label: t('leaderboard.stats.crafts'), value: stats.total_crafts, icon: Hammer, color: 'var(--cyan)' },
-            { label: t('leaderboard.stats.deaths'), value: stats.total_deaths, icon: Skull, color: 'var(--text-muted)' },
-          ].map(s => (
-            <div key={s.label} style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem',
-              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
-            }}>
-              <s.icon size={15} color={s.color} />
-              <div>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>{loading ? '...' : s.value.toLocaleString(undefined)}</div>
-                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{s.label}</div>
-              </div>
-            </div>
+        <div className="l-grid--stats">
+          {statTiles.map(s => (
+            <StatTile key={s.label} label={s.label} value={s.value.toLocaleString(undefined)} icon={s.icon} loading={loading} />
           ))}
         </div>
       )}
 
-      {/* Filtri globali */}
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)' }}>
-          {['', 'PvE', 'PvP'].map(st => (
-            <button key={st} onClick={() => setServerType(st)} style={{
-              padding: '0.3rem 0.65rem', border: 'none', fontSize: '0.78rem', fontWeight: 500, cursor: 'pointer',
-              background: serverType === st ? 'var(--accent)' : 'var(--bg-input)',
-              color: serverType === st ? '#fff' : 'var(--text-secondary)',
-            }}>
-              {st || t('leaderboard.filter.allServers')}
-            </button>
-          ))}
-        </div>
+      <SegmentedControl
+        label={t('leaderboard.filter.scopeLabel')}
+        options={scopeOptions}
+        value={serverType}
+        onChange={setServerType}
+      />
 
-        {/* Tabs */}
-        {TABS.map(tb => (
-          <button key={tb.key} onClick={() => setActiveTab(tb.key)} style={{
-            padding: '0.3rem 0.75rem', border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer',
-            background: activeTab === tb.key ? 'var(--bg-card)' : 'transparent',
-            color: activeTab === tb.key ? 'var(--accent)' : 'var(--text-muted)',
-            fontWeight: activeTab === tb.key ? 700 : 500, fontSize: '0.82rem',
-            boxShadow: activeTab === tb.key ? 'var(--shadow-sm)' : 'none',
-          }}>
-            {tb.label}
-          </button>
-        ))}
-      </div>
-
-      {/* === TAB: Classifica === */}
-      {activeTab === 'classifica' && (
-        <div className="card" style={{ minHeight: 300 }}>
-          {/* Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-card-muted)', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('leaderboard.sortByLabel')}</span>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{
-                fontSize: '0.78rem', padding: '0.2rem 0.5rem', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)', background: 'var(--bg-input)', color: 'var(--text-primary)',
-              }}>
-                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.3rem' }}>
-              <div style={{ position: 'relative', width: 200 }}>
-                <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input className="input" placeholder={t('leaderboard.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)}
-                  style={{ paddingLeft: 26, fontSize: '0.82rem', height: 30 }} />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ height: 30, fontSize: '0.75rem' }}>{t('leaderboard.searchButton')}</button>
-            </form>
-          </div>
-
-          {/* Table */}
-          <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
-            {loading ? <div className="pl-loading">{t('leaderboard.loading')}</div> : scores.length === 0 ? (
-              <div className="pl-empty"><Trophy size={40} style={{ opacity: 0.12 }} /><p>{t('leaderboard.emptyRanking')}</p></div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '50px 1.5fr 80px 80px 70px 70px 70px 70px 70px 100px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)', position: 'sticky', top: 0 }}>
-                  <span>#</span><span>{t('leaderboard.table.player')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.points')}</span>
-                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.killsWild')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.killsPvp')}</span>
-                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.tames')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.crafts')}</span>
-                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.destroyed')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.table.deaths')}</span>
-                  <span style={{ textAlign: 'right' }}>{t('leaderboard.table.last')}</span>
-                </div>
-                {scores.map(s => (
-                  <div key={`${s.eos_id}-${s.server_type}`} style={{
-                    display: 'grid', gridTemplateColumns: '50px 1.5fr 80px 80px 70px 70px 70px 70px 70px 100px',
-                    padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
-                    background: s.rank <= 3 ? 'rgba(251,191,36,0.03)' : 'transparent',
-                  }}>
-                    {/* Rank badge */}
-                    <div>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 28, height: 28, borderRadius: 6, fontSize: '0.78rem',
-                        ...getRankStyle(s.rank),
-                      }}>
-                        {s.rank <= 3 ? ['🥇', '🥈', '🥉'][s.rank - 1] : s.rank}
-                      </span>
-                    </div>
-                    {/* Nome */}
-                    <div>
-                      <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>{s.player_name}</div>
-                      <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{s.server_type}</div>
-                    </div>
-                    {/* Stats */}
-                    <span style={{ textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: 'var(--warning)', fontFamily: 'var(--font-mono)' }}>{s.total_points.toLocaleString(undefined)}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_wild > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{s.kills_wild}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.kills_player > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{s.kills_player}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.tames > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{s.tames}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.crafts > 0 ? 'var(--cyan)' : 'var(--text-muted)' }}>{s.crafts}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.structs_destroyed > 0 ? 'var(--violet)' : 'var(--text-muted)' }}>{s.structs_destroyed}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: s.deaths > 0 ? 'var(--text-muted)' : 'var(--text-muted)' }}>{s.deaths}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(s.last_event)}</span>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* === TAB: Eventi === */}
-      {activeTab === 'eventi' && (
-        <div className="card" style={{ minHeight: 300 }}>
-          {/* Filtro tipo evento */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-card-muted)', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('leaderboard.events.typeLabel')}</span>
-            {[
-              { value: undefined, label: t('leaderboard.events.all') },
-              { value: 1, label: `🗡️ ${t('leaderboard.events.killWild')}` },
-              { value: 3, label: `☠️ ${t('leaderboard.events.killPvp')}` },
-              { value: 4, label: `🦎 ${t('leaderboard.events.tame')}` },
-              { value: 5, label: `🔨 ${t('leaderboard.events.craft')}` },
-            ].map(f => (
-              <button key={String(f.value)} onClick={() => setEventTypeFilter(f.value)} style={{
-                padding: '0.2rem 0.5rem', border: 'none', borderRadius: 'var(--radius)',
-                fontSize: '0.75rem', cursor: 'pointer',
-                background: eventTypeFilter === f.value ? 'var(--accent)' : 'var(--bg-input)',
-                color: eventTypeFilter === f.value ? '#fff' : 'var(--text-secondary)',
-              }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
-            {loading ? <div className="pl-loading">{t('leaderboard.loading')}</div> : events.length === 0 ? (
-              <div className="pl-empty"><Activity size={40} style={{ opacity: 0.12 }} /><p>{t('leaderboard.emptyEvents')}</p></div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1.5fr 80px 100px', padding: '0.45rem 1rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-card-muted)', borderBottom: '2px solid var(--border)' }}>
-                  <span>{t('leaderboard.table.player')}</span><span>{t('leaderboard.events.table.event')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.events.table.points')}</span>
-                  <span>{t('leaderboard.events.table.target')}</span><span>{t('leaderboard.events.table.server')}</span><span style={{ textAlign: 'right' }}>{t('leaderboard.events.table.date')}</span>
-                </div>
-                {events.map(ev => (
-                  <div key={ev.id} style={{
-                    display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1.5fr 80px 100px',
-                    padding: '0.45rem 1rem', alignItems: 'center', borderBottom: '1px solid var(--border)',
-                    borderLeft: `3px solid ${EVENT_COLORS[ev.event_type] || '#888'}`,
-                  }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{ev.player_name}</span>
-                    <span style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <span>{EVENT_ICONS[ev.event_type] || '?'}</span>
-                      <span style={{ color: EVENT_COLORS[ev.event_type] || '#888', fontWeight: 600 }}>
-                        {EVENT_LABEL_KEYS[ev.event_type] ? t(`leaderboard.events.${EVENT_LABEL_KEYS[ev.event_type]}`) : ev.event_label}
-                      </span>
-                    </span>
-                    <span style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--warning)' }}>+{ev.points}</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ev.target_name || '—'}
-                    </span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 600 }}>{fmtServer(ev.server_key)}</span>
-                    <span style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{fmtShortDateTime(ev.created_at)}</span>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <Tabs
+        label={t('leaderboard.tabsLabel')}
+        items={[
+          { id: 'classifica', label: t('leaderboard.tabs.ranking'), icon: Trophy },
+          { id: 'eventi', label: t('leaderboard.tabs.events'), icon: Activity },
+        ]}
+        value={activeTab}
+        onChange={id => setActiveTab(id as TabType)}
+      >
+        {activeTab === 'classifica' ? rankingCard : eventsCard}
+      </Tabs>
     </div>
   )
 }

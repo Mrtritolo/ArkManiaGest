@@ -1,0 +1,71 @@
+/*
+ * Page-only layout for the blueprint catalogue. Tokens only; every colour,
+ * size and radius comes from styles/tokens.css.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* Name cell: thumbnail + name on one line, the name allowed to shrink. */
+  .nameCell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  /* 28px square thumb frame; --icon-lg would overflow a 36px row. */
+  .thumb {
+    flex-shrink: 0;
+    width: var(--control-sm);
+    height: var(--control-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+  .thumb > svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+  .thumb > img {
+    object-fit: contain;
+  }
+
+  /* Blueprint path + copy button; the path truncates, the button never does. */
+  .pathCell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  /* Category edit-in-place: select plus confirm / cancel. */
+  .catEdit {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .catEdit > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Footnote under the empty state, on the same centred axis. */
+  .emptyNote {
+    margin: 0;
+    text-align: center;
+    text-wrap: pretty;
+  }
+
+  /* One source chip: name, count and its delete button. */
+  .sourceChip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-1) 0 var(--space-2);
+    min-height: var(--control-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+    font-size: var(--text-sm);
+  }
+}

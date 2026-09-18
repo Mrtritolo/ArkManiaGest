@@ -1,0 +1,247 @@
+/*
+ * PlayersPage.module.css -- page-only layout for the players screen.
+ * Tokens only (design-system/arkmaniagest/MASTER.md). No colours, sizes or
+ * radii that are not a custom property.
+ */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* ---------------------------------------------------- column filters */
+
+  .filterPanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    background: var(--color-bg-subtle);
+  }
+
+  /* The row of "filter by column" triggers, right under the card header. */
+  .filterBar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .filterHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .filterList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    max-height: var(--popup-max-h);
+    padding: var(--space-1);
+    overflow-y: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+  }
+
+  .filterEmpty {
+    padding: var(--space-2);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .noValue {
+    font-style: italic;
+    color: var(--color-text-muted);
+  }
+
+  /* --------------------------------------------------------- table row */
+
+  /* The player whose detail panel is open. Paired with aria-current on the
+     row button, so the bar is never the only cue. */
+  .rowActive > td:first-child {
+    box-shadow: inset 2px 0 0 0 var(--color-accent);
+  }
+
+  .nameCell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1-5);
+    min-width: 0;
+  }
+
+  .chipRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+  }
+
+  /* ------------------------------------------------------ detail panel */
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .section:first-child {
+    padding-block-start: 0;
+    border-block-start: 0;
+  }
+
+  .sectionTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
+  }
+
+  .sectionTitle > svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    flex: none;
+    color: var(--color-text-secondary);
+  }
+
+  .bigValue {
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .inlineForm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-2);
+  }
+
+  .inlineForm > :first-child {
+    flex: 1 1 8rem;
+    min-width: 0;
+  }
+
+  /* One timed-permission entry: group + state, then its two fields. */
+  .timedItem {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+  }
+
+  .timedHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .timedGroup {
+    font-weight: var(--weight-medium);
+    overflow-wrap: anywhere;
+  }
+
+  .timedFields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  @media (min-width: 600px) {
+    .timedFields {
+      grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+    }
+  }
+
+  /* ------------------------------------------------------- maps / copy */
+
+  .mapItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+  }
+
+  .mapItemSelected {
+    border-color: var(--color-accent);
+    background: var(--color-accent-subtle);
+  }
+
+  .mapInfo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+  }
+
+  .mapMeta {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  /* --------------------------------------------------- dialogs (lists) */
+
+  /* Scrollable list inside a dialog body: the dialog itself never scrolls
+     away from its footer. */
+  .scrollList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: 40vh;
+    padding: var(--space-2);
+    overflow-y: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+  }
+
+  .pickCard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .mapItem {
+      transition: background-color var(--duration-fast) var(--ease-standard),
+        border-color var(--duration-fast) var(--ease-standard);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .rowActive > td:first-child {
+      box-shadow: inset 2px 0 0 0 Highlight;
+    }
+    .mapItemSelected {
+      border-color: Highlight;
+    }
+  }
+}

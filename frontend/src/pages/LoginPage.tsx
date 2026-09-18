@@ -3,14 +3,19 @@
  *
  * Shown after the setup wizard completes (users exist in the DB).
  * Authenticates the user and passes the resulting JWT + profile up to App.
+ *
+ * Rendered as the whole canvas (App.tsx shows it instead of the panel), so it
+ * owns the centred `.ui-auth` layout.
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { LogIn } from 'lucide-react'
 import { authApi, setAuthToken } from '../services/api'
 import { extractError } from '../utils/errors'
 import type { AuthUser } from '../types'
+import { Alert, Button, Card, Field, Input } from '../components/ui'
 import DiscordIcon from '../components/DiscordIcon'
+import styles from './LoginPage.module.css'
 
 // DiscordIcon is shared with the Sidebar Settings -> Discord entry, the
 // Settings -> Discord admin page and the Players page Discord quick-action
@@ -24,7 +29,6 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
   const [discordRedirecting, setDiscordRedirecting] = useState(false)
@@ -75,6 +79,8 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
       setAuthToken(res.data.token)
       onLoggedIn(res.data.user)
     } catch (err: unknown) {
+      // Only the backend detail: axios' own message is English, and a
+      // network failure says nothing useful to the operator.
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         ?? t('auth.login.errorNetwork')
@@ -85,117 +91,85 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
   }
 
   return (
-    <div className="setup-overlay">
-      <div className="unlock-container">
-        <div className="setup-header">
-          <img
-            src="/logo.png"
-            alt="ArkMania"
-            style={{ width: 120, height: 120, objectFit: 'contain', margin: '0 auto', display: 'block' }}
-          />
+    <div className="ui-auth">
+      <div className="ui-auth__card l-stack">
+        <div className={styles.brand}>
+          <img src="/logo.png" alt="" className={styles.logo} />
+          <h1>{t('nav.brand')}</h1>
         </div>
 
-        <form onSubmit={handleSubmit} className="unlock-form">
-          {error && (
-            <div className="alert alert-error">
-              <AlertCircle size={14} /> {error}
-            </div>
-          )}
+        <Card>
+          <form onSubmit={handleSubmit} className="l-stack" noValidate>
+            {error && <Alert tone="danger">{error}</Alert>}
 
-          <div className="form-group">
-            <label className="form-label">{t('auth.login.username')}</label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="form-input"
-              placeholder={t('auth.login.username')}
-              autoFocus
-              autoComplete="username"
-              disabled={loading}
-            />
-          </div>
+            <Field label={t('auth.login.username')}>
+              <Input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder={t('auth.login.username')}
+                autoFocus
+                autoComplete="username"
+                disabled={loading}
+              />
+            </Field>
 
-          <div className="form-group">
-            <label className="form-label">{t('auth.login.password')}</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
+            <Field label={t('auth.login.password')}>
+              <Input
+                type="password"
+                revealable
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="form-input"
                 placeholder={t('auth.login.password')}
                 autoComplete="current-password"
                 disabled={loading}
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(s => !s)}
-                style={{
-                  position: 'absolute', right: '0.6rem', top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-muted)',
-                }}
-                aria-label={showPassword ? t('common.close') : t('common.confirm')}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
+            </Field>
 
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ width: '100%', marginTop: '0.5rem', padding: '0.65rem' }}
-            disabled={loading || !username.trim() || !password}
-          >
-            {loading ? t('auth.login.submitting') : <><LogIn size={16} /> {t('auth.login.submit')}</>}
-          </button>
+            <Button
+              type="submit"
+              variant="primary"
+              icon={LogIn}
+              className={styles.block}
+              loading={loading}
+              loadingLabel={t('auth.login.submitting')}
+              disabled={!username.trim() || !password}
+            >
+              {t('auth.login.submit')}
+            </Button>
 
-          {/* ── Divider + Discord OAuth ──────────────────────────────
-              The button hits /api/v1/auth/discord/start which sets the
-              state cookie and returns the Discord authorize URL; we
-              then redirect the browser to it.  After consent, Discord
-              calls our /auth/discord/callback which sets the
-              disc_session cookie and bounces back to '/' with
-              ?discord_login=ok|err. */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '0.6rem',
-            margin: '1rem 0 0.65rem',
-          }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {t('auth.login.or')}
-            </span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-          </div>
-          <button
-            type="button"
-            onClick={handleDiscordLogin}
-            disabled={loading || discordRedirecting}
-            className="btn btn-secondary"
-            style={{
-              width: '100%', padding: '0.65rem',
-              background: '#5865F2',          // Discord brand blurple
-              borderColor: '#5865F2',
-              color: '#ffffff',
-            }}
-          >
-            <DiscordIcon size={16} />
-            {discordRedirecting
-              ? t('auth.login.discordRedirecting')
-              : t('auth.login.discordButton')}
-          </button>
+            {/* ── Divider + Discord OAuth ──────────────────────────────
+                The button hits /api/v1/auth/discord/start which sets the
+                state cookie and returns the Discord authorize URL; we
+                then redirect the browser to it.  After consent, Discord
+                calls our /auth/discord/callback which sets the
+                disc_session cookie and bounces back to '/' with
+                ?discord_login=ok|err. */}
+            <p className={styles.separator}>{t('auth.login.or')}</p>
 
-          {/* GDPR Art. 13: the privacy notice must be reachable BEFORE
-              the user authenticates (especially via Discord OAuth). */}
-          <div style={{ textAlign: 'center', marginTop: '0.85rem' }}>
-            <a href="/privacy" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {t('privacy.policyLink')}
-            </a>
-          </div>
-        </form>
+            <Button
+              type="button"
+              className={styles.block}
+              onClick={handleDiscordLogin}
+              disabled={loading || discordRedirecting}
+            >
+              <span className={styles.withIcon}>
+                <DiscordIcon size={16} />
+                {discordRedirecting
+                  ? t('auth.login.discordRedirecting')
+                  : t('auth.login.discordButton')}
+              </span>
+            </Button>
+
+            {/* GDPR Art. 13: the privacy notice must be reachable BEFORE
+                the user authenticates (especially via Discord OAuth).
+                A plain link, not <Link>: /privacy is resolved by App
+                before the router mounts. */}
+            <p className={styles.footerLink}>
+              <a href="/privacy">{t('privacy.policyLink')}</a>
+            </p>
+          </form>
+        </Card>
       </div>
     </div>
   )

@@ -1,0 +1,12 @@
+/* Page-only layout for the cluster-sync page. Tokens only, @layer page. */
+@layer reset, base, ui, page, utilities;
+
+@layer page {
+  /* The verdict sentence sits above a flush table, so it pads itself. */
+  .verdict {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+}

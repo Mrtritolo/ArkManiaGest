@@ -12,18 +12,36 @@
  *                   secrets, role IDs, whitelists).  Saves to backend's
  *                   .env via PUT /discord/config; restart required for
  *                   the new values to take effect.
+ *
+ * The selected tab lives in the URL (?tab=), so a tab is linkable. Only the
+ * active tab is mounted, so leaving the Settings tab with unsaved edits
+ * would silently throw them away: it asks first.
  */
-import { useState } from "react";
+import { useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Users as UsersIcon, Sliders, Cog } from "lucide-react";
+import { Users as UsersIcon, Sliders, Cog, type LucideIcon } from "lucide-react";
 import DiscordIcon from "../components/DiscordIcon";
+import { PageHeader, Tabs, useConfirm } from "../components/ui";
 import AccountsTab from "./discord/AccountsTab";
 import MembersTab from "./discord/MembersTab";
 import ConfigTab from "./discord/ConfigTab";
 import SettingsTab from "./discord/SettingsTab";
 import type { AuthUser } from "../types";
 
-type TabKey = "accounts" | "members" | "config" | "settings";
+const TAB_KEYS = ["accounts", "members", "config", "settings"] as const;
+type TabKey = (typeof TAB_KEYS)[number];
+
+function isTabKey(value: string | null): value is TabKey {
+  return value !== null && (TAB_KEYS as readonly string[]).includes(value);
+}
+
+/**
+ * The brand mark is the page's identity; DiscordIcon draws it with
+ * currentColor and takes the primitive's class, but it is not a Lucide
+ * component, so the kit's icon slot needs the shape assertion.
+ */
+const DiscordGlyph = DiscordIcon as unknown as LucideIcon;
 
 interface Props {
   // Nothing to gate here: App.tsx mounts this route for admins only and
@@ -33,92 +51,69 @@ interface Props {
 
 export default function DiscordSettingsPage(_props: Props) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<TabKey>("accounts");
+  const confirm = useConfirm();
+  const [params, setParams] = useSearchParams();
+  const tab: TabKey = isTabKey(params.get("tab")) ? (params.get("tab") as TabKey) : "accounts";
 
-  return (
-    <div className="pl-page">
-      {/* Page header */}
-      <div className="pl-header">
-        <div>
-          <h1
-            className="pl-title"
-            style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-          >
-            <DiscordIcon size={22} color="#5865F2" />
-            {t("discord.title")}
-          </h1>
-          <p className="pl-subtitle">
-            {t("discord.subtitle")}
-          </p>
-        </div>
-      </div>
+  // Written by SettingsTab whenever its form goes dirty or clean. A ref, not
+  // state: it is only ever read at the moment a tab switch is requested.
+  const settingsDirty = useRef(false);
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    settingsDirty.current = dirty;
+  }, []);
 
-      {/* Tab switcher */}
-      <div
-        style={{
-          display: "flex",
-          gap: "0.4rem",
-          marginBottom: "1rem",
-          borderBottom: "1px solid var(--border)",
-          paddingBottom: "0.4rem",
-        }}
-      >
-        <TabButton
-          active={tab === "accounts"}
-          onClick={() => setTab("accounts")}
-          icon={<UsersIcon size={14} />}
-          label={t("discord.tab.accounts")}
-        />
-        <TabButton
-          active={tab === "members"}
-          onClick={() => setTab("members")}
-          icon={<DiscordIcon size={14} />}
-          label={t("discord.tab.members")}
-        />
-        <TabButton
-          active={tab === "config"}
-          onClick={() => setTab("config")}
-          icon={<Sliders size={14} />}
-          label={t("discord.tab.config")}
-        />
-        <TabButton
-          active={tab === "settings"}
-          onClick={() => setTab("settings")}
-          icon={<Cog size={14} />}
-          label={t("discord.tab.settings")}
-        />
-      </div>
+  const changeTab = useCallback(
+    (next: string) => {
+      if (!isTabKey(next) || next === tab) return;
+      const leavingDirtySettings = tab === "settings" && settingsDirty.current;
 
-      {/* Per-tab panels */}
-      {tab === "accounts" && <AccountsTab />}
-      {tab === "members"  && <MembersTab />}
-      {tab === "config"   && <ConfigTab />}
-      {tab === "settings" && <SettingsTab />}
-    </div>
+      const go = () => {
+        settingsDirty.current = false;
+        setParams(
+          (prev) => {
+            const search = new URLSearchParams(prev);
+            search.set("tab", next);
+            return search;
+          },
+          { replace: true },
+        );
+      };
+
+      if (!leavingDirtySettings) {
+        go();
+        return;
+      }
+      void confirm({
+        title: t("discord.settings.leaveTitle"),
+        description: t("discord.settings.leaveBody"),
+        confirmLabel: t("discord.settings.leaveConfirm"),
+        tone: "danger",
+      }).then((ok) => {
+        if (ok) go();
+      });
+    },
+    [tab, setParams, confirm, t],
   );
-}
 
-// ── Tiny reusable tab button (kept local so the rest of the app keeps
-//    using its existing tab styles unchanged).
-function TabButton({
-  active, onClick, icon, label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
   return (
-    <button
-      onClick={onClick}
-      className={active ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
-      style={{
-        display: "flex", alignItems: "center", gap: "0.35rem",
-        opacity: active ? 1 : 0.85,
-      }}
-    >
-      {icon}
-      {label}
-    </button>
+    <div className="l-page">
+      <PageHeader title={t("discord.title")} icon={DiscordGlyph} description={t("discord.subtitle")} />
+      <Tabs
+        label={t("discord.title")}
+        value={tab}
+        onChange={changeTab}
+        items={[
+          { id: "accounts", label: t("discord.tab.accounts"), icon: UsersIcon },
+          { id: "members", label: t("discord.tab.members"), icon: DiscordGlyph },
+          { id: "config", label: t("discord.tab.config"), icon: Sliders },
+          { id: "settings", label: t("discord.tab.settings"), icon: Cog },
+        ]}
+      >
+        {tab === "accounts" && <AccountsTab />}
+        {tab === "members" && <MembersTab />}
+        {tab === "config" && <ConfigTab />}
+        {tab === "settings" && <SettingsTab onDirtyChange={handleDirtyChange} />}
+      </Tabs>
+    </div>
   );
 }

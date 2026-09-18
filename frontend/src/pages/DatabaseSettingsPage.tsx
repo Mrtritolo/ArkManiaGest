@@ -8,11 +8,13 @@
  * falls back to the panel DSN; the page flags this explicitly.
  */
 import { useState, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Database, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { Trans, useTranslation } from 'react-i18next'
+import { Database, Lock, Plug, RotateCw, Split, TriangleAlert } from 'lucide-react'
 import { databaseApi } from '../services/api'
 import { extractError } from '../utils/errors'
+import { usePending } from '../hooks/usePending'
 import type { AuthUser, DatabaseConfig, DualDatabaseConfig } from '../types'
+import { Alert, Badge, Button, Card, PageHeader, Spinner } from '../components/ui'
 
 type TestTarget = 'panel' | 'plugin'
 type TestState = { success: boolean; message: string }
@@ -26,8 +28,11 @@ interface Props {
 export default function DatabaseSettingsPage(_props: Props) {
   const { t } = useTranslation()
   const [config, setConfig] = useState<DualDatabaseConfig | null>(null)
+  // Separate from `config`: the page must stop saying "loading" once the
+  // request has settled, whether it succeeded or not.
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [testing, setTesting] = useState<TestTarget | null>(null)
+  const pending = usePending<TestTarget>()
   const [testResults, setTestResults] = useState<Record<TestTarget, TestState | null>>({
     panel: null,
     plugin: null,
@@ -36,52 +41,74 @@ export default function DatabaseSettingsPage(_props: Props) {
   useEffect(() => { loadConfig() }, [])
 
   async function loadConfig(): Promise<void> {
+    setLoading(true)
+    setLoadError('')
     try {
       const res = await databaseApi.get()
       setConfig(res.data)
     } catch (err: unknown) {
       // Without this the page stayed on "Loading…" forever.
       setLoadError(extractError(err, t('database.loadFailed')))
+    } finally {
+      setLoading(false)
     }
   }
 
   async function handleTest(target: TestTarget): Promise<void> {
-    setTesting(target)
     setTestResults(prev => ({ ...prev, [target]: null }))
-    try {
-      const res = target === 'panel'
-        ? await databaseApi.testCurrent()
-        : await databaseApi.testPlugin()
-      setTestResults(prev => ({ ...prev, [target]: res.data }))
-    } catch (err: unknown) {
-      setTestResults(prev => ({
-        ...prev,
-        [target]: {
-          success: false,
-          message: extractError(err, t('database.testFailed')),
-        },
-      }))
-    } finally {
-      setTesting(null)
-    }
+    await pending.run(target, async () => {
+      try {
+        const res = target === 'panel'
+          ? await databaseApi.testCurrent()
+          : await databaseApi.testPlugin()
+        setTestResults(prev => ({ ...prev, [target]: res.data }))
+      } catch (err: unknown) {
+        setTestResults(prev => ({
+          ...prev,
+          [target]: {
+            success: false,
+            message: extractError(err, t('database.testFailed')),
+          },
+        }))
+      }
+    })
   }
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div className="page-header-text">
-          <h1 className="page-title"><Database size={22} /> {t('database.title')}</h1>
-          <p className="page-subtitle">{t('database.subtitle')}</p>
-        </div>
-      </div>
+    <div className="l-page">
+      <PageHeader
+        title={t('database.title')}
+        icon={Database}
+        description={t('database.subtitle')}
+      />
 
-      {config ? (
+      {loadError && (
+        <Alert
+          tone="danger"
+          title={t('database.loadFailed')}
+          actions={
+            <Button size="sm" icon={RotateCw} onClick={loadConfig}>
+              {t('common.retry')}
+            </Button>
+          }
+        >
+          {loadError}
+        </Alert>
+      )}
+
+      {loading && !config && (
+        <Card>
+          <Spinner block label={t('common.loading')} />
+        </Card>
+      )}
+
+      {config && (
         <>
           <ConnectionCard
             title={t('database.panelTitle')}
             hint={t('database.panelHint')}
             cfg={config.panel}
-            testing={testing === 'panel'}
+            testing={pending.isPending('panel')}
             testResult={testResults.panel}
             onTest={() => handleTest('panel')}
           />
@@ -93,7 +120,7 @@ export default function DatabaseSettingsPage(_props: Props) {
                 : t('database.pluginHintFallback')
             }
             cfg={config.plugin}
-            testing={testing === 'plugin'}
+            testing={pending.isPending('plugin')}
             testResult={testResults.plugin}
             onTest={() => handleTest('plugin')}
             badge={
@@ -103,25 +130,14 @@ export default function DatabaseSettingsPage(_props: Props) {
             }
           />
         </>
-      ) : (
-        <div className="card">
-          {loadError
-            ? <p style={{ color: 'var(--danger)' }}>{loadError}</p>
-            : <p style={{ color: 'var(--text-muted)' }}>{t('common.loading')}</p>}
-        </div>
       )}
 
-      <div className="card mt-6 card-muted">
-        <h2 className="card-title">
-          <span className="card-title-icon">&#x1F512;</span>
-          {t('database.configCard.title')}
-        </h2>
-        <p
-          className="card-text"
-          // i18n string contains the <code> tags for inline keys.
-          dangerouslySetInnerHTML={{ __html: t('database.configCard.body') }}
-        />
-      </div>
+      <Card title={t('database.configCard.title')} icon={Lock}>
+        <p>
+          {/* The i18n string carries <code> tags around the .env keys. */}
+          <Trans i18nKey="database.configCard.body" components={{ code: <code className="ui-code" /> }} />
+        </p>
+      </Card>
     </div>
   )
 }
@@ -141,75 +157,56 @@ interface ConnectionCardProps {
 function ConnectionCard({ title, hint, cfg, testing, testResult, onTest, badge }: ConnectionCardProps) {
   const { t } = useTranslation()
   return (
-    <div className="card" style={{ marginBottom: '1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 className="card-title" style={{ margin: 0 }}>
-          <span className="card-title-icon">&#x25C9;</span>
-          {title}
-        </h2>
-        {badge && (
-          <span
-            style={{
-              fontSize: '0.72rem',
-              padding: '0.15rem 0.55rem',
-              borderRadius: '999px',
-              background: badge.tone === 'ok' ? 'var(--success-bg, #113922)' : 'var(--warning-bg, #3a2e13)',
-              color: badge.tone === 'ok' ? 'var(--success)' : 'var(--warning)',
-              border: '1px solid currentColor',
-            }}
+    <Card
+      title={title}
+      icon={Database}
+      actions={
+        badge ? (
+          <Badge
+            tone={badge.tone === 'ok' ? 'success' : 'warning'}
+            icon={badge.tone === 'ok' ? Split : TriangleAlert}
           >
             {badge.label}
-          </span>
-        )}
-      </div>
-      <p className="card-text" style={{ marginTop: '0.25rem', fontSize: '0.82rem' }}>{hint}</p>
+          </Badge>
+        ) : undefined
+      }
+      footer={
+        <div className="l-cluster">
+          <Button
+            variant="primary"
+            icon={Plug}
+            onClick={onTest}
+            loading={testing}
+            loadingLabel={t('database.testing')}
+          >
+            {t('database.testButton')}
+          </Button>
+        </div>
+      }
+    >
+      <div className="l-stack">
+        <p className="u-secondary">{hint}</p>
 
-      <div className="form-grid" style={{ marginTop: '0.75rem' }}>
-        <div className="form-group form-group-3">
-          <label className="form-label">{t('database.label.host')}</label>
-          <input type="text" value={cfg.host} className="form-input" readOnly style={{ opacity: 0.7 }} />
-        </div>
-        <div className="form-group form-group-1">
-          <label className="form-label">{t('database.label.port')}</label>
-          <input type="text" value={cfg.port} className="form-input" readOnly style={{ opacity: 0.7 }} />
-        </div>
-        <div className="form-group form-group-2">
-          <label className="form-label">{t('database.label.name')}</label>
-          <input type="text" value={cfg.name} className="form-input" readOnly style={{ opacity: 0.7 }} />
-        </div>
-        <div className="form-group form-group-2">
-          <label className="form-label">{t('database.label.user')}</label>
-          <input type="text" value={cfg.user} className="form-input" readOnly style={{ opacity: 0.7 }} />
-        </div>
-        <div className="form-group form-group-2">
-          <label className="form-label">{t('database.label.password')}</label>
-          <input
-            type="text"
-            value={cfg.has_password ? t('database.passwordMasked') : t('database.passwordMissing')}
-            className="form-input"
-            readOnly
-            style={{ opacity: 0.7 }}
-          />
-        </div>
-      </div>
+        {/* Read-only values: a dl, not dimmed inputs nobody can edit. */}
+        <dl className="ui-dl">
+          <dt>{t('database.label.host')}</dt>
+          <dd className="u-mono">{cfg.host}</dd>
+          <dt>{t('database.label.port')}</dt>
+          <dd className="u-mono u-num">{cfg.port}</dd>
+          <dt>{t('database.label.name')}</dt>
+          <dd className="u-mono">{cfg.name}</dd>
+          <dt>{t('database.label.user')}</dt>
+          <dd className="u-mono">{cfg.user}</dd>
+          <dt>{t('database.label.password')}</dt>
+          <dd className="u-mono">
+            {cfg.has_password ? t('database.passwordMasked') : t('database.passwordMissing')}
+          </dd>
+        </dl>
 
-      <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <button onClick={onTest} disabled={testing} className="btn btn-primary">
-          {testing
-            ? <><RefreshCw size={14} className="pl-spin" /> {t('database.testing')}</>
-            : t('database.testButton')}
-        </button>
         {testResult && (
-          <span style={{
-            display: 'flex', alignItems: 'center', gap: '0.3rem',
-            fontSize: '0.85rem',
-            color: testResult.success ? 'var(--success)' : 'var(--danger)',
-          }}>
-            {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
-            {testResult.message}
-          </span>
+          <Alert tone={testResult.success ? 'success' : 'danger'}>{testResult.message}</Alert>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
