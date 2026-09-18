@@ -7,15 +7,19 @@ Reads from and writes to the ``ARKM_rare_dinos`` and
 Each pool entry defines which creature blueprint can spawn as a "rare" variant
 and optionally overrides per-stat min/max bonus wild levels.  A value of -1
 disables the override for that stat.
+
+Pool edits need ``require_operator``; wiping the spawn log is admin-only.
+``/generate`` only returns a preview, so it stays open to every role.
 """
 import random
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.auth import require_admin, require_operator
 from app.db.session import get_plugin_db, get_db
 from app.api.routes.blueprints import is_official_or_s_variant_dino
 
@@ -82,16 +86,8 @@ def _row_to_dino(r) -> dict:
             val = bool(val)
         d[col] = val
 
-    # Derive a readable display name from the blueprint path
-    bp = d.get("dino_bp", "")
-    short = bp
-    if "." in bp:
-        short = bp.rsplit(".", 1)[-1].rstrip("'")
-    if "/" in short:
-        short = short.rsplit("/", 1)[-1]
-    d["display_name"] = (
-        short.replace("_Character_BP", "").replace("_", " ").replace("S-", "").strip()
-    )
+    # Same name the generator preview shows for this blueprint
+    d["display_name"] = _extract_display_name(d.get("dino_bp", ""))
     return d
 
 
@@ -136,7 +132,7 @@ async def list_rare_dinos(
     return {"dinos": dinos, "count": len(dinos)}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_operator)])
 async def create_rare_dino(body: RareDinoCreate, db: AsyncSession = Depends(get_plugin_db)):
     """Add a creature to the rare-dino pool."""
     await db.execute(
@@ -167,7 +163,7 @@ async def create_rare_dino(body: RareDinoCreate, db: AsyncSession = Depends(get_
     return {"created": True}
 
 
-@router.put("/{dino_id}")
+@router.put("/{dino_id}", dependencies=[Depends(require_operator)])
 async def update_rare_dino(
     dino_id: int,
     body: RareDinoUpdate,
@@ -206,7 +202,7 @@ async def update_rare_dino(
 # `/{dino_id}` catch-all routes below.  FastAPI matches paths in the
 # order they are registered, so `DELETE /{dino_id}` would otherwise win
 # and try to parse the literal string "spawns" as int (-> HTTP 422).
-@router.delete("/spawns")
+@router.delete("/spawns", dependencies=[Depends(require_admin)])
 async def clear_rare_spawns(
     server_key: Optional[str] = Query(
         default=None,
@@ -250,7 +246,7 @@ async def clear_rare_spawns(
     }
 
 
-@router.delete("/{dino_id}")
+@router.delete("/{dino_id}", dependencies=[Depends(require_operator)])
 async def delete_rare_dino(dino_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """
     Remove a creature from the rare-dino pool.
@@ -268,7 +264,7 @@ async def delete_rare_dino(dino_id: int, db: AsyncSession = Depends(get_plugin_d
     return {"deleted": True, "id": dino_id}
 
 
-@router.post("/bulk")
+@router.post("/bulk", dependencies=[Depends(require_operator)])
 async def bulk_update_dinos(
     dinos: list[RareDinoCreate],
     replace_all: bool = Query(False, description="Delete all entries before inserting"),
@@ -318,7 +314,7 @@ async def bulk_update_dinos(
 
 @router.get("/spawns")
 async def list_rare_spawns(
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     event_type: Optional[str] = Query(
         None, description="SPAWN / KILLED / TAMED / DESPAWN / CLEAR"
     ),
@@ -395,10 +391,14 @@ def _extract_display_name(bp: str) -> str:
         short = bp.rsplit(".", 1)[-1].rstrip("'")
     if "/" in short:
         short = short.rsplit("/", 1)[-1]
+    # "_C" is a class suffix: a plain replace also ate the "_C" of
+    # "_Corrupt" / "_Chaos" ("Spinoorrupt").  The longer "_ASA" form goes
+    # first, or the shorter replace leaves a stray " ASA" behind.
+    if short.endswith("_C"):
+        short = short[:-2]
     return (
-        short.replace("_Character_BP", "")
-             .replace("_Character_BP_ASA", "")
-             .replace("_C", "")
+        short.replace("_Character_BP_ASA", "")
+             .replace("_Character_BP", "")
              .replace("_", " ")
              .replace("S-", "")
              .strip()
@@ -472,6 +472,12 @@ async def generate_random_dinos(
     preset_name = body.stat_preset if body.stat_preset in _STAT_PRESETS else "balanced"
     generated: list[dict] = []
 
+    def _stat(preset: dict, key: str) -> tuple[int, int]:
+        mn, mx = preset.get(key, (-1, -1))
+        if mn == -1:
+            return -1, -1
+        return mn, random.randint(mn, mx)
+
     for dino in selected:
         bp_path = dino["blueprint"]
 
@@ -481,16 +487,10 @@ async def generate_random_dinos(
 
         preset = _STAT_PRESETS.get(preset_name, _STAT_PRESETS["balanced"])
 
-        def _stat(key: str) -> tuple[int, int]:
-            mn, mx = preset.get(key, (-1, -1))
-            if mn == -1:
-                return -1, -1
-            return mn, random.randint(mn, mx)
-
-        h_min, h_max = _stat("health")
-        s_min, s_max = _stat("stamina")
-        m_min, m_max = _stat("melee")
-        sp_min, sp_max = _stat("speed")
+        h_min, h_max = _stat(preset, "health")
+        s_min, s_max = _stat(preset, "stamina")
+        m_min, m_max = _stat(preset, "melee")
+        sp_min, sp_max = _stat(preset, "speed")
 
         generated.append({
             "map_name":     body.map_name,

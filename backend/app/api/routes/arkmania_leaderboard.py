@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.auth import require_admin
 from app.db.session import get_plugin_db
 
 router = APIRouter()
@@ -75,7 +76,7 @@ async def leaderboard_overview(db: AsyncSession = Depends(get_plugin_db)):
 async def list_scores(
     server_type: Optional[str] = Query(None, description="PvE or PvP"),
     sort_by: str = Query("total_points", description="Column to sort by"),
-    limit:   int = Query(50, le=200),
+    limit:   int = Query(50, ge=1, le=200),
     offset:  int = Query(0, ge=0),
     search:  Optional[str] = Query(None),
     db: AsyncSession = Depends(get_plugin_db),
@@ -152,7 +153,7 @@ async def list_events(
     server_type: Optional[str] = Query(None),
     event_type:  Optional[int] = Query(None),
     eos_id:      Optional[str] = Query(None),
-    limit:       int = Query(50, le=200),
+    limit:       int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """Return recent leaderboard events with optional filters."""
@@ -207,7 +208,8 @@ async def list_events(
 # (FastAPI matches paths in declaration order, so a catch-all DELETE
 # would intercept `/scores`).  Today only GET /player/{eos_id} exists,
 # but keeping the order explicit prevents future surprises.
-@router.delete("/scores")
+# Admin-only: an irreversible wipe, and the router itself only asks for viewer.
+@router.delete("/scores", dependencies=[Depends(require_admin)])
 async def clear_leaderboard(
     server_type: Optional[str] = Query(
         default=None,

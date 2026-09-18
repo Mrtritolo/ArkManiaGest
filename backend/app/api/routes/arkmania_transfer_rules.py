@@ -11,11 +11,12 @@ Transfer levels:
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.auth import require_operator
 from app.db.session import get_plugin_db
 
 router = APIRouter()
@@ -78,7 +79,7 @@ async def list_transfer_rules(db: AsyncSession = Depends(get_plugin_db)):
     return {"rules": rules, "levels": TRANSFER_LEVELS}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_operator)])
 async def create_rule(body: TransferRuleCreate, db: AsyncSession = Depends(get_plugin_db)):
     """
     Create a new transfer rule.
@@ -121,7 +122,7 @@ async def create_rule(body: TransferRuleCreate, db: AsyncSession = Depends(get_p
     return {"created": True}
 
 
-@router.put("/{rule_id}")
+@router.put("/{rule_id}", dependencies=[Depends(require_operator)])
 async def update_rule(
     rule_id: int,
     body: TransferRuleUpdate,
@@ -167,7 +168,7 @@ async def update_rule(
     return {"updated": True, "id": rule_id}
 
 
-@router.delete("/{rule_id}")
+@router.delete("/{rule_id}", dependencies=[Depends(require_operator)])
 async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """
     Delete a transfer rule.

@@ -20,14 +20,19 @@ that no duplicate pairs exist):
 
 Without this index, every upsert inserts a new row instead of updating the
 existing one, causing unbounded row duplication.
+
+Roles: reads are open to every panel role (router-level ``require_viewer``);
+config and server-record edits need ``require_operator``; deleting a server
+(with all its overrides) and purging the event log are admin-only.
 """
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.auth import require_admin, require_operator
 from app.db.session import get_plugin_db
 
 router = APIRouter()
@@ -85,7 +90,8 @@ class ServerCreate(BaseModel):
     game_mode:     str = "PvE"
     server_type:   str = "PvE"
     cluster_group: str = "default"
-    max_players:   int = 70
+    # Same bounds as ServerInstanceUpdate.max_players: the game plugins read it.
+    max_players:   int = Field(default=70, ge=1, le=500)
 
 
 class ServerUpdate(BaseModel):
@@ -95,7 +101,7 @@ class ServerUpdate(BaseModel):
     game_mode:     Optional[str] = None
     server_type:   Optional[str] = None
     cluster_group: Optional[str] = None
-    max_players:   Optional[int] = None
+    max_players:   Optional[int] = Field(default=None, ge=1, le=500)
 
 
 # ── Module endpoints ───────────────────────────────────────────────────────────
@@ -212,7 +218,7 @@ async def get_module_config(
     }
 
 
-@router.put("/modules/{module}")
+@router.put("/modules/{module}", dependencies=[Depends(require_operator)])
 async def update_module_config(
     module: str,
     body: BulkConfigUpdate,
@@ -287,7 +293,7 @@ async def get_config_value(
     }
 
 
-@router.put("/config")
+@router.put("/config", dependencies=[Depends(require_operator)])
 async def set_config_value(item: ConfigItem, db: AsyncSession = Depends(get_plugin_db)):
     """
     Upsert a single config value.
@@ -313,7 +319,7 @@ async def set_config_value(item: ConfigItem, db: AsyncSession = Depends(get_plug
     return {"saved": True, "config_key": item.config_key, "server_key": item.server_key}
 
 
-@router.post("/config")
+@router.post("/config", dependencies=[Depends(require_operator)])
 async def add_config_key(item: ConfigItem, db: AsyncSession = Depends(get_plugin_db)):
     """
     Insert a new config key (fails if the key already exists for the server).
@@ -352,7 +358,7 @@ async def add_config_key(item: ConfigItem, db: AsyncSession = Depends(get_plugin
     return {"created": True, "config_key": item.config_key}
 
 
-@router.delete("/config")
+@router.delete("/config", dependencies=[Depends(require_operator)])
 async def delete_config_override(
     key: str = Query(...),
     server_key: str = Query(..., description="Only server-specific overrides can be deleted"),
@@ -406,7 +412,7 @@ async def list_servers(db: AsyncSession = Depends(get_plugin_db)):
     return {"servers": servers}
 
 
-@router.put("/servers/{server_key}")
+@router.put("/servers/{server_key}", dependencies=[Depends(require_operator)])
 async def update_server(
     server_key: str,
     body: ServerUpdate,
@@ -443,7 +449,7 @@ async def update_server(
     return {"updated": True, "server_key": server_key}
 
 
-@router.post("/servers", status_code=201)
+@router.post("/servers", status_code=201, dependencies=[Depends(require_operator)])
 async def create_server(body: ServerCreate, db: AsyncSession = Depends(get_plugin_db)):
     """
     Register a new game server in ``ARKM_servers``.
@@ -480,7 +486,7 @@ async def create_server(body: ServerCreate, db: AsyncSession = Depends(get_plugi
     return {"created": True, "server_key": body.server_key}
 
 
-@router.delete("/servers/{server_key}")
+@router.delete("/servers/{server_key}", dependencies=[Depends(require_admin)])
 async def delete_server(server_key: str, db: AsyncSession = Depends(get_plugin_db)):
     """
     Delete a game server and all its config overrides.
@@ -716,7 +722,7 @@ async def event_stats(db: AsyncSession = Depends(get_plugin_db)):
     return {"stats": stats, "total": total}
 
 
-@router.delete("/events")
+@router.delete("/events", dependencies=[Depends(require_admin)])
 async def purge_events(
     keep_days: int = Query(..., ge=0, le=365, description="Delete events older than N days (0 = delete ALL)"),
     event_type: Optional[str] = Query(None, description="Limit purge to a specific event type"),

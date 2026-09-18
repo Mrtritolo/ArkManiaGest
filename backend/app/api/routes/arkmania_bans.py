@@ -3,15 +3,20 @@ api/routes/ARKM_bans.py — Cluster-wide ban management.
 
 Reads from and writes to the ``ARKM_bans`` table.
 Bans can be permanent or time-limited; inactive bans are preserved for audit.
+
+Banning and unbanning need ``require_operator``.  ``banned_by`` /
+``unbanned_by`` are the panel username from the JWT, never a value the
+client sends, so the audit columns name who actually did it.
 """
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.auth import require_operator
 from app.db.session import get_plugin_db
 
 router = APIRouter()
@@ -24,7 +29,6 @@ class BanCreate(BaseModel):
     eos_id:      str
     player_name: Optional[str] = None
     reason:      str = "No reason"
-    banned_by:   str = "Admin"
     # Optional expiration as a proper datetime; None means permanent ban.
     expire_time: Optional[datetime] = None
 
@@ -56,7 +60,7 @@ def _row_to_ban(r) -> dict:
 async def list_bans(
     active_only: bool = Query(True),
     search: Optional[str] = Query(None),
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """
@@ -94,26 +98,44 @@ async def list_bans(
         text("SELECT COUNT(*) FROM ARKM_bans WHERE is_active = 1")
     )
     active_count = count_result.scalar() or 0
+    # Unfiltered, like active_count: the page derives "unbanned" from both,
+    # which the filtered and LIMITed list above cannot give it.
+    total_count = (await db.execute(text("SELECT COUNT(*) FROM ARKM_bans"))).scalar() or 0
 
-    return {"bans": bans, "active_count": active_count}
+    return {"bans": bans, "active_count": active_count, "total_count": total_count}
 
 
 @router.post("")
-async def create_ban(body: BanCreate, db: AsyncSession = Depends(get_plugin_db)):
+async def create_ban(
+    body: BanCreate,
+    db: AsyncSession = Depends(get_plugin_db),
+    user: dict = Depends(require_operator),
+):
     """Create a new active ban."""
+    # The driver drops tzinfo, so an aware expiry (PlayersPage sends
+    # toISOString(), i.e. UTC) was stored as UTC wall time next to a
+    # ban_time taken from the DB's local NOW().  Shift it to the DB clock
+    # in SQL; naive values are taken as DB-local, as before.
+    expire = body.expire_time
+    expire_sql = ":expire"
+    if expire is not None and expire.tzinfo is not None:
+        expire = expire.astimezone(timezone.utc).replace(tzinfo=None)
+        expire_sql = (
+            "DATE_ADD(:expire, INTERVAL "
+            "TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) SECOND)"
+        )
     await db.execute(
         text(
             "INSERT INTO ARKM_bans "
             "(eos_id, player_name, reason, banned_by, ban_time, expire_time, is_active) "
-            "VALUES (:eos, :pn, :reason, :by, NOW(), :expire, 1)"
+            f"VALUES (:eos, :pn, :reason, :by, NOW(), {expire_sql}, 1)"
         ),
         {
             "eos":    body.eos_id,
             "pn":     body.player_name,
             "reason": body.reason,
-            "by":     body.banned_by,
-            # expire_time is already a datetime or None; SQLAlchemy serialises it correctly.
-            "expire": body.expire_time,
+            "by":     user["sub"],
+            "expire": expire,
         },
     )
     # Transaction committed by get_plugin_db dependency on success.
@@ -123,8 +145,8 @@ async def create_ban(body: BanCreate, db: AsyncSession = Depends(get_plugin_db))
 @router.put("/{ban_id}/unban")
 async def unban(
     ban_id: int,
-    unbanned_by: str = Query("Admin"),
     db: AsyncSession = Depends(get_plugin_db),
+    user: dict = Depends(require_operator),
 ):
     """
     Deactivate an active ban.
@@ -138,7 +160,7 @@ async def unban(
             "SET is_active = 0, unbanned_by = :by, unban_time = NOW() "
             "WHERE id = :id AND is_active = 1"
         ),
-        {"id": ban_id, "by": unbanned_by},
+        {"id": ban_id, "by": user["sub"]},
     )
     # Transaction committed by get_plugin_db dependency on success.
     if result.rowcount == 0:

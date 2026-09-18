@@ -157,7 +157,7 @@ async def list_decay_tribes(
         None, description="expired | expiring | safe | all"
     ),
     search: Optional[str] = Query(None),
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_plugin_db),
 ):
     """
@@ -201,6 +201,12 @@ async def list_decay_tribes(
     # 0=targeting_team  1=expire_time       2=last_refresh_eos
     # 3=tribe_name      4=last_refresh_name 5=last_refresh_group
     # 6=last_refresh_days 7=last_refresh_time 8=hours_left  9=player_name
+    # 10=status_label
+    #
+    # The label is computed in SQL with the same boundaries as the status
+    # filter above and the overview counts.  Deriving it from hours_left
+    # did not work: TIMESTAMPDIFF truncates toward zero, so a tribe that
+    # expired 40 minutes ago read 0 hours and was labelled "expiring".
     result = await db.execute(
         text(
             f"SELECT d.targeting_team, d.expire_time, d.last_refresh_eos, "
@@ -208,7 +214,10 @@ async def list_decay_tribes(
             f"d.last_refresh_group, d.last_refresh_days, "
             f"d.last_refresh_time, "
             f"TIMESTAMPDIFF(HOUR, NOW(), d.expire_time) AS hours_left, "
-            f"COALESCE(NULLIF(p.Giocatore, ''), h.player_name) AS player_name "
+            f"COALESCE(NULLIF(p.Giocatore, ''), h.player_name) AS player_name, "
+            f"CASE WHEN d.expire_time < NOW() THEN 'expired' "
+            f"     WHEN d.expire_time < DATE_ADD(NOW(), INTERVAL 3 DAY) THEN 'expiring' "
+            f"     ELSE 'safe' END AS status_label "
             f"FROM ARKM_tribe_decay d "
             f"LEFT JOIN Players p ON d.last_refresh_eos = p.EOS_Id "
             f"LEFT JOIN ARKM_players h ON d.last_refresh_eos = h.eos_id "
@@ -221,12 +230,7 @@ async def list_decay_tribes(
     tribes = []
     for r in result.fetchall():
         hours_left = r[8] or 0
-        if hours_left < 0:
-            status_label = "expired"
-        elif hours_left < 72:
-            status_label = "expiring"
-        else:
-            status_label = "safe"
+        status_label = r[10]
 
         # Tribe name: use d.tribe_name (real name), not d.last_refresh_name (player name)
         raw_tribe = (r[3] or "").strip()
@@ -348,7 +352,7 @@ async def pending_scan_detail(
 
 @router.get("/log")
 async def list_decay_log(
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     server_key: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_plugin_db),
 ):
@@ -400,8 +404,17 @@ async def list_decay_log(
 # (ARKM_purge_detail, ARKM_decay_log) AS THE ACTORS GET DESTROYED -- we
 # explicitly do NOT touch those tables here.  We just stage the
 # work; the in-game scheduler executes it.
+#
+# Both need require_operator: staging decides which tribe the next sweep
+# destroys, and cancelling can shield one from a reviewed purge, so neither
+# belongs to the read-only viewer role.  They stay below admin on purpose
+# (see DecayPage): only the RCON endpoints further down destroy anything.
 
-@router.post("/pending/{targeting_team}", status_code=201)
+@router.post(
+    "/pending/{targeting_team}",
+    status_code=201,
+    dependencies=[Depends(require_operator)],
+)
 async def schedule_tribe_purge(
     targeting_team: int,
     reason: str = Query(
@@ -455,7 +468,7 @@ async def schedule_tribe_purge(
     }
 
 
-@router.delete("/pending/{targeting_team}")
+@router.delete("/pending/{targeting_team}", dependencies=[Depends(require_operator)])
 async def cancel_tribe_purge(
     targeting_team: int,
     server_key: Optional[str] = Query(
@@ -551,7 +564,37 @@ async def purge_single_tribe(
 
     in a single round-trip.  Returns the queue insertion count plus the
     per-instance RCON result so the operator can confirm both phases ran.
+
+    Raises:
+        HTTPException 409: Other tribes are already pending.  ``ARKM.DM.Purge``
+            is queue-wide, so firing it would destroy them as well.
     """
+    # Phase 0: refuse when anything else is queued.  The sweep destroys
+    # EVERY tribe in ARKM_decay_pending, including ones the plugin's scan
+    # auto-flagged and nobody has reviewed yet, while the confirm dialog
+    # for this endpoint names only this tribe.
+    others_res = await plugin_db.execute(
+        text(
+            "SELECT DISTINCT targeting_team FROM ARKM_decay_pending "
+            "WHERE targeting_team <> :t ORDER BY targeting_team LIMIT 11"
+        ),
+        {"t": targeting_team},
+    )
+    others = [r[0] for r in others_res.fetchall()]
+    if others:
+        listed = ", ".join(f"#{team}" for team in others[:10])
+        if len(others) > 10:
+            listed += ", ..."
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Other tribes are pending purge ({listed}). ARKM.DM.Purge "
+                "destroys every pending tribe, so purging this one now would "
+                "destroy those too. Cancel them from the Pending tab first, "
+                "or review the whole queue and use Run DM.Purge."
+            ),
+        )
+
     # Phase 1: schedule on every server known to the plugin DB.
     server_rows = await plugin_db.execute(text("SELECT server_key FROM ARKM_servers"))
     server_keys = [r[0] for r in server_rows.fetchall() if r[0]]
