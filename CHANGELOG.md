@@ -7,6 +7,81 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+Audit of the whole repository, the fixes it produced, and a full UI refactor
+onto a new design system. No version bump yet.
+
+### Changed — read before upgrading
+
+- **Roles are enforced server side.** `viewer` is read-only, `operator` runs
+  game operations, `admin` owns infrastructure, credentials and irreversible
+  wipes. Until now the routers only required `viewer`, so a read-only account
+  could ban players, stage decay purges, rewrite plugin and INI config, push
+  ArkShop config to live servers, wipe the leaderboard, the event log and the
+  blueprint catalogue, and read back SSH and ASA passwords. Accounts that
+  relied on that will now get a 403: give them `operator`, or `admin` for
+  machines, ServerForge settings, the SQL console, user management and the
+  bulk wipes.
+- **"Not configured" is 409, not 503, and upstream failures are 502.** A 503
+  told the SPA the panel was down and logged the admin out; a Discord token
+  rejection was forwarded as a 401 and did the same. The frontend only signs
+  out on a 401 from a panel-JWT request now.
+- **A demoted or deactivated admin loses access immediately.** Role checks read
+  the stored role instead of the one frozen into the 24h JWT.
+- **`ban` records the panel user.** `banned_by` / `unbanned_by` are taken from
+  the JWT; the client-supplied field (default "Admin") is gone.
+- **Native Windows instances must be re-provisioned** to pick up the corrected
+  launch arguments, and a `"` in a map name, session name or password is now
+  rejected with a 422 instead of silently truncating the command line.
+- **Windows hosts:** the WinSW service definition is written as `WinSW.xml`.
+  A host provisioned before this never had a service registered at all.
+- **Release bundles keep `deploy/windows-native/harden.ps1`**, which the panel
+  uploads at runtime. Installs made from an older bundle failed hardening with
+  "script not found".
+
+### Fixed
+
+- Command injection on every game host through `eos_id`, container names and
+  base paths, reachable by any logged-in account (`players`, `containers`,
+  `scanner`, `player_transfer`).
+- Stored XSS in the ban dialog (player name) and the blueprint import dialog
+  (file name).
+- "Purge tribe now" fired the queue-wide purge and destroyed every other
+  pending tribe.
+- The character wipe's blacklist matched as a glob, so one deletion could
+  remove every character on the cluster.
+- Session commits ran after the response was sent: a failed COMMIT was
+  reported as success, and the UI's refetch could read the old row.
+- INI saves dropped repeated sections, override lines their parser could not
+  read, and crafting resources; an unreadable file was rewritten as empty.
+- The SQL console audited only the first statement of a batch and nothing at
+  all when a later one failed, and returned unbounded result sets.
+- Points and market flows: a rolled-back purchase told the player they had
+  been charged, crossing purchases could deadlock, and `/market/listed`
+  exposed every seller's EOS id.
+- Discord role sync stripped every managed group from users past the member
+  walk's cap.
+- Login timing and messages no longer reveal whether an account exists;
+  bcrypt, SSH scans and plugin queries no longer block the event loop.
+- The installer prefixed every password it collected with a newline, left
+  secrets in `/tmp` and reported success after a failed setup call.
+- Frontend: opening the Marketplace or the Discord tab could log the admin
+  out; a late response could fill another player's panel and the next save
+  wrote it back; typing in the market lost focus after one character.
+
+### Added
+
+- Design system "Ops Console": tokens for both themes (every text pair
+  measured at 4.5:1, non-text at 3:1), 29 primitives and 4 hooks in
+  `frontend/src/components/ui`, documented in
+  `design-system/arkmaniagest/MASTER.md`, with `/uikit.html` rendering every
+  primitive in every state.
+- Self-hosted fonts (`@fontsource-variable`): no visitor IP reaches a font CDN
+  and the nginx CSP no longer allows one.
+- Pages load one chunk each: the entry bundle went from 880 kB to ~330 kB.
+- Audit-log retention index and `deploy/migrations/006`.
+
 ## [4.15.0] - 2026-08-30
 
 ### Added
