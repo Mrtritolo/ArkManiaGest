@@ -1,0 +1,87 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    font-weight: var(--weight-regular);
+    line-height: var(--leading-normal);
+    text-align: start;
+    text-decoration: none;
+  }
+  .ui-stat__label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+  }
+  .ui-stat__label > svg,
+  .ui-stat__meta > svg {
+    flex-shrink: 0;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    stroke-width: var(--icon-stroke);
+  }
+  .ui-stat__value {
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-tight);
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .ui-stat__unit {
+    color: var(--color-text-muted);
+    font-size: var(--text-base);
+    font-weight: var(--weight-medium);
+    letter-spacing: normal;
+  }
+  .ui-stat__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+  .ui-stat__meta--success { color: var(--color-success); }
+  .ui-stat__meta--warning { color: var(--color-warning); }
+  .ui-stat__meta--danger { color: var(--color-danger); }
+
+  /* Only fully clickable tiles react to hover. */
+  .ui-stat--interactive {
+    cursor: pointer;
+  }
+  .ui-stat--interactive:hover {
+    border-color: var(--color-border-strong);
+  }
+  .ui-stat[aria-pressed="true"] {
+    background: linear-gradient(var(--color-accent-subtle), var(--color-accent-subtle)), var(--color-surface);
+    border-color: var(--color-accent);
+    box-shadow: inset 2px 0 0 var(--color-accent), var(--shadow-sm);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-stat--interactive {
+      transition: border-color var(--duration-fast) var(--ease-standard);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-stat[aria-pressed="true"] {
+      border: 2px solid Highlight;
+    }
+  }
+}

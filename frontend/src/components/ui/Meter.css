@@ -1,0 +1,32 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-meter {
+    --ui-meter-fill: var(--color-accent);
+    display: block;
+    width: 100%;
+    min-width: var(--space-10);
+    height: var(--meter-h);
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-active);
+  }
+  .ui-meter--success { --ui-meter-fill: var(--color-success); }
+  .ui-meter--warning { --ui-meter-fill: var(--color-warning); }
+  .ui-meter--danger { --ui-meter-fill: var(--color-danger); }
+  .ui-meter__fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--ui-meter-fill);
+  }
+
+  @media (forced-colors: active) {
+    .ui-meter {
+      border: 1px solid CanvasText;
+    }
+    .ui-meter__fill {
+      forced-color-adjust: none;
+      background: Highlight;
+    }
+  }
+}

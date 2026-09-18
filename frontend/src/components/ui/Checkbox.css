@@ -1,0 +1,52 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    min-width: var(--hit-min);
+    min-height: var(--hit-min);
+    color: var(--color-text);
+    font-size: var(--text-control);
+    line-height: var(--leading-snug);
+    vertical-align: middle;
+    cursor: pointer;
+  }
+  .ui-check--described {
+    align-items: flex-start;
+  }
+  .ui-check__input {
+    flex-shrink: 0;
+    width: var(--check-size);
+    height: var(--check-size);
+    margin: 0;
+    accent-color: var(--color-accent);
+    cursor: inherit;
+  }
+  /* Without a visible label the box is centred in its 24px hit area. */
+  .ui-check:not(:has(.ui-check__text)) {
+    justify-content: center;
+  }
+  .ui-check--described .ui-check__input {
+    margin-top: calc((1lh - var(--check-size)) / 2);
+  }
+  .ui-check__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+  }
+  .ui-check__desc {
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+  }
+  .ui-check--disabled {
+    color: var(--color-text-muted);
+    cursor: not-allowed;
+  }
+  .ui-check--disabled .ui-check__input {
+    opacity: 0.55;
+  }
+}

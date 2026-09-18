@@ -1,0 +1,184 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1-5);
+    min-width: 0;
+  }
+  .ui-field__label {
+    color: var(--color-text);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-snug);
+  }
+  .ui-field__required {
+    margin-inline-start: var(--space-0-5);
+    color: var(--color-danger);
+  }
+  .ui-field__hint,
+  .ui-field__error {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+  }
+  .ui-field__hint {
+    color: var(--color-text-muted);
+  }
+  .ui-field__error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-1-5);
+    color: var(--color-danger);
+  }
+  .ui-field__error > svg {
+    flex-shrink: 0;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    stroke-width: var(--icon-stroke);
+  }
+
+  /* ------------------------------------------ shared control appearance
+     Input, Select, Textarea and the Combobox input. */
+  .ui-control {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    height: var(--control-md);
+    margin: 0;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-sunken);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-control);
+    line-height: var(--leading-snug);
+    box-shadow: none;
+  }
+  /* A standalone text control (toolbar search, filter box) is not stretched
+     across a whole flex row: it takes a toolbar width and shrinks on narrow
+     screens. Inside a Field, a table cell, a combobox or a wrapper it still
+     fills its box. */
+  :not(.ui-field, td, th, .ui-input-wrap, .ui-combobox) > input.ui-control,
+  :not(.ui-field, td, th) > .ui-input-wrap,
+  :not(.ui-field, td, th) > .ui-combobox {
+    flex: 0 1 auto;
+    width: min(100%, var(--control-standalone-w));
+  }
+  .ui-control--sm {
+    height: var(--control-sm);
+    padding: 0 var(--space-2);
+    font-size: var(--text-sm);
+  }
+  .ui-control--mono {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-control::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+  }
+  .ui-control:hover:not(:disabled):not(:focus) {
+    border-color: var(--color-text-muted);
+  }
+  .ui-control:focus {
+    border-color: var(--color-accent);
+  }
+  .ui-control:focus-visible {
+    outline-offset: 1px;
+  }
+  .ui-control[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
+  .ui-control:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .ui-control[readonly] {
+    border-style: dashed;
+    background: var(--color-bg-subtle);
+  }
+
+  textarea.ui-control {
+    height: auto;
+    min-height: calc(var(--control-md) * 3);
+    padding: var(--space-2) var(--space-3);
+    line-height: var(--leading-normal);
+    resize: vertical;
+  }
+  textarea.ui-control--mono {
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+    tab-size: 2;
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  /* Leading search icon / trailing reveal toggle */
+  .ui-input-wrap {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+  .ui-input-wrap__lead {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: var(--space-2);
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-text-muted);
+    stroke-width: var(--icon-stroke);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .ui-input-wrap--lead > .ui-control {
+    padding-inline-start: calc(var(--space-2) + var(--icon-sm) + var(--space-2));
+  }
+  .ui-input-wrap__trail {
+    position: absolute;
+    top: 50%;
+    inset-inline-end: var(--space-0-5);
+    transform: translateY(-50%);
+  }
+  .ui-input-wrap--trail > .ui-control {
+    padding-inline-end: calc(var(--control-sm) + var(--space-1));
+  }
+
+  /* Select: native element, themed chevron */
+  .ui-select {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+  .ui-select > select {
+    appearance: none;
+    padding-inline-end: calc(var(--space-2) + var(--icon-sm) + var(--space-2));
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .ui-select > select > option,
+  .ui-select > select > optgroup {
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+  }
+  .ui-select__chevron {
+    position: absolute;
+    top: 50%;
+    inset-inline-end: var(--space-2);
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-text-muted);
+    stroke-width: var(--icon-stroke);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-control {
+      transition: border-color var(--duration-fast) var(--ease-standard);
+    }
+  }
+}

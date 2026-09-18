@@ -1,0 +1,297 @@
+/*
+ * tokens.css -- ArkManiaGest design tokens ("Ops Console").
+ *
+ * Source of truth: design-system/arkmaniagest/MASTER.md. Every colour pair
+ * listed there was measured with contrast-final.py (WCAG 2.2: 4.5:1 text,
+ * 3:1 non-text) in both themes; re-run it before changing any value here.
+ *
+ * Theme contract (src/theme.ts): data-theme="dark|light" on <html>. Dark is
+ * the default on :root, so a missing attribute still renders dark. The
+ * attribute selectors are not tied to :root, so a subtree can opt into the
+ * other theme (the UI-kit harness uses this).
+ *
+ * Layer order is repeated at the top of every stylesheet of the new system,
+ * so whichever file the bundler emits first fixes the same order:
+ *   reset < legacy < base < ui < page < utilities
+ */
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer base {
+  /* ---------------------------------------------------------------- dark */
+  :root,
+  [data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Planes, darkest to lightest */
+    --color-surface-sunken: #0A0C0F;
+    --color-bg: #0D0F12;
+    --color-bg-subtle: #111317;
+    --color-surface: #15181D;
+    --color-surface-raised: #1B1F25;
+    --color-surface-hover: #1F232A;
+    --color-surface-active: #272C34;
+
+    /* Edges: --color-border is decorative (card edges, dividers);
+       --color-border-strong is the 3:1 edge of every control whose edge is
+       its only affordance (inputs, selects, secondary buttons, switch). */
+    --color-border: #2A2F37;
+    --color-border-strong: #747C89;
+
+    /* Ink */
+    --color-text: #E6E8EC;
+    --color-text-secondary: #B0B6C0;
+    --color-text-muted: #8F96A1;
+    --color-text-on-accent: #0D0F12;
+
+    /* Accent: one indigo, only for actions, links and selection.
+       --color-accent is the solid FILL (primary button, switch on, checkbox,
+       selection bars); --color-accent-text is the INK for text and icons on
+       planes and on --color-accent-subtle. The fill is kept dark enough that
+       the neutral focus ring still clears 3:1 against it. */
+    --color-accent: #737ADF;
+    --color-accent-hover: #7E86EC;
+    --color-accent-text: #A3AAFF;
+    --color-accent-subtle: rgba(115, 122, 223, 0.18);
+
+    /* Focus ring: neutral, never the accent or a status hue. */
+    --color-focus-ring: #FFFFFF;
+
+    /* Status */
+    --color-success: #4ACB8B;
+    --color-success-subtle: rgba(74, 203, 139, 0.14);
+    --color-warning: #E9B14C;
+    --color-warning-subtle: rgba(233, 177, 76, 0.14);
+    --color-danger: #FF8077;
+    --color-danger-subtle: rgba(255, 128, 119, 0.14);
+    --color-info: #5DB9EE;
+    --color-info-subtle: rgba(93, 185, 238, 0.14);
+
+    /* ASA item quality (never status, never accent). Text-safe on every
+       plane, so also valid as a dot or border. */
+    --color-quality-primitive: #8C939E;
+    --color-quality-ramshackle: #86D46B;
+    --color-quality-apprentice: #5B9BFF;
+    --color-quality-journeyman: #D4A8FF;
+    --color-quality-mastercraft: #E8D34F;
+    --color-quality-ascendant: #3FC9C9;
+
+    /* Categorical data series, fixed order (dataviz-validated) */
+    --color-series-1: #3987E5;
+    --color-series-2: #D95926;
+    --color-series-3: #199E70;
+    --color-series-4: #C98500;
+    --color-series-5: #D55181;
+    --color-series-6: #008300;
+
+    /* Elevation */
+    --color-overlay: rgba(4, 5, 8, 0.72);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.40), 0 1px 3px rgba(0, 0, 0, 0.30);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  /* --------------------------------------------------------------- light */
+  [data-theme="light"] {
+    color-scheme: light;
+
+    --color-surface-sunken: #F1F3F6;
+    --color-bg: #F5F6F8;
+    --color-bg-subtle: #EEF0F3;
+    --color-surface: #FFFFFF;
+    --color-surface-raised: #FFFFFF;
+    --color-surface-hover: #F0F2F5;
+    --color-surface-active: #E5E8ED;
+
+    --color-border: #DDE1E7;
+    --color-border-strong: #7D8490;
+
+    --color-text: #111418;
+    --color-text-secondary: #434A55;
+    --color-text-muted: #5C6370;
+    --color-text-on-accent: #FFFFFF;
+
+    /* Hover lightens so the black focus ring stays above 3:1 on the fill. */
+    --color-accent: #4A4FD0;
+    --color-accent-hover: #565CDB;
+    --color-accent-text: #4A4FD0;
+    --color-accent-subtle: rgba(74, 79, 208, 0.10);
+
+    --color-focus-ring: #000000;
+
+    --color-success: #126C43;
+    --color-success-subtle: rgba(18, 108, 67, 0.10);
+    --color-warning: #8F5600;
+    --color-warning-subtle: rgba(214, 140, 20, 0.16);
+    --color-danger: #B82A25;
+    --color-danger-subtle: rgba(184, 42, 37, 0.09);
+    --color-info: #0A67A3;
+    --color-info-subtle: rgba(10, 103, 163, 0.09);
+
+    --color-quality-primitive: #3F4550;
+    --color-quality-ramshackle: #2F6A17;
+    --color-quality-apprentice: #1D55B8;
+    --color-quality-journeyman: #8244CA;
+    --color-quality-mastercraft: #7A6400;
+    --color-quality-ascendant: #00737D;
+
+    --color-series-1: #2A78D6;
+    --color-series-2: #D95926;
+    --color-series-3: #199E70;
+    --color-series-4: #B27C00;
+    --color-series-5: #D55181;
+    --color-series-6: #008300;
+
+    --color-overlay: rgba(17, 20, 24, 0.45);
+    --shadow-sm: 0 1px 2px rgba(16, 20, 26, 0.06);
+    --shadow-md: 0 4px 12px rgba(16, 20, 26, 0.08), 0 1px 3px rgba(16, 20, 26, 0.06);
+    --shadow-lg: 0 16px 48px rgba(16, 20, 26, 0.16), 0 4px 12px rgba(16, 20, 26, 0.08);
+  }
+
+  /* ------------------------------------------------ theme-independent */
+  :root {
+    /* Fonts are self-hosted (@fontsource-variable/*, imported in main.tsx).
+       The family names below are the ones those packages register. */
+    --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
+      "SFMono-Regular", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+
+    /* Type scale (rem on a 16px root). 12px is the floor. */
+    --text-xs: 0.75rem;     /* 12: badges, captions, nav group labels */
+    --text-sm: 0.8125rem;   /* 13: table headers, hints, errors, logs */
+    --text-base: 0.875rem;  /* 14: admin body, cells, controls */
+    --text-md: 1rem;        /* 16: player body, dialog body, empty title */
+    --text-lg: 1.125rem;    /* 18: section and dialog titles, prices */
+    --text-xl: 1.25rem;     /* 20 */
+    --text-2xl: 1.5rem;     /* 24: page title, stat values */
+    --text-3xl: 1.875rem;   /* 30: player hero numbers */
+    /* Density-dependent roles (re-pointed by .ui-scope-player) */
+    --text-body: var(--text-base);
+    --text-control: var(--text-base);
+
+    --leading-tight: 1.2;
+    --leading-snug: 1.35;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.6;
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --tracking-title: -0.015em;
+
+    /* Spacing: 4px grid with half steps */
+    --space-0-5: 2px;
+    --space-1: 4px;
+    --space-1-5: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+
+    --radius-xs: 2px;
+    --radius-sm: 4px;   /* buttons, inputs, badges */
+    --radius-md: 6px;   /* cards, alerts, toasts */
+    --radius-lg: 8px;   /* dialogs, market cards */
+    --radius-full: 999px;
+
+    /* Motion. Only transform, opacity and colour animate, and only inside
+       @media (prefers-reduced-motion: no-preference). */
+    --duration-fast: 120ms;
+    --duration-base: 180ms;
+    --duration-slow: 240ms;
+    --duration-spin: 900ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+    /* Controls and hit areas */
+    --control-sm: 28px;
+    --control-md: 32px;
+    --control-lg: 40px;
+    --control-touch: 44px;
+    --control-standalone-w: 16rem; /* toolbar search / filter input outside a Field */
+    --hit-min: 24px;        /* WCAG 2.5.8 minimum target */
+    --switch-w: 36px;
+    --switch-h: 20px;
+    --check-size: 16px;
+    --badge-h: 22px;
+    --dot-size: 8px;
+    --meter-h: 4px;
+    --avatar-sm: 24px;
+    --avatar-md: 32px;
+    --avatar-lg: 56px;
+
+    /* Icons (Lucide, 24-unit grid) */
+    --icon-xs: 12px;
+    --icon-sm: 16px;
+    --icon-md: 20px;
+    --icon-lg: 32px;
+    --icon-stroke: 1.75;
+    --icon-stroke-xs: 2.25;
+
+    /* Tables */
+    --row-h: 36px;          /* header and single-line rows */
+    --row-h-2: 44px;        /* two-line rows (.ui-cell-2) */
+    --row-line: 28px;       /* cell line box: 4px + 28px + 4px = 36px */
+
+    /* Stacking */
+    --z-base: 0;
+    --z-sticky: 20;
+    --z-dropdown: 30;
+    --z-drawer: 40;
+    --z-modal: 50;
+    --z-toast: 60;
+    --z-skip: 70;
+
+    /* Layout. Breakpoints (media queries cannot read custom properties):
+       600px sm, 900px md (sidebar -> drawer), 1200px lg, 1440px xl; 375px min. */
+    --layout-sidebar-w: 240px;
+    --layout-drawer-w: 280px;
+    --layout-topbar-h: 56px;
+    --layout-content-max: 1440px;
+    --layout-page-pad: var(--space-6);
+    --layout-rail-w: 220px;
+    --layout-aside-w: 360px;
+    --modal-sm: 460px;
+    --modal-md: 560px;
+    --modal-lg: 760px;
+    --toast-w: 380px;
+    --popup-max-h: 240px;
+    --measure-prose: 65ch;
+    --measure-empty: 38ch;
+  }
+
+  @media (max-width: 599px) {
+    :root {
+      --layout-page-pad: var(--space-4);
+    }
+  }
+
+  /* Player-facing density (Discord dashboard, market, buy dialog). The
+     standalone player pages add the class to <body> in an effect (and remove
+     it on unmount), so the dialogs, confirms and toasts they portal to
+     <body> inherit it too: primitives get 16px text and 40/32px controls
+     without any variant prop. */
+  .ui-scope-player {
+    --text-body: var(--text-md);
+    --text-control: var(--text-md);
+    --control-md: var(--control-lg);
+    --control-sm: 32px;
+    font-size: var(--text-body);
+    line-height: var(--leading-normal);
+  }
+
+  /* Touch: every control reaches 44px. Declared after the player scope so it
+     wins inside it too. */
+  @media (pointer: coarse) {
+    :root,
+    .ui-scope-player {
+      --control-sm: var(--control-touch);
+      --control-md: var(--control-touch);
+      --control-lg: var(--control-touch);
+      --hit-min: var(--control-touch);
+    }
+  }
+}

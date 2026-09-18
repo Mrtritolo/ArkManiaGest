@@ -2775,5 +2775,49 @@
     "dayHour": "{{d}}g {{h}}h",
     "ago": "{{v}} fa",
     "in": "tra {{v}}"
+  },
+  "ui": {
+    "dismiss": "Chiudi",
+    "dismissNotification": "Chiudi notifica",
+    "notifications": "Notifiche",
+    "copied": "Copiato",
+    "copyFailed": "Impossibile copiare negli appunti",
+    "showPassword": "Mostra password",
+    "notAvailable": "Non disponibile",
+    "noResults": "Nessun risultato",
+    "typeToConfirm": "Digita {{text}} per confermare",
+    "selectedCount_one": "{{count}} selezionato",
+    "selectedCount_other": "{{count}} selezionati",
+    "noneSelected": "Nessuna selezione",
+    "pagination": {
+      "previous": "Precedente",
+      "next": "Successiva",
+      "pageOf": "Pagina {{page}} di {{total}}"
+    },
+    "tone": {
+      "info": "Informazione:",
+      "success": "Operazione riuscita:",
+      "warning": "Attenzione:",
+      "error": "Errore:"
+    },
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "updating": "In aggiornamento",
+      "crashed": "Arresto anomalo",
+      "error": "Errore",
+      "degraded": "Degradato",
+      "testing": "Test in corso",
+      "unknown": "Sconosciuto"
+    },
+    "quality": {
+      "label": "Qualità:",
+      "primitive": "Primitivo",
+      "ramshackle": "Scadente",
+      "apprentice": "Apprendista",
+      "journeyman": "Esperto",
+      "mastercraft": "Maestro",
+      "ascendant": "Ascendente"
+    }
   }
 }

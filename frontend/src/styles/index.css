@@ -1,0 +1,24 @@
+/*
+ * styles/index.css -- entry point of the design system stylesheets.
+ *
+ * Import it FIRST in main.tsx (before App), so the layer order below is the
+ * first one the bundle declares:
+ *
+ *   reset      element defaults, below the legacy sheet (base.css)
+ *   legacy     src/index.css + pages/GameConfigPage.css, wrapped in
+ *              @layer legacy at integration time; deleted after migration
+ *   base       tokens, legacy aliases, global guarantees (focus ring,
+ *              reduced motion, forced colours, 16px root)
+ *   ui         components/ui/*.css and content classes
+ *   page       page-level CSS modules (tokens only)
+ *   utilities  l-* layout and u-* helpers
+ *
+ * Primitive stylesheets are imported by their own components.
+ */
+@layer reset, legacy, base, ui, page, utilities;
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./legacy-aliases.css";
+@import "./content.css";
+@import "./utilities.css";

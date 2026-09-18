@@ -1,0 +1,69 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-combobox {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  /* Strong edge: in a dialog (both themes) and on light cards the popup sits
+     on its own plane colour, so the hairline border alone would not bound it. */
+  .ui-combobox__popup {
+    max-height: var(--popup-max-h);
+    overflow-y: auto;
+    padding: var(--space-1);
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+  .ui-combobox__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ui-combobox__list:empty {
+    display: none;
+  }
+  .ui-combobox__option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-md);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: var(--text-control);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+  .ui-combobox__option[aria-selected="true"] {
+    /* Muted ink is 4.39:1 on this tint over surface-raised (dark theme), so a
+       muted secondary line in renderOption (u-muted) reads as secondary here. */
+    --color-text-muted: var(--color-text-secondary);
+    background: var(--color-accent-subtle);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+  .ui-combobox__status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+  }
+
+  @media (forced-colors: active) {
+    .ui-combobox__option[aria-selected="true"] {
+      forced-color-adjust: none;
+      /* Descendants keep author colours under `none`: point their inks at the system pair. */
+      --color-text: HighlightText;
+      --color-text-secondary: HighlightText;
+      --color-text-muted: HighlightText;
+      background: Highlight;
+      box-shadow: none;
+      color: HighlightText;
+    }
+  }
+}

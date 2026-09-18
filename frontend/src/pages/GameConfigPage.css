@@ -2,6 +2,11 @@
    Game Config Editor — Redesigned
    ============================================ */
 
+/* Wrapped in @layer legacy during the Ops Console migration: the new
+   design system (styles/) sits in later layers, so its rules win over
+   everything here regardless of specificity. This file is deleted once
+   every page group has migrated. */
+@layer legacy {
 /* Layout */
 .gc-page { display: flex; flex-direction: column; height: 100%; }
 
@@ -175,3 +180,4 @@
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 1s linear infinite; }
+}

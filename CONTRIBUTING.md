@@ -70,8 +70,13 @@ See the **Quick setup** section in [README.md](README.md#quick-setup-development
 ### Frontend (React + TypeScript + Vite)
 
 - Use functional components and hooks.
-- Keep styles in `index.css` (custom CSS) — we do not use Tailwind
-  utility classes in components.
+- Build pages from the primitives in `src/components/ui` and style them
+  with the `--color-*` / `--space-*` tokens; the rules live in
+  `design-system/arkmaniagest/MASTER.md`. No Tailwind utility classes, and
+  no raw hex or px in a page.
+- `src/index.css` and `pages/GameConfigPage.css` are the legacy sheet
+  (`@layer legacy`) and shrink as pages migrate.
+- Fonts are self-hosted via `@fontsource-variable/*`: never add a font CDN.
 - All UI text comes from `useTranslation()` (react-i18next).
 - API calls go through `services/api.ts`; do not call `axios` directly
   from a component.

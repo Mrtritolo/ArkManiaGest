@@ -1,0 +1,103 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-switch-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .ui-switch-row--bare {
+    display: inline-flex;
+    vertical-align: middle;
+  }
+  .ui-switch-row__text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+  }
+  .ui-switch-row__label {
+    color: var(--color-text);
+    font-size: var(--text-control);
+    line-height: var(--leading-snug);
+    cursor: pointer;
+  }
+  .ui-switch-row__desc {
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+  }
+
+  .ui-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: var(--switch-w);
+    height: var(--switch-h);
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-active);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  /* Invisible hit area: at least 24px tall (44px on touch). */
+  .ui-switch::before {
+    content: "";
+    position: absolute;
+    inset: calc((var(--switch-h) - var(--hit-min)) / 2)
+      calc((var(--switch-w) - max(var(--hit-min), var(--switch-w))) / 2);
+  }
+  .ui-switch__thumb {
+    position: absolute;
+    top: calc(var(--space-1) - 1px);
+    left: calc(var(--space-1) - 1px);
+    width: calc(var(--switch-h) - 2 * var(--space-1));
+    height: calc(var(--switch-h) - 2 * var(--space-1));
+    border-radius: var(--radius-full);
+    background: var(--color-text-secondary);
+  }
+  .ui-switch[aria-checked="true"] {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .ui-switch[aria-checked="true"] .ui-switch__thumb {
+    background: var(--color-text-on-accent);
+    transform: translateX(calc(var(--switch-w) - var(--switch-h)));
+  }
+  .ui-switch[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-switch {
+      transition: background-color var(--duration-base) var(--ease-standard),
+        border-color var(--duration-base) var(--ease-standard);
+    }
+    .ui-switch__thumb {
+      transition: transform var(--duration-base) var(--ease-standard),
+        background-color var(--duration-base) var(--ease-standard);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-switch {
+      forced-color-adjust: none;
+      background: ButtonFace;
+      border-color: ButtonText;
+    }
+    .ui-switch__thumb {
+      background: ButtonText;
+    }
+    .ui-switch[aria-checked="true"] {
+      background: ButtonFace;
+      border-color: Highlight;
+    }
+    .ui-switch[aria-checked="true"] .ui-switch__thumb {
+      background: Highlight;
+      outline: 1px solid CanvasText;
+    }
+  }
+}

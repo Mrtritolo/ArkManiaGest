@@ -1,0 +1,208 @@
+/*
+ * base.css -- element defaults and global guarantees.
+ *
+ * Two layers on purpose:
+ *
+ *   @layer reset  sits BELOW the legacy stylesheet, so every legacy rule
+ *                 beats these element defaults (headings, links, code,
+ *                 lists, body typography). They still apply wherever the
+ *                 legacy sheet leaves a property unset: legacy body text
+ *                 and unclassed headings. Until the migration ends, the
+ *                 legacy block of legacy-aliases.css keeps those at their
+ *                 old size (17px inherited text, user-agent heading sizes)
+ *                 outside migrated roots.
+ *   @layer base   sits ABOVE legacy. Only rules every page must get,
+ *                 migrated or not: 16px root, the neutral focus ring,
+ *                 selection and scrollbar colours, [hidden], scroll lock,
+ *                 reduced motion and forced colours.
+ */
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    font-weight: var(--weight-regular);
+    line-height: var(--leading-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-tight);
+    text-wrap: balance;
+  }
+  h1 { font-size: var(--text-2xl); letter-spacing: var(--tracking-title); }
+  h2 { font-size: var(--text-lg); }
+  h3 { font-size: var(--text-base); }
+  h4, h5, h6 { font-size: var(--text-base); }
+
+  p, figure, blockquote, dl, dd {
+    margin: 0;
+  }
+
+  a {
+    color: var(--color-accent-text);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  a:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+  }
+  button {
+    cursor: pointer;
+  }
+
+  /* Lucide icons never shrink inside flex rows. */
+  svg.lucide {
+    flex-shrink: 0;
+  }
+
+  /* Mono text never renders programming ligatures: '->', '!=' and '>=' in
+     SQL, logs and IDs must show the literal characters. */
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+  }
+  code, kbd, samp {
+    font-size: 0.9em;
+  }
+  kbd {
+    display: inline-block;
+    min-width: 1.6em;
+    padding: 0 var(--space-1);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-raised);
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    text-align: center;
+  }
+  pre {
+    margin: 0;
+  }
+
+  /* Figures line up in columns, timers and counters. */
+  table, time, data, output {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer base {
+  html {
+    /* The legacy sheet sets 15px then 17px; every rem token assumes the
+       user's default (normally 16px). */
+    font-size: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  /* Set by hooks/useDialogFocus while a dialog or drawer is open. */
+  html.ui-scroll-locked {
+    overflow: hidden;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-text-on-accent);
+  }
+
+  /* One focus indicator for everything: 2px neutral ring at 2px offset, so
+     around a solid accent fill it always leaves a gap of plane colour.
+     Components that need an inset ring (tabs, nav items, segments, scroll
+     regions) change only outline-offset. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+  /* Programmatic focus targets (main landmark on route change, a dialog
+     panel with no control inside) are not operable, so they draw nothing. */
+  main[tabindex="-1"]:focus,
+  [role="dialog"][tabindex="-1"]:focus {
+    outline: none;
+  }
+
+  /* WebKit/Blink fallback for browsers without scrollbar-color. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border: 2px solid transparent;
+    border-radius: var(--radius-full);
+    background-clip: padding-box;
+  }
+
+  .ui-skip-link {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: var(--z-skip);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    transform: translateY(calc(-100% - var(--space-4)));
+  }
+  .ui-skip-link:focus {
+    transform: none;
+  }
+
+  /* Reduced motion. New components declare motion only inside
+     (prefers-reduced-motion: no-preference), so nothing has to be undone for
+     them. This net catches legacy CSS and inline animations; !important in
+     this layer outranks !important in later layers and unlayered styles. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Forced colours (Windows High Contrast): tinted fills and box-shadow
+     indicators are dropped, so state gets a system-colour edge. */
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+    ::selection {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}

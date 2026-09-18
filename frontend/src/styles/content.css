@@ -1,0 +1,322 @@
+/*
+ * content.css -- styled semantic HTML that needs no component.
+ *
+ *   .ui-bold-stable     weight change without a width jump (tabs, segments)
+ *   dl.ui-dl            label/value grid
+ *   code.ui-code        inline code; pre.ui-code for a block
+ *   pre.ui-log          log panel (role="log"): .ui-log__line[--warn|--error]
+ *   details.ui-details  native disclosure with a rotating chevron
+ *   fieldset.ui-fieldset + legend
+ *   .ui-actionbar       sticky bottom Save / Discard bar
+ *   .ui-count           neutral numeric chip
+ *   .ui-thumb           fixed aspect-ratio image frame
+ *   .ui-nav-item        vertical nav item (Sidebar, config rails)
+ *   .ui-auth            centred auth / status card layout
+ */
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  /* ------------------------------------------------------ bold-stable
+     A label whose weight changes with state (selected tab, checked
+     segment) overlays a hidden semibold copy, so its box never resizes. */
+  .ui-bold-stable {
+    display: inline-grid;
+    justify-items: center;
+  }
+  .ui-bold-stable > * {
+    grid-area: 1 / 1;
+  }
+  .ui-bold-stable__reserve {
+    visibility: hidden;
+    font-weight: var(--weight-semibold);
+  }
+
+  /* ---------------------------------------------------------------- dl */
+  .ui-dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-2) var(--space-6);
+    margin: 0;
+  }
+  .ui-dl > dt {
+    color: var(--color-text-secondary);
+  }
+  .ui-dl > dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 599px) {
+    .ui-dl {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+    .ui-dl > dd + dt {
+      margin-top: var(--space-3);
+    }
+  }
+
+  /* -------------------------------------------------------------- code */
+  .ui-code {
+    padding: 0 var(--space-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-sunken);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    font-variant-ligatures: none;
+    overflow-wrap: anywhere;
+  }
+  pre.ui-code {
+    display: block;
+    margin: 0;
+    padding: var(--space-3);
+    overflow-x: auto;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  /* --------------------------------------------------------------- log */
+  .ui-log {
+    margin: 0;
+    padding: var(--space-2) 0;
+    max-height: 24rem;
+    overflow: auto;
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+    font-variant-ligatures: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-log:focus-visible {
+    outline-offset: -2px;
+  }
+  .ui-log__line {
+    display: grid;
+    grid-template-columns: 12ch 5ch minmax(max-content, 1fr);
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+    white-space: pre;
+  }
+  .ui-log__time { color: var(--color-text-muted); }
+  .ui-log__level { color: var(--color-info); }
+  .ui-log__line--debug .ui-log__level { color: var(--color-text-muted); }
+  .ui-log__line--warn { background: var(--color-warning-subtle); }
+  .ui-log__line--warn .ui-log__level { color: var(--color-warning); }
+  .ui-log__line--error { background: var(--color-danger-subtle); }
+  .ui-log__line--error .ui-log__level {
+    color: var(--color-danger);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* ----------------------------------------------------------- details */
+  .ui-details > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-md);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-weight: var(--weight-medium);
+    list-style: none;
+    cursor: pointer;
+  }
+  .ui-details > summary::-webkit-details-marker {
+    display: none;
+  }
+  .ui-details > summary::before {
+    content: "";
+    flex-shrink: 0;
+    width: 0.45em;
+    height: 0.45em;
+    margin-inline: 0.2em;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+  }
+  .ui-details[open] > summary::before {
+    transform: rotate(45deg);
+  }
+  .ui-details > summary:hover {
+    background: var(--color-surface-hover);
+  }
+  .ui-details > summary:focus-visible {
+    outline-offset: -2px;
+  }
+  .ui-details__body {
+    padding: var(--space-2) var(--space-1) var(--space-1);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-details > summary::before {
+      transition: transform var(--duration-base) var(--ease-standard);
+    }
+  }
+
+  /* ---------------------------------------------------------- fieldset */
+  .ui-fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .ui-fieldset > legend {
+    margin-bottom: var(--space-2);
+    padding: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+  }
+
+  /* --------------------------------------------------------- actionbar */
+  .ui-actionbar {
+    position: sticky;
+    bottom: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-raised);
+    /* Strong edge: in light theme surface-raised equals the cards it floats over. */
+    border-top: 1px solid var(--color-border-strong);
+    box-shadow: var(--shadow-md);
+  }
+  /* WCAG 2.4.11: a control focused by Tab is scrolled clear of the bar. */
+  html:has(.ui-actionbar) {
+    scroll-padding-bottom: calc(var(--control-lg) + 2 * var(--space-3) + var(--space-2));
+  }
+
+  /* ------------------------------------------------------------- count */
+  .ui-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--space-5);
+    padding: var(--space-0-5) var(--space-1-5);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-active);
+    color: var(--color-text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ------------------------------------------------------------- thumb */
+  .ui-thumb {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: var(--color-surface-sunken);
+    color: var(--color-text-muted);
+  }
+  .ui-thumb--square {
+    aspect-ratio: 1;
+  }
+  .ui-thumb > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .ui-thumb > svg {
+    width: var(--icon-lg);
+    height: var(--icon-lg);
+    stroke-width: 1.5;
+  }
+
+  /* ---------------------------------------------------------- nav item */
+  .ui-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: var(--control-md);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--text-control);
+    font-weight: var(--weight-medium);
+    text-align: start;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ui-nav-item > svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    stroke-width: var(--icon-stroke);
+  }
+  .ui-nav-item:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+  .ui-nav-item[aria-current="page"],
+  .ui-nav-item[aria-current="true"] {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent-text);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+  /* Inset ring drawn inside the 2px selection bar, so focus never hides it. */
+  .ui-nav-item:focus-visible {
+    outline-offset: -4px;
+  }
+  .ui-nav-group-label {
+    padding: var(--space-3) var(--space-2) var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-nav-item {
+      transition: background-color var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard);
+    }
+  }
+
+  /* -------------------------------------------------------------- auth */
+  .ui-auth {
+    display: grid;
+    place-items: center;
+    min-height: 100dvh;
+    padding: var(--layout-page-pad);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: var(--text-body);
+    line-height: var(--leading-normal);
+  }
+  .ui-auth__card {
+    width: min(var(--modal-sm), 100%);
+  }
+
+  @media (forced-colors: active) {
+    .ui-nav-item[aria-current="page"],
+    .ui-nav-item[aria-current="true"] {
+      border-inline-start: 3px solid Highlight;
+    }
+    .ui-log__line--warn,
+    .ui-log__line--error {
+      border-inline-start: 2px solid CanvasText;
+    }
+    .ui-count {
+      border: 1px solid CanvasText;
+    }
+  }
+}

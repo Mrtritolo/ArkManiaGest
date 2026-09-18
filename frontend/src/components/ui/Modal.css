@@ -1,0 +1,111 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-modal {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: grid;
+    place-items: center;
+    padding: var(--space-4);
+    background: var(--color-overlay);
+  }
+  .ui-modal__panel {
+    display: flex;
+    flex-direction: column;
+    width: min(var(--modal-md), 100%);
+    max-height: calc(100dvh - 2 * var(--space-4));
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    color: var(--color-text);
+    font-size: var(--text-body);
+    line-height: var(--leading-normal);
+  }
+  .ui-modal__panel--sm { width: min(var(--modal-sm), 100%); }
+  .ui-modal__panel--lg { width: min(var(--modal-lg), 100%); }
+
+  .ui-modal__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5) 0;
+  }
+  .ui-modal__title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding-top: var(--space-0-5);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
+    overflow-wrap: anywhere;
+  }
+  .ui-modal__header > .ui-icon-btn {
+    margin-inline-end: calc(-1 * var(--space-2));
+  }
+  .ui-modal__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-4) var(--space-5);
+  }
+  /* onSubmit: body + footer become one <form>, laid out like the panel. */
+  .ui-modal__form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .ui-modal__description {
+    color: var(--color-text-secondary);
+  }
+  /* Footer buttons use the large control height. Below 600px they stack
+     full-width in DOM order (never column-reverse): visual order = tab order. */
+  .ui-modal__footer {
+    --control-md: var(--control-lg);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-5);
+    border-top: 1px solid var(--color-border);
+  }
+  @media (max-width: 599px) {
+    .ui-modal__footer {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .ui-modal__footer > * {
+      width: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-modal {
+      animation: ui-fade-in var(--duration-base) var(--ease-enter);
+    }
+    .ui-modal__panel {
+      animation: ui-dialog-in var(--duration-slow) var(--ease-enter);
+    }
+  }
+  @keyframes ui-fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes ui-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--space-2)) scale(0.98);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-modal__panel {
+      border-color: CanvasText;
+    }
+  }
+}

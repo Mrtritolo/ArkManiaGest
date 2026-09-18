@@ -1,0 +1,84 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-text);
+  }
+  .ui-card__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: calc(var(--control-md) + 2 * var(--space-2));
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .ui-card__icon {
+    flex-shrink: 0;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-text-secondary);
+    stroke-width: var(--icon-stroke);
+  }
+  .ui-card__title {
+    margin: 0;
+    min-width: 0;
+    color: var(--color-text);
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
+    letter-spacing: normal;
+  }
+  .ui-scope-player .ui-card__title {
+    font-size: var(--text-lg);
+  }
+  .ui-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+  }
+  .ui-card__body {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-4);
+  }
+  .ui-scope-player .ui-card__body {
+    padding: var(--space-5);
+  }
+  .ui-card__body--flush,
+  .ui-scope-player .ui-card__body--flush {
+    padding: 0;
+  }
+  /* A Table inside a flush body shares the card's edge. */
+  .ui-card__body--flush > .ui-table-scroll {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .ui-card__body--flush:last-child > .ui-table-scroll {
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+  }
+  .ui-card__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  @media (forced-colors: active) {
+    .ui-card {
+      border-color: CanvasText;
+    }
+  }
+}

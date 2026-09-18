@@ -13,6 +13,12 @@ Both guides cover the full flow: download the release, run
 configure DNS + SSL, log in, and add game-server machines.  These
 files are shipped inside every release bundle.
 
+## Design system
+
+- **[../design-system/arkmaniagest/MASTER.md](../design-system/arkmaniagest/MASTER.md)**
+  — tokens, primitives, layout, density, accessibility contract and the
+  migration rules for the panel UI.
+
 ## External API references (for contributors)
 
 ### `ServerForge_OpenAPI_Spec.json`

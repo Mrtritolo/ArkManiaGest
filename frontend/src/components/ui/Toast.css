@@ -1,0 +1,100 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-toast-region {
+    position: fixed;
+    inset-block-end: var(--space-4);
+    inset-inline-end: var(--space-4);
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min(var(--toast-w), calc(100vw - 2 * var(--space-4)));
+    pointer-events: none;
+  }
+  .ui-toast-region__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  @media (max-width: 599px) {
+    .ui-toast-region {
+      inset-inline: var(--space-4);
+      width: auto;
+    }
+  }
+  /* A sticky Save bar puts its buttons exactly under the toast column: lift
+     the column above a one-row bar, so a focused Save is never covered
+     (WCAG 2.4.11). Same height formula as the scroll padding in content.css. */
+  html:has(.ui-actionbar) .ui-toast-region {
+    inset-block-end: calc(var(--control-lg) + 2 * var(--space-3) + var(--space-4));
+  }
+
+  .ui-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    background: var(--color-surface-raised);
+    /* Strong edge: in light theme a toast has the same plane as the cards under it. */
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    color: var(--color-text);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    pointer-events: auto;
+  }
+  .ui-toast__icon {
+    flex-shrink: 0;
+    width: var(--icon-md);
+    height: var(--icon-md);
+    margin-top: var(--space-0-5);
+    stroke-width: var(--icon-stroke);
+  }
+  .ui-toast--success .ui-toast__icon { color: var(--color-success); }
+  .ui-toast--info .ui-toast__icon { color: var(--color-info); }
+  .ui-toast--error .ui-toast__icon { color: var(--color-danger); }
+
+  .ui-toast__content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+    padding-top: var(--space-0-5);
+  }
+  .ui-toast__title {
+    margin: 0;
+    font-weight: var(--weight-semibold);
+  }
+  .ui-toast__message {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .ui-toast__title + .ui-toast__message {
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+  }
+  .ui-toast__action {
+    margin-top: var(--space-2);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-toast {
+      animation: ui-toast-in var(--duration-slow) var(--ease-enter);
+    }
+  }
+  @keyframes ui-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--space-2));
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-toast {
+      border-color: CanvasText;
+    }
+  }
+}

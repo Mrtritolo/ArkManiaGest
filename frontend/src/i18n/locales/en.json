@@ -2775,5 +2775,49 @@
     "dayHour": "{{d}}d {{h}}h",
     "ago": "{{v}} ago",
     "in": "in {{v}}"
+  },
+  "ui": {
+    "dismiss": "Dismiss",
+    "dismissNotification": "Dismiss notification",
+    "notifications": "Notifications",
+    "copied": "Copied",
+    "copyFailed": "Could not copy to the clipboard",
+    "showPassword": "Show password",
+    "notAvailable": "Not available",
+    "noResults": "No results",
+    "typeToConfirm": "Type {{text}} to confirm",
+    "selectedCount_one": "{{count}} selected",
+    "selectedCount_other": "{{count}} selected",
+    "noneSelected": "None selected",
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {{page}} of {{total}}"
+    },
+    "tone": {
+      "info": "Information:",
+      "success": "Success:",
+      "warning": "Warning:",
+      "error": "Error:"
+    },
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "updating": "Updating",
+      "crashed": "Crashed",
+      "error": "Error",
+      "degraded": "Degraded",
+      "testing": "Testing",
+      "unknown": "Unknown"
+    },
+    "quality": {
+      "label": "Quality:",
+      "primitive": "Primitive",
+      "ramshackle": "Ramshackle",
+      "apprentice": "Apprentice",
+      "journeyman": "Journeyman",
+      "mastercraft": "Mastercraft",
+      "ascendant": "Ascendant"
+    }
   }
 }

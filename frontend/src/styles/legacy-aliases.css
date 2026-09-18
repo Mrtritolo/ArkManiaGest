@@ -1,0 +1,189 @@
+/*
+ * legacy-aliases.css -- TEMPORARY migration bridge.
+ *
+ * DELETE THIS FILE AT THE END OF THE MIGRATION, together with the legacy
+ * layer (src/index.css, pages/GameConfigPage.css), once this check, run
+ * from frontend/src, prints nothing:
+ *
+ *   tokens=$(grep -oE '^ +--[a-z0-9-]+:' styles/tokens.css | tr -d ' :' | sort -u)
+ *   names=$(grep -oE '^ +--[a-z0-9-]+:' styles/legacy-aliases.css | tr -d ' :' | sort -u | grep -vxF -e "$tokens" | paste -sd'|')
+ *   grep -rnE "var\((${names})[,) ]" . --exclude-dir=styles | grep -vE '^\./(index\.css|pages/GameConfigPage\.css):'
+ *
+ * The pattern is built from this file, so it lists every alias defined
+ * below (and only those: names that are also tokens, such as the --z-*
+ * overrides, are filtered out) and matches each name exactly, followed by
+ * ')', ',' or a space.
+ *
+ * Every custom property the legacy stylesheet defines, plus the ones pages
+ * reference without a definition, is re-pointed at the new tokens, so pages
+ * that have not migrated yet already render in the new palette. It lives in
+ * @layer base, above @layer legacy, so these definitions win over the old
+ * :root / [data-theme="light"] blocks regardless of selector or order.
+ *
+ * Declared on :root and on every [data-theme] scope, so a var() chain is
+ * resolved against the theme of the element that declares it.
+ *
+ * Names that are ALSO new tokens are not redefined here and simply take the
+ * new value: --font-mono, --shadow-sm, --shadow-md, --shadow-lg, --radius-sm
+ * (4px, was undefined), --radius-lg (8px, was 6px).
+ * --chip-color is a local property set inline by BlueprintsPage; not aliased.
+ *
+ * Also here, and deleted with this file: the stacking overrides that keep new
+ * overlays above the legacy ones, the legacy type sizes of unmigrated pages
+ * and the legacy .spin bridge.
+ */
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer base {
+  :root,
+  [data-theme] {
+    /* Surfaces */
+    --bg: var(--color-bg);                           /* was undefined */
+    --bg-root: var(--color-bg);
+    --bg-subtle: var(--color-bg-subtle);             /* was undefined */
+    --bg-sidebar: var(--color-bg-subtle);
+    --bg-card: var(--color-surface);
+    --bg-card-muted: var(--color-surface-sunken);
+    --bg-input: var(--color-surface-sunken);
+    --bg-code: var(--color-surface-sunken);          /* was undefined */
+    --bg-hover: var(--color-surface-hover);
+    --bg-active: var(--color-surface-active);
+    --bg-popover: var(--color-surface-raised);
+    --surface: var(--color-surface-raised);
+
+    /* Text */
+    --text: var(--color-text);
+    --text-primary: var(--color-text);
+    --text-secondary: var(--color-text-secondary);
+    --text-muted: var(--color-text-muted);
+    --text-accent: var(--color-accent-text);
+    --text-on-accent: var(--color-text-on-accent);
+
+    /* Borders and focus. Legacy inputs set border-color: --border-focus and
+       box-shadow: --focus-ring on :focus. The neutral outline from base.css
+       already draws the ring on every page, so the old shadow ring is
+       blanked (no double ring) and the focused edge turns accent, exactly
+       like the new Input. */
+    --border: var(--color-border);
+    --border-input: var(--color-border-strong);
+    --border-focus: var(--color-accent);
+    --focus-ring: 0 0 0 0 transparent;
+
+    /* Accent. Legacy used --accent mostly as ink (links, chips, active
+       text), so it maps to the text-safe accent; fills use --grad-primary. */
+    --accent: var(--color-accent-text);
+    --accent-bright: var(--color-accent-hover);
+    --accent-glow: var(--color-accent-subtle);
+    --accent-light: var(--color-accent-subtle);
+    --accent-50: var(--color-accent-subtle);         /* was undefined */
+    --green: var(--color-accent-text);
+    --primary: var(--color-accent);
+    --primary-fg: var(--color-text-on-accent);
+    --grad-primary: var(--color-accent);
+    --grad-accent: var(--color-accent);
+    --grad-surface: var(--color-bg-subtle);
+    --glow-green: none;
+
+    /* Status */
+    --success: var(--color-success);
+    --success-bg: var(--color-success-subtle);
+    --warning: var(--color-warning);
+    --warning-bg: var(--color-warning-subtle);
+    --warn: var(--color-warning);                    /* was undefined */
+    --orange: var(--color-warning);
+    --danger: var(--color-danger);
+    --danger-bg: var(--color-danger-subtle);
+
+    /* Old decorative hues, kept text-safe until their pages migrate.
+       --cyan was used as an informational tint; --violet as a category
+       colour (the journeyman token is the only violet that clears 4.5:1 on
+       every plane in both themes). */
+    --cyan: var(--color-info);
+    --violet: var(--color-quality-journeyman);
+    --pink: var(--color-series-5);
+    --brown: var(--color-warning);
+    --brown-bright: var(--color-warning);
+
+    /* Glass layer (already flattened to solid surfaces) */
+    --glass-bg: var(--color-surface);
+    --glass-bg-strong: var(--color-bg-subtle);
+    --glass-bg-hover: var(--color-surface-hover);
+    --glass-border: var(--color-border);
+    --glass-highlight: transparent;
+    --glass-shadow: var(--shadow-sm);
+    --glass-shadow-lg: var(--shadow-md);
+
+    /* Shape, type, layout */
+    --radius: var(--radius-sm);
+    --font-body: var(--font-sans);
+    --font-heading: var(--font-sans);
+    --sidebar-width: var(--layout-sidebar-w);
+  }
+}
+
+/* The legacy green/amber background blobs belong to the retired palette;
+   the Ops Console planes are flat. */
+@layer base {
+  body::before {
+    content: none;
+  }
+}
+
+/*
+ * Stacking during the migration. Legacy overlays use literal z-index values
+ * up to 9999 (.auth-overlay; .as-dialog-overlay and inline overlays at 1000
+ * to 1100). A toast, a CopyButton error or a confirm raised while one of
+ * them is open must render above it, so the new overlay levels sit above
+ * every legacy value until the legacy layer is gone. Same selector as
+ * tokens.css and imported after it, so these win within @layer base.
+ */
+@layer base {
+  :root {
+    --z-drawer: 11000;
+    --z-modal: 12000;
+    --z-toast: 12100;
+    --z-skip: 12200;
+  }
+}
+
+/*
+ * Type of pages that have not migrated. The legacy sheet set
+ * html { font-size: 17px } and left body text and unclassed headings to
+ * inherit it; base.css now pins the root at 100% and the reset layer sets
+ * 14px body text and a compact heading scale. Until a page migrates it keeps
+ * its old inherited 17px text and user-agent heading sizes; rem-based legacy
+ * sizes still shrink by 1/17 (about 6%). Migrated roots set their own size
+ * (.l-page, .ui-auth, dialogs, toasts; .ui-scope-player on <body> wins from
+ * @layer base) and are excluded from the heading rule. :where() keeps every
+ * legacy class rule, even a bare element rule, stronger than these.
+ */
+@layer legacy {
+  :where(body) {
+    font-size: 1.0625rem;
+  }
+  :where(h1, h2, h3, h4, h5, h6):where(:not(.l-page *, .ui-auth *, .ui-modal *, .ui-toast-region *)) {
+    font-size: revert;
+    font-weight: revert;
+    line-height: revert;
+    letter-spacing: revert;
+    text-wrap: revert;
+  }
+}
+
+/*
+ * Generic spinner class of the legacy system. It is defined only in
+ * pages/GameConfigPage.css, yet ClusterSyncPage and HardeningPage use it too
+ * (and inline styles use `animation: spin ...`). Kept here so deleting
+ * GameConfigPage.css (group G5) cannot silently stop those spinners. New code
+ * uses <Spinner/>. Deleted with this file.
+ */
+@layer legacy {
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+}

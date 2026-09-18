@@ -1,0 +1,138 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1-5);
+    flex-shrink: 0;
+    height: var(--control-md);
+    margin: 0;
+    padding: 0 var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-control);
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-snug);
+    white-space: nowrap;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ui-btn--sm {
+    height: var(--control-sm);
+    padding: 0 var(--space-2);
+    font-size: var(--text-sm);
+  }
+  .ui-btn svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    stroke-width: var(--icon-stroke);
+  }
+
+  /* Label and loading label share one grid cell: the width never jumps. */
+  .ui-btn__label {
+    display: inline-grid;
+  }
+  .ui-btn__label > * {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1-5);
+  }
+  .ui-btn__label > [data-inactive] {
+    visibility: hidden;
+  }
+  .ui-btn__label > [data-reserve] {
+    font-weight: var(--weight-semibold);
+  }
+  .ui-btn .ui-spinner {
+    color: inherit;
+  }
+
+  /* ---------------------------------------------------------- variants */
+  .ui-btn--primary {
+    background: var(--color-accent);
+    color: var(--color-text-on-accent);
+  }
+  .ui-btn--primary:hover:not([aria-disabled="true"]) {
+    background: var(--color-accent-hover);
+  }
+
+  .ui-btn--secondary {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
+  .ui-btn--secondary:hover:not([aria-disabled="true"]) {
+    background: var(--color-surface-hover);
+  }
+
+  .ui-btn--ghost {
+    color: var(--color-text-secondary);
+  }
+  .ui-btn--ghost:hover:not([aria-disabled="true"]) {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  .ui-btn--danger {
+    background: var(--color-danger-subtle);
+    color: var(--color-danger);
+  }
+  .ui-btn--danger:hover:not([aria-disabled="true"]) {
+    border-color: var(--color-danger);
+  }
+
+  /* Toggle / filter chip: fill + weight + edge, never colour alone. */
+  .ui-btn[aria-pressed="true"] {
+    background: var(--color-accent-subtle);
+    border-color: var(--color-accent);
+    color: var(--color-accent-text);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* ------------------------------------------------------------ states */
+  .ui-btn[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+  .ui-btn[aria-disabled="true"]:not([aria-busy="true"]) {
+    opacity: 0.45;
+  }
+  .ui-btn[aria-busy="true"] {
+    cursor: progress;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-btn {
+      transition: background-color var(--duration-fast) var(--ease-standard),
+        border-color var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+    }
+    .ui-btn:active:not([aria-disabled="true"]) {
+      transform: scale(0.98);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-btn--primary {
+      border-color: ButtonText;
+    }
+    .ui-btn[aria-pressed="true"] {
+      forced-color-adjust: none;
+      background: Highlight;
+      border-color: Highlight;
+      color: HighlightText;
+    }
+  }
+}

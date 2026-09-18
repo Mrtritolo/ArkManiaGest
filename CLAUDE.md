@@ -177,11 +177,21 @@ reference/              # POK-manager checkout — gitignored, used as a templat
   one without the other.
 - **All HTTP calls go through `services/api.ts`.** Don't import `axios`
   directly from a page or component.
-- Styles live in `index.css` with CSS variables. We don't use Tailwind utility
-  classes in components, even though `tailwindcss` is listed in
-  `devDependencies` (legacy). Use the existing variables — and for floating
-  popovers/modals, **`var(--bg-popover)`**, not `var(--bg-card)` (the latter
-  is translucent and unreadable on dark mode — see the 3.5.5 fix).
+- **Build pages from the shared primitives** in
+  [frontend/src/components/ui](frontend/src/components/ui/index.ts) (Button,
+  Field, Modal, Table, Toast, …) and style them with the `--color-*` /
+  `--space-*` tokens. The rules are in
+  [design-system/arkmaniagest/MASTER.md](design-system/arkmaniagest/MASTER.md).
+- Styles live in `src/styles/` (tokens, base, content, utilities) plus a CSS
+  file next to each primitive. No Tailwind utility classes in components, and
+  no raw hex or px in a page. Floating surfaces use `--color-surface-raised`
+  with a `--color-border-strong` edge, or the Modal / Combobox / Toast
+  primitives — never a translucent card background.
+- `src/index.css` and `pages/GameConfigPage.css` are the **legacy** sheet,
+  wrapped in `@layer legacy`; they shrink as pages migrate and are deleted at
+  the end, together with `src/styles/legacy-aliases.css`.
+- Fonts are self-hosted (`@fontsource-variable/*`): no request to a font CDN,
+  and the nginx CSP has no font host in it.
 - Light/dark theme is driven by `[data-theme]` on `<html>`; persisted in
   `localStorage` under `arkmaniagest.theme`.
 
@@ -245,8 +255,14 @@ reference/              # POK-manager checkout — gitignored, used as a templat
   when the operator hasn't split the databases yet.
 - **Don't hardcode the panel address / domain / admin IP** anywhere — the
   operator-supplied values flow through `.env` and `deploy.conf`.
-- **`var(--bg-card)` for floating overlays is a known footgun.** Use
-  `--bg-popover` (and the `--surface` / `--text` aliases) instead.
+- **Don't reach for a legacy `--bg-*` / `--text-*` variable in new code.** They
+  only still resolve because `styles/legacy-aliases.css` re-points them at the
+  new tokens, and that file goes away at the end of the migration.
+- **Don't add a role check only in the UI.** The backend is the authority:
+  viewer is read-only, operator runs game operations, admin owns
+  infrastructure, credentials and irreversible wipes (see
+  [backend/app/api/routes/servers.py](backend/app/api/routes/servers.py) for
+  the pattern). The UI hides what the role cannot do; it never grants it.
 - **POK-manager is in `reference/` (gitignored).** Treat it as read-only
   template source; never patch it from this repo.
 
@@ -263,6 +279,8 @@ reference/              # POK-manager checkout — gitignored, used as a templat
 | How do middlewares + rate limiting work? | [backend/app/core/security.py](backend/app/core/security.py) |
 | How does the auth state machine work? | [frontend/src/App.tsx](frontend/src/App.tsx) |
 | Available API client methods? | [frontend/src/services/api.ts](frontend/src/services/api.ts) |
+| What are the design rules? | [design-system/arkmaniagest/MASTER.md](design-system/arkmaniagest/MASTER.md) |
+| Which UI primitives exist? | [frontend/src/components/ui/index.ts](frontend/src/components/ui/index.ts) |
 | How to deploy / update an install? | [deploy/](deploy/), [docs/INSTALL.en.md](docs/INSTALL.en.md) |
 | Marketplace ownership matrix? | [docs/MARKETPLACE_API_CONTRACT.md](docs/MARKETPLACE_API_CONTRACT.md) |
 | Discord rollout plan? | [docs/DISCORD_INTEGRATION.md](docs/DISCORD_INTEGRATION.md) |

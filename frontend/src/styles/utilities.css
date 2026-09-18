@@ -1,0 +1,139 @@
+/*
+ * utilities.css -- small layout (l-*) and helper (u-*) classes.
+ *
+ * Deliberately short, so pages stop writing inline flex/grid/px. The last
+ * layer, so a utility beats a component default. Breakpoints: 600 / 900 /
+ * 1200px (see tokens.css).
+ */
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer utilities {
+  /* ------------------------------------------------------------ layout */
+  .l-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: var(--layout-content-max);
+    margin-inline: auto;
+    padding: var(--layout-page-pad);
+    /* Explicit, so a migrated page never inherits the legacy 17px body. */
+    font-size: var(--text-body);
+    line-height: var(--leading-normal);
+  }
+
+  .l-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+  .l-stack--sm { gap: var(--space-2); }
+  .l-stack--lg { gap: var(--space-6); }
+
+  .l-cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .l-cluster--end { justify-content: flex-end; }
+  .l-cluster--between { justify-content: space-between; }
+
+  .l-grid--stats {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  @media (min-width: 600px) {
+    .l-grid--stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1200px) {
+    .l-grid--stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+
+  .l-grid--cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+    gap: var(--space-4);
+  }
+
+  .l-grid--form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+
+  /* Main column + aside (detail panel, logs); stacks below 1200px. */
+  .l-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
+  }
+  @media (min-width: 1200px) {
+    .l-split { grid-template-columns: minmax(0, 1fr) var(--layout-aside-w); }
+  }
+
+  /* Nav rail + editor (ArkMania config, GameConfig). Below 900px the rail
+     (.l-rail) turns into a horizontal scroller that keeps its labels. */
+  .l-split--rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
+  }
+  .l-rail {
+    display: flex;
+    gap: var(--space-1);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    list-style: none;
+  }
+  @media (min-width: 900px) {
+    .l-split--rail { grid-template-columns: var(--layout-rail-w) minmax(0, 1fr); }
+    .l-rail {
+      flex-direction: column;
+      overflow-x: visible;
+    }
+  }
+
+  /* ----------------------------------------------------------- helpers */
+  .u-push { margin-inline-start: auto; }
+  .u-span-full { grid-column: 1 / -1; }
+
+  .u-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .u-muted { color: var(--color-text-muted); }
+  .u-secondary { color: var(--color-text-secondary); }
+  .u-mono {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+  }
+  .u-num { font-variant-numeric: tabular-nums; }
+  .u-text-end { text-align: end; }
+  .u-text-sm { font-size: var(--text-sm); }
+  /* Only when the full value is reachable another way (title, detail view). */
+  .u-truncate {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .u-wrap-anywhere { overflow-wrap: anywhere; }
+}

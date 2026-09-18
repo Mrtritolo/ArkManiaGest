@@ -1,0 +1,40 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-spinner {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-text-secondary);
+    vertical-align: middle;
+  }
+  .ui-spinner__icon {
+    flex-shrink: 0;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    stroke-width: var(--icon-stroke);
+  }
+  .ui-spinner--block {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    padding: var(--space-8) var(--space-4);
+    font-size: var(--text-body);
+  }
+  .ui-spinner--block .ui-spinner__icon {
+    width: var(--icon-md);
+    height: var(--icon-md);
+  }
+
+  /* Static under reduced motion: the text still says it is loading. */
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-spinner__icon {
+      animation: ui-spin var(--duration-spin) linear infinite;
+    }
+  }
+  @keyframes ui-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

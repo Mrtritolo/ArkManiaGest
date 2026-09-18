@@ -39,6 +39,10 @@ import type { AuthUser } from "./types";
 
 // Layout
 import Sidebar from "./components/Sidebar";
+// Design-system providers: toasts and confirm dialogs are rendered in
+// portals, so they must sit above every route (and inside the router, so a
+// confirm description can hold a <Link>).
+import { ToastProvider, ConfirmProvider } from "./components/ui";
 
 // Auth / setup overlays
 import SetupWizard from "./pages/SetupWizard";
@@ -362,6 +366,8 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ToastProvider>
+        <ConfirmProvider>
       {renderAuthOverlay()}
 
       {/* Discord-only players see the dashboard with no admin sidebar.
@@ -499,6 +505,8 @@ function App() {
           </main>
         </div>
       )}
+        </ConfirmProvider>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

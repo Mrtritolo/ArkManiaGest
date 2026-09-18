@@ -1,0 +1,92 @@
+@layer reset, legacy, base, ui, page, utilities;
+
+@layer ui {
+  .ui-icon-btn {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: var(--control-md);
+    height: var(--control-md);
+    margin: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    vertical-align: middle;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ui-icon-btn--sm {
+    width: var(--control-sm);
+    height: var(--control-sm);
+  }
+  .ui-icon-btn svg {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    stroke-width: var(--icon-stroke);
+  }
+  .ui-icon-btn .ui-spinner {
+    color: inherit;
+  }
+  .ui-icon-btn:hover:not([aria-disabled="true"]) {
+    background: var(--color-surface-active);
+    color: var(--color-text);
+  }
+  .ui-icon-btn--danger:hover:not([aria-disabled="true"]),
+  .ui-icon-btn--danger:focus-visible {
+    background: var(--color-danger-subtle);
+    color: var(--color-danger);
+  }
+  /* Pressed: tint + accent ink + an accent edge (3:1 on every plane), the
+     same cue as a pressed Button: never colour of the fill alone. */
+  .ui-icon-btn[aria-pressed="true"] {
+    background: var(--color-accent-subtle);
+    border-color: var(--color-accent);
+    color: var(--color-accent-text);
+  }
+  .ui-icon-btn[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+  .ui-icon-btn[aria-disabled="true"]:not([aria-busy="true"]) {
+    opacity: 0.45;
+  }
+  .ui-icon-btn[aria-busy="true"] {
+    cursor: progress;
+  }
+
+  /* Disclosure: a chevron icon turns when the controlled region is open. */
+  .ui-icon-btn[aria-expanded="true"] > .lucide-chevron-down {
+    transform: rotate(180deg);
+  }
+  .ui-icon-btn[aria-expanded="true"] > .lucide-chevron-right {
+    transform: rotate(90deg);
+  }
+
+  /* CopyButton wrapper (keeps its status text next to the button). */
+  .ui-copy {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-icon-btn {
+      transition: background-color var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard);
+    }
+    .ui-icon-btn > svg {
+      transition: transform var(--duration-base) var(--ease-standard);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-icon-btn[aria-pressed="true"] {
+      forced-color-adjust: none;
+      background: Highlight;
+      border-color: Highlight;
+      color: HighlightText;
+    }
+  }
+}

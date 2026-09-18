@@ -17,8 +17,12 @@
    senza essere riscritto.
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+/* Wrapped in @layer legacy during the Ops Console migration: the new
+   design system (styles/) sits in later layers, so its rules win over
+   everything here regardless of specificity. This file is deleted once
+   every page group has migrated. */
+@layer legacy {
 /* --- CSS Variables (ArkMania Dark Theme) --- */
 :root {
   --bg-root: #0b0f0a;
@@ -627,6 +631,10 @@ textarea:focus-visible,
 .auth-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   z-index: 9999; background: var(--bg);
+  /* The overlay never centred its card, so the loading, unlock and
+     connection-error screens all sat in the top-left corner. */
+  display: flex; align-items: center; justify-content: center;
+  padding: 2rem;
 }
 .setup-overlay {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -1784,3 +1792,4 @@ html {
   font-size: 0.92rem;
 }
 .sidebar-brand-title { font-size: 1.15rem; }
+}
