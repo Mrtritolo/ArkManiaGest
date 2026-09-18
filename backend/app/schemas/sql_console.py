@@ -56,6 +56,10 @@ class SqlExecuteResult(BaseModel):
         default=0,
         description="Number of rows returned (SELECT) or affected (DML).",
     )
+    truncated: bool = Field(
+        default=False,
+        description="True when the result set had more rows than were returned.",
+    )
     execution_time_ms: float = Field(
         default=0.0,
         description="Query execution time in milliseconds.",

@@ -3,7 +3,7 @@
 # Versioni flessibili per compatibilita con Python 3.12-3.14
 
 # --- Framework ---
-fastapi>=0.115
+fastapi>=0.121
 uvicorn[standard]>=0.34
 pydantic>=2.10
 pydantic-settings>=2.7

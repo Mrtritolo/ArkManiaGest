@@ -14,8 +14,16 @@ Security:
     Every endpoint requires the ``admin`` role.  No query filtering or
     sanitisation is applied — the admin is assumed to know what they are doing.
     A maximum execution timeout of 30 seconds is enforced to prevent runaway
-    queries from exhausting the connection pool.
+    queries from exhausting the connection pool, and the returned result is
+    capped (see ``_MAX_ROWS`` / ``_MAX_RESULT_CHARS``).
+
+    The cap is also set server side with ``sql_select_limit``, which applies
+    to every top-level SELECT without its own LIMIT, whatever its sink:
+    ``SELECT ... INTO OUTFILE`` writes at most ``_MAX_ROWS + 1`` rows unless
+    the statement carries an explicit LIMIT.  Only the first result set of a
+    multi-statement batch is streamed; later ones are read buffered.
 """
+import re
 import time
 import logging
 from typing import Any
@@ -44,6 +52,23 @@ log = logging.getLogger("arkmaniagest.sql_console")
 # Maximum query execution time in seconds (prevents runaway queries)
 _QUERY_TIMEOUT_SECONDS = 30
 
+# Result caps.  The response is built in memory on the single uvicorn
+# worker and the page renders every row, so an unbounded SELECT (or a few
+# rows of MEDIUMTEXT / LONGBLOB) could stall or kill the panel for everyone.
+_MAX_ROWS = 1000
+_MAX_RESULT_CHARS = 8 * 1024 * 1024
+
+# Quoted strings, quoted identifiers and comments: a ';' inside them does not
+# end a statement.  Unterminated ones run to the end of the text.
+_SQL_NOISE_RE = re.compile(
+    r"'(?:[^'\\]|\\.)*(?:'|\\?\Z)"
+    r'|"(?:[^"\\]|\\.)*(?:"|\\?\Z)'
+    r"|`[^`]*(?:`|\Z)"
+    r"|/\*.*?(?:\*/|\Z)"
+    r"|(?:#|--(?=\s|\Z))[^\n]*",
+    re.S,
+)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,14 +80,14 @@ def _resolve_connection_params(target: DatabaseTarget) -> dict:
     are configured, so single-database deployments keep working.
 
     Raises:
-        HTTPException 500: Target credentials are not configured.
+        HTTPException 503: Target credentials are not configured.
     """
     s = server_settings
     if target == "plugin":
         password = s.plugin_db_password
         if not password:
             raise HTTPException(
-                status_code=500,
+                status_code=503,
                 detail="Plugin database credentials are not configured in .env.",
             )
         return {
@@ -75,7 +100,7 @@ def _resolve_connection_params(target: DatabaseTarget) -> dict:
 
     if not s.DB_PASSWORD:
         raise HTTPException(
-            status_code=500,
+            status_code=503,
             detail="Panel database credentials are not configured in .env.",
         )
     return {
@@ -98,7 +123,7 @@ async def _get_connection(target: DatabaseTarget = "panel") -> aiomysql.Connecti
         target: ``"panel"`` (default) or ``"plugin"``.
 
     Raises:
-        HTTPException 500: Connection failed or credentials missing.
+        HTTPException 503: Connection failed or credentials missing.
     """
     params = _resolve_connection_params(target)
     try:
@@ -110,7 +135,7 @@ async def _get_connection(target: DatabaseTarget = "panel") -> aiomysql.Connecti
     except Exception as exc:
         log.error("SQL Console: connection failed [%s] — %s", target, exc)
         raise HTTPException(
-            status_code=500,
+            status_code=503,
             detail=f"Database connection failed: {exc}",
         )
 
@@ -148,6 +173,22 @@ def _serialise_row(row: tuple) -> list[Any]:
     return [_serialise_value(cell) for cell in row]
 
 
+def _statement_verbs(sql: str) -> str:
+    """
+    Comma-separated leading keyword of every statement in *sql*.
+
+    Written to the audit trail, which must not store the query body.  Best
+    effort only: the authoritative statement count comes from the result
+    sets the server sends back.
+    """
+    code = _SQL_NOISE_RE.sub(" ", sql)
+    return ",".join(
+        part.split(None, 1)[0].upper()[:16]
+        for part in code.split(";")
+        if part.strip()
+    ) or "?"
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/execute", response_model=SqlExecuteResult)
@@ -176,17 +217,44 @@ async def execute_query(
             error="Empty query.",
         )
 
+    verbs = _statement_verbs(query_text)
+    # Statements the server completed.  aiomysql always enables
+    # multi-statements, and with autocommit each one is committed as soon
+    # as it runs, even when a later one in the batch fails.
+    statements = 0
+
+    async def _audit(outcome: str) -> None:
+        # Audit trail: record WHO ran WHICH kinds of statement against
+        # WHICH database and how it ended, on success and on failure --
+        # never the query body (it may embed personal data or credentials).
+        await audit_event(
+            panel_db, action="sql.execute",
+            username=_admin.get("sub"),
+            detail=(f"db={req.database} {outcome} "
+                    f"statements={statements} verbs={verbs}"),
+            request=request,
+        )
+
     conn: aiomysql.Connection | None = None
     try:
         conn = await _get_connection(req.database)
 
-        async with conn.cursor() as cur:
+        # Unbuffered cursor: the first result set is read one row at a time
+        # below and capped.  aiomysql's nextset() reads every later result
+        # set of a batch buffered, so those are only bounded by
+        # sql_select_limit (for SELECTs without their own LIMIT).
+        async with conn.cursor(aiomysql.SSCursor) as cur:
             # Enforce a per-query execution timeout.
             # MariaDB uses max_statement_time (in seconds), not MySQL's
             # max_execution_time (which uses milliseconds).
             await cur.execute(
                 f"SET SESSION max_statement_time = {_QUERY_TIMEOUT_SECONDS}"
             )
+            # Lets the server stop a SELECT without its own LIMIT one row
+            # past the cap, instead of streaming rows we would discard.
+            # Side effect: it also limits SELECT ... INTO OUTFILE, so an
+            # export needs an explicit LIMIT to write more rows.
+            await cur.execute(f"SET SESSION sql_select_limit = {_MAX_ROWS + 1}")
 
             start = time.perf_counter()
             # When no parameters are provided, call execute() without the
@@ -197,22 +265,42 @@ async def execute_query(
                 await cur.execute(query_text, req.params)
             else:
                 await cur.execute(query_text)
-            elapsed_ms = (time.perf_counter() - start) * 1000
+            statements = 1
 
             # Determine whether the query produced a result set
+            truncated = False
             if cur.description:
                 # SELECT / SHOW / DESCRIBE / EXPLAIN — return rows
                 columns = [col[0] for col in cur.description]
-                raw_rows = await cur.fetchall()
-                rows = [_serialise_row(r) for r in raw_rows]
+                rows = []
+                size = 0
+                while (raw := await cur.fetchone()) is not None:
+                    if len(rows) >= _MAX_ROWS or size >= _MAX_RESULT_CHARS:
+                        truncated = True
+                        # Read the rest without keeping it, so the
+                        # statements after this one in a batch still run.
+                        while await cur.fetchone() is not None:
+                            pass
+                        break
+                    rows.append(_serialise_row(raw))
+                    size += sum(len(str(cell)) for cell in rows[-1])
                 row_count = len(rows)
                 message = f"{row_count} row{'s' if row_count != 1 else ''} returned"
+                if truncated:
+                    message += " (result truncated)"
             else:
                 # DML / DDL — no result set
                 columns = []
                 rows = []
                 row_count = cur.rowcount
                 message = f"{row_count} row{'s' if row_count != 1 else ''} affected"
+
+            # Run the rest of a multi-statement batch here, so an error in
+            # a later statement is reported and audited instead of being
+            # raised while the cursor closes.
+            while await cur.nextset():
+                statements += 1
+            elapsed_ms = (time.perf_counter() - start) * 1000
 
         log.info(
             "SQL Console [%s/%s]: %.1f ms — %s",
@@ -221,14 +309,7 @@ async def execute_query(
             elapsed_ms,
             message,
         )
-        # Audit trail: record WHO ran a statement against WHICH database
-        # and the statement verb -- never the query body (it may embed
-        # personal data or credentials).
-        verb = query_text.split(None, 1)[0].upper()[:16] if query_text else "?"
-        await audit_event(panel_db, action="sql.execute",
-                          username=_admin.get("sub"),
-                          detail=f"db={req.database} verb={verb} ({message})",
-                          request=request)
+        await _audit(f"ok ({message})")
 
         return SqlExecuteResult(
             success=True,
@@ -236,12 +317,19 @@ async def execute_query(
             columns=columns,
             rows=rows,
             row_count=row_count,
+            truncated=truncated,
             execution_time_ms=round(elapsed_ms, 2),
             message=message,
         )
 
     except Exception as exc:
         log.warning("SQL Console error: %s", exc)
+        # MariaDB errors carry their numeric code first; the message itself
+        # is not audited because it can quote row values.
+        outcome = type(exc).__name__
+        if exc.args and isinstance(exc.args[0], int):
+            outcome += f" {exc.args[0]}"
+        await _audit(f"failed ({outcome})")
         return SqlExecuteResult(
             success=False,
             query=req.query,
@@ -296,6 +384,8 @@ async def list_tables(
             for row in rows
         ]
 
+    except HTTPException:
+        raise
     except Exception as exc:
         log.error("SQL Console: table listing failed — %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))

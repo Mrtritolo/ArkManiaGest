@@ -18,7 +18,7 @@ Connection URLs are built from environment variables via
 plugin engine transparently points to the same DSN as the panel engine,
 so legacy single-database installations keep working unchanged.
 """
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
@@ -106,6 +106,13 @@ async def create_app_tables() -> None:
         and mapper.__module__ == app_models.__name__
     ]
 
+    # A failed in-place step (no ALTER privilege, FK errno 150, metadata
+    # lock timeout) is collected instead of aborting, so it does not skip
+    # the unrelated steps after it, and raised once at the end so the
+    # lifespan handler reports it in /health instead of the first query
+    # failing with "Unknown column".
+    failures: list[str] = []
+
     async with _engine.begin() as conn:
         await conn.run_sync(
             lambda sync_conn: Base.metadata.create_all(sync_conn, tables=panel_tables)
@@ -126,6 +133,7 @@ async def create_app_tables() -> None:
                 "  FOREIGN KEY (app_user_id) "
                 "  REFERENCES arkmaniagest_users(id) ON DELETE SET NULL"
             ),
+            failures=failures,
         )
 
         # Phase 7+: DiscordRoleMap originally carried only app_role_name
@@ -142,6 +150,7 @@ async def create_app_tables() -> None:
                 "ADD COLUMN ark_group_name VARCHAR(64) NULL, "
                 "ADD INDEX ix_role_map_ark_group (ark_group_name)"
             ),
+            failures=failures,
         )
         # In-place relax of app_role_name NOT NULL -> NULL.  Skipped
         # silently when the column is already nullable (re-runs).
@@ -150,6 +159,7 @@ async def create_app_tables() -> None:
             table="arkmaniagest_discord_role_map",
             column="app_role_name",
             new_type="VARCHAR(64) NULL",
+            failures=failures,
         )
 
         # Migration 002 mirror: arkmaniagest_machines.os_type / wsl_distro.
@@ -168,6 +178,7 @@ async def create_app_tables() -> None:
                 "ADD COLUMN os_type VARCHAR(16) NOT NULL DEFAULT 'linux' "
                 "AFTER ark_plugins_path"
             ),
+            failures=failures,
         )
         await _add_column_if_missing(
             conn,
@@ -178,6 +189,7 @@ async def create_app_tables() -> None:
                 "ADD COLUMN wsl_distro VARCHAR(64) NULL DEFAULT 'Ubuntu' "
                 "AFTER os_type"
             ),
+            failures=failures,
         )
 
         # Migration 005 mirror: native-Windows runtime.  Same reasoning as
@@ -193,6 +205,7 @@ async def create_app_tables() -> None:
                 "ADD COLUMN runtime VARCHAR(16) NOT NULL DEFAULT 'pok' "
                 "AFTER wsl_distro"
             ),
+            failures=failures,
         )
         await _add_column_if_missing(
             conn,
@@ -202,6 +215,7 @@ async def create_app_tables() -> None:
                 "ALTER TABLE arkmaniagest_machines "
                 "ADD COLUMN cluster_dir VARCHAR(512) NULL AFTER runtime"
             ),
+            failures=failures,
         )
         await _add_column_if_missing(
             conn,
@@ -212,6 +226,7 @@ async def create_app_tables() -> None:
                 "ADD COLUMN cluster_sync_mode VARCHAR(16) NOT NULL "
                 "DEFAULT 'none' AFTER cluster_dir"
             ),
+            failures=failures,
         )
         await _add_column_if_missing(
             conn,
@@ -221,6 +236,7 @@ async def create_app_tables() -> None:
                 "ALTER TABLE ARKM_server_instances "
                 "ADD COLUMN install_dir VARCHAR(512) NULL AFTER instance_dir"
             ),
+            failures=failures,
         )
         await _add_column_if_missing(
             conn,
@@ -230,6 +246,7 @@ async def create_app_tables() -> None:
                 "ALTER TABLE ARKM_server_instances "
                 "ADD COLUMN service_name VARCHAR(128) NULL AFTER install_dir"
             ),
+            failures=failures,
         )
         # A native instance has no container, no image and no POK base dir.
         for _col, _type in (
@@ -242,7 +259,22 @@ async def create_app_tables() -> None:
                 table="ARKM_server_instances",
                 column=_col,
                 new_type=_type,
+                failures=failures,
             )
+
+        # Migration 006 mirror: the retention purge and the action list
+        # filter / sort on started_at.  create_all() never adds an index
+        # to an existing table.
+        await _add_index_if_missing(
+            conn,
+            table="ARKM_instance_actions",
+            column="started_at",
+            ddl=(
+                "CREATE INDEX ix_ARKM_instance_actions_started_at "
+                "ON ARKM_instance_actions (started_at)"
+            ),
+            failures=failures,
+        )
 
         # One-shot migration: legacy single-JSON-blob blueprint storage
         # at arkmaniagest_settings.key='plugin.blueprints_db' moves into
@@ -250,9 +282,25 @@ async def create_app_tables() -> None:
         # only when the table is empty AND the legacy blob exists.
         await _migrate_blueprints_blob_to_rows(conn)
 
+    if failures:
+        raise RuntimeError("In-place migrations failed: " + "; ".join(failures))
+
+
+async def _run_ddl(conn, ddl: str, *, label: str, failures: list[str]) -> None:
+    """
+    Run one in-place migration statement.  A failure is appended to
+    *failures* instead of raised, so the caller can run its remaining
+    steps and report every failure at the end.
+    """
+    from sqlalchemy import text as _sql_text
+    try:
+        await conn.execute(_sql_text(ddl))
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"{label}: {getattr(exc, 'orig', exc)}")
+
 
 async def _relax_column_to_null(
-    conn, *, table: str, column: str, new_type: str,
+    conn, *, table: str, column: str, new_type: str, failures: list[str],
 ) -> None:
     """
     Relax a column's nullability via MODIFY COLUMN, but only when the
@@ -277,14 +325,34 @@ async def _relax_column_to_null(
     if row is None or row[0] == "YES":
         # Column missing (handled elsewhere) or already nullable -- no-op.
         return
-    try:
-        await conn.execute(_sql_text(
-            f"ALTER TABLE {table} MODIFY COLUMN {column} {new_type}"
-        ))
-    except Exception:
-        # Don't crash boot if the column has FK constraints we can't
-        # touch transparently -- the operator can investigate.
-        pass
+    await _run_ddl(
+        conn,
+        f"ALTER TABLE {table} MODIFY COLUMN {column} {new_type}",
+        label=f"relax {table}.{column}",
+        failures=failures,
+    )
+
+
+async def _add_index_if_missing(
+    conn, *, table: str, column: str, ddl: str, failures: list[str],
+) -> None:
+    """Run *ddl* only when no index on *table* starts with *column*."""
+    from sqlalchemy import text as _sql_text
+    res = await conn.execute(
+        _sql_text(
+            "SELECT 1 FROM information_schema.statistics "
+            "WHERE table_schema = DATABASE() "
+            "  AND table_name   = :t "
+            "  AND column_name  = :c "
+            "  AND seq_in_index = 1 "
+            "LIMIT 1"
+        ),
+        {"t": table, "c": column},
+    )
+    if res.scalar() is None:
+        await _run_ddl(
+            conn, ddl, label=f"index {table}.{column}", failures=failures,
+        )
 
 
 async def _migrate_blueprints_blob_to_rows(conn) -> None:
@@ -411,54 +479,63 @@ async def _migrate_blueprints_blob_to_rows(conn) -> None:
     ))
 
 
-async def _add_column_if_missing(conn, *, table: str, column: str, ddl: str) -> None:
+async def _add_column_if_missing(
+    conn, *, table: str, column: str, ddl: str, failures: list[str],
+) -> None:
     """
-    Run *ddl* only when *column* does not yet exist on *table*.
+    Run *ddl* only when *table* exists and *column* does not yet exist on it.
 
     Used to push tiny in-place migrations on top of create_all().  Pure
     DDL guarded by INFORMATION_SCHEMA so the function is safe to call
-    on every boot.
+    on every boot.  A missing table is a no-op: plugin-owned tables such
+    as ``ARKM_shop_orders`` may not have been created by their plugin yet.
     """
     from sqlalchemy import text as _sql_text
     res = await conn.execute(
         _sql_text(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_schema = DATABASE() "
-            "  AND table_name   = :t "
-            "  AND column_name  = :c "
-            "LIMIT 1"
+            "SELECT "
+            "  (SELECT COUNT(*) FROM information_schema.tables "
+            "    WHERE table_schema = DATABASE() AND table_name = :t), "
+            "  (SELECT COUNT(*) FROM information_schema.columns "
+            "    WHERE table_schema = DATABASE() AND table_name = :t "
+            "      AND column_name = :c)"
         ),
         {"t": table, "c": column},
     )
-    if res.scalar() is None:
-        try:
-            await conn.execute(_sql_text(ddl))
-        except Exception:
-            # Most likely the table itself doesn't exist yet (fresh
-            # install) -- create_all() above already handled it, so
-            # the column is in place via the column definition itself.
-            pass
+    has_table, has_column = res.first()
+    if has_table and not has_column:
+        await _run_ddl(
+            conn, ddl, label=f"add {table}.{column}", failures=failures,
+        )
 
 
-async def get_db() -> AsyncSession:
+def _before_response(dependency):
     """
-    FastAPI dependency: yield a scoped session against the **panel** DB.
+    ``Depends(dependency)`` whose code after ``yield`` (commit / rollback /
+    close) runs before the response is sent.
 
-    Commits the transaction on success and rolls back on any exception.
-    If the session factory has not been initialised yet, a lazy
-    :func:`init_engine` call is attempted first.
-
-    Raises:
-        HTTPException 500: Panel database is not configured.
+    Since FastAPI 0.118 a yield dependency ends after the response by
+    default, so a handler relying on the dependency's commit would answer
+    200 before COMMIT ran: a failed commit was lost after the client had
+    been told it succeeded, and the UI's immediate refresh could read the
+    old row.  ``scope="function"`` (FastAPI 0.121+) restores the ordering.
+    Older FastAPI has no scopes; up to 0.117 it already ends the dependency
+    before the response.
     """
-    global _async_session
+    try:
+        return Depends(dependency, scope="function")
+    except TypeError:
+        return Depends(dependency)
 
-    if _async_session is None:
-        init_engine()
 
+async def _panel_session():
+    """Session against the panel DB, committed on success, rolled back on error."""
+    # The lifespan handler creates the engine only when DB_PASSWORD is set.
+    # Without it the panel runs in limited mode: refuse the request instead
+    # of connecting with an empty password.
     if _async_session is None:
         raise HTTPException(
-            status_code=500,
+            status_code=503,
             detail="Panel database not configured. Check your .env file.",
         )
 
@@ -471,6 +548,22 @@ async def get_db() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+async def get_db(
+    session: AsyncSession = _before_response(_panel_session),
+) -> AsyncSession:
+    """
+    FastAPI dependency: a request-scoped session against the **panel** DB.
+
+    Commits the transaction when the handler returns and rolls back on any
+    exception, both before the response is sent (see
+    :func:`_before_response`).
+
+    Raises:
+        HTTPException 503: Panel database is not configured.
+    """
+    return session
 
 
 # Alias kept for clarity at call-sites that want to be explicit.
@@ -530,25 +623,13 @@ def init_plugin_engine(
     )
 
 
-async def get_plugin_db() -> AsyncSession:
-    """
-    FastAPI dependency: yield a scoped session against the **plugin** DB.
-
-    Behaves exactly like :func:`get_db` but returns a session bound to
-    :data:`_plugin_engine`.  Used by routes that only read/write the game
-    plugin tables (``ARKM_bans``, ``ARKM_rare_dinos``, ``ARKM_lb_*``, etc.).
-
-    Raises:
-        HTTPException 500: Plugin database is not configured.
-    """
-    global _plugin_async_session
-
-    if _plugin_async_session is None:
-        init_plugin_engine()
-
+async def _plugin_session():
+    """Session against the plugin DB, committed on success, rolled back on error."""
+    # Created by the lifespan handler together with the panel engine; see
+    # _panel_session for why there is no lazy initialisation here.
     if _plugin_async_session is None:
         raise HTTPException(
-            status_code=500,
+            status_code=503,
             detail="Plugin database not configured. Check your .env file.",
         )
 
@@ -561,6 +642,22 @@ async def get_plugin_db() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+async def get_plugin_db(
+    session: AsyncSession = _before_response(_plugin_session),
+) -> AsyncSession:
+    """
+    FastAPI dependency: a request-scoped session against the **plugin** DB.
+
+    Behaves exactly like :func:`get_db` but returns a session bound to
+    :data:`_plugin_engine`.  Used by routes that only read/write the game
+    plugin tables (``ARKM_bans``, ``ARKM_rare_dinos``, ``ARKM_lb_*``, etc.).
+
+    Raises:
+        HTTPException 503: Plugin database is not configured.
+    """
+    return session
 
 
 async def create_marketplace_tables() -> None:
@@ -578,6 +675,10 @@ async def create_marketplace_tables() -> None:
         return
 
     from sqlalchemy import text as _t
+
+    # Same contract as create_app_tables(): collect in-place DDL failures,
+    # raise them once every step has run.
+    failures: list[str] = []
 
     async with _plugin_engine.begin() as conn:
         await conn.execute(_t(
@@ -648,18 +749,14 @@ async def create_marketplace_tables() -> None:
         # farebbe fallire la INSERT dell'ordine DOPO aver scalato i punti —
         # cioe' il giocatore paga e non riceve. Il caso non e' teorico: il
         # deploy dei due repository e' indipendente.
-        try:
-            await _add_column_if_missing(
-                conn, table="ARKM_shop_orders", column="gene_species",
-                ddl="ALTER TABLE ARKM_shop_orders "
-                    "ADD COLUMN gene_species VARCHAR(512) NOT NULL DEFAULT ''",
-            )
-        except Exception:  # noqa: BLE001
-            # Tabella ancora inesistente: nessun server ha mai avviato il
-            # plugin. La creera' lui, gia' con la colonna. Si tace invece di
-            # loggare perche' questo modulo non ha un logger e non e' il posto
-            # per introdurne uno.
-            pass
+        # A missing table (no server has started the plugin yet) is a no-op
+        # inside the helper: the plugin creates it with the column already.
+        await _add_column_if_missing(
+            conn, table="ARKM_shop_orders", column="gene_species",
+            ddl="ALTER TABLE ARKM_shop_orders "
+                "ADD COLUMN gene_species VARCHAR(512) NOT NULL DEFAULT ''",
+            failures=failures,
+        )
 
         # Vetrina web dello shop. Vive qui e non nel plugin perche' e' il
         # pannello a deciderne il contenuto: il plugin legge solo gli ordini
@@ -686,14 +783,17 @@ async def create_marketplace_tables() -> None:
         ))
         # CREATE TABLE IF NOT EXISTS non aggiunge colonne a una tabella che
         # esiste gia': una installazione che ha visto la versione precedente
-        # resterebbe senza items_json e il catalogo non si importerebbe. La
-        # ALTER e' idempotente per costruzione — fallisce se la colonna c'e'
-        # gia', ed e' esattamente il caso in cui non serve.
-        try:
-            await conn.execute(_t(
-                "ALTER TABLE ARKM_web_shop_items ADD COLUMN items_json TEXT NULL"))
-        except Exception:
-            pass
+        # resterebbe senza items_json e il catalogo non si importerebbe.
+        # Guarded on INFORMATION_SCHEMA, so a real ALTER failure is reported
+        # instead of being mistaken for "the column is already there".
+        await _add_column_if_missing(
+            conn, table="ARKM_web_shop_items", column="items_json",
+            ddl="ALTER TABLE ARKM_web_shop_items ADD COLUMN items_json TEXT NULL",
+            failures=failures,
+        )
+
+    if failures:
+        raise RuntimeError("In-place migrations failed: " + "; ".join(failures))
 
 
 async def close_plugin_engine() -> None:

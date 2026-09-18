@@ -337,7 +337,9 @@ class ARKMInstanceAction(Base):
     )
     username          = Column(String(50), nullable=True)
 
-    started_at        = Column(DateTime, server_default=func.now())
+    # Indexed: the retention purge deletes by it and the action list sorts
+    # by it (migration 006 / in-place mirror in create_app_tables).
+    started_at        = Column(DateTime, server_default=func.now(), index=True)
     completed_at      = Column(DateTime, nullable=True)
     duration_ms       = Column(Integer, nullable=True)
 
