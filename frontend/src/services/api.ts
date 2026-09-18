@@ -40,6 +40,7 @@ import type {
   PlayerListItem,
   PlayerFull,
   PlayersStats,
+  PlayerMapResult,
   PermissionGroupItem,
   AuthUser,
   LoginResponse,
@@ -815,7 +816,15 @@ export const playersApi = {
   findPlayerMaps: (eosId: string, machineId?: number) => {
     const params: Record<string, unknown> = { eos_id: eosId, debug: true };
     if (machineId) params.machine_id = machineId;
-    return api.get("/players/find-maps", { params, timeout: 120_000 });
+    return api.get<{
+      eos_id: string;
+      maps:   PlayerMapResult[];
+      total:  number;
+      /** One entry per machine whose SSH scan failed; the rest still ran. */
+      errors: string[];
+      /** Per-container diagnostics: present only because we pass debug=true. */
+      debug?: Record<string, unknown>[];
+    }>("/players/find-maps", { params, timeout: 120_000 });
   },
 
   /** Copy a player's .arkprofile from one map/machine to another. */
@@ -827,7 +836,16 @@ export const playersApi = {
     dest_container: string;
     dest_map_name: string;
     backup?: boolean;
-  }) => api.post("/players/copy-character", data, { timeout: 120_000 }),
+  }) => api.post<{
+    success:     boolean;
+    source_path: string;
+    filename:    string;
+    dest_path:   string;
+    /** Copy of the file that was there before, when `backup` was asked for. */
+    backup_path: string | null;
+    overwritten: boolean;
+    size:        number;
+  }>("/players/copy-character", data, { timeout: 120_000 }),
 };
 
 // ---------------------------------------------------------------------------
@@ -965,6 +983,25 @@ export const containersApi = {
     api.post(`/containers/machines/${machineId}/scan`),
   getMachineContainers: (machineId: number) =>
     api.get(`/containers/machines/${machineId}/containers`),
+  /**
+   * Every container of the persisted scan map, across all machines.  Reads
+   * the cached scan only, no SSH.
+   *
+   * Answers `{ containers: DiscoveredContainer[]; last_scan: string | null;
+   * total: number }` and STILL RETURNS `any`, because typing it breaks
+   * GameConfigPage (verified: two errors, both in files this pass does not
+   * own):
+   *   - useGameConfig.ts filters with a `(c: Record<string, unknown>)`
+   *     callback; an interface has no implicit index signature, so
+   *     DiscoveredContainer is not assignable to it (TS2769).
+   *   - gameConfigModel.ts `Container.map_name?: string` cannot take the
+   *     scanner's `string | null` (TS2345) — and null is real: scanner.py:95
+   *     initialises `"map_name": None` and leaves it when no map dir or save
+   *     file is found.
+   * Widen `Container.map_name` to `string | null` and change that callback to
+   * `(c: DiscoveredContainer)`, then type this call and drop the defensive
+   * cast in useInstancesData.ts.
+   */
   getAllContainers: () => api.get("/containers/containers"),
   rescanContainer: (machineId: number, containerName: string) =>
     api.post(`/containers/machines/${machineId}/containers/${containerName}/rescan`),
@@ -1183,6 +1220,81 @@ export const arkshopApi = {
 // ArkMania plugin configuration
 // ---------------------------------------------------------------------------
 
+/** One row of `ARKM_servers`, as GET /arkmania/servers returns it. */
+export interface ArkmaniaServer {
+  server_key:     string;
+  display_name:   string;
+  map_name:       string;
+  game_mode:      string;
+  server_type:    string;
+  cluster_group:  string;
+  max_players:    number;
+  /** Written by the plugin's heartbeat, not by the panel. */
+  is_online:      boolean;
+  player_count:   number;
+  last_heartbeat: string | null;
+}
+
+/**
+ * Body of PUT /arkmania/servers/{server_key}.
+ *
+ * Only the six display columns the route knows how to SET: `server_key` is
+ * the path, and is_online / player_count / last_heartbeat belong to the
+ * plugin's heartbeat, so they are not editable here.
+ */
+export interface ArkmaniaServerUpdate {
+  display_name?:  string;
+  map_name?:      string;
+  game_mode?:     string;
+  server_type?:   string;
+  cluster_group?: string;
+  max_players?:   number;
+}
+
+/** One live session in GET /arkmania/online (ARKM_sessions + names). */
+export interface OnlinePlayer {
+  eos_id:         string;
+  server_key:     string;
+  login_time:     string | null;
+  last_heartbeat: string | null;
+  ip_address:     string | null;
+  player_name:    string | null;
+  server_name:    string;
+  map_name:       string;
+  /** Minutes since login; null when the session has no login_time. */
+  duration_min:   number | null;
+}
+
+/** Per-server tile of GET /arkmania/online: registry state + live sessions. */
+export interface OnlineServerStat {
+  server_key:    string;
+  display_name:  string;
+  map_name:      string;
+  is_online:     boolean;
+  player_count:  number;
+  max_players:   number;
+  session_count: number;
+}
+
+/** One row of `ARKM_event_log`, as GET /arkmania/events returns it. */
+export interface ArkmaniaEvent {
+  id:           number;
+  event_type:   string;
+  eos_id:       string | null;
+  player_name:  string | null;
+  server_key:   string;
+  details:      string;
+  event_time:   string | null;
+  discord_sent: boolean;
+}
+
+/** One bucket of GET /arkmania/events/stats, counted per event type. */
+export interface ArkmaniaEventStat {
+  event_type: string;
+  count:      number;
+  latest:     string | null;
+}
+
 export const arkmaniaApi = {
   listModules: () => api.get("/arkmania/modules"),
   getModule: (module: string, serverKey = "*") =>
@@ -1210,13 +1322,14 @@ export const arkmaniaApi = {
   deleteConfigOverride: (key: string, serverKey: string) =>
     api.delete("/arkmania/config", { params: { key, server_key: serverKey } }),
 
-  listServers: () => api.get("/arkmania/servers"),
+  listServers: () => api.get<{ servers: ArkmaniaServer[] }>("/arkmania/servers"),
   createServer: (data: {
     server_key: string; display_name: string; map_name: string;
     game_mode?: string; server_type?: string; cluster_group?: string; max_players?: number;
   }) => api.post("/arkmania/servers", data),
-  updateServer: (serverKey: string, data: unknown) =>
-    api.put(`/arkmania/servers/${encodeURIComponent(serverKey)}`, data),
+  updateServer: (serverKey: string, data: ArkmaniaServerUpdate) =>
+    api.put<{ updated: boolean; server_key: string }>(
+      `/arkmania/servers/${encodeURIComponent(serverKey)}`, data),
   deleteServer: (serverKey: string) =>
     api.delete(`/arkmania/servers/${encodeURIComponent(serverKey)}`),
   getServerOverrides: (serverKey: string) =>
@@ -1224,7 +1337,12 @@ export const arkmaniaApi = {
 
   search: (q: string) => api.get("/arkmania/search", { params: { q } }),
   getOnlinePlayers: (serverKey?: string) =>
-    api.get("/arkmania/online", {
+    api.get<{
+      players:        OnlinePlayer[];
+      total_online:   number;
+      servers:        OnlineServerStat[];
+      servers_online: number;
+    }>("/arkmania/online", {
       params: serverKey ? { server_key: serverKey } : {},
     }),
   getPermissionGroups: () => api.get("/arkmania/permission-groups"),
@@ -1233,8 +1351,15 @@ export const arkmaniaApi = {
   getEvents: (params?: {
     event_type?: string; server_key?: string; search?: string;
     limit?: number; offset?: number;
-  }) => api.get("/arkmania/events", { params }),
-  getEventStats: () => api.get("/arkmania/events/stats"),
+  }) => api.get<{
+    events: ArkmaniaEvent[];
+    /** Rows matching the filters, before limit/offset. */
+    total:  number;
+    limit:  number;
+    offset: number;
+  }>("/arkmania/events", { params }),
+  getEventStats: () =>
+    api.get<{ stats: ArkmaniaEventStat[]; total: number }>("/arkmania/events/stats"),
   purgeEvents: (keepDays: number, eventType?: string) =>
     api.delete("/arkmania/events", { params: { keep_days: keepDays, ...(eventType ? { event_type: eventType } : {}) } }),
 };
@@ -1358,11 +1483,106 @@ export const webShopApi = {
     api.put(`/shop/admin/catalog/${encodeURIComponent(key)}`, data),
 }
 
+/**
+ * What every per-instance decay command answers with.
+ *
+ * These endpoints reply 200 even when SSH or RCON failed: `status` is
+ * `"failed"` and the reason is in `stderr`, so callers must read the body
+ * instead of trusting the HTTP status.
+ */
+export interface RconCommandResult {
+  instance_id:   number;
+  instance_name: string | null;
+  /** "success" | "failed", as the SSH/RCON bridge reports it. */
+  status:        string;
+  /** Last 2000 chars of the plugin's reply. */
+  reply:         string;
+  stderr:        string | null;
+}
+
+/** Tribe counters of GET /arkmania/decay, by decay status. */
+export interface DecayOverview {
+  total:          number;
+  expired:        number;
+  /** Expiring within 3 days. */
+  expiring_soon:  number;
+  safe:           number;
+  pending:        number;
+  purged_last_7d: number;
+}
+
+/** One row of `ARKM_tribe_decay`, as GET /arkmania/decay/tribes returns it. */
+export interface DecayTribeRow {
+  targeting_team:     number;
+  expire_time:        string | null;
+  last_refresh_eos:   string;
+  tribe_name:         string | null;
+  player_name:        string | null;
+  last_refresh_group: string;
+  last_refresh_days:  number;
+  last_refresh_time:  string | null;
+  /** Negative once the tribe has expired. */
+  hours_left:         number;
+  /** "expired" | "expiring" | "safe", computed by the same SQL as the filter. */
+  status:             string;
+}
+
+/** One queued purge (`ARKM_decay_pending`) with its tribe's context. */
+export interface DecayPendingRow {
+  targeting_team:     number;
+  server_key:         string;
+  reason:             string;
+  structure_count:    number;
+  dino_count:         number;
+  flagged_at:         string | null;
+  server_name:        string;
+  tribe_name:         string | null;
+  player_name:        string | null;
+  last_refresh_group: string | null;
+  expire_time:        string | null;
+  /** Newest login of ANY member, across every map: the anti-mistake column. */
+  last_member_login:  string | null;
+}
+
+/** One object of the plugin's last scan (`ARKM_scan_detail`). */
+export interface DecayScanDetailRow {
+  actor_type:     string;
+  class_name:     string;
+  display_name:   string | null;
+  custom_name:    string | null;
+  owner_name:     string | null;
+  pos_x:          number;
+  pos_y:          number;
+  pos_z:          number;
+  dino_level:     number;
+  reason:         string;
+  server_key:     string;
+  map_name:       string;
+  scanned_at:     string | null;
+  actor_name:     string | null;
+  targeting_team: number;
+}
+
+/** One purge already carried out (`ARKM_decay_log`). */
+export interface DecayLogRow {
+  id:                   number;
+  targeting_team:       number;
+  server_key:           string;
+  map_name:             string;
+  reason:               string;
+  structures_destroyed: number;
+  dinos_destroyed:      number;
+  purged_by:            string;
+  purged_at:            string | null;
+}
+
 export const arkDecayApi = {
-  overview: () => api.get("/arkmania/decay"),
+  overview: () => api.get<DecayOverview>("/arkmania/decay"),
   tribes: (params?: { status?: string; search?: string; limit?: number }) =>
-    api.get("/arkmania/decay/tribes", { params }),
-  pending: () => api.get("/arkmania/decay/pending"),
+    api.get<{ tribes: DecayTribeRow[]; count: number }>(
+      "/arkmania/decay/tribes", { params }),
+  pending: () =>
+    api.get<{ pending: DecayPendingRow[]; count: number }>("/arkmania/decay/pending"),
 
   /**
    * Per-object snapshot of a pending tribe from the plugin's last scan
@@ -1371,11 +1591,16 @@ export const arkDecayApi = {
    * verify the base visually before pulling the trigger.
    */
   pendingDetail: (targetingTeam: number, serverKey?: string) =>
-    api.get(`/arkmania/decay/pending/${targetingTeam}/detail`, {
+    api.get<{
+      detail: DecayScanDetailRow[];
+      count:  number;
+      /** The plugin caps a scan at 4000 objects: the list is then partial. */
+      truncated: boolean;
+    }>(`/arkmania/decay/pending/${targetingTeam}/detail`, {
       params: serverKey ? { server_key: serverKey } : undefined,
     }),
   log: (params?: { limit?: number; server_key?: string }) =>
-    api.get("/arkmania/decay/log", { params }),
+    api.get<{ log: DecayLogRow[]; count: number }>("/arkmania/decay/log", { params }),
 
   /**
    * Player-map suite (plugin 5.4.0+): targeted scan of one player's tribe
@@ -1383,7 +1608,7 @@ export const arkDecayApi = {
    * through the plugin's RCON commands; the panel never touches actors.
    */
   playerScanRun: (eosId: string, instanceId: number, kind: ScanKind = "all") =>
-    api.post<{ status: string; reply: string; stderr: string | null }>(
+    api.post<RconCommandResult>(
       "/arkmania/decay/player-scan",
       { eos_id: eosId, instance_id: instanceId, kind },
       { timeout: 120_000 }),
@@ -1399,34 +1624,39 @@ export const arkDecayApi = {
     x: number; y: number; z: number; radius_m: number;
     kind: "structures" | "dinos" | "all";
   }) =>
-    api.post<{ status: string; reply: string; stderr: string | null }>(
+    api.post<RconCommandResult>(
       "/arkmania/decay/destroy-radius", data, { timeout: 120_000 }),
   /** Single-object destruction by actor instance name (plugin 5.5.0+). */
   destroyActor: (instanceId: number, targetingTeam: number, actorName: string) =>
-    api.post<{ status: string; reply: string; stderr: string | null }>(
+    api.post<RconCommandResult>(
       "/arkmania/decay/destroy-actor",
       { instance_id: instanceId, targeting_team: targetingTeam, actor_name: actorName },
       { timeout: 60_000 }),
 
   /** Per-map plugin commands: one instance, one command. */
   scanInstance: (instanceId: number) =>
-    api.post("/arkmania/decay/scan", { instance_id: instanceId }, { timeout: 180_000 }),
+    api.post<RconCommandResult>(
+      "/arkmania/decay/scan", { instance_id: instanceId }, { timeout: 180_000 }),
   purgeInstance: (instanceId: number) =>
-    api.post("/arkmania/decay/purge-instance", { instance_id: instanceId }, { timeout: 300_000 }),
+    api.post<RconCommandResult>(
+      "/arkmania/decay/purge-instance", { instance_id: instanceId }, { timeout: 300_000 }),
   reloadInstance: (instanceId: number) =>
-    api.post("/arkmania/decay/reload", { instance_id: instanceId }, { timeout: 60_000 }),
+    api.post<RconCommandResult>(
+      "/arkmania/decay/reload", { instance_id: instanceId }, { timeout: 60_000 }),
   cleanupUnclaimed: (instanceId: number) =>
-    api.post("/arkmania/decay/cleanup-unclaimed", { instance_id: instanceId }, { timeout: 180_000 }),
+    api.post<RconCommandResult>(
+      "/arkmania/decay/cleanup-unclaimed", { instance_id: instanceId }, { timeout: 180_000 }),
   removeStructures: (instanceId: number, targetingTeam: number) =>
-    api.post("/arkmania/decay/remove-structures",
+    api.post<RconCommandResult>("/arkmania/decay/remove-structures",
       { instance_id: instanceId, targeting_team: targetingTeam }, { timeout: 180_000 }),
   removeDinos: (instanceId: number, targetingTeam: number) =>
-    api.post("/arkmania/decay/remove-dinos",
+    api.post<RconCommandResult>("/arkmania/decay/remove-dinos",
       { instance_id: instanceId, targeting_team: targetingTeam }, { timeout: 180_000 }),
   tribeInfo: (targetingTeam: number, instanceId: number) =>
-    api.get(`/arkmania/decay/tribe-info/${targetingTeam}`, { params: { instance_id: instanceId } }),
+    api.get<RconCommandResult>(`/arkmania/decay/tribe-info/${targetingTeam}`,
+      { params: { instance_id: instanceId } }),
   setExpiry: (instanceId: number, targetingTeam: number, days: number) =>
-    api.post("/arkmania/decay/set-expiry",
+    api.post<RconCommandResult>("/arkmania/decay/set-expiry",
       { instance_id: instanceId, targeting_team: targetingTeam, days }, { timeout: 60_000 }),
 
   /** Per-map GPS calibration published by the plugin (5.7.0+). */
@@ -1451,7 +1681,7 @@ export const arkDecayApi = {
       { responseType: "blob", timeout: 60_000 }),
 
   killPlayer: (eosId: string, instanceId: number) =>
-    api.post<{ status: string; reply: string; stderr: string | null }>(
+    api.post<RconCommandResult>(
       "/arkmania/decay/kill-player", { eos_id: eosId, instance_id: instanceId },
       { timeout: 60_000 }),
 
@@ -1535,27 +1765,76 @@ export const arkDecayApi = {
 // ArkMania — Bans
 // ---------------------------------------------------------------------------
 
+/** One row of `ARKM_bans`. */
+export interface BanItem {
+  id:          number;
+  eos_id:      string;
+  player_name: string | null;
+  reason:      string;
+  /** Panel username taken from the JWT, never from the client. */
+  banned_by:   string;
+  ban_time:    string | null;
+  /** Null on a permanent ban. */
+  expire_time: string | null;
+  is_active:   boolean;
+  unbanned_by: string | null;
+  unban_time:  string | null;
+}
+
+export interface BansListResponse {
+  /** Filtered and capped by `limit`. */
+  bans:         BanItem[];
+  /** Unfiltered counts: the list above cannot give the totals. */
+  active_count: number;
+  total_count:  number;
+}
+
 export const arkBansApi = {
   list: (params?: { active_only?: boolean; search?: string; limit?: number }) =>
-    api.get("/arkmania/bans", { params }),
-  get: (id: number) => api.get(`/arkmania/bans/${id}`),
+    api.get<BansListResponse>("/arkmania/bans", { params }),
+  get: (id: number) => api.get<BanItem>(`/arkmania/bans/${id}`),
   create: (data: {
     eos_id: string;
     player_name?: string;
     reason?: string;
     expire_time?: string;
-  }) => api.post("/arkmania/bans", data),
+  }) => api.post<{ created: boolean; eos_id: string }>("/arkmania/bans", data),
   // banned_by / unbanned_by are recorded server side from the JWT.
-  unban: (id: number) => api.put(`/arkmania/bans/${id}/unban`),
+  unban: (id: number) =>
+    api.put<{ unbanned: boolean; ban_id: number }>(`/arkmania/bans/${id}/unban`),
 };
 
 // ---------------------------------------------------------------------------
 // ArkMania — Rare Dinos
 // ---------------------------------------------------------------------------
 
+/**
+ * One entry of the rare-dino pool (`ARKM_rare_dinos`).
+ *
+ * Every stat bound is a wild-level override: `-1` means "leave this stat to
+ * the game", which is why they are plain numbers and never null.
+ */
+export interface RareDinoRow {
+  id:          number;
+  /** `'*'` for every map. */
+  map_name:    string;
+  dino_bp:     string;
+  enabled:     boolean;
+  health_min:  number;  health_max:  number;
+  stamina_min: number;  stamina_max: number;
+  oxygen_min:  number;  oxygen_max:  number;
+  food_min:    number;  food_max:    number;
+  weight_min:  number;  weight_max:  number;
+  melee_min:   number;  melee_max:   number;
+  speed_min:   number;  speed_max:   number;
+  extra:       string | null;
+  /** Derived server side from the blueprint path, for display only. */
+  display_name: string;
+}
+
 export const arkRareDinosApi = {
   list: (params?: { map_name?: string; enabled_only?: boolean }) =>
-    api.get("/arkmania/rare-dinos", { params }),
+    api.get<{ dinos: RareDinoRow[]; count: number }>("/arkmania/rare-dinos", { params }),
   create: (data: unknown) => api.post("/arkmania/rare-dinos", data),
   update: (id: number, data: unknown) =>
     api.put(`/arkmania/rare-dinos/${id}`, data),
@@ -1612,21 +1891,71 @@ export const arkTransferRulesApi = {
 // ArkMania — Leaderboard
 // ---------------------------------------------------------------------------
 
+/** Cluster-wide totals of GET /arkmania/leaderboard. */
+export interface LeaderboardOverview {
+  total_players:          number;
+  total_points:           number;
+  total_kills_wild:       number;
+  total_kills_enemy_dino: number;
+  total_kills_player:     number;
+  total_tames:            number;
+  total_crafts:           number;
+  total_deaths:           number;
+  total_events:           number;
+}
+
+/** One ranked player (`ARKM_lb_scores`); `rank` is derived from the offset. */
+export interface LeaderboardScoreRow {
+  rank:              number;
+  eos_id:            string;
+  player_name:       string;
+  server_type:       string;
+  total_points:      number;
+  kills_wild:        number;
+  kills_enemy_dino:  number;
+  kills_player:      number;
+  tames:             number;
+  crafts:            number;
+  structs_destroyed: number;
+  deaths:            number;
+  last_event:        string | null;
+}
+
+/** One scoring event (`ARKM_lb_events`). */
+export interface LeaderboardEventRow {
+  id:           number;
+  eos_id:       string;
+  player_name:  string;
+  event_type:   number;
+  /** English label the backend derives from event_type; pages localise it. */
+  event_label:  string;
+  points:       number;
+  target_class: string | null;
+  target_name:  string | null;
+  target_level: number;
+  target_team:  number;
+  server_key:   string;
+  server_type:  string;
+  created_at:   string | null;
+}
+
 export const arkLeaderboardApi = {
-  overview: () => api.get("/arkmania/leaderboard"),
+  overview: () => api.get<LeaderboardOverview>("/arkmania/leaderboard"),
   scores: (params?: {
     server_type?: string;
     sort_by?: string;
     limit?: number;
     offset?: number;
     search?: string;
-  }) => api.get("/arkmania/leaderboard/scores", { params }),
+  }) => api.get<{ scores: LeaderboardScoreRow[]; total: number }>(
+    "/arkmania/leaderboard/scores", { params }),
   events: (params?: {
     server_type?: string;
     event_type?: number;
     eos_id?: string;
     limit?: number;
-  }) => api.get("/arkmania/leaderboard/events", { params }),
+  }) => api.get<{ events: LeaderboardEventRow[]; count: number }>(
+    "/arkmania/leaderboard/events", { params }),
   player: (eosId: string) => api.get(`/arkmania/leaderboard/player/${eosId}`),
   /**
    * Truncate the leaderboard tables (`ARKM_lb_scores` + `ARKM_lb_events`)
@@ -2380,19 +2709,68 @@ export const marketApi = {
 
 export type SqlDatabaseTarget = "panel" | "plugin";
 
+/** Result of POST /sql/execute; a failed statement still answers 200. */
+export interface SqlQueryResult {
+  success:           boolean;
+  query:             string;
+  /** Empty for DML/DDL, which produce no result set. */
+  columns:           string[];
+  rows:              unknown[][];
+  /** Rows returned (SELECT) or affected (DML). */
+  row_count:         number;
+  /** True when the server stopped at its cap (1000 rows / 8M chars). */
+  truncated:         boolean;
+  execution_time_ms: number;
+  message:           string;
+  error:             string | null;
+}
+
+/** One table of GET /sql/tables (from information_schema.TABLES). */
+export interface SqlTableInfo {
+  name:         string;
+  engine:       string | null;
+  /** InnoDB's estimate, not an exact count. */
+  row_count:    number | null;
+  data_size_kb: number | null;
+  comment:      string | null;
+}
+
+/** One column of GET /sql/tables/{name}/schema. */
+export interface SqlColumnInfo {
+  name:           string;
+  data_type:      string;
+  is_nullable:    boolean;
+  column_default: string | null;
+  column_key:     string | null;
+  extra:          string | null;
+  comment:        string | null;
+}
+
+/**
+ * The console must outlive the statement it sent.
+ *
+ * The backend caps a statement at 30 s (`_QUERY_TIMEOUT_SECONDS`) and spends
+ * up to 10 s connecting before that clock even starts, so the shared 30 s
+ * axios timeout raced it: a write that took ~29 s was committed server side
+ * (autocommit) while the client aborted, and the operator re-ran a statement
+ * that had already succeeded.  60 s clears both.
+ */
+const SQL_EXECUTE_TIMEOUT = 60_000;
+
 /** Direct SQL query execution against one of the configured MariaDB databases. */
 export const sqlConsoleApi = {
   /** Execute an arbitrary SQL query (SELECT, INSERT, UPDATE, DDL, etc.). */
   execute: (query: string, database: SqlDatabaseTarget = "panel") =>
-    api.post("/sql/execute", { query, database }),
+    api.post<SqlQueryResult>("/sql/execute", { query, database },
+      { timeout: SQL_EXECUTE_TIMEOUT }),
 
   /** List all tables in the target database with size information. */
   tables: (database: SqlDatabaseTarget = "panel") =>
-    api.get("/sql/tables", { params: { database } }),
+    api.get<SqlTableInfo[]>("/sql/tables", { params: { database } }),
 
   /** Return column-level metadata for a specific table. */
   tableSchema: (tableName: string, database: SqlDatabaseTarget = "panel") =>
-    api.get(`/sql/tables/${tableName}/schema`, { params: { database } }),
+    api.get<SqlColumnInfo[]>(`/sql/tables/${tableName}/schema`, { params: { database } }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
