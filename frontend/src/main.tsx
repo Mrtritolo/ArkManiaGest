@@ -6,10 +6,10 @@ import App from './App'
 // same family and would download Inter twice.
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
-// Design system first: it declares the layer order the legacy sheet below
-// is wrapped in (@layer legacy), so the new rules always win.
+// Design system: tokens, element defaults, content and utility classes.
+// It declares the cascade layer order, so it must load before any
+// component stylesheet.
 import './styles/index.css'
-import './index.css'
 // Initialise i18next early — must run before any component that uses
 // useTranslation() is rendered.
 import './i18n'

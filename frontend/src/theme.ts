@@ -3,7 +3,7 @@
  *
  * The active theme is stored as a `data-theme` attribute on `<html>`.  All
  * the colour decisions live in CSS variables; see `:root` (dark) and
- * `[data-theme="light"]` in `src/index.css` for the actual palettes.
+ * `[data-theme="light"]` in `src/styles/tokens.css` for the actual palettes.
  *
  * Persistence is in `localStorage` so the choice survives full reloads;
  * the initial value is read in :func:`initTheme` (called from main.tsx
