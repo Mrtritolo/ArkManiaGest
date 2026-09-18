@@ -40,6 +40,18 @@ onto a new design system.
   uploads at runtime. Installs made from an older bundle failed hardening with
   "script not found".
 
+- **The nginx vhost is not updated by any update path.** After deploying,
+  run `sudo bash /opt/arkmaniagest/deploy/render-nginx.sh` once: this release
+  raises `proxy_read_timeout` on `/api/` from 120s to 1800s (long start /
+  stop / update calls otherwise die with a 504 while the operation keeps
+  running on the game host) and answers rate limiting with 429 instead of
+  503, which the SPA reads as "panel down" and signs the admin out.
+- **Deploy this release with `deploy/update-panel.{sh,ps1}`, not the in-UI
+  updater.** The in-UI button runs the copy of `server-update.sh` already on
+  the host, which is replaced by the update itself, so the first click would
+  run the old script and skip the frontend dependency install. The button is
+  correct again from the next release.
+
 ### Fixed
 
 - Command injection on every game host through `eos_id`, container names and

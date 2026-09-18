@@ -109,6 +109,7 @@ cat /etc/cron.d/arkmaniagest
 | `install-panel.ps1` | **PC** — Full initial deploy (tar + scp + full-deploy.sh) |
 | `server-update.sh` | **Server** — Executed by update-panel.ps1 (sync, deps, build, restart) |
 | `full-deploy.sh` | **Server** — Full setup (packages, nginx, SSL, firewall, cron) |
+| `render-nginx.sh` | **Server** — Re-render the vhost after a release changed `nginx-production.conf` (validates, reloads, restores on failure) |
 | `backup.sh` | **Server** — Backup .env, nginx config, panel/plugin DB dumps and backend/data |
 | `restore.sh` | **Server** — Restore from backup (.env + nginx; data and DB dumps each on confirmation) |
 | `status.sh` | **Server** — Service health check |
