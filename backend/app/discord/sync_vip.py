@@ -37,6 +37,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.discord import client as dc_client
+from app.discord import store as dc_store
 
 
 log = logging.getLogger("arkmaniagest.discord.sync_vip")
@@ -77,6 +78,11 @@ class VipSyncReport:
     # Members on Discord with the VIP role we couldn't map back to an EOS
     # link in our DB -- left untouched on purpose.
     unmapped_with_vip: list[str] = field(default_factory=list)
+    # False when the guild member walk failed or stopped at its page cap:
+    # unmapped_with_vip is then partial, and linked users the walk did not
+    # reach were looked up one by one instead.
+    member_scan_complete: bool = True
+    member_scan_error:    Optional[str] = None
 
     actions:           list[_LinkAction] = field(default_factory=list)
 
@@ -129,9 +135,10 @@ async def sync_vip_role(
     Reconcile the Discord VIP role with the panel DB.
 
     Reads every linked discord_account (eos_id non-null), computes
-    should-have-VIP from the plugin DB Players row, fetches the
-    member's current Discord roles, applies the diff via PUT/DELETE
-    /guilds/.../members/.../roles/...  Returns a per-player report.
+    should-have-VIP from the plugin DB Players row, reads the member's
+    current Discord roles from one walk of the guild member list, applies
+    the diff via PUT/DELETE /guilds/.../members/.../roles/...  Returns a
+    per-player report.
 
     Failures on individual members do NOT abort the run -- they're
     recorded with action='error' and the run continues.  Only Discord
@@ -159,19 +166,21 @@ async def sync_vip_role(
         linked_total    = len(pairs),
     )
 
+    # 2. Walk the guild member list once: every member's roles (no GET per
+    #    linked player) plus the "stranger VIPs" for the report.
+    known_discord_ids: set[str] = {did for did, _ in pairs}
+    member_roles = await _walk_guild_members(
+        bot_token=bot_token, guild_id=guild_id,
+        vip_role_id=vip_role_id, known_discord_ids=known_discord_ids,
+        report=report,
+    )
+
     if not pairs:
-        # Nothing to sync -- still scan the guild for "stranger VIPs"
-        # so the operator sees them in the report.
-        await _collect_unmapped_vips(
-            bot_token=bot_token, guild_id=guild_id,
-            vip_role_id=vip_role_id, known_discord_ids=set(),
-            report=report,
-        )
         report.finished_at_iso  = _iso_now()
         report.duration_seconds = round(time.monotonic() - started, 2)
         return report
 
-    # 2. For each pair, look up Players row and compute should-have
+    # 3. For each pair, look up Players row and compute should-have
     eos_ids = [eid for _, eid in pairs]
     placeholders = ",".join(f":e{i}" for i in range(len(eos_ids)))
     params = {f"e{i}": eid for i, eid in enumerate(eos_ids)}
@@ -184,9 +193,7 @@ async def sync_vip_role(
     )).mappings().fetchall()
     by_eos = {r["EOS_Id"]: r for r in rows}
 
-    known_discord_ids: set[str] = {did for did, _ in pairs}
-
-    # 3. Walk each pair, fetch member, apply diff
+    # 4. Walk each pair, apply diff
     for did, eid in pairs:
         prow = by_eos.get(eid)
         if not prow:
@@ -200,28 +207,33 @@ async def sync_vip_role(
             )
             player_name = prow.get("Giocatore")
 
-        try:
-            member = await dc_client.get_guild_member(
-                bot_token=bot_token, guild_id=guild_id, user_id=did,
-            )
-        except dc_client.DiscordAPIError as exc:
-            # 404 here = the user left the guild.  Not an error from the
-            # operator's PoV -- record as 'noop' with the detail.
-            if exc.status == 404:
-                report.actions.append(_LinkAction(
-                    discord_user_id=did, eos_id=eid, player_name=player_name,
-                    action="noop", detail="user not in guild",
-                ))
-                report.noop_count += 1
-                continue
+        roles = member_roles.get(did)
+        if roles is None and not report.member_scan_complete:
+            # The walk did not reach this user: ask for the member directly.
+            try:
+                member = await dc_client.get_guild_member(
+                    bot_token=bot_token, guild_id=guild_id, user_id=did,
+                )
+                roles = [str(r) for r in (member.get("roles") or [])]
+            except dc_client.DiscordAPIError as exc:
+                if exc.status != 404:
+                    report.actions.append(_LinkAction(
+                        discord_user_id=did, eos_id=eid, player_name=player_name,
+                        action="error", detail=str(exc),
+                    ))
+                    report.error_count += 1
+                    continue
+        if roles is None:
+            # The user left the guild.  Not an error from the operator's
+            # PoV -- record as 'noop' with the detail.
             report.actions.append(_LinkAction(
                 discord_user_id=did, eos_id=eid, player_name=player_name,
-                action="error", detail=str(exc),
+                action="noop", detail="user not in guild",
             ))
-            report.error_count += 1
+            report.noop_count += 1
             continue
 
-        has_now = vip_role_id in (member.get("roles") or [])
+        has_now = vip_role_id in roles
 
         if should and not has_now:
             try:
@@ -265,12 +277,13 @@ async def sync_vip_role(
                 detail="vip-role state already correct",
             ))
 
-    # 4. Stranger VIPs (have role on Discord, no link in our DB)
-    await _collect_unmapped_vips(
-        bot_token=bot_token, guild_id=guild_id,
-        vip_role_id=vip_role_id, known_discord_ids=known_discord_ids,
-        report=report,
-    )
+    try:
+        await dc_store.touch_last_sync(
+            db, [a.discord_user_id for a in report.actions if a.action != "error"],
+        )
+    except Exception as exc:  # noqa: BLE001 -- bookkeeping must not lose the report
+        await db.rollback()
+        log.warning("VIP sync: last_sync_at update failed: %s", exc)
 
     report.finished_at_iso  = _iso_now()
     report.duration_seconds = round(time.monotonic() - started, 2)
@@ -279,24 +292,30 @@ async def sync_vip_role(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-async def _collect_unmapped_vips(
+async def _walk_guild_members(
     *,
     bot_token:         str,
     guild_id:          str,
     vip_role_id:       str,
     known_discord_ids: set[str],
     report:            VipSyncReport,
-) -> None:
+) -> dict[str, list[str]]:
     """
-    Walk the guild member list (paginated) to find members who hold the
-    VIP role but are NOT in our linked-accounts set.  Pure observation:
-    we never strip the role from them, the operator gets a list to act
-    on manually if they want.
+    Walk the guild member list (paginated) and return ``user_id -> role
+    ids``.  Along the way, members who hold the VIP role but are NOT in
+    our linked-accounts set go to ``report.unmapped_with_vip``.  Pure
+    observation: we never strip the role from them, the operator gets a
+    list to act on manually if they want.
+
+    A failed or capped walk is recorded on the report
+    (``member_scan_complete`` / ``member_scan_error``), never swallowed.
     """
+    index: dict[str, list[str]] = {}
     after: Optional[str] = None
     page_size = 1000
     pages = 0
     MAX_PAGES = 20  # safety: stop walking after ~20k members
+    complete = False
     while pages < MAX_PAGES:
         try:
             members = await dc_client.list_guild_members(
@@ -305,23 +324,30 @@ async def _collect_unmapped_vips(
             )
         except dc_client.DiscordAPIError as exc:
             log.warning("VIP sync: list_guild_members failed: %s", exc)
-            return
+            report.member_scan_error = str(exc)
+            report.error_count += 1
+            break
         if not members:
-            return
+            complete = True
+            break
         for m in members:
             user = m.get("user") or {}
             uid  = str(user.get("id") or "")
             if not uid:
                 continue
-            if vip_role_id in (m.get("roles") or []):
-                if uid not in known_discord_ids:
-                    report.unmapped_with_vip.append(uid)
+            roles = [str(r) for r in (m.get("roles") or [])]
+            index[uid] = roles
+            if vip_role_id in roles and uid not in known_discord_ids:
+                report.unmapped_with_vip.append(uid)
         if len(members) < page_size:
-            return
+            complete = True
+            break
         after = str(members[-1].get("user", {}).get("id") or "")
         if not after:
-            return
+            break
         pages += 1
+    report.member_scan_complete = complete
+    return index
 
 
 def _iso_now() -> str:

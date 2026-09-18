@@ -2,27 +2,32 @@
 api/routes/public.py — Read-only public API for external websites.
 
 All endpoints are protected by an API key + origin/IP check rather than JWT
-so that a public website can call them without a user session.
+so that a public website can call them without a user session.  The API key
+is the real access control: Origin/Referer are set by whoever sends the
+request, so the origin check only keeps browsers on other sites out --
+a website should call these endpoints from its server, not from the page.
 
 Exposed data: player names, permission groups, leaderboard rankings.
 Never exposed: EOS IDs, shop points, kit cooldowns, internal paths.
 """
+import asyncio
 import hmac
 import time
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime, timezone
 from collections import defaultdict
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update
 
 from app.db.session import get_plugin_db
-from app.db.models.ark import Player, ArkShopPlayer
+from app.db.models.ark import Player
 from sqlalchemy import text as sa_text
 from app.core.config import server_settings
 from app.core.security import _extract_client_ip
-from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
+from app.core.store import get_machine_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles
 
@@ -30,12 +35,24 @@ router = APIRouter()
 
 # ── Security configuration ────────────────────────────────────────────────────
 
+def _origin_of(url: str) -> str:
+    """``scheme://host[:port]`` of an Origin/Referer value, or "" if it has none."""
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        return ""
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}".lower()
+
+
 def _build_allowed_origins() -> set[str]:
-    """Build the allowed origins set from config + localhost defaults."""
-    origins = {"http://localhost", "http://127.0.0.1"}
+    """Build the allowed origins set from config (loopback is handled in _origin_allowed)."""
+    origins: set[str] = set()
     raw = server_settings.PUBLIC_ALLOWED_ORIGINS
     if raw:
-        origins.update(o.strip() for o in raw.split(",") if o.strip())
+        origins.update(_origin_of(o) for o in raw.split(","))
+    origins.discard("")
     return origins
 
 
@@ -50,6 +67,25 @@ def _build_allowed_server_ips() -> set[str]:
 
 _ALLOWED_ORIGINS: set[str] = _build_allowed_origins()
 _ALLOWED_SERVER_IPS: set[str] = _build_allowed_server_ips()
+
+
+def _origin_allowed(value: str) -> bool:
+    """
+    True for an exact match on a configured origin, or for a loopback
+    origin (http/https on localhost or 127.0.0.1) on any port, so a site
+    under local development works without listing every dev-server port.
+    ``hostname`` is exact: http://localhost.evil.com is not loopback.
+    """
+    if not value:
+        return False
+    try:
+        parts = urlsplit(value.strip())
+        hostname = parts.hostname
+    except ValueError:
+        return False
+    if parts.scheme in ("http", "https") and hostname in ("localhost", "127.0.0.1"):
+        return True
+    return _origin_of(value) in _ALLOWED_ORIGINS
 
 # Simple in-memory rate limiter (resets on restart)
 _RATE_LIMITS: dict[str, list[float]] = defaultdict(list)
@@ -84,7 +120,9 @@ def _validate_request(request: Request, api_key: Optional[str] = None) -> None:
     """
     key = api_key or request.headers.get("X-API-Key", "")
     expected = server_settings.PUBLIC_API_KEY
-    if not expected or not hmac.compare_digest(key, expected):
+    # Compare bytes: compare_digest raises TypeError on a non-ASCII str,
+    # which turned a junk key into a 500 and a traceback in the log.
+    if not expected or not hmac.compare_digest(key.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Invalid API key.")
 
     origin    = request.headers.get("origin", "")
@@ -95,8 +133,10 @@ def _validate_request(request: Request, api_key: Optional[str] = None) -> None:
     # rest.  See app.core.security._extract_client_ip.
     client_ip = _extract_client_ip(request)
 
-    origin_ok  = any(origin.startswith(o)  for o in _ALLOWED_ORIGINS) if origin  else False
-    referer_ok = any(referer.startswith(o) for o in _ALLOWED_ORIGINS) if referer else False
+    # Exact scheme://host[:port] match: a prefix match let
+    # https://arkmania.example.evil.net pass for https://arkmania.example.
+    origin_ok  = _origin_allowed(origin)
+    referer_ok = _origin_allowed(referer)
     ip_ok      = client_ip in _ALLOWED_SERVER_IPS
 
     if not (origin_ok or referer_ok or ip_ok):
@@ -174,18 +214,56 @@ async def public_players_list(
         else:
             base_query = base_query.where(Player.Giocatore.ilike(like))
 
-    # Count after filter
-    filtered_result = await db.execute(
-        select(func.count()).select_from(base_query.subquery())
-    )
-    total_filtered = filtered_result.scalar() or 0
+    # Every filtered row, not just the page: the status order (Admins/VIPs
+    # first) spans the whole list, so it has to be applied before the page
+    # is cut.  Sorting each page on its own restarted the Admin/VIP block
+    # on every page.
+    now_ts  = int(datetime.now(timezone.utc).timestamp())
+    entries = []
 
-    # Paginated data
-    paginated = base_query.order_by(Player.Giocatore.asc()).limit(limit).offset(offset)
-    rows = (await db.execute(paginated)).all()
+    for r in (await db.execute(base_query.order_by(Player.Giocatore.asc()))).all():
+        name = r.Giocatore
+        if not name or not name.strip():
+            continue
+
+        # Parse permanent permission groups
+        perm_groups = [
+            g.strip()
+            for g in (r.PermissionGroups or "").split(",")
+            if g.strip() and g.strip() != "Default"
+        ]
+
+        # Parse timed permission groups
+        timed_groups = []
+        if r.TimedPermissionGroups and r.TimedPermissionGroups.strip():
+            for entry in r.TimedPermissionGroups.split(","):
+                if not entry.strip():
+                    continue
+                parts = entry.strip().split(";")
+                if len(parts) >= 3:
+                    group   = parts[2].strip()
+                    ts      = int(parts[1]) if parts[1].isdigit() else 0
+                    expired = ts > 0 and ts < now_ts
+                    if group:
+                        timed_groups.append({
+                            "group":      group,
+                            "expires_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts > 0 else None,
+                            "expired":    expired,
+                        })
+
+        active_groups = perm_groups + [
+            tg["group"] for tg in timed_groups if not tg["expired"]
+        ]
+        entries.append((r, perm_groups, timed_groups, _determine_status(active_groups)))
+
+    # Sort: Admins/VIPs first, then alphabetical
+    _STATUS_ORDER = {"Admin": 0, "VIP": 1, "Member": 2, "Default": 3}
+    entries.sort(key=lambda e: (_STATUS_ORDER.get(e[3], 9), e[0].Giocatore.lower()))
+    total_filtered = len(entries)
+    page = entries[offset:offset + limit]
 
     # Fetch tribe names and last logout from auxiliary tables
-    eos_ids = [r.EOS_Id for r in rows if r.EOS_Id]
+    eos_ids = [r.EOS_Id for r, *_ in page if r.EOS_Id]
     tribe_map: dict[str, str]   = {}  # eos_id -> tribe_name
     login_map: dict[str, int]   = {}  # eos_id -> last_logout unix timestamp
 
@@ -219,44 +297,10 @@ async def public_players_list(
             if tr[0] not in tribe_map and tr[1] and tr[1].strip():
                 tribe_map[tr[0]] = tr[1].strip()
 
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-    items  = []
+    items = []
 
-    for r in rows:
+    for r, perm_groups, timed_groups, status in page:
         name = r.Giocatore
-        if not name or not name.strip():
-            continue
-
-        # Parse permanent permission groups
-        perm_groups = [
-            g.strip()
-            for g in (r.PermissionGroups or "").split(",")
-            if g.strip() and g.strip() != "Default"
-        ]
-
-        # Parse timed permission groups
-        timed_groups = []
-        if r.TimedPermissionGroups and r.TimedPermissionGroups.strip():
-            for entry in r.TimedPermissionGroups.split(","):
-                if not entry.strip():
-                    continue
-                parts = entry.strip().split(";")
-                if len(parts) >= 3:
-                    group   = parts[2].strip()
-                    ts      = int(parts[1]) if parts[1].isdigit() else 0
-                    expired = ts > 0 and ts < now_ts
-                    if group:
-                        timed_groups.append({
-                            "group":      group,
-                            "expires_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts > 0 else None,
-                            "expired":    expired,
-                        })
-
-        active_groups = perm_groups + [
-            tg["group"] for tg in timed_groups if not tg["expired"]
-        ]
-        status = _determine_status(active_groups)
-
         last_login_ts = login_map.get(r.EOS_Id)
         last_login    = (
             datetime.fromtimestamp(last_login_ts, tz=timezone.utc).isoformat()
@@ -274,10 +318,6 @@ async def public_players_list(
             "decay_day":   None,
         })
 
-    # Sort: Admins/VIPs first, then alphabetical
-    _STATUS_ORDER = {"Admin": 0, "VIP": 1, "Member": 2, "Default": 3}
-    items.sort(key=lambda x: (_STATUS_ORDER.get(x["status"], 9), x["name"].lower()))
-
     return {
         "players":    items,
         "total":      total_filtered,
@@ -290,49 +330,17 @@ async def public_players_list(
 
 # ── Cron: sync player names ────────────────────────────────────────────────────
 
-@router.post("/cron/sync-names")
-async def cron_sync_names(
-    request: Request,
-    secret:  str           = Query(...),
-    db:      AsyncSession  = Depends(get_plugin_db),
-):
+def _scan_all_profiles_sync(containers_map: dict) -> tuple[list[dict], list[str]]:
     """
-    Cron job: scan ``.arkprofile`` files via SSH and update player names in DB.
+    Read every ``.arkprofile`` on every scanned machine: ``(profiles, errors)``.
 
-    Protected by a shared secret and restricted to localhost callers.
-    Deduplicates by EOS ID (first profile wins).
+    Blocking on purpose (pymysql machine lookups, one SSH round trip per
+    profile, 30 s per unreachable host): the caller runs it in a worker
+    thread, because on the event loop it froze every other request --
+    player dashboard, market, /health -- for the whole scan.
     """
-    expected = server_settings.CRON_SECRET
-    if not expected or not hmac.compare_digest(secret, expected):
-        raise HTTPException(status_code=403, detail="Invalid cron secret.")
-
-    client_ip = request.client.host if request.client else ""
-    if client_ip not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(status_code=403, detail="Local requests only.")
-
-    containers_map = get_containers_map_sync()
-    if not containers_map.get("machines"):
-        return {"success": False, "error": "No containers scanned."}
-
-    all_players_result = await db.execute(
-        select(Player.Id, Player.EOS_Id, Player.Giocatore)
-    )
-    eos_map = {
-        p.EOS_Id.lower(): {"id": p.Id, "eos_id": p.EOS_Id, "current_name": p.Giocatore}
-        for p in all_players_result.all()
-        if p.EOS_Id
-    }
-
-    total_profiles = 0
-    matched        = 0
-    updated_count  = 0
-    # Best candidate per EOS id: a player owns one character per map, so the
-    # same EOS shows up once per SavedArks directory with a possibly
-    # different name.  Keep the most recently written profile and apply it
-    # after every machine has been walked -- taking the first one seen made
-    # the result depend on container order and could pin a name months old.
-    best_by_eos: dict[str, dict] = {}
-    errors: list[str]      = []
+    profiles: list[dict] = []
+    errors:   list[str]  = []
 
     for mid, mdata in containers_map["machines"].items():
         machine = get_machine_sync(int(mid))
@@ -356,41 +364,93 @@ async def cron_sync_names(
                 key_path=machine.get("ssh_key_path"),
                 port=machine.get("ssh_port", 22),
             ) as ssh:
-                profiles = scan_and_match_profiles(ssh, saved_paths)
+                profiles.extend(scan_and_match_profiles(ssh, saved_paths))
         except Exception as exc:
             errors.append(f"SSH {machine['hostname']}: {exc}")
+
+    return profiles, errors
+
+
+@router.post("/cron/sync-names")
+async def cron_sync_names(
+    request: Request,
+    secret:  str           = Query(...),
+    db:      AsyncSession  = Depends(get_plugin_db),
+):
+    """
+    Cron job: scan ``.arkprofile`` files via SSH and update player names in DB.
+
+    Protected by a shared secret and restricted to localhost callers.
+    Deduplicates by EOS ID (first profile wins).
+    """
+    expected = server_settings.CRON_SECRET
+    if not expected or not hmac.compare_digest(secret.encode(), expected.encode()):
+        raise HTTPException(status_code=403, detail="Invalid cron secret.")
+
+    # Behind nginx every request reaches uvicorn from 127.0.0.1, so the TCP
+    # peer alone let internet callers through this check; resolve the real
+    # client the same way the rate limiter does.
+    client_ip = _extract_client_ip(request)
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Local requests only.")
+
+    containers_map = await asyncio.to_thread(get_containers_map_sync)
+    if not containers_map.get("machines"):
+        return {"success": False, "error": "No containers scanned."}
+
+    # Scan before touching the plugin DB, so no pooled connection sits idle
+    # in a transaction for the whole walk.
+    profiles, errors = await asyncio.to_thread(_scan_all_profiles_sync, containers_map)
+
+    all_players_result = await db.execute(
+        select(Player.Id, Player.EOS_Id, Player.Giocatore)
+    )
+    eos_map = {
+        p.EOS_Id.lower(): {"id": p.Id, "eos_id": p.EOS_Id, "current_name": p.Giocatore}
+        for p in all_players_result.all()
+        if p.EOS_Id
+    }
+
+    total_profiles = 0
+    matched        = 0
+    updated_count  = 0
+    # Best candidate per EOS id: a player owns one character per map, so the
+    # same EOS shows up once per SavedArks directory with a possibly
+    # different name.  Keep the most recently written profile and apply it
+    # after every machine has been walked -- taking the first one seen made
+    # the result depend on container order and could pin a name months old.
+    best_by_eos: dict[str, dict] = {}
+
+    for prof in profiles:
+        total_profiles += 1
+        player_name    = prof.get("player_name")
+        profile_eos_id = prof.get("eos_id")
+        file_id        = prof["file_id"].lower()
+
+        if not player_name:
             continue
 
-        for prof in profiles:
-            total_profiles += 1
-            player_name    = prof.get("player_name")
-            profile_eos_id = prof.get("eos_id")
-            file_id        = prof["file_id"].lower()
+        # Determine the canonical EOS ID to update
+        ref_eos = None
+        if profile_eos_id and profile_eos_id.lower() in eos_map:
+            ref_eos = profile_eos_id.lower()
+        elif file_id in eos_map:
+            ref_eos = file_id
+        else:
+            if profile_eos_id:
+                eos_lower = profile_eos_id.lower()
+                for db_eos in eos_map:
+                    if eos_lower in db_eos or db_eos in eos_lower:
+                        ref_eos = db_eos
+                        break
 
-            if not player_name:
-                continue
+        if not ref_eos:
+            continue
 
-            # Determine the canonical EOS ID to update
-            ref_eos = None
-            if profile_eos_id and profile_eos_id.lower() in eos_map:
-                ref_eos = profile_eos_id.lower()
-            elif file_id in eos_map:
-                ref_eos = file_id
-            else:
-                if profile_eos_id:
-                    eos_lower = profile_eos_id.lower()
-                    for db_eos in eos_map:
-                        if eos_lower in db_eos or db_eos in eos_lower:
-                            ref_eos = db_eos
-                            break
-
-            if not ref_eos:
-                continue
-
-            mtime = prof.get("mtime", 0.0)
-            best  = best_by_eos.get(ref_eos)
-            if best is None or mtime > best["mtime"]:
-                best_by_eos[ref_eos] = {"name": player_name, "mtime": mtime}
+        mtime = prof.get("mtime", 0.0)
+        best  = best_by_eos.get(ref_eos)
+        if best is None or mtime > best["mtime"]:
+            best_by_eos[ref_eos] = {"name": player_name, "mtime": mtime}
 
     for ref_eos, best in best_by_eos.items():
         player_data = eos_map[ref_eos]
@@ -452,9 +512,12 @@ async def public_leaderboard(
 
     where_clause = "WHERE " + " AND ".join(where) if where else ""
 
+    # COUNT(*), not COUNT(DISTINCT eos_id): a row is one (player, server
+    # type), so without a server_type filter a player can be listed twice,
+    # and the total has to match the rows the pages walk through.
     count_result = await db.execute(
         sa_text(
-            f"SELECT COUNT(DISTINCT eos_id) FROM ARKM_lb_scores {where_clause}"
+            f"SELECT COUNT(*) FROM ARKM_lb_scores {where_clause}"
         ),
         params,
     )
@@ -554,9 +617,14 @@ def _display_name_from_bp(bp: str) -> str:
         short = bp.rsplit(".", 1)[-1].rstrip("'")
     if "/" in short:
         short = short.rsplit("/", 1)[-1]
+    # Class-name suffix (Rex_Character_BP_C); only at the end, so names that
+    # merely contain "_C" (Spino_Corrupt) survive.
+    if short.endswith("_C"):
+        short = short[:-2]
+    # Longest suffix first: stripping "_Character_BP" first left "_ASA".
     return (
-        short.replace("_Character_BP", "")
-             .replace("_Character_BP_ASA", "")
+        short.replace("_Character_BP_ASA", "")
+             .replace("_Character_BP", "")
              .replace("_", " ")
              .replace("S-", "")
              .strip()

@@ -27,6 +27,7 @@ real panel access.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -119,8 +120,10 @@ def _require_oauth_ready():
     cfg = get_discord_config()
     missing = cfg.missing_for_oauth()
     if missing:
+        # 409, not 503: the panel is up, the integration is just not set
+        # up -- and the SPA treats 503 as "backend down".
         raise HTTPException(
-            status_code=503,
+            status_code=409,
             detail=(
                 "Discord OAuth not configured.  Missing .env keys: "
                 + ", ".join(missing)
@@ -379,12 +382,21 @@ async def _maybe_issue_panel_jwt(
     log in as, and return a fresh JWT for that user.  Returns None
     when the Discord identity has no admin / operator / viewer claim.
     """
-    # 1. Admin-set link wins (a real AppUser already exists).
+    # Username convention: discord:<id> -- can never collide with a
+    # real human-typed username because ":" isn't allowed in our
+    # password-account creation form.
+    username = f"discord:{discord_user_id}"
+
+    # 1. Admin-set link wins (a real AppUser already exists).  The
+    #    auto-provisioned discord:<id> stub is linked too, but its access
+    #    comes from the whitelist, not from an admin: it goes through step
+    #    2 on every login, so taking the ID off the whitelist (or moving it
+    #    to another tier) takes effect at the next login.
     row = await dc_store.get_by_discord_id(db, discord_user_id)
     app_user_id = row.get("app_user_id") if row else None
     if app_user_id:
         u = await db.scalar(select(AppUser).where(AppUser.id == app_user_id))
-        if u and (u.active if u.active is not None else True):
+        if u and u.username != username and (u.active if u.active is not None else True):
             return create_token(u.username, u.role)
 
     # 2. Whitelist fallback -- upsert a stub discord:<id> user.
@@ -400,24 +412,26 @@ async def _maybe_issue_panel_jwt(
     if not role:
         return None
 
-    # Username convention: discord:<id> -- can never collide with a
-    # real human-typed username because ":" isn't allowed in our
-    # password-account creation form.  display_name is the Discord
-    # name so the sidebar shows something readable.
-    username = f"discord:{discord_user_id}"
+    # display_name is the Discord name so the sidebar shows something
+    # readable.
     existing = await db.scalar(select(AppUser).where(AppUser.username == username))
     if existing:
+        # An admin who deactivated the stub on the Users page meant it:
+        # the whitelist grants a role, it does not override that switch.
+        if not existing.active:
+            return None
         # Refresh role + display_name in case the whitelist or the
         # Discord profile changed since last login.
         existing.role         = role
         existing.display_name = discord_global_name or existing.display_name or username
-        existing.active       = True
     else:
         from app.core.auth import hash_password as _hash
         import secrets as _secrets
+        # bcrypt is deliberately slow: hash off the event loop.
+        unusable_hash = await asyncio.to_thread(_hash, _secrets.token_urlsafe(48))
         existing = AppUser(
             username     = username,
-            password_hash= _hash(_secrets.token_urlsafe(48)),  # unusable
+            password_hash= unusable_hash,  # unusable
             role         = role,
             display_name = discord_global_name or username,
             active       = True,
@@ -425,8 +439,9 @@ async def _maybe_issue_panel_jwt(
         db.add(existing)
     await db.commit()
     await db.refresh(existing)
-    # Bind the Discord account to this AppUser so future logins skip
-    # the whitelist branch entirely (Step 1 will catch them).
+    # Keep the link so the Discord admin page shows which AppUser this
+    # identity maps to.  It does not bypass the whitelist: step 1 ignores
+    # the discord:<id> stub, so the stub is re-checked on every login.
     await dc_store.set_app_user_link(
         db, discord_user_id=discord_user_id, app_user_id=existing.id,
     )

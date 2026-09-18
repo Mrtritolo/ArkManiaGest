@@ -18,13 +18,16 @@ Subsequent phases (3-6) add /link, /role-mappings, /sync, /me/dashboard.
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
+from app.core.audit import audit_event
 from app.core.auth import require_admin
 from app.core.config import server_settings
 from app.core.env_writer import update_env_file
@@ -67,7 +70,7 @@ class DiscordConfigStatus(BaseModel):
     operator_user_ids: list[str] = []
     viewer_user_ids:   list[str] = []
     # Phase 4 VIP sync: when set, the Settings -> Discord page enables
-    # the manual 'Sync VIP' button.  Empty -> sync endpoint 503s.
+    # the manual 'Sync VIP' button.  Empty -> sync endpoint 409s.
     vip_role_id:       str = ""
     vip_sync_ready:    bool = False
 
@@ -169,12 +172,37 @@ def _sanitize_id_list(ids: Optional[list[str]]) -> Optional[list[str]]:
     return out
 
 
+_SNOWFLAKE_RE = re.compile(r"^[0-9]{17,20}$")
+
+
+def _check_env_value(env_key: str, value: str, *, snowflake: bool = False) -> None:
+    """
+    422 on a value .env can't hold safely.  The writer only quotes on '\\n',
+    python-dotenv also breaks lines on a bare '\\r', and the writer re-reads
+    the file with str.splitlines(), which also splits on '\\x85', U+2028 and
+    U+2029.  Any of these could smuggle in a second KEY=value binding
+    (JWT_SECRET, ...), so every non-printable character is rejected.
+    Empty strings pass: they clear the key.
+    """
+    if not value.isprintable():
+        raise HTTPException(
+            status_code=422,
+            detail=f"{env_key} contains control or line-separator characters.",
+        )
+    if snowflake and value and not _SNOWFLAKE_RE.match(value):
+        raise HTTPException(status_code=422, detail=f"{env_key} must be a Discord ID (17-20 digits).")
+
+
 @router.put(
     "/config",
     response_model=_ConfigUpdateResponse,
-    dependencies=[Depends(require_admin)],
 )
-def update_discord_config(body: DiscordConfigUpdate):
+async def update_discord_config(
+    body: DiscordConfigUpdate,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Persist edited DISCORD_* keys back to the backend's .env file.
 
@@ -199,9 +227,14 @@ def update_discord_config(body: DiscordConfigUpdate):
         ("DISCORD_REDIRECT_URI",   _strip_or_none(body.redirect_uri)),
         ("DISCORD_VIP_ROLE_ID",    _strip_or_none(body.vip_role_id)),
     ]
+    snowflake_keys = {"DISCORD_CLIENT_ID", "DISCORD_GUILD_ID", "DISCORD_VIP_ROLE_ID"}
     for env_key, value in string_map:
         if value is not None:
+            _check_env_value(env_key, value, snowflake=env_key in snowflake_keys)
             updates[env_key] = value
+    redirect_uri = updates.get("DISCORD_REDIRECT_URI")
+    if redirect_uri and not redirect_uri.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="DISCORD_REDIRECT_URI must be an http(s) URL.")
 
     # CSV-list fields (admin / operator / viewer whitelists).
     csv_map = [
@@ -211,13 +244,15 @@ def update_discord_config(body: DiscordConfigUpdate):
     ]
     for env_key, ids in csv_map:
         if ids is not None:
+            for discord_id in ids:
+                _check_env_value(env_key, discord_id, snowflake=True)
             updates[env_key] = ",".join(ids)
 
     if not updates:
         raise HTTPException(status_code=422, detail="No editable fields supplied.")
 
     try:
-        update_env_file(updates)
+        await asyncio.to_thread(update_env_file, updates)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from None
     except OSError as exc:
@@ -226,6 +261,9 @@ def update_discord_config(body: DiscordConfigUpdate):
             detail=f"Failed to write .env: {exc}",
         ) from None
 
+    # Key names only: the values include the bot token / client secret.
+    await audit_event(db, action="discord.config_update", username=admin["sub"],
+                      detail=", ".join(sorted(updates.keys())), request=request)
     return _ConfigUpdateResponse(updated_keys=sorted(updates.keys()))
 
 
@@ -295,11 +333,12 @@ def _row_with_app_user(row: dict, app_user: Optional[AppUser]) -> _DiscordAccoun
 @router.post(
     "/link-app-user/{discord_user_id}",
     response_model=_DiscordAccountRead,
-    dependencies=[Depends(require_admin)],
 )
 async def link_app_user(
     discord_user_id: str,
     body: _LinkAppUserRequest,
+    request: Request,
+    admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -338,16 +377,21 @@ async def link_app_user(
     fresh = await dc_store.set_app_user_link(
         db, discord_user_id=discord_user_id, app_user_id=user.id,
     )
+    # A Discord login as this AppUser is a panel login: keep who bound it.
+    await audit_event(db, action="discord.link_app_user", username=admin["sub"],
+                      detail=f"discord {discord_user_id} -> '{user.username}' ({user.role})",
+                      request=request)
     return _row_with_app_user(fresh, user)
 
 
 @router.delete(
     "/link-app-user/{discord_user_id}",
     response_model=_DiscordAccountRead,
-    dependencies=[Depends(require_admin)],
 )
 async def unlink_app_user(
     discord_user_id: str,
+    request: Request,
+    admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove the AppUser link from a Discord account."""
@@ -357,6 +401,9 @@ async def unlink_app_user(
     fresh = await dc_store.set_app_user_link(
         db, discord_user_id=discord_user_id, app_user_id=None,
     )
+    await audit_event(db, action="discord.unlink_app_user", username=admin["sub"],
+                      detail=f"discord {discord_user_id} (was app user id {existing.get('app_user_id')})",
+                      request=request)
     return _row_with_app_user(fresh, None)
 
 
@@ -479,11 +526,12 @@ async def search_players(
 @router.post(
     "/link-eos/{discord_user_id}",
     response_model=_DiscordAccountRead,
-    dependencies=[Depends(require_admin)],
 )
 async def link_eos_player(
     discord_user_id: str,
     body: _LinkEosRequest,
+    request: Request,
+    admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     plugin_db: AsyncSession = Depends(get_plugin_db),
 ):
@@ -535,9 +583,14 @@ async def link_eos_player(
             ),
         )
 
+    linked_by = await db.scalar(select(AppUser.id).where(AppUser.username == admin["sub"]))
     fresh = await dc_store.set_link(
         db, discord_user_id=discord_user_id, eos_id=eos_id,
+        linked_by_user_id=linked_by,
     )
+    await audit_event(db, action="discord.link_eos", username=admin["sub"],
+                      detail=f"discord {discord_user_id} -> eos {eos_id}",
+                      request=request)
     # Re-fetch the AppUser link side so the response stays a complete row.
     app_user = None
     if fresh.get("app_user_id"):
@@ -550,10 +603,11 @@ async def link_eos_player(
 @router.delete(
     "/link-eos/{discord_user_id}",
     response_model=_DiscordAccountRead,
-    dependencies=[Depends(require_admin)],
 )
 async def unlink_eos_player(
     discord_user_id: str,
+    request: Request,
+    admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Sever the Discord <-> EOS link (does NOT touch the AppUser link)."""
@@ -563,6 +617,9 @@ async def unlink_eos_player(
     fresh = await dc_store.set_link(
         db, discord_user_id=discord_user_id, eos_id=None,
     )
+    await audit_event(db, action="discord.unlink_eos", username=admin["sub"],
+                      detail=f"discord {discord_user_id} (was eos {existing.get('eos_id')})",
+                      request=request)
     app_user = None
     if fresh.get("app_user_id"):
         app_user = await db.scalar(
@@ -632,14 +689,14 @@ def _require_bot_ready() -> tuple[str, str]:
     """
     Return (bot_token, guild_id) once the bot side is fully configured.
 
-    Raises 503 with a list of the missing .env keys so the admin UI can
-    point the operator at the exact fix.
+    Raises 409 with a list of the missing .env keys so the admin UI can
+    point the operator at the exact fix (503 would read as "panel down").
     """
     cfg = get_discord_config()
     if not cfg.has_bot:
         missing = ", ".join(cfg.missing_for_bot()) or "DISCORD_BOT_TOKEN, DISCORD_GUILD_ID"
         raise HTTPException(
-            status_code=503,
+            status_code=409,
             detail=f"Discord bot not configured. Missing env keys: {missing}",
         )
     return cfg.bot_token, cfg.guild_id
@@ -650,16 +707,21 @@ def _wrap_discord_call(coro_factory):
     Run a Discord API helper and translate :class:`DiscordAPIError` into
     a FastAPI HTTPException carrying Discord's own message.
 
-    We re-raise 401/403/404 as-is (semantically meaningful for the UI) and
-    flatten everything else to 502 ("upstream error") so the panel doesn't
-    falsely advertise a 500 on the panel itself.
+    We re-raise 400/404/409/429 as-is (semantically meaningful for the UI)
+    and flatten everything else to 502 ("upstream error") so the panel
+    doesn't falsely advertise a 500 on the panel itself.  Discord's 401/403
+    reject the BOT, not the panel user: forwarding them would read as a
+    panel auth failure and log the admin out.
     """
     async def _runner():
         try:
             return await coro_factory()
         except dc_client.DiscordAPIError as exc:
-            status = exc.status if exc.status in (400, 401, 403, 404, 409, 429) else 502
-            raise HTTPException(status_code=status, detail=str(exc)) from None
+            status = exc.status if exc.status in (400, 404, 409, 429) else 502
+            detail = str(exc)
+            if exc.status == 401:
+                detail = f"Discord rejected the bot token (check DISCORD_BOT_TOKEN). {detail}"
+            raise HTTPException(status_code=status, detail=detail) from None
     return _runner
 
 
@@ -904,14 +966,14 @@ async def sync_vip_endpoint(
     stripped, the operator gets the list back to act on manually.
 
     Requires both bot credentials AND a configured DISCORD_VIP_ROLE_ID.
-    A 503 with the missing key list is returned otherwise so the admin
+    A 409 with the missing key list is returned otherwise so the admin
     UI can render the actual fix.
     """
     bot_token, guild_id = _require_bot_ready()
     vip_role_id = (server_settings.DISCORD_VIP_ROLE_ID or "").strip()
     if not vip_role_id:
         raise HTTPException(
-            status_code=503,
+            status_code=409,
             detail=(
                 "Discord VIP sync not configured.  Set DISCORD_VIP_ROLE_ID "
                 "in .env (the Discord snowflake of the VIP role) and "
@@ -960,6 +1022,21 @@ class _RoleMappingUpdate(BaseModel):
     notes:             Optional[str] = None
 
 
+def _check_ark_group_name(group: str) -> None:
+    """
+    Reject names Players.PermissionGroups can't hold as one entry: the
+    CSV splits on ',' (';' separates TimedPermissionGroups fields), so
+    such a rule would be re-added on every sync and never revoked.
+    """
+    if any(c in group for c in ",;") or any(ord(c) < 32 for c in group):
+        raise HTTPException(
+            status_code=422,
+            detail="ark_group_name cannot contain ',', ';' or control characters.",
+        )
+    if len(group) > 64:
+        raise HTTPException(status_code=422, detail="ark_group_name is limited to 64 characters.")
+
+
 def _serialize_role_mapping(m: DiscordRoleMap) -> _RoleMappingRead:
     return _RoleMappingRead(
         id                = m.id,
@@ -1001,6 +1078,7 @@ async def create_role_mapping(body: _RoleMappingCreate, db: AsyncSession = Depen
     group   = (body.ark_group_name  or "").strip()
     if not role_id or not group:
         raise HTTPException(status_code=422, detail="discord_role_id and ark_group_name are required.")
+    _check_ark_group_name(group)
     row = DiscordRoleMap(
         discord_role_id   = role_id,
         discord_role_name = (body.discord_role_name or "").strip() or None,
@@ -1035,12 +1113,16 @@ async def update_role_mapping(
         if not v:
             raise HTTPException(status_code=422, detail="discord_role_id cannot be empty.")
         row.discord_role_id = v
+        # The role id belongs to the guild configured now: the sync only
+        # applies rules bound to that guild.
+        row.discord_guild_id = get_discord_config().guild_id or ""
     if body.discord_role_name is not None:
         row.discord_role_name = body.discord_role_name.strip() or None
     if body.ark_group_name is not None:
         v = body.ark_group_name.strip()
         if not v:
             raise HTTPException(status_code=422, detail="ark_group_name cannot be empty.")
+        _check_ark_group_name(v)
         row.ark_group_name = v
     if body.is_active is not None:
         row.is_active = bool(body.is_active)
@@ -1082,13 +1164,15 @@ async def sync_roles_endpoint(
     is fixed Discord -> ARK plugin DB.  See app.discord.sync_roles for
     the algorithm details.
 
-    503s with a missing-keys list when bot creds are not configured.
+    409s with a missing-keys list when bot creds are not configured.
     """
     bot_token, guild_id = _require_bot_ready()
-    return await sync_role_mappings(
-        db=db, plugin_db=plugin_db,
-        bot_token=bot_token, guild_id=guild_id,
-    )
+    return await _wrap_discord_call(
+        lambda: sync_role_mappings(
+            db=db, plugin_db=plugin_db,
+            bot_token=bot_token, guild_id=guild_id,
+        )
+    )()
 
 
 @router.post(

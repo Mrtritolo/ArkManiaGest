@@ -31,13 +31,15 @@ grows.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Optional
 
 import jwt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.auth_discord import (
@@ -45,8 +47,12 @@ from app.api.routes.auth_discord import (
 )
 from app.core.audit import audit_event
 from app.db.session import get_db, get_plugin_db
+from app.discord import client as dc_client
 from app.discord import store as dc_store
+from app.discord.config import get_discord_config
 
+
+log = logging.getLogger("arkmaniagest.me")
 
 router = APIRouter()
 
@@ -574,6 +580,11 @@ async def get_dashboard(
         # via the LEFT JOIN; eos_id prefix is the fallback when Players is
         # missing for a member (rare -- only happens for whoever-tribed-then-
         # was-cleaned-up).
+        # Membership rows are never deleted, so a player who left for
+        # another tribe on the same map still has a row here.  Only list
+        # those whose latest row on that map is this team -- the same rule
+        # current_by_map applies above -- otherwise a former member, now
+        # maybe a rival, shows up with their EOS id and live online status.
         roster = (await plugin_db.execute(
             text(
                 "SELECT pt.eos_id, MAX(pt.last_login) AS last_login, "
@@ -581,6 +592,13 @@ async def get_dashboard(
                 "FROM ARKM_player_tribes pt "
                 "LEFT JOIN Players p ON p.EOS_Id = pt.eos_id "
                 "WHERE pt.targeting_team = :t "
+                "  AND NOT EXISTS ( "
+                "    SELECT 1 FROM ARKM_player_tribes later "
+                "    WHERE later.eos_id = pt.eos_id "
+                "      AND later.server_key = pt.server_key "
+                "      AND later.targeting_team <> pt.targeting_team "
+                "      AND later.last_login > pt.last_login "
+                "  ) "
                 "GROUP BY pt.eos_id, p.Giocatore "
                 "ORDER BY last_login DESC LIMIT 25"
             ),
@@ -693,33 +711,46 @@ async def get_dashboard(
     #     the stored world units into the GPS the player reads in game.  The
     #     home limit is per map, so the map is the unit the card is built
     #     around, not a column in a flat list.
-    home_rows = (await plugin_db.execute(
-        text(
-            "SELECT h.id, h.name, h.server_key, h.x, h.y, h.z, h.created_at, "
-            "       srv.display_name AS server_name, srv.map_name, "
-            "       mc.lat_origin, mc.lat_scale, mc.lon_origin, mc.lon_scale "
-            "FROM ARKM_homes h "
-            "LEFT JOIN ARKM_servers srv ON srv.server_key = h.server_key "
-            "LEFT JOIN ARKM_map_calibration mc ON mc.map_name = srv.map_name "
-            "WHERE h.eos_id = :e "
-            "ORDER BY srv.map_name IS NULL, srv.map_name, h.name"
-        ),
+    #
+    #     Both tables belong to optional plugins (ARKM-Teleport, DecayManager
+    #     5.7.0+), so each is read on its own and a missing table only
+    #     empties its part: without the guard one absent table turned the
+    #     whole dashboard into a 500.
+    home_rows = await _rows_if_table_exists(
+        plugin_db,
+        "SELECT h.id, h.name, h.server_key, h.x, h.y, h.z, h.created_at, "
+        "       srv.display_name AS server_name, srv.map_name "
+        "FROM ARKM_homes h "
+        "LEFT JOIN ARKM_servers srv ON srv.server_key = h.server_key "
+        "WHERE h.eos_id = :e "
+        "ORDER BY srv.map_name IS NULL, srv.map_name, h.name",
         {"e": eos},
-    )).mappings().fetchall()
+    )
+    # Keyed by map name, the way the admin map page reads the same table.
+    calib_by_map: dict[str, RowMapping] = {
+        c["map_name"]: c
+        for c in await _rows_if_table_exists(
+            plugin_db,
+            "SELECT map_name, lat_origin, lat_scale, lon_origin, lon_scale "
+            "FROM ARKM_map_calibration",
+        )
+        if c.get("map_name")
+    } if home_rows else {}
     home_groups: list[_HomeMapGroup] = []
     group_by_key: dict[str, _HomeMapGroup] = {}
     for r in home_rows:
         key = r.get("server_key") or ""
         group = group_by_key.get(key)
         if group is None:
+            calib = calib_by_map.get(r.get("map_name") or "") or {}
             group = _HomeMapGroup(
                 server_key  = r.get("server_key"),
                 server_name = r.get("server_name"),
                 map_name    = r.get("map_name"),
-                lat_origin  = _as_float(r.get("lat_origin")),
-                lat_scale   = _as_float(r.get("lat_scale")),
-                lon_origin  = _as_float(r.get("lon_origin")),
-                lon_scale   = _as_float(r.get("lon_scale")),
+                lat_origin  = _as_float(calib.get("lat_origin")),
+                lat_scale   = _as_float(calib.get("lat_scale")),
+                lon_origin  = _as_float(calib.get("lon_origin")),
+                lon_scale   = _as_float(calib.get("lon_scale")),
             )
             group_by_key[key] = group
             home_groups.append(group)
@@ -861,7 +892,8 @@ async def get_dashboard(
 #   rename — validated server-side by NameControl and applied while the
 #            player is online (or at the next login, within 7 days).
 # The table is owned and created by the plugin — a missing table means
-# the plugin is not updated yet, answered as 503.
+# the plugin is not updated yet, answered as 409 (503 would read as
+# "panel down" to the SPA).
 
 _REQUESTS_TABLE_HINT = (
     "Player-request queue not available: the ARKM-Login plugin on the "
@@ -887,6 +919,22 @@ class _PlayerRequestRow(BaseModel):
 def _is_missing_table_error(exc: Exception) -> bool:
     """MySQL 1146 'table doesn't exist' — the plugin owns the schema."""
     return "1146" in str(exc) or "doesn't exist" in str(exc)
+
+
+async def _rows_if_table_exists(
+    plugin_db: AsyncSession, sql: str, params: Optional[dict] = None,
+) -> list[RowMapping]:
+    """
+    Rows of a read against a table an optional plugin creates, or ``[]``
+    when that plugin has not created it (yet).  A failed SELECT leaves
+    the session usable, so the caller can keep reading.
+    """
+    try:
+        return list((await plugin_db.execute(text(sql), params or {})).mappings().fetchall())
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc):
+            return []
+        raise
 
 
 async def _pending_request_exists(
@@ -981,7 +1029,7 @@ async def request_self_kick(
         raise
     except Exception as exc:  # noqa: BLE001
         if _is_missing_table_error(exc):
-            raise HTTPException(status_code=503, detail=_REQUESTS_TABLE_HINT) from None
+            raise HTTPException(status_code=409, detail=_REQUESTS_TABLE_HINT) from None
         raise
 
     await audit_event(
@@ -1039,7 +1087,7 @@ async def request_rename(
         await plugin_db.commit()
     except Exception as exc:  # noqa: BLE001
         if _is_missing_table_error(exc):
-            raise HTTPException(status_code=503, detail=_REQUESTS_TABLE_HINT) from None
+            raise HTTPException(status_code=409, detail=_REQUESTS_TABLE_HINT) from None
         raise
 
     await audit_event(
@@ -1171,6 +1219,9 @@ async def delete_my_account(
     game data owned by the server plugins and is out of scope here.
     """
     discord_user_id = str(account.get("discord_user_id"))
+    # Read the OAuth tokens before the row goes, to revoke them at Discord
+    # too: deleting our copy alone leaves them valid until they expire.
+    tokens = await dc_store.get_by_discord_id(db, discord_user_id, include_tokens=True) or {}
 
     # Drop the auto-provisioned stub AppUser, if any.  The stub is
     # recognisable by its reserved "discord:<id>" username (':' is not
@@ -1184,6 +1235,24 @@ async def delete_my_account(
         {"d": discord_user_id},
     )
     await db.commit()
+
+    # After the commit, so a slow or failing Discord call cannot hold up the
+    # erasure.  Best-effort: revoke_token logs and swallows Discord errors.
+    # Bounded on top of that, because a 429 makes the client sleep and retry
+    # (up to ~50s): the browser would time out first and never receive the
+    # response that clears the session cookie, for an erasure that did happen.
+    token = tokens.get("refresh_token") or tokens.get("access_token")
+    cfg = get_discord_config()
+    if token and cfg.has_oauth:
+        try:
+            await asyncio.wait_for(
+                dc_client.revoke_token(
+                    client_id=cfg.client_id, client_secret=cfg.client_secret, token=token,
+                ),
+                timeout=5.0,
+            )
+        except Exception as exc:   # noqa: BLE001 - erasure is already committed
+            log.warning("Discord token revoke skipped: %s", type(exc).__name__)
 
     # The audit row keeps only the numeric Discord ID (needed to prove
     # the erasure happened) and is itself purged by the retention job.

@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Mapping, Optional
+from urllib.parse import quote
 
 import httpx
 
@@ -39,7 +40,10 @@ DEFAULT_TIMEOUT = 10.0
 
 
 class DiscordAPIError(RuntimeError):
-    """Raised when Discord returns a non-2xx response."""
+    """
+    Raised when Discord returns a non-2xx response, or when no response
+    arrives at all (timeout / connection failure): ``status`` is 0 then.
+    """
 
     def __init__(
         self,
@@ -68,8 +72,9 @@ class DiscordAPIError(RuntimeError):
             )
         else:
             message = str(body)[:300]
+        outcome = f"HTTP {status}" if status else "no response"
         super().__init__(
-            f"Discord {method} {url} -> HTTP {status}: {message}"
+            f"Discord {method} {url} -> {outcome}: {message}"
         )
 
 
@@ -91,6 +96,7 @@ async def _request(
     json_body:     Optional[Mapping[str, Any]] = None,
     form_body:     Optional[Mapping[str, Any]] = None,
     query:         Optional[Mapping[str, Any]] = None,
+    extra_headers: Optional[Mapping[str, str]] = None,
     timeout:       float = DEFAULT_TIMEOUT,
     _retried:      bool  = False,
 ) -> Any:
@@ -101,7 +107,8 @@ async def _request(
     caller picks which auth mode is appropriate for the endpoint).
 
     Returns the decoded JSON body on success; raises :class:`DiscordAPIError`
-    on a non-2xx response (after the retry on 429).
+    on a non-2xx response (after the retry on 429) and on network errors,
+    so callers only ever have to catch one exception type.
     """
     if bot_token and bearer_token:
         raise ValueError("Pass either bot_token OR bearer_token, not both.")
@@ -111,6 +118,7 @@ async def _request(
         "Accept":     "application/json",
         "User-Agent": "ArkManiaGest-Panel (https://arkmania.it, 1.0)",
         **_auth_header(bot_token=bot_token, bearer_token=bearer_token),
+        **(extra_headers or {}),
     }
     # Discord's token-exchange endpoint requires application/x-www-form-urlencoded.
     request_kwargs: dict[str, Any] = {
@@ -122,8 +130,14 @@ async def _request(
     elif json_body is not None:
         request_kwargs["json"] = dict(json_body)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.request(method, url, **{k: v for k, v in request_kwargs.items() if v is not None})
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.request(method, url, **{k: v for k, v in request_kwargs.items() if v is not None})
+    except httpx.HTTPError as exc:
+        raise DiscordAPIError(
+            0, {"message": f"network error: {type(exc).__name__}: {exc}"},
+            method=method, url=url,
+        ) from exc
 
     # Successful 2xx -- return decoded JSON when present, else None.
     if 200 <= resp.status_code < 300:
@@ -151,7 +165,7 @@ async def _request(
             method, path,
             bot_token=bot_token, bearer_token=bearer_token,
             json_body=json_body, form_body=form_body, query=query,
-            timeout=timeout, _retried=True,
+            extra_headers=extra_headers, timeout=timeout, _retried=True,
         )
 
     # Other 4xx / 5xx -- decode error envelope and raise.
@@ -370,25 +384,12 @@ async def create_guild_ban(
     headers_extra: dict[str, str] = {}
     if reason:
         # Discord reads the audit-log reason from a header, not the body.
-        headers_extra["X-Audit-Log-Reason"] = reason[:512]
-    # Inline the call so we can attach the audit-log header without
-    # threading another parameter through _request().
-    url = f"{API_BASE}/guilds/{guild_id}/bans/{user_id}"
-    headers = {
-        "Accept":     "application/json",
-        "User-Agent": "ArkManiaGest-Panel (https://arkmania.it, 1.0)",
-        **_auth_header(bot_token=bot_token, bearer_token=None),
-        **headers_extra,
-    }
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        resp = await client.put(url, json=body, headers=headers)
-    if resp.status_code in (200, 204):
-        return
-    try:
-        error_body: Any = resp.json()
-    except ValueError:
-        error_body = resp.text
-    raise DiscordAPIError(resp.status_code, error_body, method="PUT", url=url)
+        # Header values must be ASCII: Discord expects URL-encoded UTF-8.
+        headers_extra["X-Audit-Log-Reason"] = quote(reason[:512], safe="/ ")
+    await _request(
+        "PUT", f"/guilds/{guild_id}/bans/{user_id}",
+        json_body=body, extra_headers=headers_extra, bot_token=bot_token,
+    )
 
 
 async def remove_guild_ban(

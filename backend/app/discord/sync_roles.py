@@ -41,6 +41,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.discord import client as dc_client
+from app.discord import store as dc_store
 
 
 log = logging.getLogger("arkmaniagest.discord.sync_roles")
@@ -125,16 +126,26 @@ async def sync_role_mappings(
     started_t = time.monotonic()
     started_iso = _iso_now()
 
-    # 1. Load every row from the role-map table
-    res = await db.execute(text(
-        "SELECT id, discord_role_id, ark_group_name, is_active "
-        "FROM arkmaniagest_discord_role_map"
-    ))
+    # 1. Load the role-map rows for this guild.  Rules bound to another
+    #    guild (the bot was moved) reference role ids no member here can
+    #    own: applying them would strip their groups from every player.
+    #    Rows with an empty guild id predate the guild being configured.
+    res = await db.execute(
+        text(
+            "SELECT id, discord_role_id, ark_group_name, is_active "
+            "FROM arkmaniagest_discord_role_map "
+            "WHERE discord_guild_id = :g OR discord_guild_id = ''"
+        ),
+        {"g": guild_id},
+    )
     all_rows = list(res.mappings().fetchall())
     active_rules = [
         (str(r["discord_role_id"]), str(r["ark_group_name"]).strip())
         for r in all_rows
         if r.get("is_active") and r.get("ark_group_name") and r.get("discord_role_id")
+        # A ',' or ';' would be split by the CSV parser, never match the
+        # rule name again and get re-added on every run.
+        and not any(c in str(r["ark_group_name"]) for c in ",;")
     ]
     # The set of ARK groups this engine OWNS.  We only ever touch groups
     # in this set; everything else (Default, VIP managed elsewhere,
@@ -172,34 +183,41 @@ async def sync_role_mappings(
     # 3. Walk the guild member list once + build user_id -> roles index.
     #    list_guild_members is paginated -- walk pages of 1000 (Discord
     #    cap).  Each page returns members with their .roles array.
+    #    A DiscordAPIError here (e.g. GUILD_MEMBERS intent off) propagates:
+    #    nothing can be applied without the member list.
     user_roles: dict[str, set[str]] = {}
     after: Optional[str] = None
     page_size = 1000
     pages = 0
     MAX_PAGES = 25  # 25 * 1000 = 25k member ceiling
-    try:
-        while pages < MAX_PAGES:
-            members = await dc_client.list_guild_members(
-                bot_token=bot_token, guild_id=guild_id,
-                limit=page_size, after=after,
-            )
-            if not members:
-                break
-            for m in members:
-                u = m.get("user") or {}
-                uid = str(u.get("id") or "")
-                if not uid:
-                    continue
-                user_roles[uid] = set(str(r) for r in (m.get("roles") or []))
-            if len(members) < page_size:
-                break
-            after = str(members[-1].get("user", {}).get("id") or "")
-            if not after:
-                break
-            pages += 1
-    except dc_client.DiscordAPIError as exc:
-        # Hard fail at the very start -- nothing we can apply.
-        raise
+    walk_complete = False
+    while pages < MAX_PAGES:
+        members = await dc_client.list_guild_members(
+            bot_token=bot_token, guild_id=guild_id,
+            limit=page_size, after=after,
+        )
+        if not members:
+            walk_complete = True
+            break
+        for m in members:
+            u = m.get("user") or {}
+            uid = str(u.get("id") or "")
+            if not uid:
+                continue
+            user_roles[uid] = set(str(r) for r in (m.get("roles") or []))
+        if len(members) < page_size:
+            walk_complete = True
+            break
+        after = str(members[-1].get("user", {}).get("id") or "")
+        if not after:
+            break
+        pages += 1
+    if not walk_complete:
+        log.warning(
+            "Role sync: guild member walk stopped after %d members; "
+            "looking up the missing linked users one by one",
+            len(user_roles),
+        )
 
     # 4. Pre-fetch every Players row for the linked EOS ids (one shot)
     eos_ids = [eid for _, eid in pairs]
@@ -215,6 +233,7 @@ async def sync_role_mappings(
     by_eos = {r["EOS_Id"]: r for r in p_rows}
 
     # 5. Rule application per player
+    synced_ids: list[str] = []
     for did, eid in pairs:
         prow = by_eos.get(eid)
         if not prow:
@@ -225,7 +244,28 @@ async def sync_role_mappings(
             ))
             continue
 
-        member_roles = user_roles.get(did, set())
+        member_roles = user_roles.get(did)
+        if member_roles is None and walk_complete:
+            member_roles = set()   # not in the guild (any more)
+        elif member_roles is None:
+            # Past the walk cap: absence from the index proves nothing,
+            # and treating it as 'no roles' would strip every managed group.
+            try:
+                member = await dc_client.get_guild_member(
+                    bot_token=bot_token, guild_id=guild_id, user_id=did,
+                )
+                member_roles = set(str(r) for r in (member.get("roles") or []))
+            except dc_client.DiscordAPIError as exc:
+                if exc.status != 404:
+                    report.error_count += 1
+                    report.actions.append(_RuleAction(
+                        discord_user_id=did, eos_id=eid,
+                        player_name=prow.get("Giocatore"),
+                        detail=f"member lookup failed: {exc}",
+                        error=True,
+                    ))
+                    continue
+                member_roles = set()
         # The set of groups every active rule that matches this user
         # produces.
         target_managed: set[str] = {
@@ -243,15 +283,23 @@ async def sync_role_mappings(
 
         if not added and not removed:
             report.players_unchanged += 1
+            synced_ids.append(did)
             continue
 
         try:
-            await plugin_db.execute(
+            # Compare-and-set against the snapshot: the plugin (or another
+            # panel page) may have changed the groups since step 4, and
+            # overwriting would silently drop that change.
+            upd = await plugin_db.execute(
                 text(
                     "UPDATE Players SET PermissionGroups = :pg "
-                    "WHERE EOS_Id = :e"
+                    "WHERE EOS_Id = :e AND PermissionGroups <=> :old"
                 ),
-                {"pg": _emit_perm_groups(new_groups), "e": eid},
+                {
+                    "pg":  _emit_perm_groups(new_groups),
+                    "e":   eid,
+                    "old": prow.get("PermissionGroups"),
+                },
             )
             await plugin_db.commit()
         except Exception as exc:
@@ -265,13 +313,30 @@ async def sync_role_mappings(
                 error=True,
             ))
             continue
+        if upd.rowcount == 0:
+            report.error_count += 1
+            report.actions.append(_RuleAction(
+                discord_user_id=did, eos_id=eid,
+                player_name=prow.get("Giocatore"),
+                groups_added=added, groups_removed=removed,
+                detail="PermissionGroups changed during the sync; skipped, run it again",
+                error=True,
+            ))
+            continue
 
         report.players_changed += 1
+        synced_ids.append(did)
         report.actions.append(_RuleAction(
             discord_user_id=did, eos_id=eid,
             player_name=prow.get("Giocatore"),
             groups_added=added, groups_removed=removed,
         ))
+
+    try:
+        await dc_store.touch_last_sync(db, synced_ids)
+    except Exception as exc:  # noqa: BLE001 -- bookkeeping must not lose the report
+        await db.rollback()
+        log.warning("Role sync: last_sync_at update failed: %s", exc)
 
     report.finished_at_iso  = _iso_now()
     report.duration_seconds = round(time.monotonic() - started_t, 2)

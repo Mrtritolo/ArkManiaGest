@@ -10,7 +10,7 @@ sees a plaintext token unless it explicitly asks via
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -234,13 +234,19 @@ async def set_app_user_link(
     return fresh
 
 
-async def touch_last_sync(db: AsyncSession, discord_user_id: str) -> None:
-    """Bump ``last_sync_at`` after a successful role reconciliation pass."""
+async def touch_last_sync(db: AsyncSession, discord_user_ids: Iterable[str]) -> None:
+    """Bump ``last_sync_at`` for every account a reconciliation pass handled (one commit)."""
+    ids = [str(d) for d in discord_user_ids]
+    if not ids:
+        return
+    params: dict[str, Any] = {f"d{i}": d for i, d in enumerate(ids)}
+    params["t"] = datetime.now(timezone.utc)
+    placeholders = ",".join(f":d{i}" for i in range(len(ids)))
     await db.execute(
         text(
             "UPDATE arkmaniagest_discord_accounts "
-            "SET last_sync_at = :t WHERE discord_user_id = :d"
+            f"SET last_sync_at = :t WHERE discord_user_id IN ({placeholders})"
         ),
-        {"t": datetime.now(timezone.utc), "d": str(discord_user_id)},
+        params,
     )
     await db.commit()
