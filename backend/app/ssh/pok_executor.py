@@ -28,10 +28,11 @@ FastAPI's event loop never stalls.
 from __future__ import annotations
 
 import asyncio
+import shlex
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Dict, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,10 +124,13 @@ def _pok_command(
         "backup":  "-backup",
     }[action]
     tail = f" {extra}" if extra else ""
+    # Create enforces a slug, but imported instances take their name from a
+    # scanned directory; quote it so it stays one POK argument.
+    name = shlex.quote(instance_name)
     if action == "restart":
         minutes = max(0, int(restart_minutes))
-        return f"{flag} {minutes} {instance_name}{tail}"
-    return f"{flag} {instance_name}{tail}"
+        return f"{flag} {minutes} {name}{tail}"
+    return f"{flag} {name}{tail}"
 
 
 def _docker_ps_status_command(container_name: str) -> str:

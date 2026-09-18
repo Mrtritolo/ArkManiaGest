@@ -29,7 +29,7 @@ are NTFS directory junctions back into the shared install::
         ShooterGame\\Content\\          junction   -- the bulk of the install
         ShooterGame\\Saved\\            REAL       -- saves + per-instance INIs
         Engine\\                        junction
-        service.xml                     WinSW service definition
+        WinSW.xml                       WinSW service definition
         WinSW.exe
 
 Copying ``Binaries`` rather than junctioning it is deliberate: AsaApi writes
@@ -56,7 +56,6 @@ null-coalescing.  Sequencing uses ``;`` and explicit ``if`` blocks.
 from __future__ import annotations
 
 import base64
-import posixpath  # noqa: F401  (kept for symmetry with platform.py; see join_win)
 from typing import Iterable, Optional
 from xml.sax.saxutils import escape as _xml_escape
 
@@ -174,9 +173,22 @@ def launch_args(instance: dict, *, cluster_dir: Optional[str] = None) -> str:
                      cluster switches are omitted entirely, which is the
                      correct behaviour for a standalone instance.
     """
-    q: list[str] = [instance["map_name"], "listen"]
-
     session = instance.get("session_name") or instance["name"]
+
+    # The ?-block is passed as one quoted argument (see the return below) and
+    # the server ends a quoted argument at the next '"', so such a value would
+    # silently cut off every option after it.  The message names the field
+    # only: the value may be a password and the error gets logged.
+    for field, value in (
+        ("map_name", instance["map_name"]),
+        ("session_name", session),
+        ("admin_password", instance.get("admin_password")),
+        ("server_password", instance.get("server_password")),
+    ):
+        if value and '"' in value:
+            raise ValueError(f"{field} must not contain a double quote (\")")
+
+    q: list[str] = [instance["map_name"], "listen"]
     q.append(f"SessionName={session}")
     q.append(f"Port={int(instance['game_port'])}")
     q.append("RCONEnabled=True")
@@ -208,7 +220,10 @@ def launch_args(instance: dict, *, cluster_dir: Optional[str] = None) -> str:
     if custom:
         switches.append(custom)
 
-    return "?".join(q) + " " + " ".join(switches)
+    # The ?-block is one argument: quote it, or a space in the session name
+    # splits it and every option after the space (ports, RCON, passwords)
+    # is lost.  The server strips the quotes when it parses its command line.
+    return '"' + "?".join(q) + '" ' + " ".join(switches)
 
 
 def server_executable(instance: dict) -> str:
@@ -420,25 +435,26 @@ def create_cmd(
         )
 
     # 4. WinSW binary + service definition, then (re)register the service.
+    #    WinSW 2.x (bootstrap.ps1 installs v2.12.0) ignores a config path
+    #    argument and only loads <exe basename>.xml from the exe's folder, so
+    #    the definition is WinSW.xml and install/uninstall take no path.
     steps.append(
         f"Copy-Item -Force -Path {ps_quote(winsw)} "
         f"-Destination {ps_quote(join_win(inst, 'WinSW.exe'))}"
     )
     steps.append(
         _write_file_cmd(
-            join_win(inst, "service.xml"),
+            join_win(inst, "WinSW.xml"),
             winsw_xml(instance, instance_dir=inst, cluster_dir=cluster_dir),
         )
     )
     steps.append(
         f"$existing = Get-Service -Name {ps_quote(svc)} -ErrorAction SilentlyContinue; "
         f"if ($null -ne $existing) {{ "
-        f"& {ps_quote(join_win(inst, 'WinSW.exe'))} uninstall "
-        f"{ps_quote(join_win(inst, 'service.xml'))} }}"
+        f"& {ps_quote(join_win(inst, 'WinSW.exe'))} uninstall }}"
     )
     steps.append(
-        f"& {ps_quote(join_win(inst, 'WinSW.exe'))} install "
-        f"{ps_quote(join_win(inst, 'service.xml'))}; "
+        f"& {ps_quote(join_win(inst, 'WinSW.exe'))} install; "
         f"if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}"
     )
 
@@ -484,8 +500,7 @@ def delete_cmd(instance: dict, *, base_dir: str, purge: bool = False) -> str:
         f"$svc = Get-Service -Name {ps_quote(svc)} -ErrorAction SilentlyContinue; "
         f"if ($null -ne $svc) {{ "
         f"Stop-Service -Name {ps_quote(svc)} -Force -ErrorAction SilentlyContinue; "
-        f"& {ps_quote(join_win(inst, 'WinSW.exe'))} uninstall "
-        f"{ps_quote(join_win(inst, 'service.xml'))} }}",
+        f"& {ps_quote(join_win(inst, 'WinSW.exe'))} uninstall }}",
         f"$r = Get-NetFirewallRule -DisplayName {ps_quote('ArkMania-' + name)} "
         f"-ErrorAction SilentlyContinue; "
         f"if ($null -ne $r) {{ Remove-NetFirewallRule "

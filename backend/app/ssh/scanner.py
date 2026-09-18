@@ -8,7 +8,6 @@ directory layouts without requiring configuration.
 """
 
 import re
-import json
 import shlex
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -48,7 +47,7 @@ def scan_containers(ssh: SSHManager, base_path: str = CONTAINER_BASE) -> List[Di
         List of container info dicts (one per subdirectory).  Returns an
         empty list if the directory is missing or unreadable.
     """
-    stdout, _stderr, exit_code = ssh.execute(f'ls -1 "{base_path}" 2>/dev/null')
+    stdout, _stderr, exit_code = ssh.execute(f'ls -1 {shlex.quote(base_path)} 2>/dev/null')
     if exit_code != 0 or not stdout.strip():
         return []
 
@@ -112,7 +111,7 @@ def scan_single_container(ssh: SSHManager, name: str, path: str) -> Dict:
     if sg_path:
         for ini_filename in ("Game.ini", "GameUserSettings.ini"):
             stdout, _, _ = ssh.execute(
-                f'find "{sg_path}" -maxdepth 5 -name "{ini_filename}" 2>/dev/null | head -1'
+                f'find {shlex.quote(sg_path)} -maxdepth 5 -name "{ini_filename}" 2>/dev/null | head -1'
             )
             if stdout.strip():
                 key = ini_filename.lower().replace(".", "_")
@@ -124,7 +123,7 @@ def scan_single_container(ssh: SSHManager, name: str, path: str) -> Dict:
     # Logs directory (informational only)
     if sg_path:
         stdout, _, _ = ssh.execute(
-            f'find "{sg_path}" -maxdepth 4 -type d -name "Logs" 2>/dev/null | head -1'
+            f'find {shlex.quote(sg_path)} -maxdepth 4 -type d -name "Logs" 2>/dev/null | head -1'
         )
         if stdout.strip():
             result["paths"]["logs"] = stdout.strip()
@@ -161,14 +160,14 @@ def _find_shooter_game(ssh: SSHManager, container_path: str) -> Optional[str]:
         Full path string, or ``None`` if not found.
     """
     stdout, _, _ = ssh.execute(
-        f'find "{container_path}" -maxdepth 4 -type d -name "ShooterGame" 2>/dev/null | head -1'
+        f'find {shlex.quote(container_path)} -maxdepth 4 -type d -name "ShooterGame" 2>/dev/null | head -1'
     )
     if stdout.strip():
         return stdout.strip()
 
     # Direct child fallback
     stdout2, _, _ = ssh.execute(
-        f'test -d "{container_path}/ShooterGame" && echo "yes" 2>/dev/null'
+        f'test -d {shlex.quote(container_path + "/ShooterGame")} && echo "yes" 2>/dev/null'
     )
     return f"{container_path}/ShooterGame" if stdout2.strip() == "yes" else None
 
@@ -200,7 +199,7 @@ def _discover_saved_arks(
     search_bases = [b for b in (sg_path, container_path) if b]
     for base in search_bases:
         stdout, _, _ = ssh.execute(
-            f'find "{base}" -maxdepth 5 -type d -name "SavedArks" 2>/dev/null | head -1'
+            f'find {shlex.quote(base)} -maxdepth 5 -type d -name "SavedArks" 2>/dev/null | head -1'
         )
         if stdout.strip():
             result["paths"]["saved_arks"] = stdout.strip()
@@ -209,7 +208,7 @@ def _discover_saved_arks(
     # Fallback: derive SavedArks path from the location of the first .arkprofile
     if "saved_arks" not in result["paths"]:
         stdout, _, _ = ssh.execute(
-            f'find "{container_path}" -maxdepth 6 -name "*.arkprofile" -type f 2>/dev/null | head -1'
+            f'find {shlex.quote(container_path)} -maxdepth 6 -name "*.arkprofile" -type f 2>/dev/null | head -1'
         )
         if stdout.strip():
             result["paths"]["saved_arks"] = stdout.strip().rsplit("/", 1)[0]
@@ -234,7 +233,7 @@ def _discover_plugins_dir(ssh: SSHManager, container_path: str, result: Dict) ->
         result:         Mutable result dict.
     """
     stdout, _, _ = ssh.execute(
-        f'find "{container_path}" -maxdepth 8 -type d -name "Plugins" 2>/dev/null'
+        f'find {shlex.quote(container_path)} -maxdepth 8 -type d -name "Plugins" 2>/dev/null'
     )
     if not stdout.strip():
         return
@@ -274,7 +273,7 @@ def _discover_plugin_configs(ssh: SSHManager, result: Dict) -> None:
     if not plugins_dir:
         return
 
-    stdout, _, _ = ssh.execute(f'ls -1 "{plugins_dir}" 2>/dev/null')
+    stdout, _, _ = ssh.execute(f'ls -1 {shlex.quote(plugins_dir)} 2>/dev/null')
     if not stdout.strip():
         return
 
@@ -282,7 +281,9 @@ def _discover_plugin_configs(ssh: SSHManager, result: Dict) -> None:
 
     for plugin_name in result["plugins"]:
         config_path = f"{plugins_dir}/{plugin_name}/config.json"
-        stdout, _, _ = ssh.execute(f'test -f "{config_path}" && echo "EXISTS" 2>/dev/null')
+        stdout, _, _ = ssh.execute(
+            f'test -f {shlex.quote(config_path)} && echo "EXISTS" 2>/dev/null'
+        )
         if stdout.strip() == "EXISTS":
             config_key = f"plugin_{plugin_name.lower()}_config"
             result["paths"][config_key] = config_path
@@ -314,13 +315,13 @@ def _discover_save_data(ssh: SSHManager, result: Dict) -> None:
         return
 
     # Top-level listing
-    stdout, _, _ = ssh.execute(f'ls -1 "{saved_arks}" 2>/dev/null')
+    stdout, _, _ = ssh.execute(f'ls -1 {shlex.quote(saved_arks)} 2>/dev/null')
     if stdout.strip():
         result["saved_arks_contents"] = [e.strip() for e in stdout.strip().splitlines() if e.strip()]
 
     # Map subdirectories (skip backup/temp/old/logs/config dirs)
     stdout, _, _ = ssh.execute(
-        f'find "{saved_arks}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null'
+        f'find {shlex.quote(saved_arks)} -mindepth 1 -maxdepth 1 -type d 2>/dev/null'
     )
     if stdout.strip():
         map_dirs = []
@@ -334,7 +335,7 @@ def _discover_save_data(ssh: SSHManager, result: Dict) -> None:
 
     # .ark save files (exclude backups, temp files, anti-corruption copies)
     stdout, _, _ = ssh.execute(
-        f'find "{saved_arks}" -maxdepth 3 -name "*.ark" '
+        f'find {shlex.quote(saved_arks)} -maxdepth 3 -name "*.ark" '
         f'-not -name "*.tmp" '
         f'-not -name "*backup*" '
         f'-not -name "*_old*" '
@@ -354,7 +355,7 @@ def _discover_save_data(ssh: SSHManager, result: Dict) -> None:
 
     # Profile count
     stdout, _, _ = ssh.execute(
-        f'find "{saved_arks}" -maxdepth 3 -name "*.arkprofile" -type f 2>/dev/null | wc -l'
+        f'find {shlex.quote(saved_arks)} -maxdepth 3 -name "*.arkprofile" -type f 2>/dev/null | wc -l'
     )
     if stdout.strip().isdigit():
         result["profile_count"] = int(stdout.strip())
@@ -363,7 +364,7 @@ def _discover_save_data(ssh: SSHManager, result: Dict) -> None:
     gus_path = result["paths"].get("gameusersettings_ini")
     if gus_path:
         stdout, _, _ = ssh.execute(
-            f'grep -i "^SessionName=" "{gus_path}" 2>/dev/null | head -1'
+            f'grep -i "^SessionName=" {shlex.quote(gus_path)} 2>/dev/null | head -1'
         )
         if stdout.strip():
             match = re.search(r"SessionName=(.*)", stdout.strip(), re.IGNORECASE)
@@ -375,28 +376,34 @@ def _is_process_running(ssh: SSHManager, container_name: str) -> bool:
     """
     Check whether the ARK server process is currently running for a container.
 
-    Uses ``pgrep`` with two fallback patterns:
+    Matches the host's process command lines against two patterns:
       1. Process command line matching both ``ShooterGame`` and the container name.
       2. Any ARK/ShooterGame process that matches the container name.
 
+    The matching happens here rather than in a remote ``pgrep -f`` pipeline:
+    the remote shell running that pipeline carries the pattern in its own
+    command line and ``pgrep`` only excludes itself, not its parent, so the
+    shell matched and every container was reported as running.  The command
+    sent below contains neither the container name nor the keywords.
+
     Args:
         ssh:            Connected SSH manager.
-        container_name: Container directory name used as a pgrep filter.
+        container_name: Container directory name used as the process filter.
 
     Returns:
         True if at least one matching process is found.
     """
-    stdout, _, _ = ssh.execute(
-        f'pgrep -a -f "ShooterGame.*{container_name}" 2>/dev/null | head -1'
-    )
-    if stdout.strip():
+    stdout, _, _ = ssh.execute("ps -eww -o args= 2>/dev/null")
+    command_lines = stdout.splitlines()
+
+    first = re.compile("ShooterGame.*" + re.escape(container_name))
+    if any(first.search(line) for line in command_lines):
         return True
 
-    stdout, _, _ = ssh.execute(
-        f'pgrep -a -f "{container_name}" 2>/dev/null '
-        f'| grep -i "shooter\\|ark\\|server" | head -1'
+    keywords = re.compile("shooter|ark|server", re.IGNORECASE)
+    return any(
+        container_name in line and keywords.search(line) for line in command_lines
     )
-    return bool(stdout.strip())
 
 
 # ── Remote file I/O helpers ───────────────────────────────────────────────────
@@ -428,19 +435,22 @@ def read_remote_file(ssh: SSHManager, remote_path: str) -> Optional[str]:
         remote_path: Absolute path to the remote file.
 
     Returns:
-        File content string, or ``None`` if the file does not exist or is empty.
+        File content string (``""`` for an empty file), or ``None`` if the
+        file could not be read (missing, unreadable).
     """
     quoted = _safe_remote_path(remote_path)
     stdout, _stderr, exit_code = ssh.execute(f"cat {quoted} 2>/dev/null")
-    return stdout if exit_code == 0 and stdout else None
+    return stdout if exit_code == 0 else None
 
 
 def write_remote_file(ssh: SSHManager, remote_path: str, content: str) -> bool:
     """
     Write text content to a remote file via SSH.
 
-    The content is base64-encoded before transmission to avoid shell quoting
-    issues with special characters.
+    The content is streamed on the command's stdin, never placed on its
+    command line: sshd hands the command to the shell as one argument, which
+    Linux caps at 131072 bytes, so an ``echo <base64>`` pipeline could not
+    save a file over about 98 KB.
 
     Args:
         ssh:         Connected SSH manager.
@@ -450,12 +460,10 @@ def write_remote_file(ssh: SSHManager, remote_path: str, content: str) -> bool:
     Returns:
         True on success, False if the remote command returned a non-zero exit code.
     """
-    import base64
-    encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     quoted = _safe_remote_path(remote_path)
     # _stdout is empty for a redirect-only command; _stderr captures any error message.
     _stdout, _stderr, exit_code = ssh.execute(
-        f"echo {shlex.quote(encoded)} | base64 -d > {quoted}"
+        f"cat > {quoted}", stdin=content.encode("utf-8"),
     )
     return exit_code == 0
 
@@ -464,6 +472,10 @@ def backup_remote_file(ssh: SSHManager, remote_path: str) -> Optional[str]:
     """
     Create a timestamped ``.bak.<timestamp>`` backup copy of a remote file.
 
+    The timestamp carries microseconds: ``cp`` overwrites its target, and
+    two saves within the same second would otherwise replace the earlier
+    backup.
+
     Args:
         ssh:         Connected SSH manager.
         remote_path: Absolute path to the file to back up.
@@ -471,7 +483,7 @@ def backup_remote_file(ssh: SSHManager, remote_path: str) -> Optional[str]:
     Returns:
         Absolute path of the backup file on success, or ``None`` on failure.
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     backup_path = f"{remote_path}.bak.{timestamp}"
     src = _safe_remote_path(remote_path)
     dst = _safe_remote_path(backup_path)

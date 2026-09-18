@@ -13,6 +13,7 @@ Authentication order (first available method wins):
 """
 
 import os
+import shlex
 from typing import Optional, Tuple
 
 import paramiko
@@ -116,7 +117,13 @@ class SSHManager:
 
         try:
             self._client.connect(**connect_kwargs)
-        except paramiko.ssh_exception.SSHException as exc:
+        except Exception as exc:
+            # paramiko leaves the transport thread and its socket running when
+            # the handshake or authentication fails, and callers only
+            # disconnect after a successful connect: close it here.
+            self.disconnect()
+            if not isinstance(exc, paramiko.ssh_exception.SSHException):
+                raise
             # Build a diagnostic message listing each auth method that was tried
             tried = []
             if self.key_path:
@@ -139,29 +146,52 @@ class SSHManager:
 
     # ── Remote command execution ──────────────────────────────────────────
 
-    def execute(self, command: str) -> Tuple[str, str, int]:
+    def execute(self, command: str, stdin: Optional[bytes] = None) -> Tuple[str, str, int]:
         """
         Execute a shell command on the remote host and wait for it to finish.
 
         Args:
             command: Shell command string to execute.
+            stdin:   Bytes written to the command's standard input, which is
+                     then closed.  Use it for payloads: the command itself
+                     reaches the remote shell as one argument, capped at
+                     131072 bytes on Linux.
 
         Returns:
             A ``(stdout, stderr, exit_code)`` tuple.  Both streams are decoded
-            as UTF-8 and trailing whitespace is stripped.
+            as UTF-8 (stderr replaces undecodable bytes) and trailing
+            whitespace is stripped.
 
         Raises:
             ConnectionError: The SSH client is not connected.
+            UnicodeDecodeError: stdout is not valid UTF-8.
         """
         if not self._client:
             raise ConnectionError("SSH client is not connected. Call connect() first.")
 
         _stdin, stdout, stderr = self._client.exec_command(command)
+        if stdin is not None:
+            try:
+                _stdin.write(stdin)
+                _stdin.close()
+            except OSError:
+                # The command exited before reading all of it (e.g. its
+                # redirect failed); the exit status below reports that.
+                pass
+        # Drain the streams before waiting for the exit status: once the
+        # output exceeds the channel window (2 MB) the remote side blocks
+        # until it is read, and recv_exit_status() would wait forever.
+        out = stdout.read()
+        err = stderr.read()
         exit_code = stdout.channel.recv_exit_status()
 
+        # stdout stays strict: callers read files with `cat` and write the
+        # text back, so a lossy decode would corrupt a UTF-16 or Latin-1 file
+        # on save instead of failing the read.  stderr is only shown, and a
+        # Windows host may write it in its OEM code page.
         return (
-            stdout.read().decode("utf-8").strip(),
-            stderr.read().decode("utf-8").strip(),
+            out.decode("utf-8").strip(),
+            err.decode("utf-8", errors="replace").strip(),
             exit_code,
         )
 
@@ -251,7 +281,7 @@ class SSHManager:
             True if the path exists and is a regular file.
         """
         stdout, _, _ = self.execute(
-            f'test -f "{remote_path}" && echo "yes" || echo "no"'
+            f'test -f {shlex.quote(remote_path)} && echo "yes" || echo "no"'
         )
         return stdout == "yes"
 

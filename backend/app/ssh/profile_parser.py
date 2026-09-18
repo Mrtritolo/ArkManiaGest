@@ -12,6 +12,7 @@ The parser (:mod:`app.ssh.ark_parse_profile`) extracts:
 import os
 import json
 import base64
+import shlex
 from typing import Dict, List, Optional
 
 from app.ssh.manager import SSHManager
@@ -20,9 +21,15 @@ from app.ssh.manager import SSHManager
 _PARSER_SCRIPT_PATH       = os.path.join(os.path.dirname(__file__), "ark_parse_profile.py")
 _TRIBE_PARSER_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "ark_parse_tribe.py")
 
-# Temporary paths used on the remote server
-_REMOTE_PARSER_PATH       = "/tmp/_ark_parse.py"
-_REMOTE_TRIBE_PARSER_PATH = "/tmp/_ark_parse_tribe.py"
+
+def _remote_path(ssh: SSHManager, stem: str) -> str:
+    """
+    Temporary path of a parser script on the remote server, unique per SSH
+    session.  Scans now run in worker threads, so two of them can hit the
+    same host at once; with one shared path, the first to finish would
+    delete the script the other is still running.
+    """
+    return f"/tmp/{stem}_{os.getpid()}_{id(ssh):x}.py"
 
 
 # ── Parser lifecycle helpers ──────────────────────────────────────────────────
@@ -32,7 +39,7 @@ def _upload_parser(ssh: SSHManager) -> None:
     Upload :mod:`app.ssh.ark_parse_profile` to the remote server.
 
     The script is base64-encoded before transmission to avoid any shell quoting
-    issues.  The remote file is written to ``/tmp/_ark_parse.py``.
+    issues.  The remote file is written to the path from :func:`_remote_path`.
 
     Args:
         ssh: Connected :class:`~app.ssh.manager.SSHManager` instance.
@@ -40,7 +47,7 @@ def _upload_parser(ssh: SSHManager) -> None:
     with open(_PARSER_SCRIPT_PATH, "r") as fh:
         content = fh.read()
     encoded = base64.b64encode(content.encode()).decode()
-    ssh.execute(f'echo "{encoded}" | base64 -d > {_REMOTE_PARSER_PATH}')
+    ssh.execute(f'echo "{encoded}" | base64 -d > {_remote_path(ssh, "_ark_parse")}')
 
 
 def _cleanup_parser(ssh: SSHManager) -> None:
@@ -50,7 +57,7 @@ def _cleanup_parser(ssh: SSHManager) -> None:
     Args:
         ssh: Connected :class:`~app.ssh.manager.SSHManager` instance.
     """
-    ssh.execute(f"rm -f {_REMOTE_PARSER_PATH}")
+    ssh.execute(f"rm -f {_remote_path(ssh, '_ark_parse')}")
 
 
 # ── Public extraction API ─────────────────────────────────────────────────────
@@ -70,7 +77,7 @@ def extract_player_data(ssh: SSHManager, profile_path: str) -> Dict:
         Returns ``{"name": None, "eos_id": None}`` on any error.
     """
     stdout, _, exit_code = ssh.execute(
-        f'python3 {_REMOTE_PARSER_PATH} "{profile_path}" name_only 2>/dev/null'
+        f'python3 {_remote_path(ssh, "_ark_parse")} {shlex.quote(profile_path)} name_only 2>/dev/null'
     )
     if exit_code != 0 or not stdout.strip():
         return {"name": None, "eos_id": None}
@@ -120,7 +127,7 @@ def scan_and_match_profiles(
     try:
         for saved_path in saved_arks_paths:
             stdout, _, exit_code = ssh.execute(
-                f'find "{saved_path}" -maxdepth 3 -name "*.arkprofile" -type f '
+                f'find {shlex.quote(saved_path)} -maxdepth 3 -name "*.arkprofile" -type f '
                 f"-printf '%T@|%p\n' 2>/dev/null"
             )
             if exit_code != 0 or not stdout.strip():
@@ -163,15 +170,15 @@ def scan_and_match_profiles(
 # ── Tribe scanning ────────────────────────────────────────────────────────────
 
 def _upload_tribe_parser(ssh: SSHManager) -> None:
-    """Upload the .arktribe parser to /tmp/_ark_parse_tribe.py on the remote."""
+    """Upload the .arktribe parser to its temporary path on the remote."""
     with open(_TRIBE_PARSER_SCRIPT_PATH, "r") as fh:
         content = fh.read()
     encoded = base64.b64encode(content.encode()).decode()
-    ssh.execute(f'echo "{encoded}" | base64 -d > {_REMOTE_TRIBE_PARSER_PATH}')
+    ssh.execute(f'echo "{encoded}" | base64 -d > {_remote_path(ssh, "_ark_parse_tribe")}')
 
 
 def _cleanup_tribe_parser(ssh: SSHManager) -> None:
-    ssh.execute(f"rm -f {_REMOTE_TRIBE_PARSER_PATH}")
+    ssh.execute(f"rm -f {_remote_path(ssh, '_ark_parse_tribe')}")
 
 
 def extract_tribe_data(ssh: SSHManager, tribe_path: str) -> Dict:
@@ -185,7 +192,7 @@ def extract_tribe_data(ssh: SSHManager, tribe_path: str) -> Dict:
         both fields are ``None``.
     """
     stdout, _, exit_code = ssh.execute(
-        f'python3 {_REMOTE_TRIBE_PARSER_PATH} "{tribe_path}" name_only 2>/dev/null'
+        f'python3 {_remote_path(ssh, "_ark_parse_tribe")} {shlex.quote(tribe_path)} name_only 2>/dev/null'
     )
     if exit_code != 0 or not stdout.strip():
         return {"name": None, "tribe_id": None}
@@ -220,7 +227,7 @@ def scan_and_match_tribes(
     try:
         for saved_path in saved_arks_paths:
             stdout, _, exit_code = ssh.execute(
-                f'find "{saved_path}" -maxdepth 3 -name "*.arktribe" -type f 2>/dev/null'
+                f'find {shlex.quote(saved_path)} -maxdepth 3 -name "*.arktribe" -type f 2>/dev/null'
             )
             if exit_code != 0 or not stdout.strip():
                 continue

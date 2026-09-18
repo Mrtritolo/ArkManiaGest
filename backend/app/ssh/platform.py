@@ -23,6 +23,7 @@ hardcode ``docker ...`` must now go through the adapter.
 from __future__ import annotations
 
 import posixpath
+import re
 from typing import Literal, Optional
 
 
@@ -39,6 +40,10 @@ RuntimeKind = Literal["pok", "native"]
 # distro filesystem (via the WSL user's home).
 DEFAULT_POK_BASE_LINUX   = "/opt/arkmania"
 DEFAULT_POK_BASE_WINDOWS = "/home/arkmania/arkmania"
+
+# WSL distro names are plain identifiers.  The name is written unquoted into
+# a command that the Windows shell parses, so anything else is refused.
+_WSL_DISTRO_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _bash_single_quote(text: str) -> str:
@@ -155,6 +160,8 @@ class PlatformAdapter:
         """
         if self.os_type == "linux" or self.is_native:
             return bash_command
+        if not _WSL_DISTRO_RE.fullmatch(self.wsl_distro):
+            raise ValueError(f"Invalid WSL distro name: {self.wsl_distro!r}")
         escaped = _bash_single_quote(bash_command)
         return f"wsl.exe -d {self.wsl_distro} -- bash -c '{escaped}'"
 

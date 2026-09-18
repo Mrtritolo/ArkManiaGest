@@ -13,6 +13,8 @@ source and destination servers are different physical hosts.
 
 import base64
 import logging
+import shlex
+import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -112,7 +114,7 @@ def find_player_maps_on_machine(
                     candidate = f"{dir_path}/{target_filename}"
 
                 stdout, _, _ = ssh.execute(
-                    f'test -f "{candidate}" && echo "FOUND" 2>/dev/null'
+                    f'test -f {shlex.quote(candidate)} && echo "FOUND" 2>/dev/null'
                 )
                 found = stdout.strip() == "FOUND"
 
@@ -177,10 +179,11 @@ def download_profile_data(
         IOError:           The base64 download command failed.
     """
     filename = profile_path.split("/")[-1]
+    quoted_path = shlex.quote(profile_path)
 
     # Verify existence and retrieve file size in a single command
     stdout, _, exit_code = ssh.execute(
-        f'test -f "{profile_path}" && stat -c %s "{profile_path}" 2>/dev/null'
+        f'test -f {quoted_path} && stat -c %s {quoted_path} 2>/dev/null'
     )
     if exit_code != 0 or not stdout.strip():
         raise FileNotFoundError(f"Profile not found: {profile_path}")
@@ -195,7 +198,7 @@ def download_profile_data(
         )
 
     # Transfer as base64 to preserve binary integrity over the SSH stream
-    stdout, stderr, exit_code = ssh.execute(f'base64 "{profile_path}" 2>/dev/null')
+    stdout, stderr, exit_code = ssh.execute(f'base64 {quoted_path} 2>/dev/null')
     if exit_code != 0 or not stdout.strip():
         raise IOError(f"Download failed: exit_code={exit_code}, stderr={stderr[:200]}")
 
@@ -239,6 +242,7 @@ def upload_profile_data(
         IOError:           The temporary write or rename command failed.
     """
     dest_path = f"{dest_dir}/{filename}"
+    q_dest_path = shlex.quote(dest_path)
     operation_result = {
         "dest_path": dest_path,
         "backup_path": None,
@@ -247,40 +251,49 @@ def upload_profile_data(
     }
 
     # Verify the destination directory exists
-    stdout, _, _ = ssh.execute(f'test -d "{dest_dir}" && echo "ok" 2>/dev/null')
+    stdout, _, _ = ssh.execute(f'test -d {shlex.quote(dest_dir)} && echo "ok" 2>/dev/null')
     if stdout.strip() != "ok":
         raise FileNotFoundError(f"Destination directory not found: {dest_dir}")
 
     # Create backup if the destination file already exists
-    stdout, _, _ = ssh.execute(f'test -f "{dest_path}" && echo "exists" 2>/dev/null')
+    stdout, _, _ = ssh.execute(f'test -f {q_dest_path} && echo "exists" 2>/dev/null')
     if stdout.strip() == "exists":
         operation_result["overwritten"] = True
         if backup:
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            # Microseconds: `cp` overwrites its target, so two copies into the
+            # same profile within one second would replace the first backup.
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
             backup_path = f"{dest_path}.bak.{timestamp}"
-            _, _, bcode = ssh.execute(f'cp "{dest_path}" "{backup_path}" 2>/dev/null')
+            _, _, bcode = ssh.execute(
+                f'cp {q_dest_path} {shlex.quote(backup_path)} 2>/dev/null'
+            )
             if bcode == 0:
                 operation_result["backup_path"] = backup_path
             else:
                 logger.warning("Backup creation failed for '%s'.", dest_path)
 
     # Write to a temporary file, then atomically move to the final destination
-    encoded = base64.b64encode(raw_bytes).decode("ascii")
-    tmp_path = f"/tmp/_profile_upload_{filename}"
+    # Unique per call: copies run concurrently in the threadpool, and with a
+    # per-player name one request's `mv` could move another request's bytes.
+    tmp_path = f"/tmp/_profile_upload_{uuid.uuid4().hex}_{filename}"
+    q_tmp_path = shlex.quote(tmp_path)
 
+    # The bytes go on stdin: the command line is capped at 131072 bytes on
+    # Linux, which an `echo <base64>` payload exceeds past ~98 KB.
     _, _, write_code = ssh.execute(
-        f'echo "{encoded}" | base64 -d > "{tmp_path}" 2>/dev/null'
+        f'cat > {q_tmp_path} 2>/dev/null', stdin=raw_bytes
     )
     if write_code != 0:
+        ssh.execute(f'rm -f {q_tmp_path} 2>/dev/null')  # best-effort cleanup
         raise IOError(f"Failed to write temporary file: {tmp_path}")
 
-    _, stderr, move_code = ssh.execute(f'mv "{tmp_path}" "{dest_path}" 2>/dev/null')
+    _, stderr, move_code = ssh.execute(f'mv {q_tmp_path} {q_dest_path} 2>/dev/null')
     if move_code != 0:
-        ssh.execute(f'rm -f "{tmp_path}" 2>/dev/null')  # best-effort cleanup
+        ssh.execute(f'rm -f {q_tmp_path} 2>/dev/null')  # best-effort cleanup
         raise IOError(f"Failed to move profile to destination: {stderr[:200]}")
 
     # Post-upload size verification
-    stdout, _, _ = ssh.execute(f'stat -c %s "{dest_path}" 2>/dev/null')
+    stdout, _, _ = ssh.execute(f'stat -c %s {q_dest_path} 2>/dev/null')
     if stdout.strip():
         actual_size = int(stdout.strip())
         if actual_size != len(raw_bytes):
@@ -368,7 +381,7 @@ def resolve_map_directory(
 
     # Try constructing the path and verifying on the remote host
     candidate = f"{saved_arks}/{map_name}"
-    stdout, _, _ = ssh.execute(f'test -d "{candidate}" && echo "ok" 2>/dev/null')
+    stdout, _, _ = ssh.execute(f'test -d {shlex.quote(candidate)} && echo "ok" 2>/dev/null')
     return candidate if stdout.strip() == "ok" else None
 
 

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List
 
 from app.ssh.platform import PlatformAdapter
 from app.ssh.windows_native import join_win, ps_quote

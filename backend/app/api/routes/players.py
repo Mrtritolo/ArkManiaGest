@@ -11,7 +11,11 @@ Route ordering note:
     /{player_id} route to prevent interception.
 """
 
-from typing import List, Optional
+import asyncio
+import posixpath
+import re
+import shlex
+from typing import Callable, List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,15 +23,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update, text
 
+from app.core.auth import require_admin, require_operator
 from app.db.session import get_plugin_db
 from app.db.models.ark import Player, ArkShopPlayer, PermissionGroup, TribePermission
-from app.core.store import get_machine_sync, get_plugin_config_sync, get_containers_map_sync
+from app.core.store import get_machine_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles, scan_and_match_tribes
 from app.schemas.players import (
     PlayerFull, PlayerListItem, PlayerUpdate, PlayerPointsUpdate, PlayerPointsAdd,
     PermissionGroupRead, PermissionGroupUpdate, TribePermissionRead, PlayersStats,
-    PlayerMapResult, PlayerMapSearchResponse, CopyCharacterRequest, CopyCharacterResponse,
+    CopyCharacterRequest, CopyCharacterResponse,
 )
 from app.ssh.player_transfer import (
     find_player_maps_on_machine, copy_player_profile,
@@ -35,6 +40,83 @@ from app.ssh.player_transfer import (
 )
 
 router = APIRouter()
+
+
+# ── Input guards for values that reach remote shell commands ──────────────────
+# An EOS id, a map directory name and a profile path all end up inside
+# find / test / base64 commands run over SSH.  They are whitelisted here so
+# quotes, `$`, backticks, glob characters and `..` never reach a host.
+
+# 32 hex chars for EOS; kept a little wider for other platform ids.
+_EOS_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+# One path segment under SavedArks: a map directory or a profile filename.
+_SAVE_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+def _clean_eos_id(eos_id: str) -> str:
+    """Return *eos_id* stripped, or raise 422 unless it is a plain id."""
+    eos_clean = (eos_id or "").strip()
+    if not eos_clean:
+        raise HTTPException(status_code=422, detail="eos_id is required.")
+    if not _EOS_ID_RE.fullmatch(eos_clean):
+        raise HTTPException(status_code=422, detail="eos_id contains invalid characters.")
+    return eos_clean
+
+
+def _profile_path_in_container(container: dict, profile_path: str) -> str:
+    """
+    Return *profile_path* normalised, or raise 422 unless it names a
+    ``.arkprofile`` inside *container*'s SavedArks directory.
+
+    The path comes from the request body and is read on the host, so it
+    must not point at any other file.
+    """
+    saved_arks = (container.get("paths") or {}).get("saved_arks")
+    path = posixpath.normpath(profile_path or "")
+    root = posixpath.normpath(saved_arks) if saved_arks else ""
+    rel = path[len(root) + 1:] if root and path.startswith(root + "/") else ""
+    parts = rel.split("/") if rel else []
+    if not (
+        1 <= len(parts) <= 3
+        and all(_SAVE_SEGMENT_RE.fullmatch(p) for p in parts)
+        and parts[-1].endswith(".arkprofile")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "source_profile_path must be a .arkprofile file inside the "
+                "source container's SavedArks directory."
+            ),
+        )
+    return path
+
+
+def _scan_machine_sync(
+    machine_id: int,
+    saved_paths: list[str],
+    scan: Callable[[SSHManager, list[str]], list[dict]],
+) -> tuple[list[dict], Optional[str]]:
+    """
+    Run *scan* over SSH on one machine.  Blocking: call via
+    ``asyncio.to_thread`` so a long cluster scan does not stall the loop.
+
+    Returns ``(results, error)``; the error is reported instead of raised
+    so the caller carries on with the other machines.
+    """
+    machine = get_machine_sync(machine_id)
+    if not machine:
+        return [], f"Machine {machine_id} not found in database."
+    try:
+        with SSHManager(
+            host=machine["hostname"],
+            username=machine["ssh_user"],
+            password=machine.get("ssh_password"),
+            key_path=machine.get("ssh_key_path"),
+            port=machine.get("ssh_port", 22),
+        ) as ssh:
+            return scan(ssh, saved_paths), None
+    except Exception as exc:
+        return [], f"SSH {machine['hostname']}: {exc}"
 
 
 # ── Permission Groups ─────────────────────────────────────────────────────────
@@ -57,7 +139,7 @@ async def list_permission_groups(db: AsyncSession = Depends(get_plugin_db)):
     ]
 
 
-@router.put("/permissions/groups/{group_id}")
+@router.put("/permissions/groups/{group_id}", dependencies=[Depends(require_operator)])
 async def update_permission_group(
     group_id: int,
     data: PermissionGroupUpdate,
@@ -243,7 +325,7 @@ async def list_players(
 
 
 @router.get("/sync-containers")
-async def list_sync_containers():
+def list_sync_containers():
     """
     Return all containers that have a known SavedArks path and are therefore
     eligible for the player-name sync operation.
@@ -273,7 +355,7 @@ async def list_sync_containers():
 # ── Player map search and character copy ──────────────────────────────────────
 
 @router.get("/find-maps")
-async def find_player_maps(
+def find_player_maps(
     eos_id: str = Query(..., description="EOS_Id of the player to search for"),
     machine_id: Optional[int] = Query(None, description="Restrict search to a single machine"),
     debug: bool = Query(False, description="Include diagnostic information in the response"),
@@ -287,7 +369,11 @@ async def find_player_maps(
 
     Returns a list of :class:`~app.schemas.players.PlayerMapResult` entries
     describing every map where the player's profile was located.
+
+    Plain ``def``: the SSH work is blocking, so FastAPI runs it in its
+    threadpool instead of on the event loop.
     """
+    eos_id = _clean_eos_id(eos_id)
     containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
@@ -345,8 +431,12 @@ async def find_player_maps(
     return response
 
 
-@router.post("/copy-character", response_model=CopyCharacterResponse)
-async def copy_character(data: CopyCharacterRequest):
+@router.post(
+    "/copy-character",
+    response_model=CopyCharacterResponse,
+    dependencies=[Depends(require_operator)],
+)
+def copy_character(data: CopyCharacterRequest):
     """
     Copy a player's .arkprofile from a source map to a destination map.
 
@@ -356,10 +446,26 @@ async def copy_character(data: CopyCharacterRequest):
 
     The profile is transferred as raw bytes via base64 to avoid binary corruption
     in the SSH stream.
+
+    Plain ``def``: the SSH work is blocking, so FastAPI runs it in its
+    threadpool instead of on the event loop.
     """
+    if not _SAVE_SEGMENT_RE.fullmatch(data.dest_map_name or ""):
+        raise HTTPException(status_code=422, detail="dest_map_name contains invalid characters.")
+
     containers_map = get_containers_map_sync()
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(status_code=404, detail="No containers scanned.")
+
+    _, source_container = find_container_in_map(
+        containers_map, data.source_machine_id, data.source_container
+    )
+    if not source_container:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source container '{data.source_container}' not found. Run a scan first.",
+        )
+    source_profile_path = _profile_path_in_container(source_container, data.source_profile_path)
 
     source_machine = get_machine_sync(data.source_machine_id)
     if not source_machine:
@@ -414,7 +520,7 @@ async def copy_character(data: CopyCharacterRequest):
             copy_result = copy_player_profile(
                 source_ssh=source_ssh,
                 dest_ssh=dest_ssh,
-                source_profile_path=data.source_profile_path,
+                source_profile_path=source_profile_path,
                 dest_map_dir=dest_map_dir,
                 backup=data.backup,
             )
@@ -536,7 +642,7 @@ async def get_player(player_id: int, db: AsyncSession = Depends(get_plugin_db)):
 
 # ── Player update operations ──────────────────────────────────────────────────
 
-@router.put("/{player_id}")
+@router.put("/{player_id}", dependencies=[Depends(require_operator)])
 async def update_player(
     player_id: int,
     data: PlayerUpdate,
@@ -646,7 +752,7 @@ def _extend_timed_perm(
     )
 
 
-@router.post("/bulk-add-timed-perm")
+@router.post("/bulk-add-timed-perm", dependencies=[Depends(require_operator)])
 async def bulk_add_timed_perm(
     body: _BulkTimedPermRequest,
     db: AsyncSession = Depends(get_plugin_db),
@@ -800,7 +906,7 @@ def _align_timed_perm_family(
     return ",".join(out_parts), len(family_active), aligned, max_ts
 
 
-@router.post("/bulk-align-timed-perms")
+@router.post("/bulk-align-timed-perms", dependencies=[Depends(require_operator)])
 async def bulk_align_timed_perms(
     body: _BulkAlignTimedPermRequest,
     db: AsyncSession = Depends(get_plugin_db),
@@ -856,7 +962,7 @@ async def bulk_align_timed_perms(
     }
 
 
-@router.put("/{player_id}/points")
+@router.put("/{player_id}/points", dependencies=[Depends(require_operator)])
 async def set_player_points(
     player_id: int,
     data: PlayerPointsUpdate,
@@ -884,7 +990,7 @@ async def set_player_points(
     return {"success": True, "points": data.points, "eos_id": player.EOS_Id}
 
 
-@router.post("/{player_id}/points/add")
+@router.post("/{player_id}/points/add", dependencies=[Depends(require_operator)])
 async def add_player_points(
     player_id: int,
     data: PlayerPointsAdd,
@@ -904,13 +1010,18 @@ async def add_player_points(
     if not player:
         raise HTTPException(status_code=404, detail="Player not found.")
 
-    shop_result = await db.execute(
-        select(ArkShopPlayer).where(ArkShopPlayer.EosId == player.EOS_Id)
+    # Apply the delta in SQL: the ArkShop plugin writes Points too (purchases,
+    # timed rewards), so a read-then-write here would overwrite its changes.
+    res = await db.execute(
+        update(ArkShopPlayer)
+        .where(ArkShopPlayer.EosId == player.EOS_Id)
+        .values(Points=func.greatest(0, func.coalesce(ArkShopPlayer.Points, 0) + data.amount))
+        .execution_options(synchronize_session=False)
     )
-    shop = shop_result.scalar_one_or_none()
-    if shop:
-        new_points = max(0, shop.Points + data.amount)
-        shop.Points = new_points
+    if res.rowcount:
+        new_points = await db.scalar(
+            select(ArkShopPlayer.Points).where(ArkShopPlayer.EosId == player.EOS_Id)
+        )
     else:
         new_points = max(0, data.amount)
         db.add(ArkShopPlayer(EosId=player.EOS_Id, Points=new_points, Kits="", TotalSpent=0))
@@ -920,7 +1031,7 @@ async def add_player_points(
 
 # ── Name synchronisation from .arkprofile files ───────────────────────────────
 
-@router.post("/sync-names")
+@router.post("/sync-names", dependencies=[Depends(require_operator)])
 async def sync_player_names_from_profiles(
     machine_id: Optional[int] = Query(None, description="Restrict sync to a single machine"),
     container_name: Optional[str] = Query(None, description="Restrict sync to a single container"),
@@ -955,7 +1066,7 @@ async def sync_player_names_from_profiles(
       not_matched (parsed name but EOS unknown to DB) /
       errors
     """
-    containers_map = get_containers_map_sync()
+    containers_map = await asyncio.to_thread(get_containers_map_sync)
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,
@@ -1002,22 +1113,11 @@ async def sync_player_names_from_profiles(
     by_player: dict[int, list[dict]] = {}
 
     for mid, saved_paths in machines_to_scan.items():
-        machine = get_machine_sync(mid)
-        if not machine:
-            errors.append(f"Machine {mid} not found in database.")
-            continue
-
-        try:
-            with SSHManager(
-                host=machine["hostname"],
-                username=machine["ssh_user"],
-                password=machine.get("ssh_password"),
-                key_path=machine.get("ssh_key_path"),
-                port=machine.get("ssh_port", 22),
-            ) as ssh:
-                profiles = scan_and_match_profiles(ssh, saved_paths)
-        except Exception as exc:
-            errors.append(f"SSH {machine['hostname']}: {exc}")
+        profiles, scan_error = await asyncio.to_thread(
+            _scan_machine_sync, mid, saved_paths, scan_and_match_profiles
+        )
+        if scan_error:
+            errors.append(scan_error)
             continue
 
         for prof in profiles:
@@ -1128,7 +1228,7 @@ class _SyncNameResolveRequest(BaseModel):
     resolutions: list[_SyncNameResolution]
 
 
-@router.post("/sync-names/resolve")
+@router.post("/sync-names/resolve", dependencies=[Depends(require_operator)])
 async def resolve_ambiguous_player_names(
     body: _SyncNameResolveRequest,
     db:   AsyncSession = Depends(get_plugin_db),
@@ -1192,7 +1292,7 @@ class _PlayersImportRequest(BaseModel):
     default_groups: str = "Default,"
 
 
-@router.post("/import-from-profiles")
+@router.post("/import-from-profiles", dependencies=[Depends(require_operator)])
 async def import_players_from_profiles(
     body: _PlayersImportRequest,
     db:   AsyncSession = Depends(get_plugin_db),
@@ -1279,13 +1379,16 @@ async def import_players_from_profiles(
 # ── Cluster-wide character file wipe (per EOS) ───────────────────────────────
 
 @router.get("/{eos_id}/character-files")
-async def list_character_files_for_eos(
+def list_character_files_for_eos(
     eos_id: str,
 ):
     """
     Preview which ``.arkprofile`` files exist for *eos_id* across every
     container's SavedArks directory.  Read-only; pair with the DELETE
     endpoint below for the actual wipe.
+
+    Plain ``def``: the SSH work is blocking, so FastAPI runs it in its
+    threadpool instead of on the event loop.
 
     Returns: { eos_id, total_files, files: [{path, container, machine_id}] }
     """
@@ -1296,9 +1399,7 @@ async def list_character_files_for_eos(
             detail="No containers scanned. Run a container scan first.",
         )
 
-    eos_clean = (eos_id or "").strip()
-    if not eos_clean:
-        raise HTTPException(status_code=422, detail="eos_id is required.")
+    eos_clean = _clean_eos_id(eos_id)
 
     found: list[dict] = []
     errors: list[str] = []
@@ -1324,7 +1425,8 @@ async def list_character_files_for_eos(
                     port=machine.get("ssh_port", 22),
                 ) as ssh:
                     out, _, code = ssh.execute(
-                        f'find "{saved}" -maxdepth 3 -name "{eos_clean}.arkprofile" -type f 2>/dev/null'
+                        f"find {shlex.quote(saved)} -maxdepth 3 "
+                        f"-name {shlex.quote(eos_clean + '.arkprofile')} -type f 2>/dev/null"
                     )
                     if code == 0 and out.strip():
                         for p in (l.strip() for l in out.strip().splitlines() if l.strip()):
@@ -1344,45 +1446,16 @@ async def list_character_files_for_eos(
     }
 
 
-@router.delete("/{eos_id}/character-files")
-async def delete_character_files_for_eos(
-    eos_id: str,
-    db: AsyncSession = Depends(get_plugin_db),
-):
+def _delete_character_files_sync(
+    containers_map: dict,
+    eos_clean: str,
+) -> tuple[list[dict], list[str]]:
     """
-    Wipe every ``<eos_id>.arkprofile`` file across every container's
-    SavedArks directory AND drop the matching ``Players`` row from the
-    plugin DB.
+    SSH half of :func:`delete_character_files_for_eos`.  Blocking: call via
+    ``asyncio.to_thread``.  *eos_clean* must already be validated.
 
-    Destructive!  After this:
-      * The player's character is gone from every map of the cluster.
-      * Their next login spawns them as a brand-new character.
-      * Their permissions / "Giocatore" name in the ``Players`` table
-        are removed -- the row is recreated by the Permissions plugin
-        at next login with the default group.
-
-    The ``ArkShopPlayers`` row is intentionally NOT removed: shop
-    points are usually meant to survive a character wipe.  Wipe that
-    separately if needed.
-
-    Returns: { eos_id, total_deleted, deleted: [...], db_row_removed,
-    errors: [...] }
+    Returns ``(deleted, errors)``.
     """
-    containers_map = get_containers_map_sync()
-    if not containers_map or not containers_map.get("machines"):
-        raise HTTPException(
-            status_code=404,
-            detail="No containers scanned. Run a container scan first.",
-        )
-
-    eos_clean = (eos_id or "").strip()
-    if not eos_clean:
-        raise HTTPException(status_code=422, detail="eos_id is required.")
-    # Guard against trivially-bad inputs that would expand the find filter
-    # into something dangerous (path separators, wildcards, double-quotes).
-    if any(ch in eos_clean for ch in "/\\*?\"'`;|&$<>"):
-        raise HTTPException(status_code=422, detail="eos_id contains invalid characters.")
-
     deleted: list[dict] = []
     errors:  list[str] = []
 
@@ -1406,14 +1479,13 @@ async def delete_character_files_for_eos(
                 ) as ssh:
                     # First find which files exist (so we can report precisely)
                     out, _, code = ssh.execute(
-                        f'find "{saved}" -maxdepth 3 -name "{eos_clean}.arkprofile" -type f 2>/dev/null'
+                        f"find {shlex.quote(saved)} -maxdepth 3 "
+                        f"-name {shlex.quote(eos_clean + '.arkprofile')} -type f 2>/dev/null"
                     )
                     if code != 0 or not out.strip():
                         continue
                     for p in (l.strip() for l in out.strip().splitlines() if l.strip()):
-                        # Wrap path in quotes; the EOS-format means it's
-                        # safe ASCII hex but we belt-and-braces anyway.
-                        rm_out, rm_err, rm_code = ssh.execute(f'rm -f "{p}"')
+                        rm_out, rm_err, rm_code = ssh.execute(f"rm -f {shlex.quote(p)}")
                         if rm_code == 0:
                             deleted.append({
                                 "path":       p,
@@ -1424,6 +1496,49 @@ async def delete_character_files_for_eos(
                             errors.append(f"rm failed on {p}: {rm_err.strip() or rm_out.strip() or 'exit '+str(rm_code)}")
             except Exception as exc:
                 errors.append(f"SSH {machine['hostname']}/{container.get('name')}: {exc}")
+
+    return deleted, errors
+
+
+@router.delete("/{eos_id}/character-files", dependencies=[Depends(require_admin)])
+async def delete_character_files_for_eos(
+    eos_id: str,
+    db: AsyncSession = Depends(get_plugin_db),
+):
+    """
+    Wipe every ``<eos_id>.arkprofile`` file across every container's
+    SavedArks directory AND drop the matching ``Players`` row from the
+    plugin DB.
+
+    Destructive!  After this:
+      * The player's character is gone from every map of the cluster.
+      * Their next login spawns them as a brand-new character.
+      * Their permissions / "Giocatore" name in the ``Players`` table
+        are removed -- the row is recreated by the Permissions plugin
+        at next login with the default group.
+
+    The ``ArkShopPlayers`` row is intentionally NOT removed: shop
+    points are usually meant to survive a character wipe.  Wipe that
+    separately if needed.
+
+    Returns: { eos_id, total_deleted, deleted: [...], db_row_removed,
+    errors: [...] }
+    """
+    containers_map = await asyncio.to_thread(get_containers_map_sync)
+    if not containers_map or not containers_map.get("machines"):
+        raise HTTPException(
+            status_code=404,
+            detail="No containers scanned. Run a container scan first.",
+        )
+
+    # Whitelisted, not blacklisted: a glob such as "[0-9a-f]..." in the
+    # find -name filter would otherwise match, and delete, every character
+    # on the cluster.
+    eos_clean = _clean_eos_id(eos_id)
+
+    deleted, errors = await asyncio.to_thread(
+        _delete_character_files_sync, containers_map, eos_clean
+    )
 
     # Remove the matching Players row so wiping a character also clears
     # the in-DB profile (permissions, Giocatore display name).  Done
@@ -1448,7 +1563,7 @@ async def delete_character_files_for_eos(
     }
 
 
-@router.post("/sync-tribes")
+@router.post("/sync-tribes", dependencies=[Depends(require_operator)])
 async def sync_tribe_names_from_files(
     machine_id: Optional[int] = Query(None, description="Restrict sync to a single machine"),
     container_name: Optional[str] = Query(None, description="Restrict sync to a single container"),
@@ -1473,7 +1588,7 @@ async def sync_tribe_names_from_files(
     the binary parser couldn't recover a name (usually means the file is
     truncated or the tribe was never named in-game).
     """
-    containers_map = get_containers_map_sync()
+    containers_map = await asyncio.to_thread(get_containers_map_sync)
     if not containers_map or not containers_map.get("machines"):
         raise HTTPException(
             status_code=404,
@@ -1529,22 +1644,11 @@ async def sync_tribe_names_from_files(
     errors:    list[str]  = []
 
     for mid, saved_paths in machines_to_scan.items():
-        machine = get_machine_sync(mid)
-        if not machine:
-            errors.append(f"Machine {mid} not found in database.")
-            continue
-
-        try:
-            with SSHManager(
-                host=machine["hostname"],
-                username=machine["ssh_user"],
-                password=machine.get("ssh_password"),
-                key_path=machine.get("ssh_key_path"),
-                port=machine.get("ssh_port", 22),
-            ) as ssh:
-                tribes = scan_and_match_tribes(ssh, saved_paths)
-        except Exception as exc:
-            errors.append(f"SSH {machine['hostname']}: {exc}")
+        tribes, scan_error = await asyncio.to_thread(
+            _scan_machine_sync, mid, saved_paths, scan_and_match_tribes
+        )
+        if scan_error:
+            errors.append(scan_error)
             continue
 
         for tribe in tribes:

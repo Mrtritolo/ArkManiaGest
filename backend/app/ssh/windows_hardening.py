@@ -23,16 +23,19 @@ strand you.  Three layers guard against it:
    explicitly, and audit is the default everywhere.
 
 Because the panel does not know which source address the host sees it as, the
-allow-list is left to the script, which reads it from ``$env:SSH_CLIENT`` (or
-the established TCP connection) and so keeps the current session reachable.
+allow-list is left to the script, which reads it only from ``$env:SSH_CLIENT`` /
+``$env:SSH_CONNECTION`` and so keeps the current SSH session reachable.
+Without them (no SSH session) nothing is guessed: the lockout firewall fixes
+refuse to run until ``-AllowIp`` is passed.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, List
 
 from app.core.config import server_settings
 from app.ssh.manager import SSHManager
@@ -103,10 +106,16 @@ def build_command(
     changed machine-wide: the file is one the panel just wrote, and relaxing
     the machine policy to run it would be a hardening regression inside the
     hardening feature.
+
+    The invocation travels as ``-EncodedCommand`` rather than ``-File``:
+    ``-File`` binds every argument as one literal string, so ``-Controls
+    'a','b'`` arrived as the single id ``a,b`` (matching no control) and
+    ``-GamePorts 7777,7779`` as the integer 77777779.  An encoded command is
+    parsed as PowerShell, where the array syntax holds, and the outer shell
+    cannot reinterpret it.
     """
     args = [
-        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", ps_quote(remote_path),
+        "&", ps_quote(remote_path),
         "-Json",
         "-BaseDir", ps_quote(base_dir),
         "-ServiceAccount", ps_quote(service_account),
@@ -124,7 +133,20 @@ def build_command(
         if include_risky:
             args.append("-IncludeRisky")
 
-    return "powershell.exe " + " ".join(args)
+    # An encoded command writes its progress and error streams to stderr as
+    # CLIXML.  Silence progress and print a terminating error as plain text,
+    # so the "no results" error keeps a readable reason; the script's own
+    # exit code stays the process exit code.
+    script = (
+        "$ProgressPreference = 'SilentlyContinue'; "
+        "try { " + " ".join(args) + "; exit $LASTEXITCODE } "
+        "catch { [Console]::Error.WriteLine(($_ | Out-String)); exit 1 }"
+    )
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    return (
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass "
+        f"-EncodedCommand {encoded}"
+    )
 
 
 def parse_output(stdout: str) -> List[ControlResult]:
