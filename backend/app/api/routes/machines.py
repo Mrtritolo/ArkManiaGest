@@ -3,6 +3,11 @@ api/routes/machines.py — SSH machine CRUD and connectivity testing.
 
 SSH passwords and passphrases are encrypted with AES-256-GCM before storage.
 The raw credential values are never exposed through any read endpoint.
+
+Role matrix: viewers can list machines and run the read-only hardening audit.
+Creating, changing, deleting or duplicating a machine, the manual connection
+test and applying hardening are admin only, because changing the hostname and
+then testing would hand the stored SSH password to any host.
 """
 import asyncio
 import time
@@ -105,6 +110,21 @@ def _ssh_for_machine(machine: dict) -> SSHManager:
     )
 
 
+def _test_connection_sync(machine: dict) -> str:
+    """Blocking helper: connect, run a trivial command and return its stdout."""
+    with _ssh_for_machine(machine) as ssh:
+        stdout, _, _ = ssh.execute("echo 'ArkManiaGest OK'")
+    return stdout
+
+
+def _forget_scanned_containers_sync(machine_id: int) -> None:
+    """Blocking helper: drop a machine's entry from the persisted container map."""
+    cmap = get_plugin_config_sync("containers_map") or {}
+    if str(machine_id) in cmap.get("machines", {}):
+        del cmap["machines"][str(machine_id)]
+        save_plugin_config_sync("containers_map", cmap)
+
+
 # ── List / read ───────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[SSHMachineRead])
@@ -144,7 +164,12 @@ async def get_machine(machine_id: int, db: AsyncSession = Depends(get_db)):
 
 # ── Create ────────────────────────────────────────────────────────────────────
 
-@router.post("", response_model=SSHMachineRead, status_code=201)
+@router.post(
+    "",
+    response_model=SSHMachineRead,
+    status_code=201,
+    dependencies=[Depends(require_admin)],
+)
 async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new SSH machine.
@@ -192,7 +217,10 @@ async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_
                 "ark_plugins": raw.get("ark_plugins_path", ""),
                 "os_type":     raw.get("os_type", "linux"),
                 "wsl_distro":  raw.get("wsl_distro") or "Ubuntu",
-                "runtime":     raw.get("runtime", "pok"),
+                # "native" only exists on Windows hosts.
+                "runtime":     (
+                    raw.get("runtime", "pok") if raw.get("os_type") == "windows" else "pok"
+                ),
                 "cluster_dir": raw.get("cluster_dir") or None,
                 "cluster_sync_mode": raw.get("cluster_sync_mode", "none"),
                 "active":      1 if raw.get("is_active", True) else 0,
@@ -217,7 +245,11 @@ async def create_machine(data: SSHMachineCreate, db: AsyncSession = Depends(get_
 
 # ── Update ────────────────────────────────────────────────────────────────────
 
-@router.put("/{machine_id}", response_model=SSHMachineRead)
+@router.put(
+    "/{machine_id}",
+    response_model=SSHMachineRead,
+    dependencies=[Depends(require_admin)],
+)
 async def update_machine(
     machine_id: int,
     data: SSHMachineUpdate,
@@ -242,6 +274,12 @@ async def update_machine(
     raw = data.model_dump(exclude_unset=True)
     if not raw:
         raise HTTPException(status_code=400, detail="No fields to update.")
+
+    # "native" only exists on Windows hosts: store "pok" for any other host,
+    # whichever client sent the update, so the column never contradicts what
+    # PlatformAdapter actually runs.
+    if (raw.get("os_type") or machine.get("os_type") or "linux") != "windows":
+        raw["runtime"] = "pok"
 
     set_clauses: list[str] = []
     params: dict = {"mid": machine_id}
@@ -296,7 +334,7 @@ async def update_machine(
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 
-@router.delete("/{machine_id}")
+@router.delete("/{machine_id}", dependencies=[Depends(require_admin)])
 async def delete_machine(machine_id: int, db: AsyncSession = Depends(get_db)):
     """Delete an SSH machine record."""
     machine = await get_machine_async(db, machine_id)
@@ -326,17 +364,19 @@ async def delete_machine(machine_id: int, db: AsyncSession = Depends(get_db)):
 
     # Drop the machine's entry from the persisted container map so stale scan
     # data does not linger in settings after the machine is gone.
-    cmap = get_plugin_config_sync("containers_map") or {}
-    if str(machine_id) in cmap.get("machines", {}):
-        del cmap["machines"][str(machine_id)]
-        save_plugin_config_sync("containers_map", cmap)
+    await asyncio.to_thread(_forget_scanned_containers_sync, machine_id)
 
     return {"deleted": True, "id": machine_id, "name": machine["name"]}
 
 
 # ── Duplicate ─────────────────────────────────────────────────────────────────
 
-@router.post("/{machine_id}/duplicate", response_model=SSHMachineRead, status_code=201)
+@router.post(
+    "/{machine_id}/duplicate",
+    response_model=SSHMachineRead,
+    status_code=201,
+    dependencies=[Depends(require_admin)],
+)
 async def duplicate_machine(machine_id: int, db: AsyncSession = Depends(get_db)):
     """
     Clone an existing SSH machine under a unique derived name.
@@ -372,12 +412,12 @@ async def duplicate_machine(machine_id: int, db: AsyncSession = Depends(get_db))
             "(name, description, hostname, ip_address, ssh_port, ssh_user, auth_method, "
             "ssh_password_enc, ssh_key_path, ssh_passphrase_enc, "
             "ark_root_path, ark_config_path, ark_plugins_path, "
-            "os_type, wsl_distro, "
+            "os_type, wsl_distro, runtime, cluster_dir, cluster_sync_mode, "
             "is_active, last_status, created_at, updated_at) "
             "VALUES (:name, :desc, :host, :ip, :port, :user, :auth, "
             ":pw_enc, :key_path, :pp_enc, "
             ":ark_root, :ark_config, :ark_plugins, "
-            ":os_type, :wsl_distro, "
+            ":os_type, :wsl_distro, :runtime, :cluster_dir, :cluster_sync_mode, "
             ":active, 'unknown', :now, :now)"
         ),
         {
@@ -396,6 +436,14 @@ async def duplicate_machine(machine_id: int, db: AsyncSession = Depends(get_db))
             "ark_plugins": source.get("ark_plugins_path", ""),
             "os_type":     source.get("os_type", "linux"),
             "wsl_distro":  source.get("wsl_distro") or "Ubuntu",
+            # "native" only exists on Windows hosts: a legacy linux+native row
+            # must not be copied as such.
+            "runtime":     (
+                source.get("runtime") or "pok"
+                if source.get("os_type") == "windows" else "pok"
+            ),
+            "cluster_dir": source.get("cluster_dir") or None,
+            "cluster_sync_mode": source.get("cluster_sync_mode") or "none",
             "active":      1 if source.get("is_active", True) else 0,
             "now":         now,
         },
@@ -411,7 +459,11 @@ async def duplicate_machine(machine_id: int, db: AsyncSession = Depends(get_db))
 
 # ── Connection test ───────────────────────────────────────────────────────────
 
-@router.post("/{machine_id}/test", response_model=SSHTestResult)
+@router.post(
+    "/{machine_id}/test",
+    response_model=SSHTestResult,
+    dependencies=[Depends(require_admin)],
+)
 async def test_machine_connection(
     machine_id: int,
     db: AsyncSession = Depends(get_db),
@@ -429,25 +481,26 @@ async def test_machine_connection(
 
     start_time = time.time()
     try:
-        with _ssh_for_machine(machine) as ssh:
-            stdout, _, _ = ssh.execute("echo 'ArkManiaGest OK'")
-            elapsed_ms = (time.time() - start_time) * 1_000
+        # Off the event loop: an unreachable host holds the connect for the
+        # full SSH_TIMEOUT, which would otherwise stall every other request.
+        stdout = await asyncio.to_thread(_test_connection_sync, machine)
+        elapsed_ms = (time.time() - start_time) * 1_000
 
-            now = datetime.now(timezone.utc)
-            await db.execute(
-                text(
-                    "UPDATE arkmaniagest_machines "
-                    "SET last_status = 'online', last_connection = :now "
-                    "WHERE id = :mid"
-                ),
-                {"now": now, "mid": machine_id},
-            )
-            return SSHTestResult(
-                success=True,
-                message=f"Connected. Response: {stdout}",
-                hostname=machine["hostname"],
-                response_time_ms=round(elapsed_ms, 1),
-            )
+        now = datetime.now(timezone.utc)
+        await db.execute(
+            text(
+                "UPDATE arkmaniagest_machines "
+                "SET last_status = 'online', last_connection = :now "
+                "WHERE id = :mid"
+            ),
+            {"now": now, "mid": machine_id},
+        )
+        return SSHTestResult(
+            success=True,
+            message=f"Connected. Response: {stdout}",
+            hostname=machine["hostname"],
+            response_time_ms=round(elapsed_ms, 1),
+        )
 
     except Exception as exc:
         await db.execute(

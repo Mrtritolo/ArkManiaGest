@@ -8,8 +8,9 @@ Every destructive action (start, stop, update, ...) is mirrored into the
 
 Role matrix
 -----------
-* ``viewer``   : list + detail + status probe
-* ``operator`` : start / stop / restart / backup / rcon / create / update
+* ``viewer``   : list + detail + action log
+* ``operator`` : start / stop / restart / backup / rcon / create / update /
+  import / provision / status probe
 * ``admin``    : delete
 
 The router-level viewer dependency is installed in ``api/routes/__init__.py``;
@@ -18,6 +19,7 @@ operator / admin checks are applied per-endpoint here.
 
 from __future__ import annotations
 
+import asyncio
 import posixpath
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -36,7 +38,6 @@ from app.core.store import (
     get_containers_map_sync,
     get_instance_async,
     get_machine_async,
-    get_plugin_config_sync,
     list_actions_async,
     update_instance_async,
 )
@@ -178,7 +179,7 @@ async def _port_or_name_conflict(
     *,
     machine_id: int,
     name: str,
-    container_name: str,
+    container_name: Optional[str],
     game_port: int,
     rcon_port: int,
     exclude_id: Optional[int] = None,
@@ -186,6 +187,10 @@ async def _port_or_name_conflict(
     """
     Return a human-readable conflict message (or None) for port / name clashes
     on the same machine.
+
+    Names are compared case-insensitively: on a native host the name becomes
+    a Windows service and a directory, and both ignore case.  Native rows
+    have no container, so a NULL container name never counts as a clash.
     """
     where = "machine_id = :mid"
     params: dict = {"mid": machine_id}
@@ -200,9 +205,9 @@ async def _port_or_name_conflict(
         params,
     )
     for row in res.mappings().fetchall():
-        if row["name"] == name:
+        if row["name"].lower() == name.lower():
             return f"Instance name '{name}' is already in use on this machine."
-        if row["container_name"] == container_name:
+        if container_name and row["container_name"] == container_name:
             return f"Container name '{container_name}' is already in use on this machine."
         if row["game_port"] == game_port:
             return f"Game port {game_port} is already used by instance '{row['name']}'."
@@ -367,7 +372,11 @@ class ImportFromContainerRequest(BaseModel):
     """Body payload for :func:`import_from_container`."""
 
     machine_id:      int             = Field(..., ge=1)
-    container_name:  str             = Field(..., min_length=1, max_length=128)
+    # Becomes the instance name, so it follows the same slug rules as
+    # ServerInstanceCreate.name: it is passed to POK-manager on the host.
+    container_name:  str             = Field(
+        ..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_\-]*$",
+    )
     admin_password:  str             = Field(..., min_length=4, max_length=128)
     server_password: Optional[str]   = Field(default=None, max_length=128)
     # Operator-supplied overrides; everything is optional and falls back to
@@ -404,7 +413,7 @@ async def import_from_container(
     """
     machine = await _get_machine_or_404(db, data.machine_id)
 
-    containers_map = get_containers_map_sync()
+    containers_map = await asyncio.to_thread(get_containers_map_sync)
     machine_data   = (containers_map.get("machines") or {}).get(str(data.machine_id)) or {}
     discovered = next(
         (c for c in (machine_data.get("containers") or [])
@@ -660,17 +669,24 @@ async def provision_instance(
                    "POK-manager creates the container on first start.",
         )
 
+    try:
+        command = win.create_cmd(
+            inst,
+            base_dir=adapter.native_base_dir(),
+            cluster_dir=machine.get("cluster_dir"),
+        )
+    except ValueError as exc:
+        # A row saved before the schema refused '"' can still hold one.  The
+        # message names the field only, never its value.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     result = await run_action(
         db,
         action="create",
         instance=inst,
         machine=machine,
         user=user,
-        command=win.create_cmd(
-            inst,
-            base_dir=adapter.native_base_dir(),
-            cluster_dir=machine.get("cluster_dir"),
-        ),
+        command=command,
         # The generated command embeds the admin password in the WinSW XML,
         # so it must never be echoed into the audit row.
         meta="native provision",
@@ -819,9 +835,10 @@ async def update_instance_binary(
         # into.  On Linux a running process keeps its open file handles valid;
         # on Windows the files are locked and SteamCMD fails halfway, leaving
         # a partially updated tree.  Refuse up front with a message naming
-        # what has to be stopped.
+        # what has to be stopped.  Inactive rows are checked too: is_active
+        # is a panel flag, it does not stop the Windows service.
         siblings = await get_all_instances_async(
-            db, machine_id=machine["id"], active_only=True)
+            db, machine_id=machine["id"], active_only=False)
         services = [
             s.get("service_name") or win.service_name_for(s["name"])
             for s in siblings
@@ -835,6 +852,17 @@ async def update_instance_binary(
             command=win.instances_running_cmd(services),
             meta="pre-update running check",
         )
+        if probe.exit_code != 0:
+            # An empty stdout from a failed probe does not mean "nothing is
+            # running": fail closed rather than run SteamCMD blind.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Could not check which instances are running on this host, "
+                    "so the update was not started: "
+                    + ((probe.stderr or "").strip()[-500:] or f"exit code {probe.exit_code}")
+                ),
+            )
         running = [ln.strip() for ln in (probe.stdout or "").splitlines() if ln.strip()]
         if running:
             raise HTTPException(
@@ -875,8 +903,8 @@ async def probe_status(
     """
     Refresh the instance ``status`` column by probing ``docker inspect``.
 
-    Viewer role is sufficient because the probe is read-only, but we still
-    write an action row so the audit trail is complete.
+    Operator only: the probe opens an SSH session on the host, rewrites the
+    instance status and writes an action row.
     """
     inst = await _get_instance_or_404(db, instance_id)
     machine = await _get_machine_or_404(db, inst["machine_id"])

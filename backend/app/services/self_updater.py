@@ -33,7 +33,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -102,59 +101,35 @@ class UpdateStatus:
 
 # ── Status file helpers ──────────────────────────────────────────────────────
 
+# The last status this process could not write to STATUS_PATH, if any.
+_unsaved: Optional[UpdateStatus] = None
+
+
 def _write_status(status: UpdateStatus) -> None:
     """
     Atomically replace the JSON status file.
 
-    The atomic-rename pattern (write tmp, then rename over destination)
-    can fail with EPERM under /tmp's sticky bit when the destination
-    file was created by a different user -- which happens here whenever
-    server-update.sh (running as root via sudo) writes a status entry
-    and the next invocation comes from the panel process (running as
-    the unprivileged service user `arkmania`).  Linux sticky-bit
-    semantics: only the file owner OR root can delete/rename a file
-    they don't own, even when the directory is world-writable.
-
-    Two-stage fallback so we never crash the caller on a status write:
-      1. Try the normal atomic rename.
-      2. On PermissionError (EPERM), try to chmod 666 the target so we
-         can replace it next time, then fall back to a non-atomic
-         direct write.
-      3. On any further failure, swallow the exception -- the status
-         file is best-effort observability, never load-bearing for the
-         actual update flow.
+    The rename fails with EPERM once the file belongs to another user: /tmp
+    is sticky, and server-update.sh (root, via sudo) replaces the file with
+    a root-owned 0644 one every time it finalises a run.  The panel user can
+    neither rename over that file, nor write into it, nor delete it, so a
+    status it cannot persist is kept in memory instead and served by
+    :func:`read_status` until the file is newer.  A status write never
+    fails the caller: it is observability, not part of the update itself.
     """
+    global _unsaved
     payload = json.dumps(asdict(status), indent=2)
     tmp = STATUS_PATH.with_suffix(".json.tmp")
     try:
         tmp.write_text(payload, encoding="utf-8")
         tmp.replace(STATUS_PATH)
-        # Make the file group/world-writable so the next caller (root or
-        # service user, doesn't matter which) can keep updating in place
-        # without falling back here again.
-        try:
-            STATUS_PATH.chmod(0o666)
-        except OSError:
-            pass
-    except PermissionError:
-        # Tmp file may still be hanging around; try to clean it.
+        _unsaved = None
+    except OSError:
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
-        # Last resort: open the destination directly and overwrite.  Loses
-        # atomicity but unblocks observability.  If THIS also fails (e.g.
-        # destination owned by root with mode 600), give up silently.
-        try:
-            STATUS_PATH.write_text(payload, encoding="utf-8")
-            try:
-                STATUS_PATH.chmod(0o666)
-            except OSError:
-                pass
-        except OSError:
-            return
-    except OSError:
-        return
+        _unsaved = status
 
 
 def read_status() -> UpdateStatus:
@@ -164,15 +139,22 @@ def read_status() -> UpdateStatus:
     Returns the ``idle`` sentinel (without writing it) when no attempt has
     happened yet on this boot.
     """
-    if not STATUS_PATH.exists():
-        return UpdateStatus(state="idle")
+    status = UpdateStatus(state="idle")
     try:
         data = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("state"), str):
+            status = UpdateStatus(**{
+                k: data.get(k) for k in UpdateStatus.__dataclass_fields__.keys()
+            })
     except Exception:
-        return UpdateStatus(state="idle")
-    return UpdateStatus(**{
-        k: data.get(k) for k in UpdateStatus.__dataclass_fields__.keys()
-    })
+        pass
+
+    # A status kept in memory is newer than the file until server-update.sh
+    # finalises the run, which stamps finished_at into the file.  Both sides
+    # write UTC isoformat() strings, which compare correctly as text.
+    if _unsaved is not None and str(status.finished_at or "") < (_unsaved.started_at or ""):
+        return _unsaved
+    return status
 
 
 def write_failure_status(
@@ -401,8 +383,7 @@ async def download_and_verify(
         RuntimeError: Download failed, SHA256SUMS missing, or hash mismatch.
     """
     # Make sure we don't operate on a stale leftover from an aborted run.
-    if TARBALL_PATH.exists():
-        TARBALL_PATH.unlink()
+    TARBALL_PATH.unlink(missing_ok=True)
 
     async with httpx.AsyncClient(
         timeout=GITHUB_DOWNLOAD_TIMEOUT,
@@ -415,7 +396,13 @@ async def download_and_verify(
                     f"Tarball download HTTP {resp.status_code} from "
                     f"{assets.tarball_url}"
                 )
-            with TARBALL_PATH.open("wb") as fh:
+            # O_EXCL: the file root is about to extract must be one this
+            # process created.  In the shared /tmp anybody can pre-create
+            # (or symlink) the path and keep write access to it; with O_EXCL
+            # that aborts the update instead, and the sticky bit keeps
+            # others from swapping the file once it is ours.
+            fd = os.open(TARBALL_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            with os.fdopen(fd, "wb") as fh:
                 async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
                     fh.write(chunk)
 
@@ -442,7 +429,8 @@ async def download_and_verify(
             "(or SHA256SUMS missing).  Refusing to install."
         )
 
-    actual = _sha256_of(TARBALL_PATH)
+    # Hashing the whole tarball takes a while: keep it off the event loop.
+    actual = await asyncio.to_thread(_sha256_of, TARBALL_PATH)
     if actual.lower() != expected.lower():
         TARBALL_PATH.unlink(missing_ok=True)
         raise RuntimeError(
@@ -551,6 +539,23 @@ def probe_sudo_authorisation() -> tuple[bool, str]:
     )
 
 
+# The server-update.sh run started by this process, if any.
+_update_proc: Optional[subprocess.Popen] = None
+
+
+def update_in_progress() -> bool:
+    """
+    Whether a server-update.sh run started by this process is still going.
+
+    The status file cannot answer that: the script only rewrites it when it
+    exits normally or through its ERR trap, so a run killed by a signal (or
+    refused by sudo) leaves "running" there for good.  The script lives in
+    the panel's cgroup, so a panel restart takes it down as well: a run
+    started by an earlier process is never still going.
+    """
+    return _update_proc is not None and _update_proc.poll() is None
+
+
 def spawn_update(target_version: str) -> int:
     """
     Launch ``server-update.sh FULL`` in a detached subprocess and return its PID.
@@ -561,6 +566,7 @@ def spawn_update(target_version: str) -> int:
     update itself keeps running until completion.  The status file and
     log file then carry the result over to the next backend boot.
     """
+    global _update_proc
     if not TARBALL_PATH.exists():
         raise RuntimeError(
             f"Update tarball missing at {TARBALL_PATH} -- "
@@ -587,6 +593,7 @@ def spawn_update(target_version: str) -> int:
         close_fds=True,
         cwd=str(APP_DIR),
     )
+    _update_proc = proc
 
     _write_status(UpdateStatus(
         state="running",
@@ -613,6 +620,14 @@ async def run_self_update_async(
     (and persisted to the status file).
     """
     started_at = datetime.now(timezone.utc).isoformat()
+
+    # The UI polls the log tail from the moment the install is accepted,
+    # before spawn_update() truncates the log: do not show the previous
+    # run's log under this one.
+    try:
+        LOG_PATH.write_bytes(b"")
+    except OSError:
+        pass
 
     # 1. Discover.
     _write_status(UpdateStatus(

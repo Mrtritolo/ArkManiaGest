@@ -49,31 +49,43 @@ class ClusterSyncModeEnum(str, Enum):
     SMB = "smb"
 
 
+# The distro name is placed on the ``wsl.exe -d <distro>`` command line of
+# every POK action on a Windows host, so only plain distro-name characters are
+# accepted.  Empty is allowed: the platform adapter falls back to "Ubuntu".
+_WSL_DISTRO_PATTERN = r"^[A-Za-z0-9._-]*$"
+
+
 class SSHMachineCreate(BaseModel):
     """Fields required to register a new SSH machine."""
 
+    # Length limits mirror the arkmaniagest_machines column sizes, so long
+    # input is a 422 instead of a "Data too long" 500.
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=256)
     hostname: str = Field(..., min_length=1, max_length=255)
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = Field(default=None, max_length=45)
     ssh_port: int = Field(default=22, ge=1, le=65_535)
-    ssh_user: str = Field(..., min_length=1, max_length=100)
+    ssh_user: str = Field(..., min_length=1, max_length=64)
     auth_method: AuthMethodEnum = AuthMethodEnum.PASSWORD
 
     # Credentials (accepted on write, never returned on read)
     ssh_password: Optional[str] = None
-    ssh_key_path: Optional[str] = None
+    ssh_key_path: Optional[str] = Field(default=None, max_length=512)
     ssh_passphrase: Optional[str] = None
 
     # ARK server paths on the remote host
-    ark_root_path: str = "/opt/ark"
-    ark_config_path: str = "/opt/ark/ShooterGame/Saved/Config/LinuxServer"
-    ark_plugins_path: str = "/opt/ark/ShooterGame/Binaries/Linux/Plugins"
+    ark_root_path: str = Field(default="/opt/ark", max_length=512)
+    ark_config_path: str = Field(
+        default="/opt/ark/ShooterGame/Saved/Config/LinuxServer", max_length=512,
+    )
+    ark_plugins_path: str = Field(
+        default="/opt/ark/ShooterGame/Binaries/Linux/Plugins", max_length=512,
+    )
 
     # Host platform — controls how POK-manager and docker are invoked.
     os_type: OSTypeEnum = OSTypeEnum.LINUX
     wsl_distro: Optional[str] = Field(
-        default="Ubuntu", max_length=64,
+        default="Ubuntu", max_length=64, pattern=_WSL_DISTRO_PATTERN,
         description="WSL distribution name; only used when os_type = 'windows'.",
     )
 
@@ -93,20 +105,22 @@ class SSHMachineUpdate(BaseModel):
     """All fields are optional for partial updates."""
 
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    hostname: Optional[str] = None
-    ip_address: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=256)
+    hostname: Optional[str] = Field(None, min_length=1, max_length=255)
+    ip_address: Optional[str] = Field(None, max_length=45)
     ssh_port: Optional[int] = Field(None, ge=1, le=65_535)
-    ssh_user: Optional[str] = None
+    ssh_user: Optional[str] = Field(None, min_length=1, max_length=64)
     auth_method: Optional[AuthMethodEnum] = None
     ssh_password: Optional[str] = None
-    ssh_key_path: Optional[str] = None
+    ssh_key_path: Optional[str] = Field(None, max_length=512)
     ssh_passphrase: Optional[str] = None
-    ark_root_path: Optional[str] = None
-    ark_config_path: Optional[str] = None
-    ark_plugins_path: Optional[str] = None
+    ark_root_path: Optional[str] = Field(None, max_length=512)
+    ark_config_path: Optional[str] = Field(None, max_length=512)
+    ark_plugins_path: Optional[str] = Field(None, max_length=512)
     os_type: Optional[OSTypeEnum] = None
-    wsl_distro: Optional[str] = Field(default=None, max_length=64)
+    wsl_distro: Optional[str] = Field(
+        default=None, max_length=64, pattern=_WSL_DISTRO_PATTERN,
+    )
     runtime: Optional[RuntimeEnum] = None
     cluster_dir: Optional[str] = Field(default=None, max_length=512)
     cluster_sync_mode: Optional[ClusterSyncModeEnum] = None

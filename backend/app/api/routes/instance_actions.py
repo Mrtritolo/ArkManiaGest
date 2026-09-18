@@ -2,8 +2,10 @@
 api/routes/instance_actions.py -- Read-only view of the ARK instance action log.
 
 Every row written to ``ARKM_instance_actions`` by :mod:`app.ssh.pok_executor`
-is surfaced here.  Consumers are the Event Log page and the per-instance
-drawer on the Servers page.
+is surfaced here, filterable across instances and machines.  The panel UI
+does not call this endpoint today: the per-instance drawer on the Instances
+page uses ``GET /servers/{id}/actions``, and the Event Log page reads the
+plugin event log (``/arkmania/events``), not this table.
 
 Rows are kept after the related instance is deleted (``machine_id`` +
 ``instance_name`` stay populated via ``ON DELETE SET NULL``), so this

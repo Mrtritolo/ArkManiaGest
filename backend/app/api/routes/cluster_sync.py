@@ -17,7 +17,7 @@ import asyncio
 import time
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import server_settings
@@ -34,11 +34,18 @@ from app.ssh.platform import PlatformAdapter
 
 router = APIRouter()
 
+# The page's HTTP client gives up after 30 s, and a host that drops packets
+# holds the connect for the whole timeout: keep it well below that, so one
+# dead host costs its own row and not the whole report.
+_PROBE_CONNECT_TIMEOUT_S = 10
 
-def _probe_machine_sync(machine: dict, command: str) -> str:
+
+def _probe_machine_sync(machine: dict, commands: List[str]) -> List[str]:
     """
-    Blocking probe of one host.  Errors come back as text, never as raises:
-    a single unreachable host must degrade its own row, not the whole page.
+    Blocking probe of one host: one SSH session, one output per command.
+
+    Errors come back as text, never as raises: a single unreachable host must
+    degrade its own row, not the whole page.
     """
     ssh = SSHManager(
         host=machine["hostname"],
@@ -46,19 +53,25 @@ def _probe_machine_sync(machine: dict, command: str) -> str:
         password=machine.get("ssh_password"),
         key_path=machine.get("ssh_key_path"),
         port=machine.get("ssh_port", 22),
-        timeout=server_settings.SSH_TIMEOUT,
+        timeout=min(server_settings.SSH_TIMEOUT, _PROBE_CONNECT_TIMEOUT_S),
     )
     try:
         ssh.connect()
     except Exception as exc:  # pragma: no cover - network dependant
-        return f"error=SSH connection failed: {exc}"
+        return [f"error=SSH connection failed: {exc}"] * len(commands)
     try:
-        stdout, stderr, rc = ssh.execute(command)
-        if rc != 0 and not stdout:
-            return f"error={stderr or 'probe exited ' + str(rc)}"
-        return stdout
-    except Exception as exc:
-        return f"error=Remote exec failed: {exc}"
+        outputs: List[str] = []
+        for command in commands:
+            try:
+                stdout, stderr, rc = ssh.execute(command)
+            except Exception as exc:
+                outputs.append(f"error=Remote exec failed: {exc}")
+                continue
+            if rc != 0 and not stdout:
+                outputs.append(f"error={stderr or 'probe exited ' + str(rc)}")
+            else:
+                outputs.append(stdout)
+        return outputs
     finally:
         ssh.close()
 
@@ -69,9 +82,9 @@ async def cluster_health(db: AsyncSession = Depends(get_db)):
     Report cluster-directory agreement for every cluster the panel knows.
 
     Instances are grouped by ``cluster_id``; each distinct machine hosting
-    one of them is probed once, in parallel.  A cluster whose instances all
-    live on a single host reports ``unknown`` -- there is nothing to compare,
-    and that is not a fault.
+    one of them is probed once, in one SSH session, in parallel.  A cluster
+    whose instances all live on a single host reports ``unknown`` -- there is
+    nothing to compare, and that is not a fault.
     """
     machines = {m["id"]: m for m in await get_all_machines_async(db)}
     instances = await get_all_instances_async(db, active_only=True)
@@ -105,27 +118,34 @@ async def cluster_health(db: AsyncSession = Depends(get_db)):
                 sync_lib.probe_cmd(cluster_dir, cid, adapter),
             ))
 
-    results = await asyncio.gather(*[
-        asyncio.to_thread(_probe_machine_sync, machine, cmd)
-        if cmd else asyncio.sleep(0, result="error=cluster_dir not configured")
-        for _cid, machine, _adapter, _dir, cmd in jobs
-    ])
-
-    # Syncthing identity is per machine, not per cluster: probe each host once
-    # even when it carries instances from several clusters.
-    seen: Dict[int, dict] = {}
-    for _cid, machine, adapter, _dir, _cmd in jobs:
-        seen.setdefault(machine["id"], {"machine": machine, "adapter": adapter})
-    sync_ids = list(seen.keys())
-    sync_out = await asyncio.gather(*[
-        asyncio.to_thread(
-            _probe_machine_sync,
-            seen[mid]["machine"],
-            sync_lib.syncthing_probe_cmd(seen[mid]["adapter"]),
+    # One SSH session per host, all its probes inside it: first the Syncthing
+    # probe (its identity is per machine, not per cluster), then one
+    # fingerprint per cluster the host carries.  A second round of sessions
+    # would make an unreachable host cost its timeout twice.
+    commands: Dict[int, List[str]] = {}
+    slots: List[int] = []  # per job: index of its fingerprint output, -1 if none
+    for _cid, machine, adapter, _dir, cmd in jobs:
+        host_cmds = commands.setdefault(
+            machine["id"], [sync_lib.syncthing_probe_cmd(adapter)],
         )
-        for mid in sync_ids
+        if cmd:
+            slots.append(len(host_cmds))
+            host_cmds.append(cmd)
+        else:
+            slots.append(-1)
+
+    host_ids = list(commands)
+    host_out = await asyncio.gather(*[
+        asyncio.to_thread(_probe_machine_sync, machines[mid], commands[mid])
+        for mid in host_ids
     ])
-    sync_raw: Dict[int, str] = dict(zip(sync_ids, sync_out))
+    outputs: Dict[int, List[str]] = dict(zip(host_ids, host_out))
+    sync_raw: Dict[int, str] = {mid: out[0] for mid, out in outputs.items()}
+    results = [
+        outputs[machine["id"]][slot] if slot >= 0
+        else "error=cluster_dir not configured"
+        for (_cid, machine, _adapter, _dir, _cmd), slot in zip(jobs, slots)
+    ]
 
     now = int(time.time())
     grouped: Dict[str, List] = {}
@@ -185,12 +205,3 @@ async def cluster_health(db: AsyncSession = Depends(get_db)):
             ],
         ))
     return out
-
-
-@router.get("/{cluster_id}", response_model=ClusterHealthRead)
-async def cluster_health_one(cluster_id: str, db: AsyncSession = Depends(get_db)):
-    """Same report, narrowed to a single cluster."""
-    for item in await cluster_health(db):
-        if item.cluster_id == cluster_id:
-            return item
-    raise HTTPException(status_code=404, detail="Unknown cluster id.")

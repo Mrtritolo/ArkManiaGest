@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
@@ -25,6 +25,9 @@ class InstanceStatus(str, Enum):
     STOPPED   = "stopped"
     UPDATING  = "updating"
     ERROR     = "error"
+    # Written by the status probe when the container / Windows service does
+    # not exist on the host at all.
+    MISSING   = "missing"
 
 
 class UpdateCoordinationRole(str, Enum):
@@ -35,6 +38,12 @@ class UpdateCoordinationRole(str, Enum):
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
+
+# Map, session name and passwords go into the quoted ?-block of the native
+# server command line, where a '"' ends the argument early and drops every
+# option after it (see windows_native.launch_args).
+_NO_DOUBLE_QUOTE = r'^[^"]*$'
+
 
 class ServerInstanceCreate(BaseModel):
     """Fields accepted when creating a new ARK server instance."""
@@ -51,8 +60,8 @@ class ServerInstanceCreate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=512)
 
     # Gameplay
-    map_name: str = Field(default="TheIsland_WP", max_length=64)
-    session_name: str = Field(default="", max_length=128)
+    map_name: str = Field(default="TheIsland_WP", max_length=64, pattern=_NO_DOUBLE_QUOTE)
+    session_name: str = Field(default="", max_length=128, pattern=_NO_DOUBLE_QUOTE)
     max_players: int = Field(default=70, ge=1, le=500)
     cluster_id: Optional[str] = Field(default=None, max_length=64)
     mods: Optional[str] = None
@@ -60,8 +69,10 @@ class ServerInstanceCreate(BaseModel):
     custom_args: Optional[str] = None
 
     # Credentials (never returned on read)
-    admin_password: str = Field(..., min_length=4, max_length=128)
-    server_password: Optional[str] = Field(default=None, max_length=128)
+    admin_password: str = Field(..., min_length=4, max_length=128, pattern=_NO_DOUBLE_QUOTE)
+    server_password: Optional[str] = Field(
+        default=None, max_length=128, pattern=_NO_DOUBLE_QUOTE,
+    )
 
     # Network — port conflicts are validated by the API route against existing
     # instances on the same machine.
@@ -88,29 +99,44 @@ class ServerInstanceCreate(BaseModel):
 
 # ── Update ────────────────────────────────────────────────────────────────────
 
+# Update fields whose column accepts NULL.  Every other field maps onto a
+# NOT NULL column, so an explicit null is rejected with a 422 here instead of
+# failing the UPDATE with a 500.
+_NULLABLE_UPDATE_FIELDS = frozenset({
+    "description", "cluster_id", "mods", "passive_mods", "custom_args",
+    "server_password", "image",
+})
+
+
 class ServerInstanceUpdate(BaseModel):
     """All fields optional for partial updates."""
 
     display_name: Optional[str] = Field(default=None, max_length=128)
     description: Optional[str] = Field(default=None, max_length=512)
 
-    map_name: Optional[str] = Field(default=None, max_length=64)
-    session_name: Optional[str] = Field(default=None, max_length=128)
+    map_name: Optional[str] = Field(default=None, max_length=64, pattern=_NO_DOUBLE_QUOTE)
+    session_name: Optional[str] = Field(
+        default=None, max_length=128, pattern=_NO_DOUBLE_QUOTE,
+    )
     max_players: Optional[int] = Field(default=None, ge=1, le=500)
-    cluster_id: Optional[str] = None
+    cluster_id: Optional[str] = Field(default=None, max_length=64)
     mods: Optional[str] = None
     passive_mods: Optional[str] = None
     custom_args: Optional[str] = None
 
-    admin_password: Optional[str] = Field(default=None, min_length=4, max_length=128)
-    server_password: Optional[str] = Field(default=None, max_length=128)
+    admin_password: Optional[str] = Field(
+        default=None, min_length=4, max_length=128, pattern=_NO_DOUBLE_QUOTE,
+    )
+    server_password: Optional[str] = Field(
+        default=None, max_length=128, pattern=_NO_DOUBLE_QUOTE,
+    )
 
     game_port: Optional[int] = Field(default=None, ge=1, le=65_535)
     rcon_port: Optional[int] = Field(default=None, ge=1, le=65_535)
 
-    image: Optional[str] = None
+    image: Optional[str] = Field(default=None, max_length=128)
     mem_limit_mb: Optional[int] = Field(default=None, ge=1024, le=131_072)
-    timezone: Optional[str] = None
+    timezone: Optional[str] = Field(default=None, max_length=64)
 
     mod_api: Optional[bool] = None
     battleye: Optional[bool] = None
@@ -120,6 +146,16 @@ class ServerInstanceUpdate(BaseModel):
     cpu_optimization: Optional[bool] = None
 
     is_active: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def _reject_null_for_required_columns(self):
+        nulls = sorted(
+            name for name in self.model_fields_set
+            if getattr(self, name) is None and name not in _NULLABLE_UPDATE_FIELDS
+        )
+        if nulls:
+            raise ValueError(f"These fields cannot be null: {', '.join(nulls)}")
+        return self
 
 
 # ── Read ──────────────────────────────────────────────────────────────────────

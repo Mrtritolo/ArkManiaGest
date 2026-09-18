@@ -5,6 +5,10 @@ Provides endpoints to scan game server containers via SSH, read/write plugin
 configuration files, and browse the container filesystem.  Container metadata
 is persisted to the application database (via plugin config key "containers_map")
 so subsequent requests do not require a live SSH connection.
+
+Every handler here does blocking work (Paramiko SSH, sync pymysql), so they
+are plain ``def``: FastAPI runs them in its threadpool instead of on the event
+loop.
 """
 
 import json
@@ -13,12 +17,13 @@ import shlex
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import require_admin, require_operator
 from app.core.config import server_settings
 from app.core.store import (
-    get_machine_sync, get_plugin_config_sync, save_plugin_config_sync,
+    get_machine_sync, save_plugin_config_sync,
     get_containers_map_sync,
 )
 from app.ssh.manager import SSHManager
@@ -123,23 +128,28 @@ def _find_container(containers_map: dict, machine_id: int, container_name: str) 
 
 # ── Scan endpoints ────────────────────────────────────────────────────────────
 
-@router.post("/machines/{machine_id}/scan")
-async def scan_machine_containers(machine_id: int, base_path: str = CONTAINER_BASE):
+@router.post("/machines/{machine_id}/scan", dependencies=[Depends(require_operator)])
+def scan_machine_containers(machine_id: int):
     """
     Scan all containers on a machine via SSH and persist the results.
 
-    Connects to the remote host, lists all subdirectories under *base_path*,
-    and runs a full discovery scan on each container.  Results are stored in
-    the application database so subsequent reads do not require SSH.
+    Connects to the remote host, lists all subdirectories under
+    :data:`CONTAINER_BASE`, and runs a full discovery scan on each container.
+    Results are stored in the application database so subsequent reads do
+    not require SSH.
+
+    The base directory is deliberately not a request parameter: it is
+    interpolated into shell commands on the host, and the stored container
+    paths become the trusted roots of ``browse``.
 
     Args:
         machine_id: Primary key of the machine to scan.
-        base_path:  Base directory that holds all container subdirectories.
 
     Returns:
         Number of containers found and their discovery data.
     """
     machine = _get_machine_or_404(machine_id)
+    base_path = CONTAINER_BASE
 
     try:
         with _ssh_for_machine(machine) as ssh:
@@ -167,7 +177,7 @@ async def scan_machine_containers(machine_id: int, base_path: str = CONTAINER_BA
 
 
 @router.get("/machines/{machine_id}/containers")
-async def get_machine_containers(machine_id: int):
+def get_machine_containers(machine_id: int):
     """
     Return previously scanned container data for a machine (no SSH required).
 
@@ -190,7 +200,7 @@ async def get_machine_containers(machine_id: int):
 
 
 @router.get("/containers")
-async def get_all_containers():
+def get_all_containers():
     """
     Return all container entries across all scanned machines (no SSH required).
 
@@ -215,29 +225,33 @@ async def get_all_containers():
     }
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/rescan")
-async def rescan_container(
-    machine_id: int,
-    container_name: str,
-    base_path: str = CONTAINER_BASE,
-):
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/rescan",
+    dependencies=[Depends(require_operator)],
+)
+def rescan_container(machine_id: int, container_name: str):
     """
     Re-scan a single container and update the persisted map entry.
 
     Useful when a container's contents have changed (e.g. new plugin installed)
     without needing to re-scan all containers on the machine.
 
+    Only a container already found by a machine scan can be re-scanned, and
+    its stored name and path are reused: the caller's value only selects the
+    entry, it never reaches the shell on the host.
+
     Args:
         machine_id:     Primary key of the machine.
         container_name: Directory name of the container to re-scan.
-        base_path:      Root directory containing containers.
     """
     machine = _get_machine_or_404(machine_id)
-    container_path = f"{base_path}/{container_name}"
+    known = _find_container(_load_containers_map(), machine_id, container_name)
+    if not known:
+        raise HTTPException(status_code=404, detail="Container not found. Run a scan first.")
 
     try:
         with _ssh_for_machine(machine) as ssh:
-            updated_container = scan_single_container(ssh, container_name, container_path)
+            updated_container = scan_single_container(ssh, known["name"], known["path"])
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc
 
@@ -265,17 +279,23 @@ class WriteConfigRequest(BaseModel):
     backup: bool = True
 
 
-@router.get("/machines/{machine_id}/containers/{container_name}/file")
-async def read_container_file(
+@router.get(
+    "/machines/{machine_id}/containers/{container_name}/file",
+    dependencies=[Depends(require_admin)],
+)
+def read_container_file(
     machine_id: int,
     container_name: str,
     path_key: str,
 ):
     """
-    Read a file from a container via SSH.
+    Read a file from a container via SSH.  Admin only.
 
     The *path_key* must correspond to a key in the container's ``paths`` dict
     as discovered during the last scan (e.g. ``arkshop_config``, ``game_ini``).
+    The raw file is returned unfiltered -- GameUserSettings.ini carries
+    ServerAdminPassword and plugin configs carry database credentials -- so
+    this read is restricted to admins.
 
     Returns the file content either as a parsed JSON object (``is_json: True``)
     or as a plain string (``is_json: False``).
@@ -300,7 +320,7 @@ async def read_container_file(
         raise HTTPException(status_code=500, detail=f"Read error: {exc}") from exc
 
     if content is None:
-        raise HTTPException(status_code=404, detail="File not found or empty.")
+        raise HTTPException(status_code=404, detail="File not found or unreadable.")
 
     try:
         parsed = json.loads(content)
@@ -309,8 +329,11 @@ async def read_container_file(
         return {"path": file_path, "content": content, "is_json": False, "size": len(content)}
 
 
-@router.post("/machines/{machine_id}/containers/{container_name}/file")
-async def write_container_file(
+@router.post(
+    "/machines/{machine_id}/containers/{container_name}/file",
+    dependencies=[Depends(require_operator)],
+)
+def write_container_file(
     machine_id: int,
     container_name: str,
     path_key: str,
@@ -356,8 +379,11 @@ async def write_container_file(
     }
 
 
-@router.get("/machines/{machine_id}/containers/{container_name}/browse")
-async def browse_container(
+@router.get(
+    "/machines/{machine_id}/containers/{container_name}/browse",
+    dependencies=[Depends(require_operator)],
+)
+def browse_container(
     machine_id: int,
     container_name: str,
     sub_path: str = "",

@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ActionKind(str, Enum):
@@ -64,14 +64,3 @@ class InstanceActionRead(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class InstanceActionFilters(BaseModel):
-    """Query-string filters for the action log list endpoint."""
-
-    instance_id: Optional[int] = Field(default=None, ge=1)
-    machine_id: Optional[int] = Field(default=None, ge=1)
-    action: Optional[ActionKind] = None
-    status: Optional[ActionStatus] = None
-    limit: int = Field(default=100, ge=1, le=1000)
-    offset: int = Field(default=0, ge=0)

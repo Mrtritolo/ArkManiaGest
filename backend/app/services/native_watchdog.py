@@ -107,8 +107,10 @@ def evaluate(
         over.append(entry)
 
         if used < limit * margin:
-            # Over the advisory limit but within the margin: report, do not
-            # start counting towards a restart.
+            # Over the advisory limit but within the margin: report, and do
+            # not count towards a restart.  It is not a breach either, so it
+            # ends any run of consecutive ones.
+            breaches.pop(inst["id"], None)
             continue
 
         breaches[inst["id"]] = breaches.get(inst["id"], 0) + 1
@@ -119,11 +121,17 @@ def evaluate(
     return over, actionable
 
 
-async def _check_machine(session, machine: dict) -> None:
-    """Sample one native host and act on at most one instance."""
+async def _check_machine(session, machine: dict, sampled: set) -> None:
+    """
+    Sample one native host and act on at most one instance.
+
+    The ids of the instances actually sampled are added to *sampled*.
+    """
     from app.core.store import get_all_instances_async
     from app.ssh import windows_native as win
-    from app.ssh.pok_executor import _run_remote_sync, exec_pok_lifecycle
+    from app.ssh.pok_executor import (
+        _run_remote_sync, exec_pok_lifecycle, native_restart_pending,
+    )
     from app.ssh.platform import PlatformAdapter
 
     instances = [
@@ -149,6 +157,7 @@ async def _check_machine(session, machine: dict) -> None:
         return
 
     usage = _parse_usage(stdout)
+    sampled.update(i["id"] for i in instances)
     over, actionable = evaluate(usage, instances, breaches=_breaches)
 
     for entry in over:
@@ -161,6 +170,10 @@ async def _check_machine(session, machine: dict) -> None:
     from app.core.config import server_settings
     if not getattr(server_settings, "NATIVE_WATCHDOG_ENABLED", False):
         return
+    # An operator's countdown restart is already on its way: restarting now
+    # would cut the players' warning short, and the countdown would then
+    # restart the fresh server a second time.
+    actionable = [a for a in actionable if not native_restart_pending(a["id"])]
     if not actionable:
         return
 
@@ -198,13 +211,20 @@ async def run_once() -> None:
             log.warning("Watchdog could not list machines: %s", exc)
             return
 
+        sampled: set = set()
         for machine in machines:
             if not PlatformAdapter.from_machine(machine).is_native:
                 continue
             try:
-                await _check_machine(session, machine)
+                await _check_machine(session, machine, sampled)
             except Exception as exc:  # noqa: BLE001
                 log.warning("Watchdog pass failed on %s: %s", machine["name"], exc)
+
+        # Breaches only count while consecutive: an instance not sampled in
+        # this pass (stopped, deactivated, deleted, or its host unreachable)
+        # starts again from zero next time.
+        for inst_id in set(_breaches) - sampled:
+            _breaches.pop(inst_id, None)
 
 
 async def watchdog_loop() -> None:

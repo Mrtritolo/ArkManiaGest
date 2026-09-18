@@ -29,12 +29,14 @@ from app.core.auth import require_admin
 from app.core.config import server_settings
 from app.services import self_updater
 
-# Single-process lock that prevents two admins from triggering the
-# install flow simultaneously.  Two parallel POSTs would otherwise race
-# on the tarball path and fork two `server-update.sh` processes
+# The install flow (release lookup, download, verify, spawn) runs in this
+# background task so POST /install can answer at once: the download alone
+# can outlast the client's timeout.  The reference also keeps two admins
+# from triggering it simultaneously.  Two parallel runs would otherwise
+# race on the tarball path and fork two `server-update.sh` processes
 # fighting for /opt/arkmaniagest -- whichever finished last would win,
 # and the status JSON would alternate between them.
-_install_lock = asyncio.Lock()
+_install_task: asyncio.Task | None = None
 
 log = logging.getLogger("arkmaniagest.system_update")
 
@@ -142,10 +144,11 @@ async def install_update() -> InstallResponse:
     """
     Trigger an in-place self-update.
 
-    This call returns immediately (HTTP 202) -- the actual update runs in
+    This call returns immediately (HTTP 202) -- the release lookup, download
+    and verification run in a background task, and the update itself in
     a detached subprocess that will outlive the request and even the
     backend restart it triggers.  The UI must poll ``/system-update/status``
-    afterwards to learn how it went.
+    afterwards to learn how it went, failures included.
 
     Refuses to start when preflight fails (no sudoers, no script, etc.).
 
@@ -158,8 +161,10 @@ async def install_update() -> InstallResponse:
     + tail of the error log together always answer "what went wrong"
     rather than the empty 500 + empty log we had before.
     """
+    global _install_task
     try:
-        pre = preflight()
+        # preflight() shells out to sudo: keep it off the event loop.
+        pre = await asyncio.to_thread(preflight)
     except Exception as exc:                       # noqa: BLE001 -- want the catch-all
         tb = traceback.format_exc()
         log.exception("system-update preflight raised: %s", exc)
@@ -176,28 +181,36 @@ async def install_update() -> InstallResponse:
     if not pre.can_self_update:
         raise HTTPException(status_code=412, detail=pre.hint)
 
-    if _install_lock.locked():
+    # Reject double-trigger while this process is still downloading or
+    # server-update.sh is still running.  Deliberately not read from the
+    # status file: a run killed mid-way leaves "downloading" / "running"
+    # there for good, which used to refuse every later attempt until the
+    # host rebooted.  No await between this check and create_task(), so two
+    # POSTs cannot both get past it.
+    if (
+        (_install_task is not None and not _install_task.done())
+        or self_updater.update_in_progress()
+    ):
         raise HTTPException(
             status_code=409,
             detail="An update is already in progress. Poll /system-update/status.",
         )
 
-    # Reject double-trigger when a previous update is still downloading
-    # / verifying / running.  Idle state ("idle", "succeeded", "failed")
-    # means the lock should accept a fresh attempt.
-    current = self_updater.read_status()
-    if current and current.state in ("downloading", "verifying", "running"):
-        raise HTTPException(
-            status_code=409,
-            detail=f"An update is already {current.state}. Poll /system-update/status.",
-        )
+    _install_task = asyncio.create_task(_run_install())
+    return InstallResponse(
+        state="downloading",
+        message="Update started. Poll /system-update/status.",
+        progress_pct=5,
+    )
 
+
+async def _run_install() -> None:
+    """Body of the install task: every outcome ends up in the update status."""
     try:
-        async with _install_lock:
-            status = await self_updater.run_self_update_async(
-                repo=server_settings.GITHUB_REPO.strip(),
-                github_token=server_settings.GITHUB_TOKEN.strip() or None,
-            )
+        await self_updater.run_self_update_async(
+            repo=server_settings.GITHUB_REPO.strip(),
+            github_token=server_settings.GITHUB_TOKEN.strip() or None,
+        )
     except Exception as exc:                       # noqa: BLE001
         tb = traceback.format_exc()
         log.exception("system-update orchestrator raised: %s", exc)
@@ -206,22 +219,6 @@ async def install_update() -> InstallResponse:
             message=f"update orchestrator crashed: {type(exc).__name__}: {exc}",
             traceback_text=tb,
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Update orchestrator crashed: {type(exc).__name__}: {exc}",
-        )
-
-    if status.state == "failed":
-        # Surface failure as 500 + body so the UI can show the message.
-        # run_self_update_async has already persisted the status JSON.
-        raise HTTPException(status_code=500, detail=status.message or "Update failed.")
-
-    return InstallResponse(
-        state=status.state,
-        target_version=status.target_version,
-        message=status.message,
-        progress_pct=status.progress_pct,
-    )
 
 
 @router.get(

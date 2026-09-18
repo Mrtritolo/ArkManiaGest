@@ -6,19 +6,22 @@ the Bearer token is never exposed to the frontend.
 The token is read first from the database (set by the GUI) and falls back to
 the ``SF_TOKEN`` environment variable.
 """
+import asyncio
 import httpx
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_admin, require_operator
 from app.core.config import server_settings
-from app.core.encryption import encrypt_value
-from app.core.store import get_all_machines_sync, get_setting_sync, set_setting_sync
+from app.core.encryption import decrypt_value, encrypt_value
+from app.core.store import get_all_machines_async, get_setting_async, set_setting_async
 from app.db.session import get_db
+from app.schemas.ssh_machine import AuthMethodEnum
 
 router = APIRouter()
 
@@ -27,7 +30,25 @@ _REQUEST_TIMEOUT = 15.0
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _get_sf_config() -> tuple[str, str]:
+async def _get_sf_token(db: AsyncSession) -> Optional[str]:
+    """
+    Return the stored ServerForge token, or ``SF_TOKEN`` from .env when none is.
+
+    A token saved before tokens were encrypted is re-saved encrypted the first
+    time it is read, so existing installs stop keeping it in cleartext.
+    """
+    row = (await db.execute(
+        text("SELECT `value`, `encrypted` FROM arkmaniagest_settings WHERE `key` = 'sf_token'")
+    )).fetchone()
+    if not row or not row[0]:
+        return server_settings.SF_TOKEN
+    if not row[1]:
+        await set_setting_async(db, "sf_token", row[0], encrypted=True)
+        return row[0]
+    return decrypt_value(row[0]) or server_settings.SF_TOKEN
+
+
+async def _get_sf_config(db: AsyncSession) -> tuple[str, str]:
     """
     Return the active (token, base_url) pair.
 
@@ -37,16 +58,16 @@ def _get_sf_config() -> tuple[str, str]:
         Tuple of (bearer_token, base_url).
 
     Raises:
-        HTTPException 400: No token is configured anywhere.
+        HTTPException 409: No token is configured anywhere.
     """
-    token    = get_setting_sync("sf_token")    or server_settings.SF_TOKEN
+    token    = await _get_sf_token(db)
     base_url = (
-        get_setting_sync("sf_base_url")
+        await get_setting_async(db, "sf_base_url")
         or server_settings.SF_BASE_URL
         or "https://serverforge.cx/api"
     )
     if not token:
-        raise HTTPException(status_code=400, detail="ServerForge token not configured.")
+        raise HTTPException(status_code=409, detail="ServerForge token not configured.")
     return token, base_url
 
 
@@ -58,41 +79,83 @@ def _auth_headers(token: str) -> dict:
     }
 
 
+async def _sf_call(config: tuple[str, str], method: str, path: str) -> dict:
+    """
+    Forward one request to ServerForge and return its JSON body.
+
+    Every upstream failure is a 502, never ServerForge's own status: a 401
+    from an expired ServerForge token must not read as the panel session
+    expiring, which logs the user out.
+    """
+    token, base_url = config
+    try:
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            resp = await client.request(
+                method, f"{base_url}{path}", headers=_auth_headers(token)
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Cannot reach ServerForge: {exc}")
+
+    if resp.status_code in (401, 403):
+        raise HTTPException(
+            status_code=502,
+            detail=f"ServerForge rejected the API token (HTTP {resp.status_code}).",
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"ServerForge returned HTTP {resp.status_code}: {resp.text[:300]}",
+        )
+    try:
+        return resp.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="ServerForge returned a non-JSON response.")
+
+
 # ── Token configuration ────────────────────────────────────────────────────────
 
 class ServerForgeTokenUpdate(BaseModel):
     """Payload for saving a new ServerForge token."""
-    token:    str
-    base_url: Optional[str] = None
+    # An empty token would silently switch to SF_TOKEN from .env.
+    token:    str = Field(..., min_length=1)
+    # The token is sent to this URL: never over plain HTTP.
+    base_url: Optional[str] = Field(default=None, pattern=r"^(https://|$)")
 
 
 @router.get("/config")
-async def get_sf_config_status():
+async def get_sf_config_status(db: AsyncSession = Depends(get_db)):
     """Return the ServerForge configuration state (token presence only)."""
-    token    = get_setting_sync("sf_token")    or server_settings.SF_TOKEN
+    token    = await _get_sf_token(db)
     base_url = (
-        get_setting_sync("sf_base_url")
+        await get_setting_async(db, "sf_base_url")
         or server_settings.SF_BASE_URL
         or "https://serverforge.cx/api"
     )
     return {"has_token": bool(token), "base_url": base_url}
 
 
-@router.put("/config")
-async def update_sf_config(data: ServerForgeTokenUpdate):
+@router.put("/config", dependencies=[Depends(require_admin)])
+async def update_sf_config(
+    data: ServerForgeTokenUpdate,
+    db: AsyncSession = Depends(get_db),
+):
     """Persist a new ServerForge Bearer token (and optionally a custom base URL)."""
-    set_setting_sync("sf_token", data.token, description="ServerForge API token")
+    await set_setting_async(
+        db, "sf_token", data.token, encrypted=True, description="ServerForge API token",
+    )
     if data.base_url:
-        set_setting_sync("sf_base_url", data.base_url, description="ServerForge base URL")
+        await set_setting_async(
+            db, "sf_base_url", data.base_url, description="ServerForge base URL",
+        )
     return {"success": True, "message": "ServerForge token saved."}
 
 
-@router.post("/config/test")
-async def test_sf_token():
+@router.post("/config/test", dependencies=[Depends(require_admin)])
+async def test_sf_token(db: AsyncSession = Depends(get_db)):
     """
     Verify the configured token by calling the ``/user/machines`` endpoint.
     """
-    token, base_url = _get_sf_config()
+    token, base_url = await _get_sf_config(db)
     try:
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
             resp = await client.get(
@@ -121,82 +184,84 @@ async def test_sf_token():
 
 class SFImportMachineRequest(BaseModel):
     """Fields required to import a ServerForge machine into the local database."""
+    # Same limits as SSHMachineCreate: a row GET /machines cannot read back
+    # (an unknown auth_method) breaks the machine list for everyone.
     sf_machine_id:   int
-    name:            str
-    hostname:        str
-    ip_address:      Optional[str] = None
-    ssh_port:        int = 22
-    ssh_user:        str
-    auth_method:     str = "password"
+    name:            str = Field(..., min_length=1, max_length=100)
+    hostname:        str = Field(..., min_length=1, max_length=255)
+    ip_address:      Optional[str] = Field(default=None, max_length=45)
+    ssh_port:        int = Field(default=22, ge=1, le=65_535)
+    ssh_user:        str = Field(..., min_length=1, max_length=64)
+    auth_method:     AuthMethodEnum = AuthMethodEnum.PASSWORD
     ssh_password:    Optional[str] = None
-    ssh_key_path:    Optional[str] = None
+    ssh_key_path:    Optional[str] = Field(default=None, max_length=512)
     # Default paths for ServerForge containers (ASA runs under Wine → WindowsServer)
-    ark_root_path:   str = "/gameadmin/containers"
-    ark_config_path: str = ""
-    ark_plugins_path:str = ""
+    ark_root_path:   str = Field(default="/gameadmin/containers", max_length=512)
+    ark_config_path: str = Field(default="", max_length=512)
+    ark_plugins_path:str = Field(default="", max_length=512)
 
 
 @router.get("/machines/preview-import")
-async def preview_import_machines():
+async def preview_import_machines(db: AsyncSession = Depends(get_db)):
     """
     Show ServerForge machines that could be imported, indicating which ones
     are already present in the local database.
     """
-    token, base_url = _get_sf_config()
-
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            f"{base_url}/user/machines", headers=_auth_headers(token)
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-
-    sf_machines = resp.json().get("data", [])
+    config = await _get_sf_config(db)
+    token, base_url = config
+    sf_machines = (await _sf_call(config, "GET", "/user/machines")).get("data", [])
 
     # Compare against locally known machines by hostname and IP
-    local_machines = get_all_machines_sync()
+    local_machines = await get_all_machines_async(db)
     local_hosts = {m["hostname"].lower() for m in local_machines if m.get("hostname")}
     local_ips   = {m["ip_address"]       for m in local_machines if m.get("ip_address")}
 
-    result = []
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as detail_client:
-        for sfm in sf_machines:
-            hostname = sfm.get("hostname") or ""
-            ip       = sfm.get("ip_address") or ""
-            already  = (
-                (hostname and hostname.lower() in local_hosts)
-                or (ip and ip in local_ips)
+    async def _ssh_port(client: httpx.AsyncClient, sfm: dict) -> int:
+        # The SSH port is only in the detail endpoint, not in the list response
+        try:
+            dr = await client.get(
+                f"{base_url}/machines/{sfm['id']}",
+                headers=_auth_headers(token),
             )
+            if dr.status_code == 200:
+                return dr.json().get("data", {}).get("ssh_port", 22)
+        except Exception:
+            pass
+        return 22
 
-            # Fetch the SSH port from the detail endpoint (not in the list response)
-            ssh_port = 22
-            try:
-                dr = await detail_client.get(
-                    f"{base_url}/machines/{sfm['id']}",
-                    headers=_auth_headers(token),
-                )
-                if dr.status_code == 200:
-                    ssh_port = dr.json().get("data", {}).get("ssh_port", 22)
-            except Exception:
-                pass
+    # One detail call per machine, concurrently: serially, a slow detail
+    # endpoint multiplies its timeout by the number of machines.
+    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as detail_client:
+        ssh_ports = await asyncio.gather(
+            *[_ssh_port(detail_client, sfm) for sfm in sf_machines]
+        )
 
-            result.append({
-                "sf_id":            sfm.get("id"),
-                "hostname":         hostname,
-                "ip_address":       ip,
-                "status":           sfm.get("status", "unknown"),
-                "os":               sfm.get("os", ""),
-                "location":         sfm.get("location", ""),
-                "ssh_port":         ssh_port,
-                "containers_count": sfm.get("containers_count", 0),
-                "clusters_count":   sfm.get("clusters_count", 0),
-                "already_imported": already,
-            })
+    result = []
+    for sfm, ssh_port in zip(sf_machines, ssh_ports):
+        hostname = sfm.get("hostname") or ""
+        ip       = sfm.get("ip_address") or ""
+        already  = (
+            (hostname and hostname.lower() in local_hosts)
+            or (ip and ip in local_ips)
+        )
+
+        result.append({
+            "sf_id":            sfm.get("id"),
+            "hostname":         hostname,
+            "ip_address":       ip,
+            "status":           sfm.get("status", "unknown"),
+            "os":               sfm.get("os", ""),
+            "location":         sfm.get("location", ""),
+            "ssh_port":         ssh_port,
+            "containers_count": sfm.get("containers_count", 0),
+            "clusters_count":   sfm.get("clusters_count", 0),
+            "already_imported": already,
+        })
 
     return {"machines": result, "total": len(result)}
 
 
-@router.post("/machines/import")
+@router.post("/machines/import", dependencies=[Depends(require_admin)])
 async def import_machine(
     data: SFImportMachineRequest,
     db: AsyncSession = Depends(get_db),
@@ -210,7 +275,6 @@ async def import_machine(
 
     Raises:
         HTTPException 409: Machine name already in use.
-        HTTPException 500: Database insertion failed.
     """
     now        = datetime.now(timezone.utc)
     ssh_pw_enc = encrypt_value(data.ssh_password) if data.ssh_password else None
@@ -235,7 +299,7 @@ async def import_machine(
                 "ip":          data.ip_address,
                 "port":        data.ssh_port,
                 "user":        data.ssh_user,
-                "auth":        data.auth_method,
+                "auth":        data.auth_method.value,
                 "pw_enc":      ssh_pw_enc,
                 "key_path":    data.ssh_key_path,
                 "ark_root":    data.ark_root_path,
@@ -250,7 +314,9 @@ async def import_machine(
                 status_code=409,
                 detail=f"Name '{data.name}' is already in use.",
             )
-        raise HTTPException(status_code=500, detail=str(exc))
+        # Anything else is a 500 from the global handler, which does not
+        # echo the raw database error to the client.
+        raise
 
     # Fetch the newly created row to return its id
     result = await db.execute(
@@ -264,134 +330,46 @@ async def import_machine(
 # ── Proxy: machines ────────────────────────────────────────────────────────────
 
 @router.get("/machines")
-async def list_machines():
+async def list_machines(db: AsyncSession = Depends(get_db)):
     """Proxy: list all physical machines from ServerForge."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(f"{base_url}/user/machines", headers=_auth_headers(token))
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
-
-
-@router.get("/machines/{machine_id}")
-async def get_machine(machine_id: int):
-    """Proxy: detail for a single ServerForge machine."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            f"{base_url}/machines/{machine_id}", headers=_auth_headers(token)
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
+    return await _sf_call(await _get_sf_config(db), "GET", "/user/machines")
 
 
 # ── Proxy: containers ─────────────────────────────────────────────────────────
 
 @router.get("/containers")
-async def list_containers():
+async def list_containers(db: AsyncSession = Depends(get_db)):
     """Proxy: list all game-server containers from ServerForge."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            f"{base_url}/user/containers", headers=_auth_headers(token)
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
+    return await _sf_call(await _get_sf_config(db), "GET", "/user/containers")
 
 
-@router.get("/containers/{container_id}")
-async def get_container(container_id: int):
-    """Proxy: detail for a single ServerForge container."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            f"{base_url}/containers/{container_id}", headers=_auth_headers(token)
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
-
-
-@router.get("/containers/{container_id}/status")
-async def get_container_status(container_id: int):
-    """Proxy: quick status for a ServerForge container."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            f"{base_url}/containers/{container_id}/status",
-            headers=_auth_headers(token),
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
-
-
-@router.post("/containers/{container_id}/start")
-async def start_container(container_id: int):
+@router.post("/containers/{container_id}/start", dependencies=[Depends(require_operator)])
+async def start_container(container_id: int, db: AsyncSession = Depends(get_db)):
     """Proxy: start a ServerForge container."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.post(
-            f"{base_url}/containers/{container_id}/start",
-            headers=_auth_headers(token),
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
+    return await _sf_call(
+        await _get_sf_config(db), "POST", f"/containers/{container_id}/start"
+    )
 
 
-@router.post("/containers/{container_id}/stop")
-async def stop_container(container_id: int):
+@router.post("/containers/{container_id}/stop", dependencies=[Depends(require_operator)])
+async def stop_container(container_id: int, db: AsyncSession = Depends(get_db)):
     """Proxy: stop a ServerForge container."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.post(
-            f"{base_url}/containers/{container_id}/stop",
-            headers=_auth_headers(token),
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
+    return await _sf_call(
+        await _get_sf_config(db), "POST", f"/containers/{container_id}/stop"
+    )
 
 
-@router.post("/containers/{container_id}/restart")
-async def restart_container(container_id: int):
+@router.post("/containers/{container_id}/restart", dependencies=[Depends(require_operator)])
+async def restart_container(container_id: int, db: AsyncSession = Depends(get_db)):
     """Proxy: restart a ServerForge container."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.post(
-            f"{base_url}/containers/{container_id}/restart",
-            headers=_auth_headers(token),
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
+    return await _sf_call(
+        await _get_sf_config(db), "POST", f"/containers/{container_id}/restart"
+    )
 
 
 # ── Proxy: clusters ────────────────────────────────────────────────────────────
 
 @router.get("/clusters")
-async def list_clusters():
+async def list_clusters(db: AsyncSession = Depends(get_db)):
     """Proxy: list all ServerForge clusters."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(f"{base_url}/user/clusters", headers=_auth_headers(token))
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
-
-
-@router.get("/clusters/{cluster_id}")
-async def get_cluster(cluster_id: int):
-    """Proxy: detail for a single ServerForge cluster."""
-    token, base_url = _get_sf_config()
-    async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            f"{base_url}/clusters/{cluster_id}", headers=_auth_headers(token)
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-        return resp.json()
+    return await _sf_call(await _get_sf_config(db), "GET", "/user/clusters")
