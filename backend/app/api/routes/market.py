@@ -15,10 +15,11 @@ machine.
 
 Auth model:
   - GET /listed                 : any authenticated caller (panel JWT
-                                  OR disc_session cookie)
+                                  OR disc_session cookie of a linked player)
   - GET /me/* + POST /list/buy/cancel  : requires disc_session cookie;
                                   the EOS comes from there.
-  - POST /admin/*               : panel JWT, admin role.
+  - POST /admin/wallet/credit   : panel JWT, operator role.
+  - GET /admin/audit            : panel JWT, any role.
 """
 
 from __future__ import annotations
@@ -28,16 +29,20 @@ from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 log = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_admin, decode_token
+from app.core.auth import (
+    get_current_user, get_current_user_optional, require_operator, require_viewer,
+)
 from app.db.session import get_db, get_plugin_db
+from app.api.routes.auth_discord import _SESSION_COOKIE
 from app.api.routes.me import get_current_player, _PlayerSession
-from app.services.market_thumbs import get_or_fetch_thumb, sanitize_thumb_name
+from app.services.market_thumbs import TransientWikiError, get_or_fetch_thumb, thumb_key
 from app.services.cryopod_parser import parse_cryopod_blob, CryopodInfo
 
 # Heuristic: cryopod-class blueprints contain 'cryopod' in their path.
@@ -144,19 +149,39 @@ async def _resolve_eos_for_read(
             detail="for_eos override requires a panel admin JWT.",
         )
     token = auth_header.split(" ", 1)[1].strip()
+    # get_current_user, not a bare decode: a disabled or deleted admin's
+    # token stays cryptographically valid until it expires.
     try:
-        payload = decode_token(token)
-    except HTTPException:
+        payload = await get_current_user(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+        )
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
         raise HTTPException(
             status_code=403,
             detail="for_eos override requires a panel admin JWT.",
-        )
+        ) from None
     if payload.get("role") != "admin":
         raise HTTPException(
             status_code=403,
             detail="for_eos override is admin-only.",
         )
     return for_eos.strip()
+
+
+async def _require_market_reader(
+    panel_user:   Optional[dict] = Depends(get_current_user_optional),
+    disc_session: Optional[str]  = Cookie(default=None, alias=_SESSION_COOKIE),
+    db:           AsyncSession   = Depends(get_db),
+) -> None:
+    """
+    Gate for /listed: a valid panel JWT (any role), otherwise a Discord
+    session linked to a player.  Listings carry every seller's EOS ID, so
+    they are not for anonymous callers.
+    """
+    if panel_user is None:
+        await get_current_player(disc_session=disc_session, db=db)
 
 
 # ── Pydantic shapes ─────────────────────────────────────────────────────────
@@ -332,15 +357,23 @@ async def get_item_thumb(display_name: str):
 
     Responds 404 when the wiki has no matching image (mod items,
     typos).  The 404 is cached on disk for 24h so we don't keep
-    hammering the wiki.
+    hammering the wiki.  Responds 502, never cached, when the image
+    could not be fetched right now (wiki throttling or outage).
     """
     # Strip the optional ``.png`` suffix to support both forms.
     name = display_name[:-4] if display_name.lower().endswith(".png") else display_name
-    safe = sanitize_thumb_name(name)
-    if not safe:
+    if not thumb_key(name):
         raise HTTPException(status_code=422, detail="Invalid item name")
 
-    data = await get_or_fetch_thumb(name)
+    try:
+        data = await get_or_fetch_thumb(name)
+    except TransientWikiError:
+        # A miss for now, not a verdict: the next render must retry.
+        return Response(
+            status_code=502,
+            content=b"",
+            headers={"Cache-Control": "no-store"},
+        )
     if data is None:
         # Tell the browser to cache the negative response for 24h so
         # rendering a long catalog (Blueprints page) doesn't spam the
@@ -362,7 +395,11 @@ async def get_item_thumb(display_name: str):
 
 # ── Browse listed items (any authenticated caller) ──────────────────────────
 
-@router.get("/listed", response_model=_ListedResponse)
+@router.get(
+    "/listed",
+    response_model=_ListedResponse,
+    dependencies=[Depends(_require_market_reader)],
+)
 async def list_market_items(
     plugin_db: AsyncSession = Depends(get_plugin_db),
     limit:     int          = Query(50, ge=1, le=200),
@@ -391,8 +428,8 @@ async def list_market_items(
 
     order = {
         "newest":     "listed_at DESC, id DESC",
-        "price_asc":  "price ASC, listed_at DESC",
-        "price_desc": "price DESC, listed_at DESC",
+        "price_asc":  "price ASC, listed_at DESC, id DESC",
+        "price_desc": "price DESC, listed_at DESC, id DESC",
     }[sort]
 
     where_sql = " AND ".join(where)
@@ -664,29 +701,26 @@ async def buy_item(
     seller = item["owner_eos_id"]
     price  = int(item["price"] or 0)
 
-    # 2. Lock buyer points (ArkShop currency; auto-create like ArkShop does)
-    await plugin_db.execute(
-        text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
-             "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
-        {"e": me},
-    )
-    buyer_bal = int((await plugin_db.execute(
-        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e FOR UPDATE"),
-        {"e": me},
-    )).scalar() or 0)
+    # 2-3. Lock buyer and seller points (ArkShop currency; auto-create at 0
+    #      like ArkShop does) in a FIXED order.  Buyer-then-seller let two
+    #      crossing purchases (X buys from Y while Y buys from X) each hold
+    #      one row and wait for the other: a deadlock, and a 500 for one.
+    #      The buyer balance comes from its locking read, never a snapshot.
+    buyer_bal = 0
+    for eos in sorted((me, seller)):
+        await plugin_db.execute(
+            text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
+                 "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
+            {"e": eos},
+        )
+        points = (await plugin_db.execute(
+            text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e FOR UPDATE"),
+            {"e": eos},
+        )).scalar()
+        if eos == me:
+            buyer_bal = int(points or 0)
     if buyer_bal < price:
         raise HTTPException(status_code=402, detail="INSUFFICIENT_FUNDS")
-
-    # 3. Lock seller points (auto-create at 0)
-    await plugin_db.execute(
-        text("INSERT INTO ArkShopPlayers (EosId, Kits, Points) "
-             "VALUES (:e, '{}', 0) ON DUPLICATE KEY UPDATE EosId = EosId"),
-        {"e": seller},
-    )
-    await plugin_db.execute(
-        text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e FOR UPDATE"),
-        {"e": seller},
-    )
 
     # 4. Move points (TotalSpent tracks the buyer's spend, same as the shop)
     await plugin_db.execute(
@@ -742,12 +776,13 @@ async def buy_item(
 
 # ── Admin endpoints ─────────────────────────────────────────────────────────
 
-@router.post("/admin/wallet/credit", dependencies=[Depends(require_admin)])
+@router.post("/admin/wallet/credit")
 async def admin_credit_wallet(
     body:      _AdminCreditRequest,
+    user:      dict         = Depends(require_operator),
     plugin_db: AsyncSession = Depends(get_plugin_db),
 ):
-    """Admin top-up / debit of any player's ArkShop points.  Audited."""
+    """Operator top-up / debit of any player's ArkShop points.  Audited."""
     eos = body.eos_id.strip()
     if not eos:
         raise HTTPException(status_code=422, detail="eos_id required")
@@ -761,9 +796,11 @@ async def admin_credit_wallet(
         {"a": int(body.amount), "e": eos},
     )
     await plugin_db.commit()
+    # The panel user has no EOS, so actor_eos_id stays NULL: who gave the
+    # points and who got them go in detail, or the row answers neither.
     await _audit(plugin_db, actor_eos=None, action="credit_admin",
                  item_id=None, amount=int(body.amount),
-                 detail=(body.reason or "")[:500])
+                 detail=f"target={eos} by={user['sub']} reason={body.reason or ''}"[:512])
     new_bal = int((await plugin_db.execute(
         text("SELECT Points FROM ArkShopPlayers WHERE EosId = :e"),
         {"e": eos},
@@ -771,7 +808,7 @@ async def admin_credit_wallet(
     return {"ok": True, "eos_id": eos, "new_balance": new_bal}
 
 
-@router.get("/admin/audit", dependencies=[Depends(require_admin)])
+@router.get("/admin/audit", dependencies=[Depends(require_viewer)])
 async def admin_get_audit(
     limit:     int                = Query(100, ge=1, le=500),
     offset:    int                = Query(0,   ge=0),

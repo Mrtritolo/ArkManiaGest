@@ -23,6 +23,7 @@ in modo che due acquisti simultanei non possano portare il saldo sotto zero.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -34,7 +35,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_admin
+from app.core.auth import require_operator, require_viewer
 from app.db.session import get_db, get_plugin_db
 from app.api.routes.blueprints import is_official_or_s_variant_dino
 from app.api.routes.me import get_current_player, _PlayerSession
@@ -237,9 +238,12 @@ async def _forge_supported(db: AsyncSession) -> bool:
     if _forge_columns_ok:
         return True
     try:
+        # table_schema: another schema visible to the same DB user (a
+        # staging copy, a second cluster) must not answer for this one.
         row = (await db.execute(text(
             "SELECT COUNT(*) FROM information_schema.columns "
-            "WHERE table_name = 'ARKM_shop_orders' "
+            "WHERE table_schema = DATABASE() "
+            "AND table_name = 'ARKM_shop_orders' "
             "AND column_name = 'egg_stats'"))).fetchone()
         _forge_columns_ok = bool(row and row[0])
     except Exception:
@@ -403,7 +407,9 @@ class BuyRequest(BaseModel):
     # Chiave di catalogo per item/dino/gene; per egg/embryo non c'e' un
     # catalogo e il campo porta un'etichetta libera (finisce in item_key
     # dell'ordine, solo per leggibilita' nello storico).
-    key: str = ""
+    # Capped at the item_key column width: a longer key made the order
+    # INSERT fail after the points UPDATE.
+    key: str = Field("", max_length=128)
     quantity: int = Field(1, ge=1, le=100)
     gene_tier: int = Field(1, ge=1, le=3)
     # Path del blueprint del dino. Per kind='gene' e' la specie da cui il
@@ -431,10 +437,12 @@ async def buy(
     """
     Compra con i punti ArkShop e mette l'ordine in coda per il ritiro.
 
-    L'ordine di esecuzione conta: prima si scala, poi si accoda. Al
-    contrario, un errore fra i due passi regalerebbe l'oggetto; cosi' il
-    caso peggiore e' un addebito senza ordine, che resta nel log e si
-    rimborsa a mano — molto piu' raro e molto meno costoso.
+    The points UPDATE and the order INSERTs run in ONE transaction and are
+    committed together, so a failure in between rolls the charge back: the
+    player is never charged without an order, nor given an order for free.
+
+    Errors carry a stable code in ``detail`` (INSUFFICIENT_FUNDS, ...), like
+    market.py, and the UI translates it: the player may not read Italian.
     """
     eos = player.eos_id
     if data.kind not in WEB_KINDS:
@@ -456,7 +464,7 @@ async def buy(
             "FROM ARKM_gene_traits WHERE internal_name = :k"),
             {"k": data.key})).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Trait not found.")
+            raise HTTPException(status_code=404, detail="TRAIT_NOT_FOUND")
         matrix = await _gene_price_matrix(panel_db)
         unit = _gene_price(matrix, row[4], data.gene_tier,
                            {1: row[1], 2: row[2], 3: row[3]}[data.gene_tier])
@@ -474,18 +482,17 @@ async def buy(
     elif data.kind in ("egg", "embryo"):
         # Capability check PRIMA dell'addebito: su un plugin senza colonne
         # egg_* la INSERT fallirebbe a punti gia' scalati.
+        # 409, not 503: the game servers are not updated yet
+        # (ARKM-Marketplace >= 7.5.0), the panel database is fine.
         if not await _forge_supported(db):
-            raise HTTPException(
-                status_code=503,
-                detail="Shop uova/embrioni non ancora attivo: i server di "
-                       "gioco non sono aggiornati (ARKM-Marketplace >= 7.5.0).")
+            raise HTTPException(status_code=409, detail="FORGE_NOT_SUPPORTED")
 
         shop = "Egg" if data.kind == "egg" else "Embryo"
         cfg = await _forge_config(db, shop)
         if not cfg["enabled"]:
-            raise HTTPException(status_code=403, detail="Shop disabilitato.")
+            raise HTTPException(status_code=403, detail="SHOP_DISABLED")
         if not data.gene_species.strip():
-            raise HTTPException(status_code=422, detail="Scegli una specie.")
+            raise HTTPException(status_code=422, detail="SPECIES_REQUIRED")
 
         # Prezzo PER SPECIE dal listino admin: una specie fuori listino (o
         # disabilitata per questo shop, o senza prezzo) non e' in vendita.
@@ -499,13 +506,11 @@ async def buy(
             species_price = prow[1] if data.kind == "egg" else prow[2]
             sp_enabled = bool(prow[3] if data.kind == "egg" else prow[4])
         if not prow or not sp_enabled or species_price <= 0:
-            raise HTTPException(status_code=404,
-                detail="Questa specie non e' in vendita in questo shop.")
+            raise HTTPException(status_code=404, detail="SPECIES_NOT_FOR_SALE")
 
         colors = [max(0, min(255, int(v))) for v in data.egg_colors]
         if len(data.egg_traits) > cfg["max_traits"]:
-            raise HTTPException(status_code=422,
-                detail=f"Max {cfg['max_traits']} tratti.")
+            raise HTTPException(status_code=422, detail="TOO_MANY_TRAITS")
 
         # Tratti "Nome[tier]": validati e prezzati sul listino geni effettivo
         # (matrice admin con fallback ai costi del plugin).
@@ -514,15 +519,14 @@ async def buy(
         for t in data.egg_traits:
             m = re.fullmatch(r"([A-Za-z0-9_]+)\[([0-2])\]", t.strip())
             if not m:
-                raise HTTPException(status_code=422,
-                    detail=f"Tratto malformato: {t} (atteso Nome[0..2]).")
+                # Expected form: Name[0..2].
+                raise HTTPException(status_code=422, detail="TRAIT_MALFORMED")
             trow = (await db.execute(text(
                 "SELECT cost_t1, cost_t2, cost_t3, category "
                 "FROM ARKM_gene_traits WHERE internal_name = :n"),
                 {"n": m.group(1)})).fetchone()
             if not trow:
-                raise HTTPException(status_code=422,
-                    detail=f"Tratto sconosciuto: {m.group(1)}.")
+                raise HTTPException(status_code=422, detail="TRAIT_NOT_FOUND")
             tier = int(m.group(2)) + 1
             traits_price += _gene_price(matrix, trow[3], tier, trow[tier - 1])
 
@@ -555,9 +559,9 @@ async def buy(
             "FROM ARKM_web_shop_items "
             "WHERE item_key = :k AND enabled = 1"), {"k": data.key})).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Item not found.")
+            raise HTTPException(status_code=404, detail="ITEM_NOT_FOUND")
         if row[1] != data.kind:
-            raise HTTPException(status_code=422, detail="Wrong kind for this item.")
+            raise HTTPException(status_code=422, detail="WRONG_KIND")
         order["blueprint"] = row[2]
         order["quality"] = row[4]
         order["is_blueprint"] = 1 if row[5] else 0
@@ -573,7 +577,7 @@ async def buy(
             total = unit * data.quantity
 
     if total <= 0:
-        raise HTTPException(status_code=422, detail="This entry has no price set.")
+        raise HTTPException(status_code=422, detail="NO_PRICE")
 
     # 2. Scala i punti in modo condizionale: se il saldo e' cambiato fra la
     #    lettura e la scrittura, la UPDATE non tocca nessuna riga e non c'e'
@@ -584,23 +588,15 @@ async def buy(
         {"p": total, "e": eos})
     if res.rowcount != 1:
         await db.rollback()
-        cur = (await db.execute(text(
-            "SELECT Points FROM ArkShopPlayers WHERE EosId = :e"),
-            {"e": eos})).fetchone()
-        raise HTTPException(
-            status_code=400,
-            detail=f"Punti insufficienti: servono {total}, "
-                   f"disponibili {cur[0] if cur else 0}.")
+        raise HTTPException(status_code=400, detail="INSUFFICIENT_FUNDS")
 
     # 3. Accoda: un ordine per ogni riga consegnabile. Una voce ArkShop puo'
     #    essere un pacchetto (il set di armatura sono cinque pezzi) e il
     #    plugin consegna un blueprint per ordine, quindi e' qui che il
     #    pacchetto si apre.
     #
-    #    Da questo punto i punti sono GIA' scalati: tutto cio' che segue sta
-    #    dentro il try, compresa la costruzione dei parametri. Un errore
-    #    lasciato fuori dal try non verrebbe rimborsato dal nostro ramo di
-    #    errore, e la sessione lo salverebbe solo per fortuna.
+    #    The points UPDATE above is not committed yet: it is committed
+    #    together with these INSERTs, and any failure below rolls both back.
     rows_to_queue: list[dict] = []
     try:
         base = {
@@ -633,11 +629,14 @@ async def buy(
             # Nessuna riga consegnabile: annulla l'addebito, non c'e' niente
             # da consegnare e tenere i punti sarebbe un furto.
             await db.rollback()
-            raise HTTPException(status_code=422,
-                                detail="Questa voce non ha nulla da consegnare.")
+            raise HTTPException(status_code=422, detail="NOTHING_TO_DELIVER")
 
         n_orders = len(rows_to_queue)
-        for r in rows_to_queue:
+        # The first order takes the remainder, so the recorded prices add up
+        # to the points actually charged (1002 over 5 pieces: 202 + 4 x 200).
+        base_price, remainder = divmod(total, n_orders)
+        for i, r in enumerate(rows_to_queue):
+            price = base_price + (remainder if i == 0 else 0)
             if data.kind in ("egg", "embryo"):
                 # INSERT esteso con i parametri di forgiatura. Solo per
                 # questi kind: cosi' i kind classici continuano a funzionare
@@ -652,7 +651,7 @@ async def buy(
                     "        :qual, :isbp, :lvl, :trait, :tier, :species, "
                     "        :estats, :emuts, :ecolors, :etraits, :egender, "
                     "        :price, 'pending')"),
-                    {**r, "price": total // n_orders,
+                    {**r, "price": price,
                      # Roll indipendente per riga: due uova dello stesso
                      # acquisto non devono mai essere gemelle.
                      "estats": ",".join(
@@ -670,22 +669,20 @@ async def buy(
                     "VALUES (:eos, :name, :src, :key, :kind, :bp, :qty, :qual, "
                     "        :isbp, :lvl, :trait, :tier, :species, :price, "
                     "        'pending')"),
-                    {**r, "price": total // n_orders})
+                    {**r, "price": price})
         await db.commit()
     except HTTPException:
         # Gia' gestita sopra (rollback incluso): non e' un errore da
-        # trasformare nel messaggio generico di addebito senza ordine.
+        # trasformare nel messaggio generico di ordine fallito.
         raise
     except Exception as exc:
         await db.rollback()
-        # I punti sono gia' stati scalati e la INSERT e' fallita: e' il caso
-        # che va reso rumoroso, perche' e' l'unico in cui il giocatore paga
-        # senza ricevere.
-        log.error("web_shop: ordine non accodato dopo l'addebito "
-                  "eos=%s totale=%s: %s", eos, total, exc)
-        raise HTTPException(
-            status_code=500,
-            detail="Punti scalati ma ordine non registrato: contatta un admin.")
+        # The rollback also undoes the points UPDATE: nothing was charged.
+        # Saying otherwise sent players to an admin for a refund of a charge
+        # that never happened, and the refund minted points.
+        log.error("web_shop: order not queued, charge rolled back "
+                  "eos=%s total=%s: %s", eos, total, exc)
+        raise HTTPException(status_code=500, detail="ORDER_FAILED") from None
 
     return {"status": "ok", "orders": n_orders, "spent": total}
 
@@ -717,7 +714,8 @@ async def my_orders(
 
 # ── Amministrazione prezzi ────────────────────────────────────────────────────
 #
-# Tab "Prezzi" del Mercato (solo admin). Le tabelle sono del pannello:
+# Tab "Prezzi" del Mercato (read: any panel role, write: operator).
+# Le tabelle sono del pannello:
 # arkmaniagest_gene_prices (matrice categoria x tier, override dei costi che
 # il plugin ripubblica uniformi a ogni boot) e arkmaniagest_forge_prices
 # (listino per specie degli shop uova/embrioni).
@@ -738,7 +736,7 @@ class ForgePriceRow(BaseModel):
     embryo_enabled: bool = True
 
 
-@router.get("/admin/prices", dependencies=[Depends(require_admin)])
+@router.get("/admin/prices", dependencies=[Depends(require_viewer)])
 async def admin_prices(
     db: AsyncSession = Depends(get_plugin_db),
     panel_db: AsyncSession = Depends(get_db),
@@ -786,7 +784,7 @@ async def admin_prices(
     }
 
 
-@router.put("/admin/gene-prices", dependencies=[Depends(require_admin)])
+@router.put("/admin/gene-prices", dependencies=[Depends(require_operator)])
 async def save_gene_prices(
     entries: list[GenePriceEntry],
     panel_db: AsyncSession = Depends(get_db),
@@ -806,7 +804,7 @@ async def save_gene_prices(
     return {"ok": True, "cells": len(entries)}
 
 
-@router.put("/admin/forge-prices", dependencies=[Depends(require_admin)])
+@router.put("/admin/forge-prices", dependencies=[Depends(require_operator)])
 async def save_forge_prices(
     rows: list[ForgePriceRow],
     panel_db: AsyncSession = Depends(get_db),
@@ -832,7 +830,7 @@ async def save_forge_prices(
 
 # ── Amministrazione del catalogo ──────────────────────────────────────────────
 
-@router.post("/admin/import-arkshop", dependencies=[Depends(require_admin)])
+@router.post("/admin/import-arkshop", dependencies=[Depends(require_operator)])
 async def import_from_arkshop(db: AsyncSession = Depends(get_plugin_db)):
     """
     Importa in ``ARKM_web_shop_items`` le voci item/dino della config ArkShop.
@@ -841,10 +839,10 @@ async def import_from_arkshop(db: AsyncSession = Depends(get_plugin_db)):
     aggiorna la definizione tecnica (blueprint, quantita', livello) senza
     ributtare online qualcosa che era stato tolto a mano dalla vetrina.
     """
-    from app.api.routes.arkshop import _require_vault, _get_config
+    from app.api.routes.arkshop import _get_config
 
-    _require_vault()
-    shop_items = _get_config().get("ShopItems", {})
+    # _get_config opens a blocking pymysql connection: keep it off the loop.
+    shop_items = (await asyncio.to_thread(_get_config)).get("ShopItems", {})
 
     imported = 0
     skipped_kinds: dict[str, int] = {}
@@ -919,7 +917,7 @@ class CatalogEntryUpdate(BaseModel):
     label: Optional[str] = None
 
 
-@router.put("/admin/catalog/{item_key}", dependencies=[Depends(require_admin)])
+@router.put("/admin/catalog/{item_key}", dependencies=[Depends(require_operator)])
 async def update_catalog_entry(
     item_key: str,
     data: CatalogEntryUpdate,

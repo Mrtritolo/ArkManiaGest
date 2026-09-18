@@ -11,23 +11,39 @@ Defines an ``APIRouter`` pre-wired with:
 :mod:`app.api.routes.arkshop` imports ``router`` and the config helpers and
 registers its plugin-specific endpoints on top.  All other ArkMania plugins
 store their configuration in the MariaDB database via ``ARKM_config``.
+
+Roles: reads are open to every panel role, with the MySQL password masked
+for non-admins; pull, deploy and version snapshots/restores need
+``require_operator``; replacing or clearing the whole stored config (which
+carries the MySQL credential block) and deleting versions are admin-only.
+
+Handlers are plain ``def`` on purpose, like arkshop.py: the store helpers
+run blocking pymysql queries and pull/deploy run paramiko commands, so
+FastAPI must run them in its threadpool instead of on the event loop.
 """
 import json
 import re
 from typing import Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.auth import require_admin, require_operator, require_viewer
 from app.core.store import (
+    encrypt_setting_in_place_sync,
     get_containers_map_sync,
     get_machine_sync,
     get_plugin_config_sync,
     save_plugin_config_sync,
 )
 from app.ssh.manager import SSHManager
-from app.ssh.scanner import read_remote_file, write_remote_file, backup_remote_file
+from app.ssh.scanner import (
+    _is_process_running,
+    backup_remote_file,
+    read_remote_file,
+    write_remote_file,
+)
 
 # Identifier used as the settings key prefix
 _PLUGIN_NAME = "arkshop"
@@ -130,6 +146,26 @@ router = APIRouter()
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
+# Set once this process has encrypted any legacy plaintext ArkShop rows.
+_legacy_rows_encrypted = False
+
+
+def _encrypt_legacy_rows() -> None:
+    """
+    Encrypt the config and versions rows if a release before whole-row
+    encryption left them in plaintext (both carry the MySQL password).
+
+    Runs on the first read in each process instead of waiting for the next
+    save: the versions row is only rewritten by a version save or delete.
+    """
+    global _legacy_rows_encrypted
+    if _legacy_rows_encrypted:
+        return
+    for key in (_PLUGIN_NAME, _VERSIONS_KEY):
+        encrypt_setting_in_place_sync(f"plugin.{key}")
+    _legacy_rows_encrypted = True
+
+
 def _get_config() -> dict:
     """
     Load and return the current plugin config from the settings DB.
@@ -137,6 +173,7 @@ def _get_config() -> dict:
     Raises:
         HTTPException 404: No config has been saved yet.
     """
+    _encrypt_legacy_rows()
     config = get_plugin_config_sync(_PLUGIN_NAME)
     if not config:
         raise HTTPException(
@@ -147,8 +184,47 @@ def _get_config() -> dict:
 
 
 def _save_config(config: dict) -> None:
-    """Persist a sanitised config to the settings DB."""
-    save_plugin_config_sync(_PLUGIN_NAME, _sanitize_config(config))
+    """
+    Persist a sanitised config to the settings DB.
+
+    Encrypted as a whole: the ``Mysql`` block carries the ArkShop database
+    password.  A legacy plaintext row stays readable and is encrypted by
+    :func:`_encrypt_legacy_rows` on the first read.
+    """
+    save_plugin_config_sync(_PLUGIN_NAME, _sanitize_config(config), encrypted=True)
+
+
+def _hide_mysql_password(config: dict, user: dict) -> dict:
+    """
+    Drop ``Mysql.MysqlPass`` for non-admins.
+
+    Same rule as ``GET /mysql`` in arkshop.py, which the whole-config reads
+    (``/config``, ``/config/export``) used to bypass.
+    """
+    mysql = config.get("Mysql")
+    if user["role"] == "admin" or not isinstance(mysql, dict):
+        return config
+    return {**config, "Mysql": {k: v for k, v in mysql.items() if k != "MysqlPass"}}
+
+
+def _keep_mysql_password(config: dict) -> dict:
+    """
+    Carry the stored ``Mysql.MysqlPass`` over into *config* when the uploaded
+    one has none.
+
+    ``GET /config/export`` masks the password for non-admins, so a file a
+    viewer or an operator exported comes back without it.  Saving that block
+    verbatim would clear the credential and ``POST /deploy`` would then write
+    a config.json with no password to every container.  Clearing it on
+    purpose is still possible through ``PUT /mysql``.
+    """
+    mysql = config.get("Mysql") if isinstance(config, dict) else None
+    if not isinstance(mysql, dict) or mysql.get("MysqlPass"):
+        return config
+    stored = (get_plugin_config_sync(_PLUGIN_NAME) or {}).get("Mysql")
+    if not isinstance(stored, dict) or not stored.get("MysqlPass"):
+        return config
+    return {**config, "Mysql": {**mysql, "MysqlPass": stored["MysqlPass"]}}
 
 
 def _get_ssh(machine: dict) -> SSHManager:
@@ -234,26 +310,14 @@ def _find_plugin_containers() -> list[dict]:
 
 
 def _get_versions() -> list[dict]:
+    _encrypt_legacy_rows()
     data = get_plugin_config_sync(_VERSIONS_KEY)
     return data.get("versions", []) if isinstance(data, dict) else []
 
 
 def _save_versions(versions: list[dict]) -> None:
-    save_plugin_config_sync(_VERSIONS_KEY, {"versions": versions})
-
-
-def _is_container_stopped(ssh: SSHManager, container_name: str) -> bool:
-    """Return True if no ARK server process is running for the container."""
-    stdout, _, _ = ssh.execute(
-        f'pgrep -a -f "{container_name}" 2>/dev/null '
-        f'| grep -iE "shooter|ark|server" | head -1'
-    )
-    if stdout.strip():
-        return False
-    stdout2, _, _ = ssh.execute(
-        f'pgrep -a -f "ShooterGame.*{container_name}" 2>/dev/null | head -1'
-    )
-    return not bool(stdout2.strip())
+    # Encrypted like the current config: every snapshot carries its Mysql block.
+    save_plugin_config_sync(_VERSIONS_KEY, {"versions": versions}, encrypted=True)
 
 
 def _deploy_result(
@@ -278,14 +342,15 @@ def _deploy_result(
 # ── Config CRUD ────────────────────────────────────────────────────────────────
 
 @router.get("/config")
-async def get_config():
+def get_config(user: dict = Depends(require_viewer)):
     """Return the currently saved plugin configuration."""
-    return _get_config()
+    return _hide_mysql_password(_get_config(), user)
 
 
 @router.get("/config/status")
-async def config_status():
+def config_status():
     """Return whether a config is saved and which sections it contains."""
+    _encrypt_legacy_rows()
     config = get_plugin_config_sync(_PLUGIN_NAME)
     if not config:
         return {"has_config": False, "sections": []}
@@ -294,37 +359,44 @@ async def config_status():
     return {"has_config": True, "sections": sections}
 
 
-@router.post("/config")
-async def upload_config(data: ConfigUpload):
-    """Upload a plugin config JSON directly."""
+@router.post("/config", dependencies=[Depends(require_admin)])
+def upload_config(data: ConfigUpload):
+    """
+    Upload a plugin config JSON directly.
+
+    Admin-only: the upload replaces the ``Mysql`` credential block too,
+    which ``PUT /mysql`` already reserves to admins.  A password missing
+    from the upload is kept, not cleared — see :func:`_keep_mysql_password`.
+    """
     if _is_plugininfo_content(data.config):
         raise HTTPException(
             status_code=422,
             detail="The uploaded JSON appears to be a PluginInfo.json, not a config.",
         )
-    _save_config(data.config)
-    clean = _sanitize_config(data.config)
+    config = _keep_mysql_password(data.config)
+    _save_config(config)
+    clean = _sanitize_config(config)
     return {"success": True, "sections": [k for k in clean if not k.startswith("_")]}
 
 
-@router.delete("/config")
-async def delete_config():
+@router.delete("/config", dependencies=[Depends(require_admin)])
+def delete_config():
     """Clear the saved plugin configuration."""
     save_plugin_config_sync(_PLUGIN_NAME, {})
     return {"success": True}
 
 
 @router.get("/config/export")
-async def export_config():
+def export_config(user: dict = Depends(require_viewer)):
     """Export the current config (internal metadata keys excluded)."""
-    config = _get_config()
+    config = _hide_mysql_password(_get_config(), user)
     return {k: v for k, v in config.items() if not k.startswith("_")}
 
 
 # ── Container / server discovery ───────────────────────────────────────────────
 
 @router.get("/servers")
-async def list_servers():
+def list_servers():
     """List containers where this plugin is installed."""
     servers = _find_plugin_containers()
     return {"servers": servers, "total": len(servers)}
@@ -332,8 +404,8 @@ async def list_servers():
 
 # ── Pull from server ───────────────────────────────────────────────────────────
 
-@router.post("/pull")
-async def pull_config(
+@router.post("/pull", dependencies=[Depends(require_operator)])
+def pull_config(
     machine_id:     int = Query(...),
     container_name: str = Query(...),
 ):
@@ -400,8 +472,8 @@ async def pull_config(
 
 # ── Deploy to servers ──────────────────────────────────────────────────────────
 
-@router.post("/deploy")
-async def deploy_config(
+@router.post("/deploy", dependencies=[Depends(require_operator)])
+def deploy_config(
     version_id:     Optional[int] = Query(None),
     machine_id:     Optional[int] = Query(None),
     container_name: Optional[str] = Query(None),
@@ -433,13 +505,12 @@ async def deploy_config(
     config_json = json.dumps(deploy_data, indent=2, ensure_ascii=False)
     containers  = _find_plugin_containers()
 
-    if machine_id is not None and container_name:
-        containers = [
-            c for c in containers
-            if c["machine_id"] == machine_id and c["container_name"] == container_name
-        ]
-    elif machine_id is not None:
+    # Independent filters: container_name alone used to be ignored, so the
+    # config went to every container in the cluster.
+    if machine_id is not None:
         containers = [c for c in containers if c["machine_id"] == machine_id]
+    if container_name:
+        containers = [c for c in containers if c["container_name"] == container_name]
 
     if not containers:
         raise HTTPException(status_code=404, detail="No target containers found.")
@@ -460,7 +531,7 @@ async def deploy_config(
         try:
             with _get_ssh(machine) as ssh:
                 for t in targets:
-                    if not _is_container_stopped(ssh, t["container_name"]) and not force:
+                    if not force and _is_process_running(ssh, t["container_name"]):
                         results.append(
                             _deploy_result(
                                 t, False,
@@ -503,7 +574,7 @@ async def deploy_config(
 # ── Version history ────────────────────────────────────────────────────────────
 
 @router.get("/versions")
-async def list_versions():
+def list_versions():
     """
     Return the saved version list (metadata only, no full config).
 
@@ -531,8 +602,8 @@ async def list_versions():
     }
 
 
-@router.post("/versions")
-async def save_version(req: SaveVersionRequest):
+@router.post("/versions", dependencies=[Depends(require_operator)])
+def save_version(req: SaveVersionRequest):
     """Snapshot the current config as a named version."""
     config = _get_config()
     clean  = {k: v for k, v in config.items() if not k.startswith("_")}
@@ -558,8 +629,8 @@ async def save_version(req: SaveVersionRequest):
     }
 
 
-@router.post("/versions/{version_id}/restore")
-async def restore_version(version_id: int):
+@router.post("/versions/{version_id}/restore", dependencies=[Depends(require_operator)])
+def restore_version(version_id: int):
     """Restore a saved version as the current config."""
     target = next((v for v in _get_versions() if v["id"] == version_id), None)
     if not target:
@@ -573,8 +644,8 @@ async def restore_version(version_id: int):
     return {"success": True, "version_id": version_id, "label": target["label"]}
 
 
-@router.delete("/versions/{version_id}")
-async def delete_version(version_id: int):
+@router.delete("/versions/{version_id}", dependencies=[Depends(require_admin)])
+def delete_version(version_id: int):
     """Delete a saved version."""
     versions     = _get_versions()
     new_versions = [v for v in versions if v["id"] != version_id]
