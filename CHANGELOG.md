@@ -7,6 +7,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.1] - 2026-10-02
+
+### Fixed
+
+- **The public `/rare-dinos` endpoint returned rare dinos that were long
+  gone.** A spawn counted as alive until a later KILLED, TAMED or DESPAWN
+  event, but ARKM-RareDino keeps its active rares in memory, so a server
+  restart or crash never logs the DESPAWN. On 2026-10-02 the endpoint
+  returned 91 rares, some 7 days old, on maps that hold at most 5. A spawn
+  now also has to be younger than the server's `RareDino.DespawnMinutes`
+  (the server row overrides `'*'`, default 120, `0` means never) plus a
+  5-minute grace, measured against the database's own `NOW()` because
+  `event_time` is a naive local DATETIME. CLEAR events (`/puliscirari`) now
+  end a spawn too.
+
 ## [4.16.0] - 2026-09-18
 
 Audit of the whole repository, the fixes it produced, and a full UI refactor

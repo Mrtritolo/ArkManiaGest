@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import get_plugin_db
 from app.db.models.ark import Player
@@ -631,6 +632,34 @@ def _display_name_from_bp(bp: str) -> str:
     )
 
 
+# ARKM-RareDino despawns a rare after RareDino.DespawnMinutes (0 = never).
+_RARE_DESPAWN_DEFAULT_MIN = 120.0
+# The plugin checks the timeout on its tick, so DESPAWN lands a little late.
+_RARE_DESPAWN_GRACE_MIN = 5.0
+
+
+async def _rare_despawn_windows(db: AsyncSession) -> dict[str, float]:
+    """``RareDino.DespawnMinutes`` per ``server_key`` (``'*'`` = cluster default).
+
+    A server row overrides the ``'*'`` row, as in the plugin's ConfigDB.
+    Unreadable values are skipped, so the caller falls back to the default.
+    """
+    try:
+        rows = (await db.execute(sa_text(
+            "SELECT server_key, config_value FROM ARKM_config "
+            "WHERE config_key = 'RareDino.DespawnMinutes'"
+        ))).fetchall()
+    except SQLAlchemyError:
+        return {}
+    windows: dict[str, float] = {}
+    for key, value in rows:
+        try:
+            windows[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return windows
+
+
 @router.get("/rare-dinos")
 async def public_rare_dinos(
     request:    Request,
@@ -642,10 +671,19 @@ async def public_rare_dinos(
     """
     Public endpoint: currently alive rare dinos.
 
-    A dino is "alive" if it has a SPAWN event with no subsequent
-    KILLED, TAMED, or DESPAWN event on the same server.
+    A dino is "alive" if it has a SPAWN event with no later KILLED, TAMED,
+    DESPAWN or CLEAR event on the same server, and it is younger than the
+    server's despawn window. The window matters because the plugin keeps its
+    active rares in memory: after a restart or a crash no DESPAWN is logged,
+    and without the bound those spawns stayed "alive" for days.
+
+    ``event_time`` is a naive DATETIME in the database's local time, so ages
+    are measured against the database's own ``NOW()``.
     """
     _validate_request(request, api_key)
+
+    windows = await _rare_despawn_windows(db)
+    default_window = windows.get("*", _RARE_DESPAWN_DEFAULT_MIN)
 
     where: list[str] = []
     params: dict = {}
@@ -657,13 +695,20 @@ async def public_rare_dinos(
         where.append("rs.map_name = :mn")
         params["mn"] = map_name
 
+    # Coarse bound in SQL (skips the spawn history); the exact per-server
+    # window is applied below. A window <= 0 (never despawn) disables it.
+    all_windows = [default_window, *windows.values()]
+    if all(w > 0 for w in all_windows):
+        where.append("rs.event_time > NOW() - INTERVAL :max_age MINUTE")
+        params["max_age"] = int(max(all_windows) + _RARE_DESPAWN_GRACE_MIN) + 1
+
     extra_where = ("AND " + " AND ".join(where)) if where else ""
 
     result = await db.execute(
         sa_text(
             f"SELECT rs.dino_name, rs.dino_level, rs.server_key, rs.map_name, "
             f"rs.gps_lat, rs.gps_lon, rs.event_time, "
-            f"srv.display_name "
+            f"srv.display_name, NOW() "
             f"FROM ARKM_rare_spawns rs "
             f"LEFT JOIN ARKM_servers srv ON srv.server_key = rs.server_key "
             f"WHERE rs.event_type = 'SPAWN' "
@@ -671,7 +716,7 @@ async def public_rare_dinos(
             f"  SELECT 1 FROM ARKM_rare_spawns rs2 "
             f"  WHERE rs2.dino_blueprint = rs.dino_blueprint "
             f"    AND rs2.server_key = rs.server_key "
-            f"    AND rs2.event_type IN ('KILLED', 'TAMED', 'DESPAWN') "
+            f"    AND rs2.event_type IN ('KILLED', 'TAMED', 'DESPAWN', 'CLEAR') "
             f"    AND rs2.event_time > rs.event_time "
             f") "
             f"{extra_where} "
@@ -680,8 +725,14 @@ async def public_rare_dinos(
         params,
     )
 
-    dinos = [
-        {
+    dinos = []
+    for r in result.fetchall():
+        window = windows.get(r[2], default_window)
+        if window > 0 and r[6] and r[8]:
+            age_min = (r[8] - r[6]).total_seconds() / 60.0
+            if age_min > window + _RARE_DESPAWN_GRACE_MIN:
+                continue
+        dinos.append({
             "name":        r[0] or "Unknown",
             "level":       r[1],
             "server":      r[2],
@@ -690,9 +741,7 @@ async def public_rare_dinos(
             "lat":         r[4],
             "lon":         r[5],
             "spawned_at":  str(r[6]) if r[6] else None,
-        }
-        for r in result.fetchall()
-    ]
+        })
 
     return {
         "dinos":     dinos,
