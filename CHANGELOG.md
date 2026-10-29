@@ -7,6 +7,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.6] - 2026-10-29
+
+### Fixed
+
+- **The nightly backup never saved the plugin database.** MariaDB 11.4 and
+  later clients require TLS by default and refuse a server without it.
+  `backup.sh` threw the error away, so every run logged "partial backup"
+  and shipped the panel database alone. `backup.sh` and `restore.sh` now
+  connect without TLS, the way the panel itself does, and a failed dump
+  prints the client's error in the backup log.
+
 ## [4.16.5] - 2026-10-29
 
 ### Fixed

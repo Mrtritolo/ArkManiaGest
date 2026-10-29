@@ -131,12 +131,16 @@ load_db() {
     # A defaults-extra-file keeps the password out of `ps`.
     local creds
     creds=$(mktemp "$TEMP_DIR/db.XXXXXX")
+    # skip-ssl like backup.sh: MariaDB 11.4+ clients otherwise refuse a
+    # server without TLS.
     cat > "$creds" <<EOF
 [client]
 host=$host
 port=${port:-3306}
 user=$(optval "$user")
 password=$(optval "$password")
+[client-mariadb]
+skip-ssl
 EOF
     if gunzip -c "$SRC/${label}.sql.gz" | mysql --defaults-extra-file="$creds" "$name"; then
         echo "  [OK] ${label} DB restored ($name)"

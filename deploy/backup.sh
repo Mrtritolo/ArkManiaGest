@@ -66,25 +66,33 @@ dump_db() {
     local creds
     creds=$(mktemp)
     chmod 600 "$creds"
+    # skip-ssl: connect the way the panel does (it never asks for TLS).
+    # MariaDB 11.4+ clients require TLS by default and refused a server
+    # without it, so every nightly backup went out without the plugin DB.
+    # [client-mariadb] because MySQL's own clients reject the option.
     cat > "$creds" <<EOF
 [client]
 host=$host
 port=$port
 user=$(optval "$user")
 password=$(optval "$password")
+[client-mariadb]
+skip-ssl
 EOF
+    local err
+    err=$(mktemp)
     if mysqldump --defaults-extra-file="$creds" \
         --single-transaction --skip-lock-tables \
         --no-tablespaces \
-        "$name" 2>/dev/null | gzip > "$out"
+        "$name" 2>"$err" | gzip > "$out"
     then
         chmod 600 "$out"
         echo "  [OK] ${label} DB ($name)"
     else
-        echo "  [WARN] ${label} DB dump failed ($name) -- partial backup"
+        echo "  [WARN] ${label} DB dump failed ($name): $(head -1 "$err") -- partial backup"
         rm -f "$out"
     fi
-    rm -f "$creds"
+    rm -f "$creds" "$err"
 }
 
 PANEL_HOST=$(get_env DB_HOST || echo localhost)
