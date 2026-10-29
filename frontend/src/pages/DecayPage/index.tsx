@@ -127,6 +127,7 @@ export default function DecayPage({ currentUser }: Props) {
             onSchedule={purge.handleSchedulePurge}
             onPurgeNow={purge.handlePurgeTribeNow}
             formatHoursLeft={h => formatHoursLeft(h, t)}
+            pendingTeams={data.pending.map(p => p.targeting_team)}
           />
         )}
         {activeTab === 'pending' && (

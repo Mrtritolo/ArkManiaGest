@@ -113,7 +113,9 @@ def _ssh_for_machine(machine: dict) -> SSHManager:
 def _test_connection_sync(machine: dict) -> str:
     """Blocking helper: connect, run a trivial command and return its stdout."""
     with _ssh_for_machine(machine) as ssh:
-        stdout, _, _ = ssh.execute("echo 'ArkManiaGest OK'")
+        # An echo that has not answered in 15 s will not: fail the test well
+        # inside the client's 60 s, so the result and last_status are written.
+        stdout, _, _ = ssh.execute("echo 'ArkManiaGest OK'", timeout=15)
     return stdout
 
 

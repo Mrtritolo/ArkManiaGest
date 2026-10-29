@@ -7,6 +7,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.4] - 2026-10-29
+
+### Fixed
+
+- **Slow host operations were reported as failed while they kept running.**
+  Several calls that do SSH work on the backend used axios' 30-second
+  default: Hardening audit and apply, the character-file preview and wipe,
+  the per-machine container scan (also behind Instances → Scan all), the
+  container rescan and the instance status probe. The UI showed a timeout
+  while the host finished the job, which invited a second click. They now
+  wait as long as the work can take (3 to 10 minutes). Machine Test waits
+  60 s, and the backend gives its `echo` 15 s on top of the 30 s connect
+  timeout, so a dead or stuck host reports the real reason. Name sync waits
+  up to 25 minutes, just under nginx's limit. If the panel still gives up
+  first, it says the sync is still running on the server instead of
+  reporting a failure that invites a second scan.
+- **Retry buttons that did nothing, and errors that never cleared.**
+  - ArkMania Config: when the module list failed, Retry only re-ran the
+    module loader, which had no module to load. Retry now reloads whatever
+    failed, the lists or the module, and never discards unsaved edits. A
+    successful module load no longer hides that the server or
+    permission-group list failed.
+  - Rare dinos: a successful reload clears the error. A failed spawn-table
+    clear shows a toast instead of an alert whose Retry reloaded the dino
+    pool.
+  - Event log: a successful reload clears the red banner. A failed purge
+    shows a toast, so a reload can no longer clear it as if it had worked.
+  - Market, Orders tab: Refresh and Retry report a failure instead of
+    swallowing it (the background refresh stays quiet), and a successful
+    refresh clears it.
+- **Failures that looked like empty data.**
+  - ArkShop: a shop, kit or sell list that failed to load showed as empty,
+    or kept its rows from before a restore, which could then be saved back
+    over the restored config. The list is now emptied and its tab says it
+    failed, with Retry. New entries wait until it loads, because the
+    duplicate-key check needs the stored keys.
+  - Players: the KPI tiles stayed in their loading state forever when the
+    stats call failed. They now read "not available".
+  - Import missing players: an import the backend rolled back
+    (`success: false`) was reported as done and emptied the list. It is
+    reported as failed now, and on per-row errors the list stays for a
+    retry.
+- **Decay "Purge now" failed on almost every row.** Since 4.16.0 the backend
+  refuses a per-tribe purge with 409 while other tribes are pending, because
+  `ARKM.DM.Purge` would destroy them too, and on a live cluster the queue is
+  rarely empty. The button is now unavailable in that case, and its tooltip
+  says why.
+
 ## [4.16.3] - 2026-10-29
 
 ### Fixed

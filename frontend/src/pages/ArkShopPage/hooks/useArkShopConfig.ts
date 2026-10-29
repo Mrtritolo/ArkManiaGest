@@ -18,6 +18,7 @@ export interface LoadedCounts { items: number; kits: number }
 
 /** The three settings blocks that have their own form and their own Save. */
 export type SettingsBlock = 'mysql' | 'general' | 'messages'
+export type EntryList = 'shop' | 'kit' | 'sell'
 
 export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
   const { t } = useTranslation()
@@ -48,6 +49,12 @@ export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
   const [blockFailed, setBlockFailed] = useState<Record<SettingsBlock, boolean>>({
     mysql: false, general: false, messages: false,
   })
+  // A list whose GET failed is empty on screen, not empty on the server: its
+  // tab says so, and new entries wait, because the duplicate-key check needs
+  // the stored keys.
+  const [listFailed, setListFailed] = useState<Record<EntryList, boolean>>({
+    shop: false, kit: false, sell: false,
+  })
   const dirtyMysql = JSON.stringify(mysql) !== saved.mysql
   const dirtyGeneral = JSON.stringify(general) !== saved.general
   const dirtyMessages = JSON.stringify(messages) !== saved.messages
@@ -60,9 +67,12 @@ export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
     ])
     if (my.status === 'fulfilled') setMysql(my.value.data)
     if (gen.status === 'fulfilled') setGeneral(gen.value.data)
-    if (shop.status === 'fulfilled') setShopItems(shop.value.data)
-    if (kit.status === 'fulfilled') setKits(kit.value.data)
-    if (sell.status === 'fulfilled') setSellItems(sell.value.data)
+    // A failed list is emptied, not left as it was: after a restore or pull
+    // the old rows would still be editable, and saving one would write it
+    // back over the restored config.
+    setShopItems(shop.status === 'fulfilled' ? shop.value.data : [])
+    setKits(kit.status === 'fulfilled' ? kit.value.data : [])
+    setSellItems(sell.status === 'fulfilled' ? sell.value.data : [])
     if (msg.status === 'fulfilled') setMessages(msg.value.data)
     setSaved({
       mysql: JSON.stringify(my.status === 'fulfilled' ? my.value.data : {}),
@@ -73,6 +83,11 @@ export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
       mysql: my.status === 'rejected',
       general: gen.status === 'rejected',
       messages: msg.status === 'rejected',
+    })
+    setListFailed({
+      shop: shop.status === 'rejected',
+      kit: kit.status === 'rejected',
+      sell: sell.status === 'rejected',
     })
     // Pull and restore do not return counts; report the ones just loaded.
     return {
@@ -97,6 +112,18 @@ export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
       setBlockFailed(prev => ({ ...prev, [block]: false }))
     } catch (err) {
       toast.error(extractError(err, t('arkshop.blockLoad.error')))
+    }
+  }, [t, toast])
+
+  /** Retry one failed entry list. */
+  const reloadList = useCallback(async (list: EntryList) => {
+    try {
+      if (list === 'shop') setShopItems((await arkshopApi.listShopItems()).data)
+      else if (list === 'kit') setKits((await arkshopApi.listKits()).data)
+      else setSellItems((await arkshopApi.listSellItems()).data)
+      setListFailed(prev => ({ ...prev, [list]: false }))
+    } catch (err) {
+      toast.error(extractError(err, t('arkshop.listLoad.error')))
     }
   }, [t, toast])
 
@@ -139,6 +166,7 @@ export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
       setMysql({}); setGeneral({}); setMessages({})
       setSaved({ mysql: '{}', general: '{}', messages: '{}' })
       setBlockFailed({ mysql: false, general: false, messages: false })
+      setListFailed({ shop: false, kit: false, sell: false })
       toast.success(t('arkshop.messagesResult.resetSuccess'))
     } catch (err) {
       toast.error(extractError(err, t('arkshop.messagesResult.resetError')))
@@ -221,7 +249,7 @@ export function useArkShopConfig(fileInputRef: RefObject<HTMLInputElement>) {
     configLoaded, setConfigLoaded, statusLoading, statusError, retryStatus: checkStatus, loading,
     mysql, setMysql, general, setGeneral, messages, setMessages,
     shopItems, setShopItems, kits, setKits, sellItems, setSellItems,
-    blockFailed, reloadBlock,
+    blockFailed, reloadBlock, listFailed, reloadList,
     dirtyMysql, dirtyGeneral, dirtyMessages, anyDirty, confirmDiscardEdits,
     loadAll, handleReset, handleUploadClick, handleFileUpload, handleExport,
     saveMysql, saveGeneral, saveMessages,

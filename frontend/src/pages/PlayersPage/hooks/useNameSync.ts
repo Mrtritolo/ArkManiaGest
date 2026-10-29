@@ -80,7 +80,14 @@ export function useNameSync({ toast, loadPlayers, loadStats, t }: Args) {
         setImportChecked(checks);
       }
     } catch (err) {
-      toast.error(extractError(err, t("players.errors.syncNames")));
+      // A client timeout does not stop the backend: it keeps scanning and
+      // commits the names at the end. Say so, instead of "failed", so the
+      // operator does not start a second scan on top of the first.
+      if ((err as { code?: string })?.code === "ECONNABORTED") {
+        toast.info(t("players.messages.syncStillRunning"));
+      } else {
+        toast.error(extractError(err, t("players.errors.syncNames")));
+      }
     } finally {
       setSyncing(false);
     }
@@ -130,12 +137,23 @@ export function useNameSync({ toast, loadPlayers, loadStats, t }: Args) {
       const res = await playersApi.importFromProfiles(
         selected.map(o => ({ eos_id: o.eos_id, player_name: o.player_name || null })),
       );
+      // The backend answers 200 with success:false when the insert was
+      // rolled back: nothing was imported, so the list stays as it is.
+      if (!res.data.success) {
+        toast.error([t("players.importMissing.errors.apply"), ...res.data.errors].join(" "));
+        return;
+      }
       toast.success(t("players.importMissing.done", { n: res.data.inserted, s: res.data.skipped_existing }));
-      // Drop imported ones so the banner count goes down; the admin can
-      // reopen the modal to retry partial failures.
-      setNotMatchedList(prev => prev.filter(o => !importChecked[o.eos_id]));
-      setImportChecked({});
-      setImportModalOpen(false);
+      if (res.data.errors.length > 0) {
+        // Some rows failed: keep the list so a retry can pick them up (the
+        // ones that went in are skipped as already present).
+        toast.error(t("players.importMissing.errors.rows", { errors: res.data.errors.join("; ") }));
+      } else {
+        // Drop imported ones so the banner count goes down.
+        setNotMatchedList(prev => prev.filter(o => !importChecked[o.eos_id]));
+        setImportChecked({});
+        setImportModalOpen(false);
+      }
       loadPlayers();
       loadStats();
     } catch (err) {

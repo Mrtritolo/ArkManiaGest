@@ -12,7 +12,7 @@ import {
   type WebShopForgeConfig, type WebShopForgePrice, type WebShopGene,
   type WebShopGeneDino, type WebShopItem, type WebShopOrder,
 } from "../../../services/api";
-import { extractError, SHOP_CATEGORY_ORDER, type TFunc } from "../marketUtils";
+import { extractError, listedError, SHOP_CATEGORY_ORDER, type TFunc } from "../marketUtils";
 import type { PendingBuy } from "./usePurchaseConfirm";
 import type { ToastApi } from "../../../components/ui";
 
@@ -68,13 +68,20 @@ export function useWebShop({ setLoadError, toast, loadWallet, requestBuy, t }: A
     }
   }, [setLoadError]);
 
-  const loadShopOrders = useCallback(async () => {
+  /** `report`: the player asked (Refresh / Retry), so a failure is shown. */
+  const loadShopOrders = useCallback(async (report = false) => {
     try {
       const r = await webShopApi.orders();
       setShopOrders(r.data.orders || []);
       setShopPending(r.data.pending || 0);
-    } catch { /* the queued count is a bonus, not an error worth showing */ }
-  }, []);
+      // Clear what a failed explicit refresh left, not other tabs' errors.
+      if (report) setLoadError("");
+    } catch (e: unknown) {
+      // In the background the queued count is a bonus, not an error worth
+      // showing; on an explicit refresh silence read as "nothing happened".
+      if (report) setLoadError(listedError(e, tRef.current));
+    }
+  }, [setLoadError]);
 
   /** Operator: fill the web window from the ArkShop catalogue. */
   async function doImport() {

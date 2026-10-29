@@ -2,14 +2,28 @@
  * The three entry lists: shop items (searchable, filterable, expandable),
  * kits (expandable) and sell items.
  */
-import { ChevronDown, Coins, Package, Pencil, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import { ChevronDown, Coins, Package, Pencil, Plus, RotateCw, ShoppingBag, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
-  Badge, Button, Card, EmptyState, IconButton, Input, Select, Table, TableMessageRow,
+  Alert, Badge, Button, Card, EmptyState, IconButton, Input, Select, Table, TableMessageRow,
 } from '../../../components/ui'
 import type { ArkShopEntry } from '../../../services/api'
 import { bpName, isCommandLine, type SubItem } from '../arkshopUtils'
 import styles from '../ArkShopPage.module.css'
+
+/** The load failure of one entry list, with its own Retry. */
+export function ListLoadAlert({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <Alert
+      tone="danger"
+      title={t('arkshop.listLoad.error')}
+      actions={<Button size="sm" icon={RotateCw} onClick={onRetry}>{t('common.retry')}</Button>}
+    >
+      {t('arkshop.listLoad.hint')}
+    </Alert>
+  )
+}
 
 /** The lines of an expanded shop item or kit. */
 function EntryLines({ lines }: { lines: SubItem[] }) {

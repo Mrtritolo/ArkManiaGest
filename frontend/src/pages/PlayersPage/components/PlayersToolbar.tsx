@@ -6,29 +6,47 @@ import { CreditCard, Search, Shield, Star, Users } from "lucide-react";
 import { Button, Input, Select, StatTile } from "../../../components/ui";
 import type { PermissionGroupItem, PlayersStats } from "../../../types";
 
-export function PlayersStatsTiles({ stats }: { stats: PlayersStats | null }) {
+export function PlayersStatsTiles({ stats, failed }: { stats: PlayersStats | null; failed: boolean }) {
   const { t } = useTranslation();
-  const loading = stats === null;
+  const loading = stats === null && !failed;
+  // Failed before any value arrived: say so instead of a fake 0.
+  const missing = stats === null && failed;
+  const show = (v: string | number) => (missing ? "—" : v);
+  const meta = missing ? t("players.stats.unavailable") : undefined;
+  const metaTone = missing ? "danger" as const : undefined;
   return (
     <div className="l-grid--stats">
-      <StatTile label={t("players.stats.players")} icon={Users} loading={loading} value={stats?.total_players ?? 0} />
+      <StatTile
+        label={t("players.stats.players")}
+        icon={Users}
+        loading={loading}
+        value={show(stats?.total_players ?? 0)}
+        meta={meta}
+        metaTone={metaTone}
+      />
       <StatTile
         label={t("players.stats.pointsInCirculation")}
         icon={Star}
         loading={loading}
-        value={(stats?.total_points_in_circulation ?? 0).toLocaleString(undefined)}
+        value={show((stats?.total_points_in_circulation ?? 0).toLocaleString(undefined))}
+        meta={meta}
+        metaTone={metaTone}
       />
       <StatTile
         label={t("players.stats.totalSpent")}
         icon={CreditCard}
         loading={loading}
-        value={(stats?.total_spent ?? 0).toLocaleString(undefined)}
+        value={show((stats?.total_spent ?? 0).toLocaleString(undefined))}
+        meta={meta}
+        metaTone={metaTone}
       />
       <StatTile
         label={t("players.stats.groups")}
         icon={Shield}
         loading={loading}
-        value={stats?.permission_groups_count ?? 0}
+        value={show(stats?.permission_groups_count ?? 0)}
+        meta={meta}
+        metaTone={metaTone}
       />
     </div>
   );

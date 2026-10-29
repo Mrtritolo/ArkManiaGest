@@ -31,11 +31,13 @@ interface Props {
   onSchedule: (tribe: DecayTribe) => void
   onPurgeNow: (tribe: DecayTribe) => void
   formatHoursLeft: (h: number) => string
+  /** Teams in ARKM_decay_pending: the per-tribe purge refuses while others wait. */
+  pendingTeams: number[]
 }
 
 export function TribesTab({
   tribes, loading, filterStatus, setFilterStatus, search, setSearch, onSearchSubmit,
-  acting, running, isAdmin, canOperate, onSchedule, onPurgeNow, formatHoursLeft,
+  acting, running, isAdmin, canOperate, onSchedule, onPurgeNow, formatHoursLeft, pendingTeams,
 }: Props) {
   const { t } = useTranslation()
 
@@ -145,12 +147,16 @@ export function TribesTab({
                         size="sm"
                         variant="danger"
                         icon={Trash2}
-                        title={t('decay.purgeTribeTitle', {
-                          id: tr.targeting_team,
-                          name: tr.tribe_name || t('decay.unknownTribe'),
-                        })}
+                        // DM.Purge destroys every pending tribe, so the backend
+                        // answers 409 while others wait: say so up front.
+                        title={pendingTeams.some(id => id !== tr.targeting_team)
+                          ? t('decay.purgeNowBlocked')
+                          : t('decay.purgeTribeTitle', {
+                              id: tr.targeting_team,
+                              name: tr.tribe_name || t('decay.unknownTribe'),
+                            })}
                         loading={acting.isPending(tr.targeting_team)}
-                        disabled={busy}
+                        disabled={busy || pendingTeams.some(id => id !== tr.targeting_team)}
                         onClick={() => onPurgeNow(tr)}
                       >
                         {t('decay.purgeNowButton')}

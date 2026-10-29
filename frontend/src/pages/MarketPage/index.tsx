@@ -130,7 +130,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
     if (tab === "browse") loadListed();
     else if (tab === "mine") loadMyItems();
     else if (tab === "history") loadHistory();
-    else if (tab === "orders") loadShopOrders();
+    else if (tab === "orders") loadShopOrders(true);
     else if (tab === "prices") { loadShop(); prices.load(); }
     else loadShop();
   }
@@ -266,7 +266,7 @@ export default function MarketPage({ embedded = false, currentUser }: MarketPage
         )}
 
         {tab === "orders" && (
-          <OrdersTab orders={shop.shopOrders} onRefresh={loadShopOrders} />
+          <OrdersTab orders={shop.shopOrders} onRefresh={() => loadShopOrders(true)} />
         )}
       </Tabs>
 

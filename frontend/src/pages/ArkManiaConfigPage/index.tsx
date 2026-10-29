@@ -69,7 +69,7 @@ export default function ArkManiaConfigPage({ currentUser }: Props) {
         <Alert
           tone="danger"
           title={state.error}
-          onDismiss={() => state.setError('')}
+          onDismiss={state.dismissError}
           actions={<Button size="sm" icon={RotateCw} onClick={() => void state.retry()}>{t('common.retry')}</Button>}
         />
       )}

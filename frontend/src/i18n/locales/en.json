@@ -843,6 +843,7 @@
     "scheduleDone": "Tribe #{{id}} scheduled on {{rows}}/{{total}} servers.",
     "scheduleFailed": "Could not schedule the purge.",
     "purgeNowButton": "Now",
+    "purgeNowBlocked": "Other tribes are pending purge, and DM.Purge would destroy them too. Cancel them from the Pending purge tab first, or review the queue and use Run DM.Purge.",
     "purgeNowTitle": "Schedule this tribe AND immediately fire ARKM.DM.Purge over RCON on every active instance.",
     "confirmPurgeNow": "Purge tribe #{{id}} ({{name}}) RIGHT NOW?\n\nThe panel will: 1) insert the tribe into ARKM_decay_pending on every server, then 2) send ARKM.DM.Purge over RCON to every active ARK instance.\nThe plugin destroys all of the tribe's structures and dinos and writes the audit log entries.\n\nThis cannot be undone.",
     "purgeNowDone": "Tribe #{{id}} purged: queued on {{rows}} server(s), RCON ok on {{ok}}/{{total}} instances.",
@@ -1280,7 +1281,8 @@
       "players": "Players",
       "pointsInCirculation": "Points in circulation",
       "totalSpent": "Total spent",
-      "groups": "Groups"
+      "groups": "Groups",
+      "unavailable": "Not available"
     },
     "searchPlaceholder": "Search by name, EOS ID…",
     "allGroups": "All groups",
@@ -1458,7 +1460,8 @@
       "timedPermsUpdated": "Timed permissions updated",
       "bannedPermanent": "Player {{name}} banned permanently",
       "bannedTemporary": "Player {{name}} banned for {{duration}}",
-      "syncErrors": "Sync errors: {{errors}}"
+      "syncErrors": "Sync errors: {{errors}}",
+      "syncStillRunning": "The sync is still running on the server. The names change when it finishes: reload the page in a few minutes."
     },
     "errors": {
       "load": "Load error. Check DB connection.",
@@ -1486,7 +1489,8 @@
     "importMissing": {
       "done": "Imported {{n}} players ({{s}} already present).",
       "errors": {
-        "apply": "Import failed."
+        "apply": "Import failed.",
+        "rows": "Some players were not imported: {{errors}}"
       },
       "banner": "Found {{n}} .arkprofile profiles with no row in Players. Import them?",
       "openModal": "Import missing players ({{n}})",
@@ -1956,6 +1960,10 @@
       "description": "General, MySQL or Messages hold unsaved edits. Loading a configuration replaces them.",
       "marker": "Unsaved changes",
       "title": "Unsaved settings"
+    },
+    "listLoad": {
+      "error": "This list could not be loaded.",
+      "hint": "It is empty on screen, not on the server. New entries stay unavailable until it loads: the panel checks a new key against the stored ones."
     },
     "blockLoad": {
       "error": "This section could not be loaded.",

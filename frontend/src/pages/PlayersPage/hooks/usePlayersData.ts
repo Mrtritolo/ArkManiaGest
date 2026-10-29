@@ -22,6 +22,7 @@ interface Args {
 export function usePlayersData({ setListError, t }: Args) {
   const [players, setPlayers] = useState<PlayerListItem[]>([]);
   const [stats, setStats] = useState<PlayersStats | null>(null);
+  const [statsFailed, setStatsFailed] = useState(false);
   const [groups, setGroups] = useState<PermissionGroupItem[]>([]);
   // `loading` blanks the table on the very first load only; a refetch keeps
   // the rows visible and raises `refreshing` for the card-header spinner.
@@ -64,8 +65,11 @@ export function usePlayersData({ setListError, t }: Args) {
     try {
       const res = await playersApi.stats();
       setStats(res.data);
+      setStatsFailed(false);
     } catch {
-      /* the KPI tiles simply stay on their last value */
+      // The tiles keep their last value; with none yet they would read as
+      // loading forever, so they show "not available" instead.
+      setStatsFailed(true);
     }
   }, []);
 
@@ -114,6 +118,7 @@ export function usePlayersData({ setListError, t }: Args) {
   return {
     players,
     stats,
+    statsFailed,
     groups,
     loading,
     refreshing,

@@ -200,7 +200,7 @@ export default function PlayersPage({ currentUser }: Props) {
         />
       )}
 
-      <PlayersStatsTiles stats={data.stats} />
+      <PlayersStatsTiles stats={data.stats} failed={data.statsFailed} />
 
       {truncated && (
         <Alert tone="info" title={t("players.truncatedTitle")}>

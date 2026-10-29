@@ -843,6 +843,7 @@
     "scheduleDone": "Tribù #{{id}} programmata su {{rows}}/{{total}} server.",
     "scheduleFailed": "Programmazione purge fallita.",
     "purgeNowButton": "Ora",
+    "purgeNowBlocked": "Altre tribù sono in attesa di purge e DM.Purge distruggerebbe anche quelle. Annullale prima dalla scheda In attesa purge, oppure controlla la coda e usa Run DM.Purge.",
     "purgeNowTitle": "Pianifica e lancia subito ARKM.DM.Purge via RCON su tutte le istanze attive.",
     "confirmPurgeNow": "Eseguire la purge della tribù #{{id}} ({{name}}) ADESSO?\n\nIl pannello: 1) inserisce la tribù in ARKM_decay_pending su tutti i server, poi 2) lancia ARKM.DM.Purge via RCON su tutte le istanze ARK attive.\nIl plugin distrugge strutture e dino della tribù e scrive le righe di audit.\n\nOperazione irreversibile.",
     "purgeNowDone": "Tribù #{{id}} purgata: pianificata su {{rows}} server, RCON ok su {{ok}}/{{total}} istanze.",
@@ -1280,7 +1281,8 @@
       "players": "Giocatori",
       "pointsInCirculation": "Punti in circolo",
       "totalSpent": "Totale spesi",
-      "groups": "Gruppi"
+      "groups": "Gruppi",
+      "unavailable": "Non disponibile"
     },
     "searchPlaceholder": "Cerca per nome, EOS ID...",
     "allGroups": "Tutti i gruppi",
@@ -1458,7 +1460,8 @@
       "timedPermsUpdated": "Permessi temporanei aggiornati",
       "bannedPermanent": "Giocatore {{name}} bannato permanentemente",
       "bannedTemporary": "Giocatore {{name}} bannato per {{duration}}",
-      "syncErrors": "Errori durante sync: {{errors}}"
+      "syncErrors": "Errori durante sync: {{errors}}",
+      "syncStillRunning": "La sync è ancora in corso sul server. I nomi cambiano quando finisce: ricarica la pagina tra qualche minuto."
     },
     "errors": {
       "load": "Errore caricamento. Verifica connessione DB.",
@@ -1486,7 +1489,8 @@
     "importMissing": {
       "done": "Importati {{n}} giocatori ({{s}} già presenti).",
       "errors": {
-        "apply": "Import fallito."
+        "apply": "Import fallito.",
+        "rows": "Alcuni giocatori non sono stati importati: {{errors}}"
       },
       "banner": "Trovati {{n}} profili .arkprofile senza riga in Players. Vuoi importarli?",
       "openModal": "Importa giocatori mancanti ({{n}})",
@@ -1956,6 +1960,10 @@
       "description": "Generale, MySQL o Messaggi hanno modifiche non salvate. Il caricamento di una configurazione le sostituisce.",
       "marker": "Modifiche non salvate",
       "title": "Impostazioni non salvate"
+    },
+    "listLoad": {
+      "error": "Impossibile caricare questo elenco.",
+      "hint": "È vuoto a schermo, non sul server. Le nuove voci restano non disponibili finché non viene caricato: il pannello confronta una nuova chiave con quelle salvate."
     },
     "blockLoad": {
       "error": "Impossibile caricare questa sezione.",

@@ -127,6 +127,7 @@ export default function EventLogPage({ currentUser }: Props) {
       if (req !== eventsReq.current) return
       setEvents(res.data.events)
       setTotal(res.data.total)
+      setError('')
     } catch (e: unknown) {
       if (req === eventsReq.current) setError(extractError(e, t('eventLog.loadFailed')))
     } finally {
@@ -178,7 +179,9 @@ export default function EventLogPage({ currentUser }: Props) {
       if (page !== 0) setPage(0)
       else loadEvents()
     } catch (e: unknown) {
-      setError(extractError(e, t('eventLog.purgeFailed')))
+      // A toast, not the page alert: that alert's Retry reloads the events,
+      // and the next successful load clears it as if the purge had worked.
+      toast.error(extractError(e, t('eventLog.purgeFailed')))
     } finally {
       setPurging(false)
     }

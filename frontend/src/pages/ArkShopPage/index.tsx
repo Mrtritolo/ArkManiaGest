@@ -24,7 +24,7 @@ import { useEntryDialog } from './hooks/useEntryDialog'
 import { DeployPanel } from './components/DeployPanel'
 import { EntryDialog } from './components/EntryDialog'
 import { NoConfigView } from './components/NoConfigView'
-import { KitsTab, SellTab, ShopItemsTab } from './tabs/EntryTabs'
+import { KitsTab, ListLoadAlert, SellTab, ShopItemsTab } from './tabs/EntryTabs'
 import { GeneralTab, MessagesTab, MysqlTab } from './tabs/SettingsTabs'
 
 interface Props {
@@ -156,6 +156,9 @@ export default function ArkShopPage({ currentUser }: Props) {
           { id: 'messages', label: t('arkshop.tabs.messages'), icon: MessageSquare },
         ]}
       >
+        {tab === 'shop' && config.listFailed.shop && (
+          <ListLoadAlert onRetry={() => void config.reloadList('shop')} />
+        )}
         {tab === 'shop' && (
           <ShopItemsTab
             items={filteredShop}
@@ -163,7 +166,7 @@ export default function ArkShopPage({ currentUser }: Props) {
             onSearch={setShopSearch}
             typeFilter={shopTypeFilter}
             onTypeFilter={setShopTypeFilter}
-            canOperate={canOperate}
+            canOperate={canOperate && !config.listFailed.shop}
             expandedItem={expandedItem}
             setExpandedItem={setExpandedItem}
             onNew={() => dialog.openShopDialog()}
@@ -171,10 +174,13 @@ export default function ArkShopPage({ currentUser }: Props) {
             onDelete={key => void dialog.handleDelete('shop', key)}
           />
         )}
+        {tab === 'kits' && config.listFailed.kit && (
+          <ListLoadAlert onRetry={() => void config.reloadList('kit')} />
+        )}
         {tab === 'kits' && (
           <KitsTab
             kits={config.kits}
-            canOperate={canOperate}
+            canOperate={canOperate && !config.listFailed.kit}
             expandedItem={expandedItem}
             setExpandedItem={setExpandedItem}
             onNew={() => dialog.openKitDialog()}
@@ -182,10 +188,13 @@ export default function ArkShopPage({ currentUser }: Props) {
             onDelete={key => void dialog.handleDelete('kit', key)}
           />
         )}
+        {tab === 'sell' && config.listFailed.sell && (
+          <ListLoadAlert onRetry={() => void config.reloadList('sell')} />
+        )}
         {tab === 'sell' && (
           <SellTab
             sellItems={config.sellItems}
-            canOperate={canOperate}
+            canOperate={canOperate && !config.listFailed.sell}
             onNew={() => dialog.openSellDialog()}
             onEdit={dialog.openSellDialog}
             onDelete={key => void dialog.handleDelete('sell', key)}

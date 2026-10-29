@@ -374,7 +374,9 @@ export const machinesApi = {
     api.put<SSHMachine>(`/machines/${id}`, data),
   delete: (id: number) => api.delete(`/machines/${id}`),
   duplicate: (id: number) => api.post<SSHMachine>(`/machines/${id}/duplicate`),
-  test: (id: number) => api.post<SSHTestResult>(`/machines/${id}/test`),
+  // Above the backend's 30 s SSH connect timeout, so an unreachable host
+  // comes back with the real reason instead of axios' own timeout.
+  test: (id: number) => api.post<SSHTestResult>(`/machines/${id}/test`, undefined, { timeout: 60_000 }),
   count: () =>
     api.get<{ total: number; active: number; online: number }>("/machines/count"),
 };
@@ -391,12 +393,14 @@ export const machinesApi = {
  * never disagree about what a control means.
  */
 export const hardeningApi = {
+  // Both run harden.ps1 over SSH, which walks the firewall rules several
+  // times: minutes, not seconds, on a host with many rules.
   /** Read-only: nothing on the host is changed. */
   audit: (machineId: number) =>
-    api.get<HardeningReport>(`/machines/${machineId}/hardening`),
+    api.get<HardeningReport>(`/machines/${machineId}/hardening`, { timeout: LIFECYCLE_TIMEOUT }),
   /** Admin only. Returns a fresh audit: every fix is re-checked after it runs. */
   apply: (machineId: number, body: HardeningApplyRequest) =>
-    api.post<HardeningReport>(`/machines/${machineId}/hardening/apply`, body),
+    api.post<HardeningReport>(`/machines/${machineId}/hardening/apply`, body, { timeout: LIFECYCLE_TIMEOUT }),
 };
 
 /**
@@ -469,7 +473,9 @@ export const serverInstancesApi = {
     ),
   backup:  (id: number) =>
     api.post<InstanceActionResult>(`/servers/${id}/backup`, undefined, { timeout: LIFECYCLE_TIMEOUT }),
-  status:  (id: number) => api.post<InstanceActionResult>(`/servers/${id}/status`),
+  // The backend gives the probe 120 s on the host, plus the SSH connect.
+  status:  (id: number) =>
+    api.post<InstanceActionResult>(`/servers/${id}/status`, undefined, { timeout: 180_000 }),
   rcon:    (id: number, command: string) =>
     api.post<InstanceActionResult>(`/servers/${id}/rcon`, { command }),
 
@@ -674,7 +680,10 @@ export const playersApi = {
     const params: Record<string, unknown> = {};
     if (machineId) params.machine_id = machineId;
     if (containerName) params.container_name = containerName;
-    return api.post<SyncNamesResponse>("/players/sync-names", null, { params, timeout: 120_000 });
+    // One remote parser run per .arkprofile, machine after machine: minutes
+    // on a large cluster.  Just under nginx's 30-minute /api/ limit, so the
+    // panel gets the real answer instead of giving up while the scan runs.
+    return api.post<SyncNamesResponse>("/players/sync-names", null, { params, timeout: 25 * 60 * 1000 });
   },
 
   /**
@@ -711,13 +720,15 @@ export const playersApi = {
    * Used by the 'Wipe character cluster-wide' modal as the confirmation
    * step BEFORE the destructive DELETE call.
    */
+  // This and the wipe below open one SSH session per container, one after
+  // another: a host that is down costs the 30 s connect timeout per container.
   listCharacterFiles: (eos_id: string) =>
     api.get<{
       eos_id:      string;
       total_files: number;
       files:       Array<{ path: string; container: string; machine_id: number }>;
       errors:      string[];
-    }>(`/players/${eos_id}/character-files`),
+    }>(`/players/${eos_id}/character-files`, { timeout: LIFECYCLE_TIMEOUT }),
 
   /**
    * Wipe every .arkprofile for an EOS across the cluster (cluster-wide
@@ -732,7 +743,7 @@ export const playersApi = {
       deleted:         Array<{ path: string; container: string; machine_id: number }>;
       db_row_removed:  boolean;
       errors:          string[];
-    }>(`/players/${eos_id}/character-files`),
+    }>(`/players/${eos_id}/character-files`, { timeout: LIFECYCLE_TIMEOUT }),
 
   /**
    * Extend (or grant) the same timed permission group across a batch of
@@ -979,8 +990,10 @@ export const blueprintsApi = {
 // ---------------------------------------------------------------------------
 
 export const containersApi = {
+  // A dozen or more SSH round trips per container, including `find` walks
+  // over the ASA install tree.
   scanMachine: (machineId: number) =>
-    api.post(`/containers/machines/${machineId}/scan`),
+    api.post(`/containers/machines/${machineId}/scan`, undefined, { timeout: 180_000 }),
   getMachineContainers: (machineId: number) =>
     api.get(`/containers/machines/${machineId}/containers`),
   /**
@@ -1004,7 +1017,7 @@ export const containersApi = {
    */
   getAllContainers: () => api.get("/containers/containers"),
   rescanContainer: (machineId: number, containerName: string) =>
-    api.post(`/containers/machines/${machineId}/containers/${containerName}/rescan`),
+    api.post(`/containers/machines/${machineId}/containers/${containerName}/rescan`, undefined, { timeout: 180_000 }),
   readFile: (machineId: number, containerName: string, pathKey: string) =>
     api.get(
       `/containers/machines/${machineId}/containers/${containerName}/file`,

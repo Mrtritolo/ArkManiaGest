@@ -52,6 +52,7 @@ export default function RareDinosPage({ currentUser }: Props) {
     try {
       const res = await arkRareDinosApi.list()
       setDinos(res.data.dinos)
+      setError('')
     } catch (e: unknown) {
       setError(extractError(e, t('rareDinos.loadFailed')))
     } finally { setLoading(false) }
@@ -118,14 +119,15 @@ export default function RareDinosPage({ currentUser }: Props) {
       tone: 'danger',
     })
     if (!ok) return
-    setClearingSpawns(true); setError('')
+    setClearingSpawns(true)
     try {
       const res = await arkRareDinosApi.clearSpawns()
       toast.success(t('rareDinos.clearSpawnsDone', { count: res.data.deleted }))
     } catch (e: unknown) {
-      // The api.ts response interceptor already turns a Pydantic array
-      // `detail` into a string, so it is always safe to render here.
-      setError(extractError(e, t('rareDinos.clearSpawnsFailed')))
+      // A toast, not the page alert: that alert's Retry reloads the dino
+      // pool, which is not what failed here.  The api.ts response
+      // interceptor already turns a Pydantic array `detail` into a string.
+      toast.error(extractError(e, t('rareDinos.clearSpawnsFailed')))
     } finally {
       setClearingSpawns(false)
     }

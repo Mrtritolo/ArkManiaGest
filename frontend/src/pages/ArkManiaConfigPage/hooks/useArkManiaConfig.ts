@@ -34,7 +34,12 @@ export function useArkManiaConfig(urlModule: string | undefined, navigate: Navig
   const [loading, setLoading] = useState(true)
   const [moduleLoading, setModuleLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  // Kept apart: a module load that succeeds must not hide that the module,
+  // server or permission-group list failed to load.
+  const [bootError, setBootError] = useState('')
+  const [moduleError, setModuleError] = useState('')
+  // Bumped by Retry to re-run the module load through its effect.
+  const [moduleReload, setModuleReload] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [permGroups, setPermGroups] = useState<string[]>([])
   // Config keys whose key-value editor holds duplicate keys (a change not yet passed up).
@@ -44,30 +49,30 @@ export function useArkManiaConfig(urlModule: string | undefined, navigate: Navig
   // Only the latest loadModuleConfig call may apply its result.
   const moduleSeq = useRef(0)
 
-  // Loaded once: this used to re-run on every sidebar click (the click
-  // changes the URL), and a late response could switch back to an older module.
-  useEffect(() => {
-    async function load() {
-      const [modRes, srvRes, grpRes] = await Promise.allSettled([
-        arkmaniaApi.listModules(),
-        arkmaniaApi.listServers(),
-        arkmaniaApi.getPermissionGroups(),
-      ])
-      // Servers and permission groups only feed selectors: when one of them
-      // fails (e.g. no PermissionGroups table) the editor still loads.
-      if (modRes.status === 'fulfilled') {
-        setModules(modRes.value.data.modules)
-        const first = modRes.value.data.modules[0]?.prefix || ''
-        setActiveModule(prev => prev || first)
-      }
-      if (srvRes.status === 'fulfilled') setServers(srvRes.value.data.servers)
-      if (grpRes.status === 'fulfilled') setPermGroups(grpRes.value.data.groups)
-      const failed = [modRes, srvRes, grpRes].find((r): r is PromiseRejectedResult => r.status === 'rejected')
-      if (failed) setError(extractError(failed.reason, tRef.current('arkmaniaConfig.loadFailed')))
-      setLoading(false)
+  // Loaded on mount and by Retry only: this used to re-run on every sidebar
+  // click (the click changes the URL), and a late response could switch back
+  // to an older module.
+  const loadBootstrap = useCallback(async () => {
+    const [modRes, srvRes, grpRes] = await Promise.allSettled([
+      arkmaniaApi.listModules(),
+      arkmaniaApi.listServers(),
+      arkmaniaApi.getPermissionGroups(),
+    ])
+    // Servers and permission groups only feed selectors: when one of them
+    // fails (e.g. no PermissionGroups table) the editor still loads.
+    if (modRes.status === 'fulfilled') {
+      setModules(modRes.value.data.modules)
+      const first = modRes.value.data.modules[0]?.prefix || ''
+      setActiveModule(prev => prev || first)
     }
-    void load()
+    if (srvRes.status === 'fulfilled') setServers(srvRes.value.data.servers)
+    if (grpRes.status === 'fulfilled') setPermGroups(grpRes.value.data.groups)
+    const failed = [modRes, srvRes, grpRes].find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    setBootError(failed ? extractError(failed.reason, tRef.current('arkmaniaConfig.loadFailed')) : '')
+    setLoading(false)
   }, [])
+
+  useEffect(() => { void loadBootstrap() }, [loadBootstrap])
 
   useEffect(() => { if (urlModule) setActiveModule(urlModule) }, [urlModule])
 
@@ -83,15 +88,15 @@ export function useArkManiaConfig(urlModule: string | undefined, navigate: Navig
       if (seq !== moduleSeq.current) return
       setItems(res.data.items)
       setSearchQuery('')
-      setError('')
+      setModuleError('')
     } catch (err) {
       if (seq !== moduleSeq.current) return
       setItems([])
-      setError(extractError(err, tRef.current('arkmaniaConfig.loadFailed')))
+      setModuleError(extractError(err, tRef.current('arkmaniaConfig.loadFailed')))
     } finally { if (seq === moduleSeq.current) setModuleLoading(false) }
   }, [activeModule, selectedServer])
 
-  useEffect(() => { void loadModuleConfig() }, [loadModuleConfig])
+  useEffect(() => { void loadModuleConfig() }, [loadModuleConfig, moduleReload])
 
   const hasChanges = Object.keys(editedValues).length > 0 || duplicateKeys.size > 0
 
@@ -200,12 +205,26 @@ export function useArkManiaConfig(urlModule: string | undefined, navigate: Navig
     URL.revokeObjectURL(url)
   }
 
+  const dismissError = useCallback(() => { setBootError(''); setModuleError('') }, [])
+
+  // Reload only what failed.  A failed module list leaves no active module,
+  // so the module loader alone had nothing to load; the module the bootstrap
+  // picks is loaded by the effect.  A failed module load is re-run through
+  // the effect too, never through this render's closure: the operator may
+  // switch module or server while the bootstrap is in flight.  A failed
+  // module load also left no edits to lose, unlike a bootstrap-only error.
+  const retry = useCallback(async () => {
+    if (bootError) await loadBootstrap()
+    if (moduleError) setModuleReload(n => n + 1)
+  }, [bootError, moduleError, loadBootstrap])
+
   return {
     modules, activeModule, items, editedValues, servers, selectedServer,
-    loading, moduleLoading, saving, error, setError, searchQuery, setSearchQuery,
+    loading, moduleLoading, saving, error: moduleError || bootError, dismissError,
+    searchQuery, setSearchQuery,
     permGroups, duplicateKeys, discardSeq, hasChanges, invalidJsonKeys,
     handleTabClick, handleServerChange, handleValueChange, handleDuplicatesChange,
-    handleDiscard, handleSave, handleExportJSON, retry: loadModuleConfig,
+    handleDiscard, handleSave, handleExportJSON, retry,
   }
 }
 
