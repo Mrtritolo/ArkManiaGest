@@ -16,9 +16,9 @@ backup / delete / rcon) goes through :func:`run_action`, which:
    streams; updates the instance ``status`` column when appropriate.
 6. Returns an :class:`ActionResult` dict for the HTTP layer.
 
-Long-running actions (POK-manager ``-update`` can take 10+ minutes) rely
-on ``SSH_TIMEOUT`` from the panel settings; tweak it in ``.env`` for
-slow hosts.  RCON calls are short and finish in milliseconds.
+Long-running actions (POK-manager ``-update`` can take 10+ minutes) are
+capped by ``SSH_EXEC_TIMEOUT`` (2 h); raise it in ``.env`` for slow links.
+RCON calls are short and finish in milliseconds.
 
 The executor stays synchronous internally (paramiko is blocking) but is
 designed to be called from async handlers via ``asyncio.to_thread`` so
@@ -43,7 +43,7 @@ from app.core.store import (
     set_instance_status_async,
 )
 from app.ssh import windows_native as win
-from app.ssh.manager import SSHManager
+from app.ssh.manager import RemoteCommandTimeout, SSHManager
 from app.ssh.platform import PlatformAdapter
 from app.ssh.rcon import RconError, rcon_execute
 
@@ -62,6 +62,17 @@ _STATUS_TRANSITIONS: Dict[str, tuple] = {
     "update":  ("updating", "stopped",  "error"),
     "delete":  ("stopping", "stopped",  "error"),
 }
+
+
+_POK_PATH_PROMPT = "POK-Manager directory has changed"
+_POK_PATH_PROMPT_HELP = (
+    "POK-manager found that its directory moved and asked whether to update "
+    "the docker-compose volume paths. The panel cannot answer prompts, so the "
+    "empty answer was saved as AUTO_UPDATE_PATHS=false in "
+    "config/POK-manager/path_preferences.txt and the containers keep the old "
+    "paths. On the host, delete that file and run the action once from a "
+    "shell to answer the prompt."
+)
 
 
 @dataclass
@@ -229,12 +240,14 @@ def _rcon_runner(machine: dict, instance: dict, rcon_cmd: str) -> Callable[[], t
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def _run_remote_sync(machine: dict, command: str) -> tuple:
+def _run_remote_sync(machine: dict, command: str, timeout: Optional[float] = None) -> tuple:
     """
     Blocking helper: open SSH, run *command*, close.
 
-    Returns ``(stdout, stderr, exit_code)``.  Connection failures surface as
-    ``("", <error message>, -1)`` so callers can log them uniformly.
+    Returns ``(stdout, stderr, exit_code)``.  Connection failures surface
+    as ``("", <error message>, -1)`` so callers can log them uniformly; a
+    command outliving *timeout* (default ``SSH_EXEC_TIMEOUT``) keeps what it
+    printed, which is all the operator has to see where it stuck.
     """
     ssh = SSHManager(
         host=machine["hostname"],
@@ -249,7 +262,9 @@ def _run_remote_sync(machine: dict, command: str) -> tuple:
     except Exception as exc:  # pragma: no cover - network dependant
         return ("", f"SSH connection failed: {exc}", -1)
     try:
-        return ssh.execute(command)
+        return ssh.execute(command, timeout=timeout)
+    except RemoteCommandTimeout as exc:
+        return (exc.stdout, "\n".join(filter(None, [exc.stderr, f"Remote exec failed: {exc}"])), -1)
     except Exception as exc:
         return ("", f"Remote exec failed: {exc}", -1)
     finally:
@@ -269,6 +284,7 @@ async def run_action(
     command: Optional[str] = None,
     runner: Optional[Callable[[], tuple]] = None,
     meta: Optional[str] = None,
+    timeout: Optional[float] = None,
 ) -> ActionResult:
     """
     Execute a lifecycle action for a single instance and log the outcome.
@@ -300,6 +316,9 @@ async def run_action(
     meta:
         Optional free-form JSON/string to store alongside the action row
         (for example the RCON command text or the update mod list).
+    timeout:
+        Seconds *command* may run on the host before it is cut off and the
+        action fails (default ``SSH_EXEC_TIMEOUT``).
     """
     # The command arrives already wrapped for the target platform: every
     # exec_* helper below builds it through the adapter (``pok()`` and
@@ -335,10 +354,18 @@ async def run_action(
     if runner is not None:
         stdout, stderr, rc = await asyncio.to_thread(runner)
     elif wrapped:
-        stdout, stderr, rc = await asyncio.to_thread(_run_remote_sync, machine, wrapped)
+        stdout, stderr, rc = await asyncio.to_thread(_run_remote_sync, machine, wrapped, timeout)
     else:
         stdout, stderr, rc = ("", "No command provided for this action.", -1)
     duration_ms = int((time.monotonic() - started) * 1000)
+
+    # Remote stdin is closed (SSHManager.execute), so a POK prompt reads an
+    # empty answer.  Every one on the lifecycle paths takes a harmless
+    # default except this one: it saves "no" for good and goes on to start
+    # the containers on the old volume paths, so it must not pass as success.
+    if _POK_PATH_PROMPT in stdout or _POK_PATH_PROMPT in stderr:
+        rc = rc or 1
+        stderr = "\n".join(filter(None, [stderr, _POK_PATH_PROMPT_HELP]))
 
     status = "success" if rc == 0 else "failed"
 
@@ -610,6 +637,9 @@ async def exec_status_probe(
         user=user,
         command=cmd,
         meta="status-probe",
+        # One docker inspect / service query: a daemon that does not answer
+        # in two minutes is not going to, and the operator retries Refresh.
+        timeout=120,
     )
 
     docker_state = (result.stdout or "").strip().lower()

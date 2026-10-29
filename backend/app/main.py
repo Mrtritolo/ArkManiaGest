@@ -18,6 +18,13 @@ from app.core.config import APP_VERSION, server_settings
 IS_PRODUCTION = not server_settings.DEBUG
 log = logging.getLogger("arkmaniagest")
 
+# Threads behind asyncio.to_thread: SSH sessions, sync DB reads, bcrypt.
+# asyncio's default is min(32, CPUs + 4), six on a 2-vCPU host, so a few
+# long host actions queued login and every other blocking call behind them.
+# The threads mostly wait on the network, and each store read opens its own
+# DB connection, well inside MariaDB's default max_connections (151).
+_WORKER_THREADS = 64
+
 # Surfaced via /health so operators can spot a botched schema migration
 # without grepping journalctl.  The lifespan handler intentionally swallows
 # create_app_tables / create_marketplace_tables failures (so /health keeps
@@ -46,6 +53,12 @@ async def lifespan(app: FastAPI):
       - Dispose the async SQLAlchemy engine
     """
     # --- Startup ---
+    import asyncio as _asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    _asyncio.get_running_loop().set_default_executor(
+        ThreadPoolExecutor(max_workers=_WORKER_THREADS, thread_name_prefix="arkm-worker")
+    )
+
     # 1. Generate JWT_SECRET / FIELD_ENCRYPTION_KEY if not present in .env
     server_settings.ensure_secrets()
 
@@ -82,6 +95,28 @@ async def lifespan(app: FastAPI):
             )
             _SCHEMA_INIT_ERRORS.append(f"panel: {type(exc).__name__}")
 
+        # 4b. Actions a previous process never finished (restart mid-update).
+        #     Bounded: with the DB unreachable, a third unbounded connect
+        #     attempt pushed boot past the 5-minute health cron.
+        from app.core.store import fail_interrupted_actions_async
+        from app.db import session as db_session
+
+        async def _close_interrupted() -> tuple[int, int]:
+            async with db_session._async_session() as session:
+                counts = await fail_interrupted_actions_async(session)
+                await session.commit()
+                return counts
+
+        try:
+            closed, reset = await _asyncio.wait_for(_close_interrupted(), 15)
+            if closed or reset:
+                log.warning(
+                    "Closed %s interrupted instance action(s), %s instance(s) set to error",
+                    closed, reset,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Closing interrupted instance actions failed: %s", exc)
+
         # 5. Initialise the plugin DB engine (falls back to panel DSN when
         #    no PLUGIN_DB_* variables are configured in .env)
         init_plugin_engine(
@@ -113,7 +148,6 @@ async def lifespan(app: FastAPI):
         )
 
     # 6. GDPR retention job: purge expired audit/action rows daily.
-    import asyncio as _asyncio
     from app.services.retention import retention_loop
     retention_task = _asyncio.create_task(retention_loop())
 

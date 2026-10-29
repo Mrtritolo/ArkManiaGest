@@ -13,7 +13,9 @@ pydantic>=2.10
 pydantic-settings>=2.7
 
 # --- Database (MariaDB) ---
-sqlalchemy>=2.0
+# [asyncio] pulls greenlet, which sqlalchemy.ext.asyncio needs: from 2.1 it
+# is no longer a default dependency, and a fresh install could not boot.
+sqlalchemy[asyncio]>=2.0
 aiomysql>=0.2.0          # Driver async MySQL/MariaDB (pure Python, no Rust)
 pymysql>=1.1             # Driver sync (per aiomysql)
 

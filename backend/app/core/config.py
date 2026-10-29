@@ -17,7 +17,7 @@ from app.core.env_writer import get_env_file_path, update_env_file
 # duplicated as a literal in main.py (twice) and as the fallback of the
 # app_version setting, which is how the panel kept advertising 3.5.5 long
 # after 3.5.5 shipped.  Bump this and frontend/package.json together.
-APP_VERSION: str = "4.16.2"
+APP_VERSION: str = "4.16.3"
 
 
 class ServerSettings(BaseSettings):
@@ -96,7 +96,12 @@ class ServerSettings(BaseSettings):
 
     # --- Optional ---
     ALLOWED_IPS: str = ""
+    # SSH connect timeout (s).
     SSH_TIMEOUT: int = 30
+    # Ceiling for one remote command (s), above the longest legitimate one
+    # (a first POK -update downloading the whole ASA build).  A command still
+    # running then is cut off and its action fails; raise it for slow links.
+    SSH_EXEC_TIMEOUT: int = 2 * 60 * 60
     # GDPR/NIS2 data-retention horizon (days) for panel-owned history
     # tables (arkmaniagest_audit_log, ARKM_instance_actions).  Rows older
     # than this are purged daily by app/services/retention.py.  Set to 0
@@ -198,6 +203,7 @@ class ServerSettings(BaseSettings):
         "DB_PORT",
         "PLUGIN_DB_PORT",
         "SSH_TIMEOUT",
+        "SSH_EXEC_TIMEOUT",
         mode="before",
     )
     @classmethod

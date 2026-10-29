@@ -14,13 +14,28 @@ Authentication order (first available method wins):
 
 import os
 import shlex
+import threading
 from typing import Optional, Tuple
 
 import paramiko
 
+from app.core.config import server_settings
+
 DEFAULT_SSH_PORT: int = 22
 DEFAULT_SSH_TIMEOUT: int = 30
 DEFAULT_SSH_KEY_PATH: str = "/home/arkmania/.ssh/id_ed25519"
+# Keepalive interval: without it a link that dies silently mid-command
+# is never noticed and the read below waits on it forever.
+SSH_KEEPALIVE_S: int = 30
+
+
+class RemoteCommandTimeout(TimeoutError):
+    """A remote command outlived its budget; carries what it printed until then."""
+
+    def __init__(self, message: str, stdout: str, stderr: str) -> None:
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 class SSHManager:
@@ -138,6 +153,10 @@ class SSHManager:
                 f"{exc} | Tried: {', '.join(tried)}"
             ) from exc
 
+        transport = self._client.get_transport()
+        if transport is not None:
+            transport.set_keepalive(SSH_KEEPALIVE_S)
+
     def disconnect(self) -> None:
         """Close the SSH connection and release resources."""
         if self._client:
@@ -146,16 +165,24 @@ class SSHManager:
 
     # ── Remote command execution ──────────────────────────────────────────
 
-    def execute(self, command: str, stdin: Optional[bytes] = None) -> Tuple[str, str, int]:
+    def execute(
+        self,
+        command: str,
+        stdin: Optional[bytes] = None,
+        timeout: Optional[float] = None,
+    ) -> Tuple[str, str, int]:
         """
         Execute a shell command on the remote host and wait for it to finish.
 
         Args:
             command: Shell command string to execute.
-            stdin:   Bytes written to the command's standard input, which is
-                     then closed.  Use it for payloads: the command itself
-                     reaches the remote shell as one argument, capped at
-                     131072 bytes on Linux.
+            stdin:   Bytes written to the command's standard input.  Use it
+                     for payloads: the command itself reaches the remote
+                     shell as one argument, capped at 131072 bytes on Linux.
+                     Standard input is closed either way.
+            timeout: Seconds the command may run before the channel is
+                     closed and :class:`RemoteCommandTimeout` raised
+                     (default ``SSH_EXEC_TIMEOUT``).
 
         Returns:
             A ``(stdout, stderr, exit_code)`` tuple.  Both streams are decoded
@@ -164,26 +191,63 @@ class SSHManager:
 
         Raises:
             ConnectionError: The SSH client is not connected.
+            RemoteCommandTimeout: The command did not finish within *timeout*.
             UnicodeDecodeError: stdout is not valid UTF-8.
         """
         if not self._client:
             raise ConnectionError("SSH client is not connected. Call connect() first.")
+        if timeout is None:
+            timeout = server_settings.SSH_EXEC_TIMEOUT
 
         _stdin, stdout, stderr = self._client.exec_command(command)
-        if stdin is not None:
-            try:
+        channel = stdout.channel
+        # EOF on stdin even with no payload: a remote prompt (POK-manager
+        # asks [Y/n] when the docker socket permissions look wrong) waited
+        # for an answer forever.  On EOF `read` gets an empty answer; see
+        # pok_executor for the one POK prompt where that is not harmless.
+        try:
+            if stdin is not None:
                 _stdin.write(stdin)
-                _stdin.close()
-            except OSError:
-                # The command exited before reading all of it (e.g. its
-                # redirect failed); the exit status below reports that.
+            _stdin.close()
+        except OSError:
+            # The command exited before reading all of it (e.g. its
+            # redirect failed); the exit status below reports that.
+            pass
+
+        # Closing the channel wakes the blocked reads below.  sshd then closes
+        # the command's output pipes: one that keeps writing dies of SIGPIPE,
+        # a silent one may run on.
+        expired = threading.Event()
+
+        def _expire() -> None:
+            expired.set()
+            try:
+                channel.close()
+            except Exception:
+                # The reader already woke and closed the transport: the
+                # close message has nowhere to go, and nothing is lost.
                 pass
-        # Drain the streams before waiting for the exit status: once the
-        # output exceeds the channel window (2 MB) the remote side blocks
-        # until it is read, and recv_exit_status() would wait forever.
-        out = stdout.read()
-        err = stderr.read()
-        exit_code = stdout.channel.recv_exit_status()
+
+        timer = threading.Timer(timeout, _expire)
+        timer.daemon = True
+        timer.start()
+        try:
+            # Drain the streams before waiting for the exit status: once the
+            # output exceeds the channel window (2 MB) the remote side blocks
+            # until it is read, and recv_exit_status() would wait forever.
+            out = stdout.read()
+            err = stderr.read()
+            exit_code = channel.recv_exit_status()
+        finally:
+            timer.cancel()
+        # -1 is paramiko's "closed without an exit status"; a command that
+        # finished just as the timer fired keeps its real one.
+        if expired.is_set() and exit_code == -1:
+            raise RemoteCommandTimeout(
+                f"Remote command did not finish within {timeout:g} s.",
+                out.decode("utf-8", errors="replace").strip(),
+                err.decode("utf-8", errors="replace").strip(),
+            )
 
         # stdout stays strict: callers read files with `cat` and write the
         # text back, so a lossy decode would corrupt a UTF-16 or Latin-1 file

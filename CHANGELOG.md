@@ -7,6 +7,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.3] - 2026-10-29
+
+### Fixed
+
+- **A host action could hang forever and take the panel down with it.**
+  Remote commands ran with standard input left open and with no time limit.
+  When the docker socket permissions looked wrong, POK-manager asked
+  `[Y/n]` and waited for an answer that never came. The request hung, its
+  worker thread stayed blocked for the life of the process, and the action
+  row stayed `running`. Standard input is now always closed, so `read`
+  gets an empty answer. POK's "directory has changed" prompt is the one
+  where that is not harmless: POK saves the "no" for good, so the action
+  is marked failed with the steps to answer it by hand. A command still
+  running after `SSH_EXEC_TIMEOUT` (new `.env` setting, default 2 hours;
+  2 minutes for the status probe) is cut off and the action fails, keeping
+  what it printed. A 30-second keepalive notices a link that dies
+  mid-command.
+- **A few long SSH actions made login and other pages stop responding.**
+  Every blocking call (SSH sessions, store reads, password hashing) ran on
+  asyncio's default thread pool, which has 6 threads on a 2-vCPU host.
+  Some hung or long host actions were enough to queue login behind them,
+  while `/health` stayed green, so the health cron never restarted the
+  panel. The pool now has 64 threads.
+- **Actions interrupted by a restart stayed "running" forever.** The
+  action row and the instance status are written only once the host
+  command returns. A panel restart in between (self-update, the health cron,
+  a crash) left the row `running` and the instance `starting` / `stopping` /
+  `updating`. At boot, such rows are now closed as `failed` with a note, and
+  the instances go to `error` until a status probe says otherwise.
+- **A fresh install could not start.** SQLAlchemy 2.1 no longer installs
+  `greenlet` unless asked to, and `sqlalchemy.ext.asyncio` cannot be
+  imported without it. `requirements.txt` now asks for
+  `sqlalchemy[asyncio]`. On upgrade, `server-update.sh` sees the changed
+  requirements and reinstalls them.
+
 ## [4.16.2] - 2026-10-29
 
 ### Fixed

@@ -817,8 +817,8 @@ async def update_instance_binary(
 
     This call can take 10+ minutes on a slow disk; the HTTP response only
     returns when the remote bash finishes, which is why the panel polls
-    ``/actions`` for progress.  Tune ``SSH_TIMEOUT`` in the backend ``.env``
-    for very slow hosts.
+    ``/actions`` for progress.  ``SSH_EXEC_TIMEOUT`` in the backend ``.env``
+    caps it (2 h by default); raise it for very slow links.
 
     Note: since POK-manager 2.x ``-update`` is a SHARED-installation
     operation -- it checks the server files and Docker image for the whole

@@ -832,6 +832,42 @@ async def finalise_action_async(
     )
 
 
+async def fail_interrupted_actions_async(db: AsyncSession) -> tuple[int, int]:
+    """
+    Close what a previous panel process left mid-action.
+
+    ``run_action`` finalises its row and the instance status only after the
+    host command returns.  A restart in between (self-update, the health
+    cron restarting a wedged backend, a crash) left the row ``running`` and
+    the instance ``starting`` / ``stopping`` / ``updating`` for good.  Called
+    once at boot, before this process can have started an action of its own.
+
+    Returns ``(actions closed, instances reset)``.  The instances go to
+    ``error``, what a failed action leaves; a status probe tells the truth.
+    """
+    now = datetime.now(timezone.utc)
+    actions = await db.execute(
+        text(
+            "UPDATE ARKM_instance_actions SET status = 'failed', "
+            "stderr = CONCAT_WS(:nl, NULLIF(stderr, ''), :note), completed_at = :now "
+            "WHERE status IN ('pending', 'running')"
+        ),
+        {
+            "nl":   "\n",
+            "note": "Interrupted: the panel restarted before the action finished.",
+            "now":  now,
+        },
+    )
+    instances = await db.execute(
+        text(
+            "UPDATE ARKM_server_instances SET status = 'error', last_status_at = :now "
+            "WHERE status IN ('starting', 'stopping', 'updating')"
+        ),
+        {"now": now},
+    )
+    return actions.rowcount, instances.rowcount
+
+
 async def list_actions_async(
     db: AsyncSession,
     *,
