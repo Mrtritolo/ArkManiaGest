@@ -182,9 +182,11 @@ export default function ServersPage({ currentUser }: Props) {
     }
   }
 
-  /** Enter commits an inline edit, Escape abandons it. */
+  /** Enter in a field commits an inline edit, Escape abandons it. */
   function onEditKeyDown(event: KeyboardEvent<HTMLTableRowElement>) {
-    if (event.key === 'Enter') {
+    // Only from a text field: Enter on the row's Cancel button bubbled up
+    // here, and preventDefault turned "cancel" into a save.
+    if (event.key === 'Enter' && (event.target as HTMLElement).tagName === 'INPUT') {
       event.preventDefault()
       void saveEdit()
     } else if (event.key === 'Escape') {

@@ -24,7 +24,10 @@ interface Args {
 
 export function usePlayerMaps({ selectedPlayer, shownPlayerRef, syncContainers, toast, t }: Args) {
   const [playerMaps, setPlayerMaps] = useState<PlayerMapResult[]>([]);
-  const [mapsLoading, setMapsLoading] = useState(false);
+  // The player the running search is for: a slow sweep for A must not
+  // show B's button as busy (and swallow its clicks) after a switch.
+  const [mapsLoadingFor, setMapsLoadingFor] = useState<number | null>(null);
+  const mapsLoading = mapsLoadingFor !== null && mapsLoadingFor === selectedPlayer?.id;
   const [mapsSearched, setMapsSearched] = useState(false);
   const [mapsErrors, setMapsErrors] = useState<string[]>([]);
   const [mapsDebug, setMapsDebug] = useState<Record<string, unknown>[]>([]);
@@ -46,7 +49,7 @@ export function usePlayerMaps({ selectedPlayer, shownPlayerRef, syncContainers, 
   async function handleFindMaps() {
     if (!selectedPlayer) return;
     const id = selectedPlayer.id;
-    setMapsLoading(true);
+    setMapsLoadingFor(id);
     setMapsErrors([]);
     setMapsSearched(false);
     setMapsDebug([]);
@@ -60,7 +63,8 @@ export function usePlayerMaps({ selectedPlayer, shownPlayerRef, syncContainers, 
     } catch (err) {
       if (shownPlayerRef.current === id) toast.error(extractError(err, t("players.errors.mapSearch")));
     } finally {
-      setMapsLoading(false);
+      // Only if no newer search (for another player) took over meanwhile.
+      setMapsLoadingFor(cur => (cur === id ? null : cur));
     }
   }
 

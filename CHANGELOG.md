@@ -7,6 +7,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.5] - 2026-10-29
+
+### Fixed
+
+- **The status probe marked running servers as missing.** It turned every
+  Docker failure into `not-found`: a socket that denies the SSH user, a
+  daemon that is down, Docker not installed. The instance was then stored
+  as `missing`, and the action logged as a success. Only Docker's "No such
+  object/container" means not-found now, not "no such file", which is also
+  what a stopped daemon's missing socket says. Permission denied is retried
+  with `sudo -n docker`, the way POK-manager runs Docker unless told
+  otherwise. Any other failure fails the action with Docker's message and
+  leaves the status alone. Warnings on stderr (sudo, Docker config) no
+  longer spoil the state that is read back.
+- **The container scan took "unreadable" for "empty".** When
+  `/gameadmin/containers` (the only layout the scan reads) could not be
+  listed, the scan reported success with 0 containers and replaced the
+  stored map with an empty one. An unreadable directory is now an error
+  that leaves the stored data alone. A directory that does not exist still
+  clears it, since there is nothing left to point at. Hosts without that
+  layout (POK, Windows) are reported as skipped with the reason, not as
+  scanned, and Scan all no longer counts them as failures.
+- **Copying a character to an unreachable host left an SSH session open.**
+  The source session was closed only once both sides had connected, so
+  every failed copy to a down or misconfigured destination left one open.
+- **Players page.**
+  - "Search maps" stayed busy, and ignored clicks, for the next player
+    while the previous player's sweep ran.
+  - After a cluster-wide character wipe, the player stayed in the list and
+    in the panel, where every action answered 404. The list and counters
+    reload now, and the panel closes when the Players row went with the
+    files.
+- **Server list: Enter on the Cancel button saved the row.** Enter saves
+  an inline edit only from a text field now.
+
 ## [4.16.4] - 2026-10-29
 
 ### Fixed

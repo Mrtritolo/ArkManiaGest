@@ -34,10 +34,14 @@ export function useOrphanImport({ machines, loadDiscoveredCache, loadInstances, 
     if (machines.length === 0) return;
     setScanFailures([]);
     const failures: string[] = [];
+    // Hosts without a layout the scan reads (POK, Windows): not failures,
+    // or every Scan all would flag them again.
+    const skipped: string[] = [];
     for (const m of machines) {
       setScanningMachineId(m.id);
       try {
-        await containersApi.scanMachine(m.id);
+        const res = await containersApi.scanMachine(m.id);
+        if (res.data?.skipped) skipped.push(m.name);
       } catch (e) {
         // A host that is down must not be reported as "scanned, 0 found".
         failures.push(`${m.name}: ${extractError(e, t("instances.errors.scan"))}`);
@@ -46,8 +50,11 @@ export function useOrphanImport({ machines, loadDiscoveredCache, loadInstances, 
     setScanningMachineId(null);
     await loadDiscoveredCache();
     setScanFailures(failures);
-    const ok = machines.length - failures.length;
+    const ok = machines.length - failures.length - skipped.length;
     if (ok > 0) toast.success(t("instances.scanDone", { count: ok }));
+    if (skipped.length > 0) {
+      toast.info(t("instances.scanSkipped", { count: skipped.length, names: skipped.join(", ") }));
+    }
     if (failures.length > 0) toast.error(t("instances.scanFailed", { count: failures.length }));
   }, [loadDiscoveredCache, machines, t, toast]);
 

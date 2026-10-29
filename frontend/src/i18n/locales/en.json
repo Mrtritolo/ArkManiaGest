@@ -2519,6 +2519,7 @@
     "scanAll": "Scan machines",
     "scanning": "Scanning…",
     "scanDone": "Scanned {{count}} machine(s).",
+    "scanSkipped": "{{count}} machine(s) skipped, they have no container directory the scan can read: {{names}}",
     "orphansTitle": "Discovered containers ({{count}})",
     "orphansHint": "Containers found by SSH that are NOT yet registered as managed instances. Click Import to promote one into the panel DB.",
     "orphanPlugins": "Plugins: {{plugins}}",

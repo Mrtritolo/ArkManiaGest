@@ -30,7 +30,7 @@ from app.ssh.manager import SSHManager
 from app.ssh.scanner import (
     scan_containers, scan_single_container,
     read_remote_file, write_remote_file, backup_remote_file,
-    CONTAINER_BASE,
+    CONTAINER_BASE, ContainerBaseMissing, ContainerBaseUnreadable,
 )
 
 router = APIRouter()
@@ -150,10 +150,34 @@ def scan_machine_containers(machine_id: int):
     """
     machine = _get_machine_or_404(machine_id)
     base_path = CONTAINER_BASE
+    # The scan reads the ServerForge layout (one directory per container
+    # under CONTAINER_BASE) with POSIX tools, without the platform wrapper:
+    # a Windows host (native or WSL) has nothing it can read.  Said so as a
+    # skip, not an error, so Scan all does not flag such hosts on every run.
+    if machine.get("os_type") == "windows":
+        return {
+            "success": True, "skipped": True, "machine": machine["name"],
+            "containers_found": 0, "containers": [],
+            "reason": "Windows host: the container scan reads Linux container "
+                      f"directories ({base_path}).",
+        }
 
+    skipped_reason = ""
     try:
         with _ssh_for_machine(machine) as ssh:
             containers = scan_containers(ssh, base_path)
+    except ContainerBaseMissing:
+        # Really nothing there (a POK host, or containers removed): store
+        # that, so stale entries do not outlive the directory.
+        containers = []
+        skipped_reason = f"No {base_path} on this host: the container scan only reads that layout."
+    except ContainerBaseUnreadable as exc:
+        # It exists but could not be read: do not take that for "empty".
+        raise HTTPException(
+            status_code=500,
+            detail=f"{base_path} could not be listed on {machine['name']} ({exc}). "
+                   "The data stored for this machine was left as it was.",
+        ) from None
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"SSH error: {exc}") from exc
 
@@ -170,9 +194,11 @@ def scan_machine_containers(machine_id: int):
 
     return {
         "success":           True,
+        "skipped":           bool(skipped_reason),
         "machine":           machine["name"],
         "containers_found":  len(containers),
         "containers":        containers,
+        "reason":            skipped_reason or None,
     }
 
 

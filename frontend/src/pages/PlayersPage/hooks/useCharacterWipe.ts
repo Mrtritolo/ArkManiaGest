@@ -30,9 +30,11 @@ interface Args {
   toast: ToastApi;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
   t: TFunction;
+  /** After a wipe: the backend may have deleted the Players row as well. */
+  onWiped: (eosId: string, rowRemoved: boolean) => void;
 }
 
-export function useCharacterWipe({ selectedPlayer, toast, confirm, t }: Args) {
+export function useCharacterWipe({ selectedPlayer, toast, confirm, t, onWiped }: Args) {
   const [wipeOpen, setWipeOpen] = useState(false);
   const [wipePreview, setWipePreview] = useState<WipePreview | null>(null);
   const [wipeLoading, setWipeLoading] = useState(false);
@@ -96,6 +98,7 @@ export function useCharacterWipe({ selectedPlayer, toast, confirm, t }: Args) {
       }
       setWipeOpen(false);
       setWipePreview(null);
+      onWiped(wipePreview.eos_id, res.data.db_row_removed);
     } catch (err) {
       toast.error(extractError(err, t("players.wipe.errors.delete")));
     } finally {

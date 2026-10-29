@@ -104,6 +104,19 @@ export function usePlayerDetail({ canOperate, toast, confirm, loadPlayers, loadS
   }
 
   /**
+   * The player's Players row was deleted (cluster-wide character wipe): close
+   * the panel if it shows them. No discard prompt, there is nothing left to
+   * save an edit to; every action from the panel would answer 404.
+   */
+  function dropPlayer(eosId: string) {
+    if (selectedPlayer?.eos_id !== eosId) return;
+    detailReqRef.current++;
+    shownPlayerRef.current = null;
+    setDetailLoading(false);
+    setSelectedPlayer(null);
+  }
+
+  /**
    * A bulk grant/align rewrites TimedPermissionGroups server side. If the
    * panel shows one of those players, its editor still holds the old list and
    * "Save timed perms" would PUT it back over the bulk change.
@@ -209,6 +222,7 @@ export function usePlayerDetail({ canOperate, toast, confirm, loadPlayers, loadS
     confirmDiscard,
     openDetail,
     closeDetail,
+    dropPlayer,
     shownPlayerRef,
     reloadShownPlayerIfIn,
     pointsInput,

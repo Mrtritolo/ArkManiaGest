@@ -32,6 +32,14 @@ def _is_excluded_container(name: str) -> bool:
     return name.strip().lower() in _EXCLUDED_CONTAINER_NAMES
 
 
+class ContainerBaseMissing(Exception):
+    """The container base directory does not exist on the host."""
+
+
+class ContainerBaseUnreadable(Exception):
+    """The container base directory exists but could not be listed."""
+
+
 def scan_containers(ssh: SSHManager, base_path: str = CONTAINER_BASE) -> List[Dict]:
     """
     Scan all containers present under *base_path* on the remote host.
@@ -44,11 +52,24 @@ def scan_containers(ssh: SSHManager, base_path: str = CONTAINER_BASE) -> List[Di
         base_path: Absolute path to the directory that holds all containers.
 
     Returns:
-        List of container info dicts (one per subdirectory).  Returns an
-        empty list if the directory is missing or unreadable.
+        List of container info dicts (one per subdirectory), empty when the
+        directory has none.
+
+    Raises:
+        ContainerBaseMissing: *base_path* does not exist (a host without
+            this layout, or one whose containers were removed).
+        ContainerBaseUnreadable: *base_path* exists but ``ls`` failed
+            (permissions, I/O).  Kept apart from an empty listing: the caller
+            replaced the stored map with an empty one either way.
     """
-    stdout, _stderr, exit_code = ssh.execute(f'ls -1 {shlex.quote(base_path)} 2>/dev/null')
-    if exit_code != 0 or not stdout.strip():
+    quoted = shlex.quote(base_path)
+    _, _, absent = ssh.execute(f"test -d {quoted}")
+    if absent:
+        raise ContainerBaseMissing(base_path)
+    stdout, stderr, exit_code = ssh.execute(f"ls -1 {quoted}")
+    if exit_code != 0:
+        raise ContainerBaseUnreadable(stderr or f"ls exited {exit_code}")
+    if not stdout.strip():
         return []
 
     container_names = [

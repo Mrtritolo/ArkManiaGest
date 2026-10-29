@@ -91,7 +91,17 @@ export default function PlayersPage({ currentUser }: Props) {
     t,
   });
   const ban = useBanPlayer({ selectedPlayer: detail.selectedPlayer, toast, t });
-  const wipe = useCharacterWipe({ selectedPlayer: detail.selectedPlayer, toast, confirm, t });
+  const wipe = useCharacterWipe({
+    selectedPlayer: detail.selectedPlayer,
+    toast,
+    confirm,
+    t,
+    onWiped: (eosId, rowRemoved) => {
+      if (rowRemoved) detail.dropPlayer(eosId);
+      data.loadPlayers();
+      data.loadStats();
+    },
+  });
   const bulk = useBulkTimedPerms({
     selection,
     toast,

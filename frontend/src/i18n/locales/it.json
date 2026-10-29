@@ -2519,6 +2519,7 @@
     "scanAll": "Scansiona macchine",
     "scanning": "Scansione…",
     "scanDone": "Scansionate {{count}} macchina/e.",
+    "scanSkipped": "{{count}} macchina/e saltate, non hanno una cartella container che la scansione sappia leggere: {{names}}",
     "orphansTitle": "Container scoperti ({{count}})",
     "orphansHint": "Container trovati via SSH ma NON ancora registrati come istanze gestite. Clicca Importa per promuoverne uno nel DB del pannello.",
     "orphanPlugins": "Plugin: {{plugins}}",

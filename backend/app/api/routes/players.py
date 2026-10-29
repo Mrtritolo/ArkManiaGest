@@ -13,6 +13,7 @@ Route ordering note:
 
 import asyncio
 import posixpath
+from contextlib import ExitStack
 import re
 import shlex
 from typing import Callable, List, Optional
@@ -488,26 +489,24 @@ def copy_character(data: CopyCharacterRequest):
     same_machine = data.source_machine_id == data.dest_machine_id
 
     try:
-        source_ssh = SSHManager(
-            host=source_machine["hostname"],
-            username=source_machine["ssh_user"],
-            password=source_machine.get("ssh_password"),
-            key_path=source_machine.get("ssh_key_path"),
-            port=source_machine.get("ssh_port", 22),
-        )
-        source_ssh.connect()
+        # The stack closes every session it opened, including the source one
+        # when the destination connect fails: that path used to leave it open.
+        with ExitStack() as sessions:
+            source_ssh = sessions.enter_context(SSHManager(
+                host=source_machine["hostname"],
+                username=source_machine["ssh_user"],
+                password=source_machine.get("ssh_password"),
+                key_path=source_machine.get("ssh_key_path"),
+                port=source_machine.get("ssh_port", 22),
+            ))
+            dest_ssh = source_ssh if same_machine else sessions.enter_context(SSHManager(
+                host=dest_machine["hostname"],
+                username=dest_machine["ssh_user"],
+                password=dest_machine.get("ssh_password"),
+                key_path=dest_machine.get("ssh_key_path"),
+                port=dest_machine.get("ssh_port", 22),
+            ))
 
-        dest_ssh = source_ssh if same_machine else SSHManager(
-            host=dest_machine["hostname"],
-            username=dest_machine["ssh_user"],
-            password=dest_machine.get("ssh_password"),
-            key_path=dest_machine.get("ssh_key_path"),
-            port=dest_machine.get("ssh_port", 22),
-        )
-        if not same_machine:
-            dest_ssh.connect()
-
-        try:
             dest_map_dir = resolve_map_directory(dest_ssh, dest_container, data.dest_map_name)
             if not dest_map_dir:
                 raise HTTPException(
@@ -526,11 +525,6 @@ def copy_character(data: CopyCharacterRequest):
                 backup=data.backup,
             )
             return CopyCharacterResponse(**copy_result)
-
-        finally:
-            if not same_machine:
-                dest_ssh.disconnect()
-            source_ssh.disconnect()
 
     except HTTPException:
         raise

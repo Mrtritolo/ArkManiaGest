@@ -152,11 +152,32 @@ def _docker_ps_status_command(container_name: str) -> str:
     POK-manager calls are cheap but slow because they ``cd`` and start a
     bash script -- for simple status polling we use ``docker inspect``
     directly.
+
+    Only Docker's "No such object" means not-found.  Any other failure
+    (permission denied on the socket, daemon down, docker missing) used to
+    print not-found as well, so a running server was stored as missing; it
+    now exits non-zero with Docker's message and the status is left alone.
+    Permission denied is retried with ``sudo -n docker``, which is how
+    POK-manager itself runs Docker unless told otherwise.
+
+    stderr is kept apart from the state: a warning there (sudo's "unable to
+    resolve host", Docker's config-file notice) would otherwise turn
+    "running" into a line the status mapping does not recognise.  And only
+    "no such object/container" counts, not "no such file", which is what a
+    stopped daemon's missing socket says.
     """
     name = container_name.replace("'", "'\"'\"'")
     return (
-        f"docker inspect -f '{{{{.State.Status}}}}' '{name}' "
-        f"2>/dev/null || echo 'not-found'"
+        "t=$(mktemp); "
+        "probe() { out=$(\"$@\" inspect -f '{{.State.Status}}' "
+        f"'{name}' 2>\"$t\"); rc=$?; err=$(cat \"$t\"); }}; "
+        "probe docker; "
+        "if [ $rc -ne 0 ] && printf '%s' \"$err\" | grep -qi 'permission denied'; then "
+        "probe sudo -n docker; fi; "
+        "rm -f \"$t\"; "
+        "if [ $rc -eq 0 ]; then printf '%s\\n' \"$out\"; "
+        "elif printf '%s' \"$err\" | grep -qiE 'no such (object|container)'; then echo not-found; "
+        "else printf '%s\\n' \"$err\" >&2; exit $rc; fi"
     )
 
 
