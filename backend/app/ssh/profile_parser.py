@@ -112,7 +112,10 @@ def scan_and_match_profiles(
     Returns:
         List of dicts, each with:
           - ``file_id``     (str): Filename stem (used as the internal ARK player GUID)
-          - ``player_name`` (str | None): Extracted character name
+          - ``player_name`` (str | None): Extracted character name, or the
+            account name when the profile has none
+          - ``character_name`` (str | None): The character name alone
+          - ``account_name`` (str | None): Platform account name (``PlayerName``)
           - ``eos_id``      (str | None): Extracted EOS ID
           - ``source_path`` (str): Absolute path of the .arkprofile file
           - ``mtime``       (float): Unix mtime of the file, used by the caller
@@ -156,6 +159,8 @@ def scan_and_match_profiles(
                 results.append({
                     "file_id": file_id,
                     "player_name": data.get("name"),
+                    "character_name": data.get("character_name"),
+                    "account_name": data.get("account_name"),
                     "eos_id": data.get("eos_id"),
                     "source_path": prof_path,
                     "mtime": mtime,

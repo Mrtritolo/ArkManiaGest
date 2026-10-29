@@ -29,6 +29,7 @@ from app.db.models.ark import Player, ArkShopPlayer, PermissionGroup, TribePermi
 from app.core.store import get_machine_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles, scan_and_match_tribes
+from app.services.player_names import pick_profile_name
 from app.schemas.players import (
     PlayerFull, PlayerListItem, PlayerUpdate, PlayerPointsUpdate, PlayerPointsAdd,
     PermissionGroupRead, PermissionGroupUpdate, TribePermissionRead, PlayersStats,
@@ -1046,13 +1047,11 @@ async def sync_player_names_from_profiles(
       2. The .arkprofile filename (which equals the internal ARK player GUID).
       3. Substring match between the extracted EOS_Id and the DB EOS_Id.
 
-    Per-EOS resolution (Phase 7+ multi-character handling):
-      * 0 candidates                       -> ignored
-      * 1 candidate, name == DB            -> noop
-      * 1 candidate, name != DB            -> auto-update
-      * N candidates (one character per    -> the profile with the most
-        map, names may all differ)            recent mtime wins; auto-update
-                                              when it differs from the DB
+    Per-EOS resolution (one character per map, names may all differ): the
+    newest profile with a real character name wins; when every character
+    still has the game's default name, the account name, and only then the
+    default itself -- neither of those two replaces a real name already in
+    the DB.  See :func:`app.services.player_names.pick_profile_name`.
 
     'ambiguous' is always empty: multiple distinct names are resolved by
     file mtime rather than by asking the admin.  The field and
@@ -1111,6 +1110,8 @@ async def sync_player_names_from_profiles(
     # can detect multi-character cases (one EOS -> N distinct names from N
     # different .arkprofile files across the cluster).
     by_player: dict[int, list[dict]] = {}
+    # Profiles of EOS ids with no Players row, by filename (= EOS).
+    unmatched_by_file: dict[str, list[dict]] = {}
 
     for mid, saved_paths in machines_to_scan.items():
         profiles, scan_error = await asyncio.to_thread(
@@ -1154,25 +1155,23 @@ async def sync_player_names_from_profiles(
                         break
 
             if not player_data:
+                unmatched_by_file.setdefault(file_id_lower, []).append(prof)
                 not_matched.append({
                     "file_id":    prof["file_id"],
                     "eos_id":     profile_eos_id,
-                    "player_name":player_name,
+                    "player_name":None,   # picked below, across the EOS's profiles
                     "source":     prof.get("source_path", ""),
                 })
                 continue
 
-            by_player.setdefault(player_data["id"], []).append({
-                "name":         player_name,
-                "source_path":  prof.get("source_path", ""),
-                "profile_eos":  profile_eos_id,
-                "file_id":      prof["file_id"],
-                "machine_id":   mid,
-                "mtime":        prof.get("mtime", 0.0),
-                "_db":          player_data,
-            })
+            by_player.setdefault(player_data["id"], []).append({**prof, "_db": player_data})
 
-    # ── Per-player resolution: newest profile wins ──────────────────────
+    # Import-missing writes this name to the new Players row, and keeps the
+    # first entry per EOS: give every entry the name an update would pick.
+    for entry in not_matched:
+        entry["player_name"] = pick_profile_name(unmatched_by_file[entry["file_id"].lower()], None)
+
+    # ── Per-player resolution: see pick_profile_name ────────────────────
 
     matched   = 0
     updated   = 0
@@ -1182,21 +1181,18 @@ async def sync_player_names_from_profiles(
 
     for pid, candidates in by_player.items():
         matched += len(candidates)
-        db_data      = candidates[0]["_db"]
-        current_name = db_data.get("current_name")
+        current_name = candidates[0]["_db"].get("current_name")
 
         # A player legitimately owns one character per map, each with its own
         # name, so several .arkprofile files for the same EOS with different
-        # names is the normal case -- not an anomaly.  Policy: the most
-        # recently written profile wins, so the panel follows whichever
-        # character the player actually used last.  'ambiguous' stays empty
+        # names is the normal case -- not an anomaly.  'ambiguous' stays empty
         # and is kept only for response-shape compatibility.
-        newest = max(candidates, key=lambda c: c["mtime"])
-        if current_name != newest["name"]:
+        name = pick_profile_name(candidates, current_name)
+        if name and name != current_name:
             await db.execute(
                 update(Player)
                 .where(Player.Id == pid)
-                .values(Giocatore=newest["name"])
+                .values(Giocatore=name)
             )
             updated += 1
 

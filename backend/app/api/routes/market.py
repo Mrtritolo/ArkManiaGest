@@ -44,6 +44,7 @@ from app.api.routes.auth_discord import _SESSION_COOKIE
 from app.api.routes.me import get_current_player, _PlayerSession
 from app.services.market_thumbs import TransientWikiError, get_or_fetch_thumb, thumb_key
 from app.services.cryopod_parser import parse_cryopod_blob, CryopodInfo
+from app.services.player_names import current_names, resolved_name
 
 # Heuristic: cryopod-class blueprints contain 'cryopod' in their path.
 # Includes stock 'PrimalItem_WeaponEmptyCryopod' and 'PrimalItem_WeaponSocketableCryopod'
@@ -451,6 +452,7 @@ async def list_market_items(
         params,
     )).mappings().fetchall()
 
+    names = await current_names(plugin_db, (r["owner_eos_id"] for r in rows))
     items: list[_ListedItem] = []
     for r in rows:
         bp = r["blueprint"] or ""
@@ -465,7 +467,7 @@ async def list_market_items(
             rating       = float(r["rating"] or 0),
             price        = int(r["price"] or 0),
             owner_eos_id = r["owner_eos_id"],
-            owner_name   = r.get("owner_name"),
+            owner_name   = resolved_name(names.get(r["owner_eos_id"]), r.get("owner_name")),
             listed_at    = _iso(r.get("listed_at")),
             dino         = dino,
         ))
@@ -501,6 +503,9 @@ async def list_my_items(
         ),
         {"e": eos},
     )).mappings().fetchall()
+    names = await current_names(
+        plugin_db, [e for r in rows for e in (r["owner_eos_id"], r.get("buyer_eos_id"))],
+    )
     out: list[_MyItem] = []
     for r in rows:
         role = "owner" if r["owner_eos_id"] == eos else "buyer"
@@ -511,8 +516,10 @@ async def list_my_items(
             blueprint=bp, quantity=int(r["quantity"] or 1),
             quality=int(r["quality"] or 0), price=int(r["price"] or 0),
             status=r["status"],
-            owner_eos_id=r["owner_eos_id"], owner_name=r.get("owner_name"),
-            buyer_eos_id=r.get("buyer_eos_id"), buyer_name=r.get("buyer_name"),
+            owner_eos_id=r["owner_eos_id"],
+            owner_name=resolved_name(names.get(r["owner_eos_id"]), r.get("owner_name")),
+            buyer_eos_id=r.get("buyer_eos_id"),
+            buyer_name=resolved_name(names.get(r.get("buyer_eos_id")), r.get("buyer_name")),
             created_at=_iso(r.get("created_at")),
             listed_at=_iso(r.get("listed_at")),
             sold_at=_iso(r.get("sold_at")),
@@ -540,19 +547,10 @@ async def list_my_transactions(
     )).mappings().fetchall()
 
     # Look up counterpart names in one shot to avoid N+1.
-    counterpart_eos_ids = list({
+    name_map = await current_names(plugin_db, (
         (r["seller_eos_id"] if r["buyer_eos_id"] == eos else r["buyer_eos_id"])
         for r in rows
-    })
-    name_map: dict[str, str] = {}
-    if counterpart_eos_ids:
-        ph     = ",".join(f":c{i}" for i in range(len(counterpart_eos_ids)))
-        params = {f"c{i}": cid for i, cid in enumerate(counterpart_eos_ids)}
-        nm_rows = (await plugin_db.execute(
-            text(f"SELECT EOS_Id, Giocatore FROM Players WHERE EOS_Id IN ({ph})"),
-            params,
-        )).fetchall()
-        name_map = {r[0]: r[1] for r in nm_rows if r[1]}
+    ))
 
     return _TransactionsResponse(transactions=[
         _TransactionRow(

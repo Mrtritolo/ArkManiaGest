@@ -26,6 +26,7 @@ from app.core.store import (
 )
 from app.db.session import get_db, get_plugin_db
 from app.ssh.pok_executor import exec_rcon
+from app.services.player_names import resolved_name_sql
 
 router = APIRouter()
 
@@ -214,7 +215,7 @@ async def list_decay_tribes(
             f"d.last_refresh_group, d.last_refresh_days, "
             f"d.last_refresh_time, "
             f"TIMESTAMPDIFF(HOUR, NOW(), d.expire_time) AS hours_left, "
-            f"COALESCE(NULLIF(p.Giocatore, ''), h.player_name) AS player_name, "
+            f"{resolved_name_sql('p.Giocatore', 'h.player_name')} AS player_name, "
             f"CASE WHEN d.expire_time < NOW() THEN 'expired' "
             f"     WHEN d.expire_time < DATE_ADD(NOW(), INTERVAL 3 DAY) THEN 'expiring' "
             f"     ELSE 'safe' END AS status_label "
@@ -259,7 +260,7 @@ async def list_pending(db: AsyncSession = Depends(get_plugin_db)):
             "p.structure_count, p.dino_count, p.flagged_at, "
             "s.display_name, d.tribe_name, d.last_refresh_group, "
             "d.expire_time, "
-            "COALESCE(NULLIF(pl.Giocatore, ''), h.player_name) AS player_name, "
+            f"{resolved_name_sql('pl.Giocatore', 'h.player_name')} AS player_name, "
             # Most recent login of ANY member, across every map. On
             # 2026-08-26 four tribes of active players sat in this list
             # with nothing on screen to give them away -- this column is

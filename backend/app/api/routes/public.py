@@ -31,6 +31,7 @@ from app.core.security import _extract_client_ip
 from app.core.store import get_machine_sync, get_containers_map_sync
 from app.ssh.manager import SSHManager
 from app.ssh.profile_parser import scan_and_match_profiles
+from app.services.player_names import display_name_sql, pick_profile_name
 
 router = APIRouter()
 
@@ -382,7 +383,8 @@ async def cron_sync_names(
     Cron job: scan ``.arkprofile`` files via SSH and update player names in DB.
 
     Protected by a shared secret and restricted to localhost callers.
-    Deduplicates by EOS ID (first profile wins).
+    One name per EOS ID, picked like the Players page sync
+    (:func:`app.services.player_names.pick_profile_name`).
     """
     expected = server_settings.CRON_SECRET
     if not expected or not hmac.compare_digest(secret.encode(), expected.encode()):
@@ -415,12 +417,12 @@ async def cron_sync_names(
     total_profiles = 0
     matched        = 0
     updated_count  = 0
-    # Best candidate per EOS id: a player owns one character per map, so the
+    # Every profile per EOS id: a player owns one character per map, so the
     # same EOS shows up once per SavedArks directory with a possibly
-    # different name.  Keep the most recently written profile and apply it
-    # after every machine has been walked -- taking the first one seen made
-    # the result depend on container order and could pin a name months old.
-    best_by_eos: dict[str, dict] = {}
+    # different name.  The name is picked after every machine has been
+    # walked -- taking the first one seen made the result depend on
+    # container order and could pin a name months old.
+    profiles_by_eos: dict[str, list[dict]] = {}
 
     for prof in profiles:
         total_profiles += 1
@@ -448,20 +450,18 @@ async def cron_sync_names(
         if not ref_eos:
             continue
 
-        mtime = prof.get("mtime", 0.0)
-        best  = best_by_eos.get(ref_eos)
-        if best is None or mtime > best["mtime"]:
-            best_by_eos[ref_eos] = {"name": player_name, "mtime": mtime}
+        profiles_by_eos.setdefault(ref_eos, []).append(prof)
 
-    for ref_eos, best in best_by_eos.items():
+    for ref_eos, candidates in profiles_by_eos.items():
         player_data = eos_map[ref_eos]
         matched += 1
 
-        if player_data["current_name"] != best["name"]:
+        name = pick_profile_name(candidates, player_data["current_name"])
+        if name and name != player_data["current_name"]:
             await db.execute(
                 update(Player)
                 .where(Player.Id == player_data["id"])
-                .values(Giocatore=best["name"])
+                .values(Giocatore=name)
             )
             updated_count += 1
 
@@ -472,7 +472,7 @@ async def cron_sync_names(
         "total_profiles_scanned":total_profiles,
         "matched":               matched,
         "updated":               updated_count,
-        "deduped_eos_ids":       len(best_by_eos),
+        "deduped_eos_ids":       len(profiles_by_eos),
         "errors":                errors,
         "timestamp":             datetime.now(timezone.utc).isoformat(),
     }
@@ -526,7 +526,8 @@ async def public_leaderboard(
 
     result = await db.execute(
         sa_text(
-            f"SELECT player_name, server_type, total_points, "
+            f"SELECT {display_name_sql('ARKM_lb_scores.eos_id', 'player_name')} AS player_name, "
+            f"server_type, total_points, "
             f"kills_wild, kills_enemy_dino, kills_player, tames, crafts, "
             f"structs_destroyed, deaths, last_event "
             f"FROM ARKM_lb_scores {where_clause} "
@@ -591,8 +592,9 @@ async def public_leaderboard_stats(
 
     top_result = await db.execute(
         sa_text(
-            "SELECT player_name, total_points FROM ARKM_lb_scores "
-            "ORDER BY total_points DESC LIMIT 3"
+            f"SELECT {display_name_sql('ARKM_lb_scores.eos_id', 'player_name')} AS player_name, "
+            f"total_points FROM ARKM_lb_scores "
+            f"ORDER BY total_points DESC LIMIT 3"
         )
     )
     top3 = [{"name": r[0], "points": r[1]} for r in top_result.fetchall()]

@@ -22,6 +22,7 @@ from sqlalchemy import text
 from app.core.auth import require_admin, require_operator
 from app.db.session import get_plugin_db, get_db
 from app.api.routes.blueprints import is_official_or_s_variant_dino
+from app.services.player_names import display_name_sql
 
 router = APIRouter()
 
@@ -340,7 +341,8 @@ async def list_rare_spawns(
     result = await db.execute(
         text(
             f"SELECT id, event_type, dino_name, dino_blueprint, dino_level, "
-            f"gps_lat, gps_lon, server_key, killer_eos, killer_name, event_time "
+            f"gps_lat, gps_lon, server_key, killer_eos, "
+            f"{display_name_sql('ARKM_rare_spawns.killer_eos', 'killer_name')} AS killer_name, event_time "
             f"FROM ARKM_rare_spawns {where_clause} "
             f"ORDER BY event_time DESC LIMIT :lim"
         ),

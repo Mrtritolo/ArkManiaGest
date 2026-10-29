@@ -316,6 +316,7 @@ def _read_str_property(data: bytes, marker: bytes) -> Optional[str]:
 def find_player_name(
     data: bytes,
     fstrings: list[tuple[int, str]],
+    markers: tuple[bytes, ...] = _PLAYER_NAME_MARKERS,
 ) -> Optional[str]:
     """
     Locate the player's character name in the binary save data.
@@ -332,6 +333,9 @@ def find_player_name(
     Args:
         data:     Raw bytes of the .arkprofile file.
         fstrings: Pre-extracted ``(offset, string)`` pairs.
+        markers:  Name markers to try, in order.  The default ends with
+                  ``PlayerName``, i.e. falls back to the account name;
+                  pass ``(b"PlayerCharacterName",)`` for the character only.
 
     Returns:
         The player character name, or ``None`` if not found.
@@ -339,12 +343,12 @@ def find_player_name(
     # Preferred path: read the property value structurally.  The FString
     # sweep below cannot see names shorter than _FSTRING_MIN_LEN and would
     # return the following property name instead.
-    for marker in _PLAYER_NAME_MARKERS:
+    for marker in markers:
         value = _read_str_property(data, marker)
         if value and not _is_technical_string(value):
             return value
 
-    for marker in _PLAYER_NAME_MARKERS:
+    for marker in markers:
         search_start = 0
         while True:
             marker_pos = data.find(marker, search_start)
@@ -365,6 +369,20 @@ def find_player_name(
                 if not _is_technical_string(candidate):
                     return candidate
 
+    return None
+
+
+def find_account_name(data: bytes) -> Optional[str]:
+    """
+    Read the platform account name (``PlayerName``), or ``None``.
+
+    The sync shows it when the character still carries the game's default
+    name, so it is read on its own instead of only as a fallback inside
+    :func:`find_player_name`.
+    """
+    value = _read_str_property(data, b"PlayerName")
+    if value and not _is_technical_string(value):
+        return value
     return None
 
 
@@ -460,7 +478,7 @@ def main() -> None:
     Parse CLI arguments, read the .arkprofile file, and print JSON to stdout.
 
     Modes:
-        name_only — minimal output: ``{"name": "...", "eos_id": "..."}``
+        name_only — minimal output: ``name``, ``eos_id``, ``character_name``, ``account_name``
         debug     — full diagnostic output (default)
     """
     if len(sys.argv) < 2:
@@ -482,7 +500,14 @@ def main() -> None:
     eos_id = find_eos_id(data, fstrings)
 
     if mode == "name_only":
-        print(json.dumps({"name": player_name, "eos_id": eos_id}))
+        print(json.dumps({
+            "name": player_name,
+            "eos_id": eos_id,
+            # "name" falls back to the account name; the sync needs to know
+            # which of the two it got.
+            "character_name": find_player_name(data, fstrings, (b"PlayerCharacterName",)),
+            "account_name": find_account_name(data),
+        }))
     else:
         output = _build_debug_output(data, fstrings, player_name, eos_id)
         print(json.dumps(output))

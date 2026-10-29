@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.core.auth import require_admin
 from app.db.session import get_plugin_db
+from app.services.player_names import display_name_sql, name_search_sql
 
 router = APIRouter()
 
@@ -102,7 +103,9 @@ async def list_scores(
         where.append("server_type = :stype")
         params["stype"] = server_type
     if search:
-        where.append("player_name LIKE :q")
+        where.append(
+            f"(player_name LIKE :q OR {name_search_sql('ARKM_lb_scores.eos_id')})"
+        )
         params["q"] = f"%{search}%"
 
     where_clause = "WHERE " + " AND ".join(where) if where else ""
@@ -115,7 +118,8 @@ async def list_scores(
 
     result = await db.execute(
         text(
-            f"SELECT eos_id, player_name, server_type, total_points, "
+            f"SELECT eos_id, {display_name_sql('ARKM_lb_scores.eos_id', 'player_name')} AS player_name, "
+            f"server_type, total_points, "
             f"kills_wild, kills_enemy_dino, kills_player, tames, crafts, "
             f"structs_destroyed, deaths, last_event "
             f"FROM ARKM_lb_scores {where_clause} "
@@ -174,7 +178,9 @@ async def list_events(
 
     result = await db.execute(
         text(
-            f"SELECT id, eos_id, player_name, event_type, points, "
+            f"SELECT id, eos_id, "
+            f"{display_name_sql('ARKM_lb_events.eos_id', 'player_name')} AS player_name, "
+            f"event_type, points, "
             f"target_class, target_name, target_level, target_team, "
             f"server_key, server_type, created_at "
             f"FROM ARKM_lb_events {where_clause} "

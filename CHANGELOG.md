@@ -7,6 +7,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.2] - 2026-10-29
+
+### Fixed
+
+- **Players were renamed "Survivor" across the panel.** The name sync (the
+  Players page button and the 04:30 cron) wrote the name of the most
+  recently written `.arkprofile` to `Players.Giocatore`, and a character
+  nobody has renamed carries the game's default name. One fresh character on
+  another map was enough to replace a player's real name everywhere, and the
+  cron did it again every night. The sync now takes the newest profile with
+  a real character name. If every character still has a default name
+  (`Survivor`, `Human`, `Umano`, `Humain`, `Человек`), it takes the account
+  name, so the parser now reports the character name and `PlayerName`
+  separately: a character named after the account is still a character
+  name. Neither fallback replaces a real name already stored. Import-missing
+  picks across all of an orphan's profiles the same way. The next sync
+  repairs the rows already overwritten.
+- **Several pages showed the name the plugin stored on the row instead of
+  the player's name.** Online players and the Dashboard preferred
+  `ARKM_players.player_name` over `Players.Giocatore`, the opposite of the
+  Decay page. Leaderboard (admin and public), event log, bans, rare-dino
+  kills, marketplace owner/buyer and the decay card of the player dashboard
+  showed the plugin's copy as it was. They all show `Players.Giocatore` now
+  (Decay already did), and fall back to the stored copy when it is empty or
+  still a default name, which covers players a sync can no longer repair
+  because they have no `.arkprofile` left. Searching the leaderboard, event
+  log and bans also matches it.
+
 ## [4.16.1] - 2026-10-02
 
 ### Fixed

@@ -50,6 +50,7 @@ from app.db.session import get_db, get_plugin_db
 from app.discord import client as dc_client
 from app.discord import store as dc_store
 from app.discord.config import get_discord_config
+from app.services.player_names import display_name_sql
 
 
 log = logging.getLogger("arkmaniagest.me")
@@ -457,20 +458,21 @@ async def get_dashboard(
     #    fact from "my Island base expires next week".
     tribe_rows = (await plugin_db.execute(
         text(
-            "SELECT pt.targeting_team, pt.tribe_name, pt.server_key, pt.last_login, "
-            "       srv.display_name AS server_name, srv.map_name, "
-            "       d.tribe_name AS decay_tribe_name, d.expire_time, "
-            "       d.last_refresh_name, d.last_refresh_time, d.last_refresh_days, "
-            "       TIMESTAMPDIFF(HOUR, NOW(), d.expire_time) AS hours_left, "
-            "       dp.targeting_team AS pending_team "
-            "FROM ARKM_player_tribes pt "
-            "LEFT JOIN ARKM_servers srv ON srv.server_key = pt.server_key "
-            "LEFT JOIN ARKM_tribe_decay d ON d.targeting_team = pt.targeting_team "
-            "LEFT JOIN ARKM_decay_pending dp "
-            "       ON dp.targeting_team = pt.targeting_team "
-            "      AND dp.server_key = pt.server_key "
-            "WHERE pt.eos_id = :e "
-            "ORDER BY pt.last_login DESC"
+            f"SELECT pt.targeting_team, pt.tribe_name, pt.server_key, pt.last_login, "
+            f"       srv.display_name AS server_name, srv.map_name, "
+            f"       d.tribe_name AS decay_tribe_name, d.expire_time, "
+            f"       {display_name_sql('d.last_refresh_eos', 'd.last_refresh_name')} AS last_refresh_name, "
+            f"       d.last_refresh_time, d.last_refresh_days, "
+            f"       TIMESTAMPDIFF(HOUR, NOW(), d.expire_time) AS hours_left, "
+            f"       dp.targeting_team AS pending_team "
+            f"FROM ARKM_player_tribes pt "
+            f"LEFT JOIN ARKM_servers srv ON srv.server_key = pt.server_key "
+            f"LEFT JOIN ARKM_tribe_decay d ON d.targeting_team = pt.targeting_team "
+            f"LEFT JOIN ARKM_decay_pending dp "
+            f"       ON dp.targeting_team = pt.targeting_team "
+            f"      AND dp.server_key = pt.server_key "
+            f"WHERE pt.eos_id = :e "
+            f"ORDER BY pt.last_login DESC"
         ),
         {"e": eos},
     )).mappings().fetchall()

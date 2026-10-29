@@ -34,6 +34,7 @@ from sqlalchemy import text
 
 from app.core.auth import require_admin, require_operator
 from app.db.session import get_plugin_db
+from app.services.player_names import display_name_sql, name_search_sql, resolved_name_sql
 
 router = APIRouter()
 
@@ -581,7 +582,7 @@ async def get_online_players(
         text(
             f"SELECT s.eos_id, s.server_key, s.login_time, s.last_heartbeat, "
             f"s.ip_address, "
-            f"COALESCE(NULLIF(h.player_name, ''), p.Giocatore) AS player_name, "
+            f"{resolved_name_sql('p.Giocatore', 'h.player_name')} AS player_name, "
             f"srv.display_name, srv.map_name, "
             f"TIMESTAMPDIFF(MINUTE, s.login_time, NOW()) AS duration_min "
             f"FROM ARKM_sessions s "
@@ -665,7 +666,10 @@ async def list_events(
         where_clauses.append("server_key = :sk")
         params["sk"] = server_key
     if search:
-        where_clauses.append("(player_name LIKE :q OR details LIKE :q)")
+        where_clauses.append(
+            f"(player_name LIKE :q OR details LIKE :q "
+            f"OR {name_search_sql('ARKM_event_log.eos_id')})"
+        )
         params["q"] = f"%{search}%"
 
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
@@ -679,7 +683,8 @@ async def list_events(
     # Fetch page
     result = await db.execute(
         text(
-            f"SELECT id, event_type, eos_id, player_name, server_key, "
+            f"SELECT id, event_type, eos_id, "
+            f"{display_name_sql('ARKM_event_log.eos_id', 'player_name')} AS player_name, server_key, "
             f"details, event_time, discord_sent "
             f"FROM ARKM_event_log {where_sql} "
             f"ORDER BY event_time DESC LIMIT :lim OFFSET :off"

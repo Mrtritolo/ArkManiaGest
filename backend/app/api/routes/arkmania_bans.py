@@ -18,6 +18,7 @@ from sqlalchemy import text
 
 from app.core.auth import require_operator
 from app.db.session import get_plugin_db
+from app.services.player_names import display_name_sql, name_search_sql
 
 router = APIRouter()
 
@@ -34,6 +35,10 @@ class BanCreate(BaseModel):
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+# The player's current name; ARKM_bans.player_name is the one at ban time.
+_BAN_NAME_SQL = display_name_sql("ARKM_bans.eos_id", "player_name")
+
 
 def _row_to_ban(r) -> dict:
     """Convert a raw database row tuple to a serialisable ban dict."""
@@ -78,14 +83,17 @@ async def list_bans(
     if active_only:
         where.append("is_active = 1")
     if search:
-        where.append("(eos_id LIKE :q OR player_name LIKE :q OR reason LIKE :q)")
+        where.append(
+            f"(eos_id LIKE :q OR player_name LIKE :q OR reason LIKE :q "
+            f"OR {name_search_sql('ARKM_bans.eos_id')})"
+        )
         params["q"] = f"%{search}%"
 
     where_clause = "WHERE " + " AND ".join(where) if where else ""
 
     result = await db.execute(
         text(
-            f"SELECT id, eos_id, player_name, reason, banned_by, ban_time, "
+            f"SELECT id, eos_id, {_BAN_NAME_SQL} AS player_name, reason, banned_by, ban_time, "
             f"expire_time, is_active, unbanned_by, unban_time "
             f"FROM ARKM_bans {where_clause} "
             f"ORDER BY ban_time DESC LIMIT :lim"
@@ -173,9 +181,9 @@ async def get_ban(ban_id: int, db: AsyncSession = Depends(get_plugin_db)):
     """Return details for a single ban entry."""
     result = await db.execute(
         text(
-            "SELECT id, eos_id, player_name, reason, banned_by, ban_time, "
-            "expire_time, is_active, unbanned_by, unban_time "
-            "FROM ARKM_bans WHERE id = :id"
+            f"SELECT id, eos_id, {_BAN_NAME_SQL} AS player_name, reason, banned_by, ban_time, "
+            f"expire_time, is_active, unbanned_by, unban_time "
+            f"FROM ARKM_bans WHERE id = :id"
         ),
         {"id": ban_id},
     )
