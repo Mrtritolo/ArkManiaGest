@@ -110,8 +110,10 @@ async def list_scores(
 
     where_clause = "WHERE " + " AND ".join(where) if where else ""
 
+    # COUNT(*): a row is one (player, server type), and the total has to
+    # match the rows the pages walk through (same as the public endpoint).
     count_result = await db.execute(
-        text(f"SELECT COUNT(DISTINCT eos_id) FROM ARKM_lb_scores {where_clause}"),
+        text(f"SELECT COUNT(*) FROM ARKM_lb_scores {where_clause}"),
         params,
     )
     total = count_result.scalar() or 0

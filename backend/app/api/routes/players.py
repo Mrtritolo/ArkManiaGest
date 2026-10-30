@@ -1086,6 +1086,23 @@ async def sync_player_names_from_profiles(
             detail="No SavedArks paths found in the scanned containers.",
         )
 
+    total_profiles = 0
+    no_name_extracted: list[dict] = []  # binary parser couldn't pull a name
+    not_matched: list[dict] = []        # parsed name but EOS unknown to DB
+    errors: list[str] = []
+
+    # Scan before touching the plugin DB, so no pooled connection sits idle
+    # in a transaction for the whole walk.
+    scanned: list[tuple[int, dict]] = []
+    for mid, saved_paths in machines_to_scan.items():
+        profiles, scan_error = await asyncio.to_thread(
+            _scan_machine_sync, mid, saved_paths, scan_and_match_profiles
+        )
+        if scan_error:
+            errors.append(scan_error)
+            continue
+        scanned.extend((mid, prof) for prof in profiles)
+
     # Load the full EOS_Id → player_id mapping once to avoid per-profile queries
     all_players_result = await db.execute(
         select(Player.Id, Player.EOS_Id, Player.Giocatore)
@@ -1093,12 +1110,8 @@ async def sync_player_names_from_profiles(
     eos_map: dict[str, dict] = {
         p.EOS_Id.lower(): {"id": p.Id, "eos_id": p.EOS_Id, "current_name": p.Giocatore}
         for p in all_players_result.all()
+        if p.EOS_Id
     }
-
-    total_profiles = 0
-    no_name_extracted: list[dict] = []  # binary parser couldn't pull a name
-    not_matched: list[dict] = []        # parsed name but EOS unknown to DB
-    errors: list[str] = []
 
     # Group ALL successful profile parses by the resolved DB Player.Id, so we
     # can detect multi-character cases (one EOS -> N distinct names from N
@@ -1107,58 +1120,50 @@ async def sync_player_names_from_profiles(
     # Profiles of EOS ids with no Players row, by filename (= EOS).
     unmatched_by_file: dict[str, list[dict]] = {}
 
-    for mid, saved_paths in machines_to_scan.items():
-        profiles, scan_error = await asyncio.to_thread(
-            _scan_machine_sync, mid, saved_paths, scan_and_match_profiles
-        )
-        if scan_error:
-            errors.append(scan_error)
+    for mid, prof in scanned:
+        total_profiles += 1
+        player_name = prof.get("player_name")
+        profile_eos_id: Optional[str] = prof.get("eos_id")
+        file_id_lower = prof["file_id"].lower()
+
+        if not player_name:
+            # Surface to the admin instead of silently dropping.  The
+            # previous version dropped these profiles entirely which
+            # made it impossible to know the parser had failed.
+            no_name_extracted.append({
+                "file_id":    prof["file_id"],
+                "eos_id":     profile_eos_id,
+                "source":     prof.get("source_path", ""),
+                "machine_id": mid,
+            })
             continue
 
-        for prof in profiles:
-            total_profiles += 1
-            player_name = prof.get("player_name")
-            profile_eos_id: Optional[str] = prof.get("eos_id")
-            file_id_lower = prof["file_id"].lower()
+        # Match 1: EOS_Id extracted from the binary file
+        player_data = eos_map.get(profile_eos_id.lower()) if profile_eos_id else None
 
-            if not player_name:
-                # Surface to the admin instead of silently dropping.  The
-                # previous version dropped these profiles entirely which
-                # made it impossible to know the parser had failed.
-                no_name_extracted.append({
-                    "file_id":    prof["file_id"],
-                    "eos_id":     profile_eos_id,
-                    "source":     prof.get("source_path", ""),
-                    "machine_id": mid,
-                })
-                continue
+        # Match 2: filename as EOS_Id fallback
+        if not player_data:
+            player_data = eos_map.get(file_id_lower)
 
-            # Match 1: EOS_Id extracted from the binary file
-            player_data = eos_map.get(profile_eos_id.lower()) if profile_eos_id else None
+        # Match 3: substring containment match
+        if not player_data and profile_eos_id:
+            eos_lower = profile_eos_id.lower()
+            for db_eos, pdata in eos_map.items():
+                if eos_lower in db_eos or db_eos in eos_lower:
+                    player_data = pdata
+                    break
 
-            # Match 2: filename as EOS_Id fallback
-            if not player_data:
-                player_data = eos_map.get(file_id_lower)
+        if not player_data:
+            unmatched_by_file.setdefault(file_id_lower, []).append(prof)
+            not_matched.append({
+                "file_id":    prof["file_id"],
+                "eos_id":     profile_eos_id,
+                "player_name":None,   # picked below, across the EOS's profiles
+                "source":     prof.get("source_path", ""),
+            })
+            continue
 
-            # Match 3: substring containment match
-            if not player_data and profile_eos_id:
-                eos_lower = profile_eos_id.lower()
-                for db_eos, pdata in eos_map.items():
-                    if eos_lower in db_eos or db_eos in eos_lower:
-                        player_data = pdata
-                        break
-
-            if not player_data:
-                unmatched_by_file.setdefault(file_id_lower, []).append(prof)
-                not_matched.append({
-                    "file_id":    prof["file_id"],
-                    "eos_id":     profile_eos_id,
-                    "player_name":None,   # picked below, across the EOS's profiles
-                    "source":     prof.get("source_path", ""),
-                })
-                continue
-
-            by_player.setdefault(player_data["id"], []).append({**prof, "_db": player_data})
+        by_player.setdefault(player_data["id"], []).append({**prof, "_db": player_data})
 
     # Import-missing writes this name to the new Players row, and keeps the
     # first entry per EOS: give every entry the name an update would pick.

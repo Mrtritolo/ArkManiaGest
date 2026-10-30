@@ -8,7 +8,7 @@
  * Pydantic loads .env once at boot, so any change here only takes effect
  * after a service restart; the banner next to Save carries the command.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Bot, KeyRound, RotateCcw, RotateCw, Save, Star } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, Card, Field, Input, Spinner } from "../../../components/ui";
@@ -30,6 +30,11 @@ export default function SettingsTab({ onDirtyChange }: Props) {
   const { t } = useTranslation();
   const settings = useDiscordSettingsForm();
   const { config, form, hasChanges, setForm } = settings;
+  const [roleReload, setRoleReload] = useState(0);
+
+  async function refreshAll(): Promise<void> {
+    if (await settings.refresh()) setRoleReload((n) => n + 1);
+  }
 
   useEffect(() => {
     onDirtyChange?.(hasChanges);
@@ -50,7 +55,9 @@ export default function SettingsTab({ onDirtyChange }: Props) {
     </Alert>
   ) : null;
 
-  if (settings.loading) {
+  // Only the first load: a Refresh keeps the form and the role mappings
+  // mounted (the button shows the progress), or it wiped their state.
+  if (settings.loading && !form) {
     return <Spinner block label={t("discord.settings.loading")} />;
   }
 
@@ -174,13 +181,19 @@ export default function SettingsTab({ onDirtyChange }: Props) {
       </form>
 
       {/* Discord role -> ARK group mapping (Phase 7+). Rendered only after the
-          form has loaded, so a Refresh never remounts and re-fetches it.
+          form has loaded, so a Refresh never remounts it: it reloads its rows
+          and the guild roles, and keeps a half-typed new row.
           Kept OUTSIDE the .env form: its rows save themselves, and Enter in
           one of their inputs must not submit the .env form. */}
-      <RoleMappingSection />
+      <RoleMappingSection reloadKey={roleReload} />
 
       <div className={`ui-actionbar ${styles.actionbar}`}>
-        <Button size="sm" icon={RotateCw} onClick={() => void settings.refresh()}>
+        <Button
+          size="sm"
+          icon={RotateCw}
+          loading={settings.loading}
+          onClick={() => void refreshAll()}
+        >
           {t("common.refresh")}
         </Button>
         <Button

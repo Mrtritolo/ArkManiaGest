@@ -7,6 +7,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.16.7] - 2026-10-30
+
+### Fixed
+
+- **SSH commands that wrote a lot to stderr hung until the 2-hour cap.**
+  stdout was read to the end before stderr, and both share the channel's
+  2 MB window, so a command that filled it with stderr first blocked
+  forever. Both streams are now drained at the same time.
+- **Sync names held a plugin-DB transaction open for the whole scan.** It
+  read the Players table before walking every host over SSH, so one
+  connection sat idle in a transaction for minutes and a server-side idle
+  timeout lost the whole result. It now scans first, like the nightly job.
+  A Players row with an empty EOS id no longer swallows unmatched profiles
+  or, when NULL, fails the request.
+- **Sync tribes gave up after 120 s** with axios' raw timeout text while
+  the backend kept working. It now gets the same 25 minutes as Sync names,
+  and a client timeout says the sync is still running.
+- **Editing a player with an over-long name or permission string** answered
+  500 (or, on a non-strict server, cut the last permission entry). It is a
+  422 now, checked against the Players column sizes.
+- **Discord settings: Refresh** blanked the tab, which threw away a
+  half-typed role-mapping row and its last sync report. The tab stays on
+  screen and the role mappings and guild roles reload in place.
+- **Server instances imported from a container** always started as
+  "stopped": the import read a status the scanner never sets.
+- **Blueprints:** the "Other" category and the "item" type listed rows
+  with no category or type that the filter could not select; options and
+  filters now agree.
+- **Public API:** a site backend listed in `PUBLIC_SERVER_IPS` shared one
+  30 requests/minute budget among all its visitors. It is now limited by
+  the panel-wide per-IP limit only.
+- **Leaderboard API:** `total` counted players instead of rows, so it was
+  short whenever a player had scores in both modes.
+- **Instance action log:** the user id was never recorded (the token
+  carries only the username). A user deleted while an action of theirs
+  runs is recorded as no user instead of failing the action.
+- **Backup:** the option files holding the DB passwords are removed even
+  when the run is interrupted.
+
 ## [4.16.6] - 2026-10-29
 
 ### Fixed

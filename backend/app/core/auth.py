@@ -166,6 +166,8 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="User disabled or not found.")
 
     payload["role"] = user["role"]
+    # The token carries only the username; the action log links rows by id.
+    payload["user_id"] = user["id"]
     return payload
 
 

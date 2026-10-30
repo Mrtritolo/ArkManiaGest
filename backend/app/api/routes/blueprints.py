@@ -1062,10 +1062,10 @@ async def list_blueprints(
         )
         params["s"] = f"%{search.lower()}%"
     if category:
-        where.append("LOWER(TRIM(category)) = :cat")
+        where.append("LOWER(TRIM(COALESCE(category, 'Other'))) = :cat")
         params["cat"] = category.lower().strip()
     if type:
-        where.append("type = :t")
+        where.append("COALESCE(type, 'item') = :t")
         params["t"] = type
     if source:
         where.append("source = :src")
@@ -1108,9 +1108,12 @@ async def list_blueprints(
 @router.get("/categories")
 async def list_categories(db: AsyncSession = Depends(get_db)):
     """Return all categories with their blueprint counts."""
+    # Grouped by the label, so NULL and a real 'Other' are one option; the
+    # list and delete filters apply the same COALESCE, so every option
+    # matches the rows it counts.  Same for /types below.
     res = await db.execute(text(
         "SELECT COALESCE(category, 'Other') AS c, COUNT(*) AS n "
-        "FROM ARKM_blueprints GROUP BY category ORDER BY c"
+        "FROM ARKM_blueprints GROUP BY c ORDER BY c"
     ))
     return {"categories": [{"name": r[0], "count": int(r[1])} for r in res.fetchall()]}
 
@@ -1120,7 +1123,7 @@ async def list_types(db: AsyncSession = Depends(get_db)):
     """Return all blueprint types with their counts."""
     res = await db.execute(text(
         "SELECT COALESCE(type, 'item') AS t, COUNT(*) AS n "
-        "FROM ARKM_blueprints GROUP BY type ORDER BY t"
+        "FROM ARKM_blueprints GROUP BY t ORDER BY t"
     ))
     return {"types": [{"name": r[0], "count": int(r[1])} for r in res.fetchall()]}
 
@@ -1216,10 +1219,10 @@ async def delete_by_filter(
         )
         params["s"] = f"%{search.lower()}%"
     if category:
-        where.append("LOWER(TRIM(category)) = :cat")
+        where.append("LOWER(TRIM(COALESCE(category, 'Other'))) = :cat")
         params["cat"] = category.lower().strip()
     if type:
-        where.append("type = :t")
+        where.append("COALESCE(type, 'item') = :t")
         params["t"] = type
     if source:
         where.append("source = :src")

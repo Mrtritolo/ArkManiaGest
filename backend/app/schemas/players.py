@@ -57,9 +57,11 @@ class PlayerListItem(BaseModel):
 class PlayerUpdate(BaseModel):
     """Fields that can be updated on a player record (all optional)."""
 
-    name: Optional[str] = None
-    permission_groups: Optional[str] = None
-    timed_permission_groups: Optional[str] = None
+    # The Players column sizes: a longer value is a 422, not a 500 from the
+    # DB (or, on a non-strict server, a silently cut permission entry).
+    name: Optional[str] = Field(None, max_length=45)
+    permission_groups: Optional[str] = Field(None, max_length=256)
+    timed_permission_groups: Optional[str] = Field(None, max_length=256)
 
 
 # ── Shop points operations ────────────────────────────────────────────────────

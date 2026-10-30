@@ -487,10 +487,9 @@ async def import_from_container(
         "update_coordination_priority": 1,
         "cpu_optimization":     False,
         "is_active":            True,
-        # Mark as "stopped" until the next status probe -- the scanner
-        # already knows whether the container is currently running, but
-        # we trust the live docker inspect more than a cached scan.
-        "status":               "stopped" if discovered.get("status") != "running" else "running",
+        # The scan's process check is only the starting point: the next
+        # status probe (docker inspect) replaces it with the live state.
+        "status":               "running" if discovered.get("process_running") else "stopped",
         "created_at":           now,
         "updated_at":           now,
     }

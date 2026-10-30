@@ -785,7 +785,11 @@ async def log_action_async(
             "INSERT INTO ARKM_instance_actions "
             "(instance_id, machine_id, instance_name, action, status, "
             " meta, user_id, username, started_at) "
-            "VALUES (:iid, :mid, :iname, :act, :st, :meta, :uid, :un, :now)"
+            # The id is resolved at write time: a scheduled restart keeps the
+            # requester's dict for up to an hour, and a user deleted in the
+            # meantime would fail the foreign key and kill the action.
+            "VALUES (:iid, :mid, :iname, :act, :st, :meta, "
+            " (SELECT id FROM arkmaniagest_users WHERE id = :uid), :un, :now)"
         ),
         {
             "iid":   instance_id,

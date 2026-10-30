@@ -232,11 +232,18 @@ class SSHManager:
         timer.daemon = True
         timer.start()
         try:
-            # Drain the streams before waiting for the exit status: once the
-            # output exceeds the channel window (2 MB) the remote side blocks
-            # until it is read, and recv_exit_status() would wait forever.
+            # Drain both streams at once, then wait for the exit status: they
+            # share the channel window (2 MB), so output left unread on one
+            # blocks the remote command while the other is read, and neither
+            # read nor recv_exit_status() would ever return.
+            err_parts: list = []
+            err_reader = threading.Thread(
+                target=lambda: err_parts.append(stderr.read()), daemon=True,
+            )
+            err_reader.start()
             out = stdout.read()
-            err = stderr.read()
+            err_reader.join()
+            err = b"".join(err_parts)
             exit_code = channel.recv_exit_status()
         finally:
             timer.cancel()

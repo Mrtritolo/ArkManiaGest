@@ -464,7 +464,8 @@ export const serverInstancesApi = {
     api.post<InstanceActionResult>(`/servers/${id}/provision`, undefined, { timeout: LIFECYCLE_TIMEOUT }),
   // POK update pulls the latest ASA build from Steam; it can run for
   // 10+ minutes, well past axios' 30s default, so we bump the per-call
-  // timeout to 30 minutes.  The backend also respects SSH_TIMEOUT.
+  // timeout to 30 minutes.  The backend caps the host command with
+  // SSH_EXEC_TIMEOUT.
   update_: (id: number) =>
     api.post<InstanceActionResult>(
       `/servers/${id}/update`,
@@ -803,6 +804,8 @@ export const playersApi = {
     const params: Record<string, unknown> = {};
     if (machineId) params.machine_id = machineId;
     if (containerName) params.container_name = containerName;
+    // One remote parser run per .arktribe, machine after machine, like
+    // sync-names: same budget, just under nginx's 30-minute /api/ limit.
     return api.post<{
       success:                     boolean;
       total_files_scanned:         number;
@@ -812,7 +815,7 @@ export const playersApi = {
       not_named:                   Array<{file_id: string; tribe_id: number | null; source: string}>;
       not_named_total:             number;
       errors:                      string[];
-    }>("/players/sync-tribes", null, { params, timeout: 120_000 });
+    }>("/players/sync-tribes", null, { params, timeout: 25 * 60 * 1000 });
   },
 
   /** Return containers eligible for the name sync operation. */

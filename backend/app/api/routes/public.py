@@ -114,7 +114,9 @@ def _validate_request(request: Request, api_key: Optional[str] = None) -> None:
       1. API key present and correct
       2. Origin/Referer header matches an allowed origin, OR client IP is an
          allowed server IP
-      3. Rate limit not exceeded
+      3. Rate limit not exceeded (origin callers only: a PUBLIC_SERVER_IPS
+         caller is a site backend relaying many visitors, so one 30/min
+         bucket would starve them all; the global middleware still limits it)
 
     Raises:
         HTTPException 403: Key invalid, or origin/IP not allowed.
@@ -144,7 +146,7 @@ def _validate_request(request: Request, api_key: Optional[str] = None) -> None:
     if not (origin_ok or referer_ok or ip_ok):
         raise HTTPException(status_code=403, detail="Unauthorized origin.")
 
-    if not _check_rate_limit(client_ip):
+    if not ip_ok and not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again in a minute.")
 
 

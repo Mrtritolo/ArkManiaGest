@@ -23,6 +23,10 @@ if ! flock -n 9; then
     exit 0
 fi
 
+# The DB option files hold passwords: removed even when the run is killed.
+TEMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
 echo "============================================"
 echo "  ArkManiaGest — Backup"
 echo "  ${TIMESTAMP}"
@@ -64,7 +68,7 @@ dump_db() {
     local out="$BACKUP_PATH/${label}.sql.gz"
     # Use a defaults-extra-file so the password never lands in `ps`.
     local creds
-    creds=$(mktemp)
+    creds=$(mktemp "$TEMP_DIR/db.XXXXXX")
     chmod 600 "$creds"
     # skip-ssl: connect the way the panel does (it never asks for TLS).
     # MariaDB 11.4+ clients require TLS by default and refused a server
@@ -80,7 +84,7 @@ password=$(optval "$password")
 skip-ssl
 EOF
     local err
-    err=$(mktemp)
+    err=$(mktemp "$TEMP_DIR/err.XXXXXX")
     if mysqldump --defaults-extra-file="$creds" \
         --single-transaction --skip-lock-tables \
         --no-tablespaces \

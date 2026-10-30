@@ -34,7 +34,8 @@ export interface DiscordSettingsForm {
   hasChanges: boolean;
   setForm: (updater: (current: FormState) => FormState) => void;
   load: () => Promise<void>;
-  refresh: () => Promise<void>;
+  /** False when the operator kept their unsaved edits instead. */
+  refresh: () => Promise<boolean>;
   save: () => Promise<void>;
   reset: () => Promise<void>;
 }
@@ -179,7 +180,7 @@ export function useDiscordSettingsForm(): DiscordSettingsForm {
     setSuccess(null);
   }, [initial, hasChanges, confirm, t]);
 
-  const refresh = useCallback(async (): Promise<void> => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     if (hasChanges) {
       const ok = await confirm({
         title: t("discord.settings.refreshTitle"),
@@ -187,9 +188,10 @@ export function useDiscordSettingsForm(): DiscordSettingsForm {
         confirmLabel: t("discord.settings.refreshConfirm"),
         tone: "danger",
       });
-      if (!ok) return;
+      if (!ok) return false;
     }
     await load();
+    return true;
   }, [hasChanges, confirm, t, load]);
 
   return {

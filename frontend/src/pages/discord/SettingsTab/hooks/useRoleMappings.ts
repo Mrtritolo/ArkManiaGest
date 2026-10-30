@@ -35,7 +35,8 @@ export interface RoleMappings {
   runSync: () => Promise<void>;
 }
 
-export function useRoleMappings(): RoleMappings {
+/** @param reloadKey Bumped by the tab's Refresh: reloads the rows and roles. */
+export function useRoleMappings(reloadKey = 0): RoleMappings {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
@@ -68,7 +69,7 @@ export function useRoleMappings(): RoleMappings {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadKey]);
 
   const createMapping = useCallback(
     async (roleId: string, group: string): Promise<boolean> => {

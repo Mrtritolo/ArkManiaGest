@@ -23,14 +23,22 @@ import type { RoleMapping } from "../../../../services/api";
 import { useRoleMappings } from "../hooks/useRoleMappings";
 import styles from "../SettingsTab.module.css";
 
-export function RoleMappingSection() {
+interface Props {
+  /** Bumped by the tab's Refresh; the draft row survives it. */
+  reloadKey: number;
+}
+
+export function RoleMappingSection({ reloadKey }: Props) {
   const { t } = useTranslation();
-  const rm = useRoleMappings();
+  const rm = useRoleMappings(reloadKey);
   // New-row draft (kept local so typing doesn't yet hit the backend).
   const [draftRole, setDraftRole] = useState("");
   const [draftGroup, setDraftGroup] = useState("");
 
   const assignableRoles = rm.roles.filter((r) => r.name !== "@everyone" && !r.managed);
+  // The draft survives a reload, but a role that left the guild meanwhile
+  // must not be added: the select would show the placeholder over it.
+  const pickedRole = assignableRoles.some((r) => r.id === draftRole) ? draftRole : "";
   const activeCount = rm.mappings?.filter((m) => m.is_active).length ?? 0;
 
   function roleLabel(mapping: RoleMapping): string {
@@ -44,7 +52,7 @@ export function RoleMappingSection() {
 
   async function addMapping(): Promise<void> {
     // The draft is cleared only after the row exists server side.
-    if (await rm.createMapping(draftRole, draftGroup)) {
+    if (await rm.createMapping(pickedRole, draftGroup)) {
       setDraftRole("");
       setDraftGroup("");
     }
@@ -72,7 +80,7 @@ export function RoleMappingSection() {
           <Select
             size="sm"
             aria-label={t("discord.roleMap.pickRole")}
-            value={draftRole}
+            value={pickedRole}
             onChange={(event) => setDraftRole(event.target.value)}
           >
             <option value="">
@@ -98,7 +106,7 @@ export function RoleMappingSection() {
             icon={Plus}
             loading={rm.creating}
             loadingLabel={t("discord.roleMap.adding")}
-            disabled={!draftRole || !draftGroup.trim()}
+            disabled={!pickedRole || !draftGroup.trim()}
             onClick={() => void addMapping()}
           >
             {t("discord.roleMap.add")}

@@ -184,7 +184,12 @@ export function useNameSync({ toast, loadPlayers, loadStats, t }: Args) {
         toast.error(t("players.messages.syncErrors", { errors: res.data.errors.join("; ") }));
       }
     } catch (err) {
-      toast.error(extractError(err, t("players.tribeSync.failed")));
+      // Same as the name sync: on a client timeout the backend still commits.
+      if ((err as { code?: string })?.code === "ECONNABORTED") {
+        toast.info(t("players.messages.syncStillRunning"));
+      } else {
+        toast.error(extractError(err, t("players.tribeSync.failed")));
+      }
     } finally {
       setSyncingTribes(false);
     }
