@@ -12,6 +12,9 @@ Endpoints:
   GET   /accounts                            -- admin: list known
                                                 Discord accounts +
                                                 their links
+  GET   /accounts/guild-membership           -- admin: which of them
+                                                left the guild
+  DELETE /accounts/{discord_user_id}         -- admin: delete one
 
 Subsequent phases (3-6) add /link, /role-mappings, /sync, /me/dashboard.
 """
@@ -19,6 +22,7 @@ Subsequent phases (3-6) add /link, /role-mappings, /sync, /me/dashboard.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from typing import Optional
 
@@ -42,6 +46,7 @@ from app.db.models.app import DiscordRoleMap
 
 
 router = APIRouter()
+log = logging.getLogger("arkmaniagest.discord")
 
 
 class DiscordConfigStatus(BaseModel):
@@ -676,6 +681,124 @@ async def list_discord_accounts(db: AsyncSession = Depends(get_db)):
             last_sync_at        = m.get("last_sync_at"),
         ))
     return out
+
+
+class _GuildMembershipRead(BaseModel):
+    """Known Discord accounts whose user is no longer in the guild."""
+    not_in_guild: list[str] = []
+
+
+@router.get(
+    "/accounts/guild-membership",
+    response_model=_GuildMembershipRead,
+    dependencies=[Depends(require_admin)],
+)
+async def accounts_guild_membership(db: AsyncSession = Depends(get_db)):
+    """
+    Flag the known Discord accounts whose user left the guild (or deleted
+    their Discord account), so the Accounts tab can point the operator at
+    the stale rows to delete by hand.
+
+    One member-list walk (1000 per page) rather than one call per account.
+    Past the walk cap an absent ID proves nothing, so those are looked up
+    one by one (404 = not a member).  Needs the bot and the GUILD_MEMBERS
+    intent, like the Members tab.
+    """
+    bot_token, guild_id = _require_bot_ready()
+    known = [
+        str(row[0]) for row in (await db.execute(
+            text("SELECT discord_user_id FROM arkmaniagest_discord_accounts")
+        )).fetchall()
+    ]
+    if not known:
+        return _GuildMembershipRead()
+
+    async def _find_missing() -> list[str]:
+        members: set[str] = set()
+        after: Optional[str] = None
+        for _ in range(25):   # 25 * 1000 = 25k member ceiling, as in role sync
+            page = await dc_client.list_guild_members(
+                bot_token=bot_token, guild_id=guild_id, limit=1000, after=after,
+            ) or []
+            members.update(str((m.get("user") or {}).get("id") or "") for m in page)
+            if len(page) < 1000:
+                return [d for d in known if d not in members]
+            after = str((page[-1].get("user") or {}).get("id") or "")
+            if not after:
+                break
+        missing: list[str] = []
+        for d in known:
+            if d in members:
+                continue
+            try:
+                await dc_client.get_guild_member(
+                    bot_token=bot_token, guild_id=guild_id, user_id=d,
+                )
+            except dc_client.DiscordAPIError as exc:
+                if exc.status != 404:
+                    raise
+                missing.append(d)
+        return missing
+
+    return _GuildMembershipRead(not_in_guild=await _wrap_discord_call(_find_missing)())
+
+
+@router.delete(
+    "/accounts/{discord_user_id}",
+    status_code=204,
+)
+async def delete_discord_account(
+    discord_user_id: str,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a known Discord identity, typically one that left the guild:
+    the row (profile, encrypted OAuth tokens, player and AppUser links)
+    and the auto-provisioned ``discord:<id>`` stub AppUser -- the same
+    scope as the self-service GDPR erasure in me.py.  A manually-created
+    AppUser that was linked is only unlinked.  The person can sign in
+    with Discord again later and comes back as a fresh, unlinked identity.
+    """
+    existing = await dc_store.get_by_discord_id(db, discord_user_id, include_tokens=True)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Discord account not found.")
+    stub_username = f"discord:{discord_user_id}"
+    if admin["sub"] == stub_username:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+
+    await db.execute(
+        text("DELETE FROM arkmaniagest_users WHERE username = :u"),
+        {"u": stub_username},
+    )
+    await db.execute(
+        text("DELETE FROM arkmaniagest_discord_accounts WHERE discord_user_id = :d"),
+        {"d": discord_user_id},
+    )
+    await db.commit()
+
+    # After the commit and bounded, as in the GDPR erasure: revoking only
+    # stops the tokens working before they expire, it must not hold up or
+    # fail a delete that already happened.
+    token = existing.get("refresh_token") or existing.get("access_token")
+    cfg = get_discord_config()
+    if token and cfg.has_oauth:
+        try:
+            await asyncio.wait_for(
+                dc_client.revoke_token(
+                    client_id=cfg.client_id, client_secret=cfg.client_secret, token=token,
+                ),
+                timeout=5.0,
+            )
+        except Exception as exc:   # noqa: BLE001 - the delete is already committed
+            log.warning("Discord token revoke skipped: %s", type(exc).__name__)
+
+    await audit_event(db, action="discord.account_delete", username=admin["sub"],
+                      detail=(f"discord {discord_user_id} (was eos {existing.get('eos_id')}, "
+                              f"app user id {existing.get('app_user_id')})"),
+                      request=request)
+    return None
 
 
 # ── Discord bot interaction (admin only) ─────────────────────────────────────

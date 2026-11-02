@@ -2938,14 +2938,17 @@
         "loadUsers": "Caricamento utenti fallito.",
         "linkAppUser": "Collegamento dell'AppUser fallito.",
         "search": "Ricerca giocatore fallita.",
-        "linkEos": "Collegamento del giocatore fallito."
+        "linkEos": "Collegamento del giocatore fallito.",
+        "membership": "Impossibile verificare chi è ancora nel server Discord.",
+        "delete": "Eliminazione dell'account Discord fallita."
       },
       "confirmUnlinkAppUser": "Scollegare l'AppUser '{{u}}' da Discord '{{d}}'?",
       "toast": {
         "appUserUnlinked": "Collegamento AppUser rimosso.",
         "eosUnlinked": "Collegamento giocatore rimosso.",
         "appUserLinked": "AppUser collegato.",
-        "eosLinked": "Giocatore collegato."
+        "eosLinked": "Giocatore collegato.",
+        "deleted": "Account Discord eliminato."
       },
       "confirmUnlinkEos": "Scollegare il giocatore EOS '{{e}}' da Discord '{{d}}'?",
       "loading": "Caricamento account Discord…",
@@ -2954,13 +2957,15 @@
         "discord": "Discord",
         "appUser": "AppUser del pannello",
         "player": "Giocatore ARK",
-        "linkedAt": "Collegato il"
+        "linkedAt": "Collegato il",
+        "actions": "Azioni"
       },
       "action": {
         "unlinkAppUser": "Scollega AppUser",
         "linkAppUser": "Collega AppUser",
         "unlinkEos": "Scollega giocatore",
-        "linkEos": "Collega giocatore"
+        "linkEos": "Collega giocatore",
+        "delete": "Elimina account"
       },
       "modal": {
         "linkAppUserTitle": "Collega AppUser a {{d}}",
@@ -2983,7 +2988,16 @@
       "appUserWithRole": "{{user}} ({{role}})",
       "copyEos": "Copia l'EOS ID di {{user}}",
       "unlinkAppUserFrom": "Scollega l'utente del pannello da {{user}}",
-      "unlinkEosFrom": "Scollega il giocatore ARK da {{user}}"
+      "unlinkEosFrom": "Scollega il giocatore ARK da {{user}}",
+      "confirmDelete": "Eliminare l'account Discord '{{d}}'? Vengono rimossi anche i collegamenti al giocatore e all'utente del pannello, e l'utente 'discord:' creato automaticamente, se esiste; un utente del pannello creato a mano resta. Potrà accedere di nuovo con Discord più avanti, come nuovo account non collegato.",
+      "deleteAccountOf": "Elimina l'account Discord di {{user}}",
+      "membership": {
+        "unavailable": "Appartenenza al server non verificata",
+        "gone": "Uscito dal server",
+        "goneTitle_one": "{{count}} account non fa più parte del server Discord",
+        "goneTitle_other": "{{count}} account non fanno più parte del server Discord",
+        "goneBody": "Sono segnati \"Uscito dal server\" nell'elenco qui sotto. Elimina quelli che non servono più con il pulsante cestino sulla loro riga."
+      }
     },
     "common": {
       "eosShort": "EOS {{id}}…"

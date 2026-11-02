@@ -2106,6 +2106,12 @@ export interface DiscordAccount {
   last_sync_at:        string | null;
 }
 
+/** /api/v1/discord/accounts/guild-membership */
+export interface DiscordAccountsMembership {
+  /** Known accounts whose user is no longer in the guild. */
+  not_in_guild: string[];
+}
+
 /** Single hit from /api/v1/discord/players/search?q= */
 export interface DiscordPlayerSearchHit {
   eos_id:     string;
@@ -2173,6 +2179,17 @@ export const discordApi = {
   updateConfig: (body: DiscordConfigUpdate) =>
     api.put<DiscordConfigUpdateResponse>("/discord/config", body),
   accounts: () => api.get<DiscordAccount[]>("/discord/accounts"),
+  /**
+   * Which known accounts left the guild.  Needs the bot; walks the guild
+   * member list, so a large guild takes longer than the default timeout.
+   */
+  accountsMembership: () =>
+    api.get<DiscordAccountsMembership>("/discord/accounts/guild-membership", {
+      timeout: 120_000,
+    }),
+  /** Delete a known Discord identity with its links (admin). */
+  deleteAccount: (discord_user_id: string) =>
+    api.delete(`/discord/accounts/${discord_user_id}`),
 
   // -- Player search + EOS link ----------------------------------------------
   searchPlayers: (q: string, limit = 25) =>

@@ -4,7 +4,11 @@
  * One row per known Discord identity (anyone who has signed in via Discord
  * at least once). Per row: the Discord identity, the panel AppUser link, the
  * ARK player link and when the pair was bound, plus the inline unlink
- * actions for the two link kinds.
+ * actions for the two link kinds and a delete action for the whole row.
+ *
+ * Accounts whose user has left the guild are flagged, so the stale ones
+ * can be deleted by hand. That check needs the bot: when it can't run,
+ * a warning says why and the table works as before.
  *
  * Two dialog flows:
  *   Link AppUser — combobox over /users (panel AppUsers, filtered locally).
@@ -16,7 +20,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Database, Link2, Link2Off, RotateCw, Save, UserCog, Users } from "lucide-react";
+import { Database, Link2, Link2Off, RotateCw, Save, Trash2, UserCog, Users, UserX } from "lucide-react";
 import {
   Alert,
   Avatar,
@@ -70,14 +74,26 @@ export default function AccountsTab() {
   const [accounts, setAccounts] = useState<DiscordAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // null until the guild check has answered (or when it could not run).
+  const [notInGuild, setNotInGuild] = useState<Set<string> | null>(null);
+  const [membershipError, setMembershipError] = useState("");
 
   const [linkAppUserFor, setLinkAppUserFor] = useState<DiscordAccount | null>(null);
   const [linkEosFor, setLinkEosFor] = useState<DiscordAccount | null>(null);
 
   useEffect(() => {
-    void loadAccounts();
+    refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const goneCount = notInGuild
+    ? accounts.filter((acc) => notInGuild.has(acc.discord_user_id)).length
+    : 0;
+
+  function refresh(): void {
+    void loadAccounts();
+    void loadMembership();
+  }
 
   async function loadAccounts(): Promise<void> {
     setLoading(true);
@@ -90,6 +106,36 @@ export default function AccountsTab() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadMembership(): Promise<void> {
+    setMembershipError("");
+    try {
+      const res = await discordApi.accountsMembership();
+      setNotInGuild(new Set(res.data.not_in_guild));
+    } catch (err: unknown) {
+      setNotInGuild(null);
+      setMembershipError(extractError(err, t("discord.accounts.errors.membership")));
+    }
+  }
+
+  async function handleDelete(acc: DiscordAccount): Promise<void> {
+    const ok = await confirm({
+      title: t("discord.accounts.action.delete"),
+      description: t("discord.accounts.confirmDelete", { d: discordName(acc) }),
+      confirmLabel: t("discord.accounts.action.delete"),
+      tone: "danger",
+    });
+    if (!ok) return;
+    await pending.run(`${acc.discord_user_id}:delete`, async () => {
+      try {
+        await discordApi.deleteAccount(acc.discord_user_id);
+        toast.success(t("discord.accounts.toast.deleted"));
+        await loadAccounts();
+      } catch (err: unknown) {
+        toast.error(extractError(err, t("discord.accounts.errors.delete")));
+      }
+    });
   }
 
   async function handleUnlinkAppUser(acc: DiscordAccount): Promise<void> {
@@ -152,31 +198,46 @@ export default function AccountsTab() {
         </Alert>
       )}
 
+      {membershipError && (
+        <Alert tone="warning" title={t("discord.accounts.membership.unavailable")}>
+          {membershipError}
+        </Alert>
+      )}
+
+      {!loading && goneCount > 0 && (
+        <Alert tone="warning" title={t("discord.accounts.membership.goneTitle", { count: goneCount })}>
+          {t("discord.accounts.membership.goneBody")}
+        </Alert>
+      )}
+
       <Card
         title={t("discord.accounts.listTitle")}
         flush
         actions={
-          <Button size="sm" icon={RotateCw} onClick={() => void loadAccounts()}>
+          <Button size="sm" icon={RotateCw} onClick={refresh}>
             {t("common.refresh")}
           </Button>
         }
       >
-        <Table label={t("discord.accounts.listTitle")} minWidth={900}>
+        <Table label={t("discord.accounts.listTitle")} minWidth={960}>
           <thead>
             <tr>
               <th scope="col">{t("discord.accounts.col.discord")}</th>
               <th scope="col">{t("discord.accounts.col.appUser")}</th>
               <th scope="col">{t("discord.accounts.col.player")}</th>
               <th scope="col">{t("discord.accounts.col.linkedAt")}</th>
+              <th scope="col">
+                <span className="u-sr-only">{t("discord.accounts.col.actions")}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <TableMessageRow colSpan={4}>
+              <TableMessageRow colSpan={5}>
                 <Spinner block label={t("discord.accounts.loading")} />
               </TableMessageRow>
             ) : accounts.length === 0 ? (
-              <TableMessageRow colSpan={4}>
+              <TableMessageRow colSpan={5}>
                 <EmptyState
                   icon={Users}
                   title={t("discord.accounts.emptyTitle")}
@@ -203,6 +264,11 @@ export default function AccountsTab() {
                               : acc.discord_user_id}
                           </span>
                         </span>
+                        {notInGuild?.has(acc.discord_user_id) && (
+                          <Badge tone="warning" icon={UserX}>
+                            {t("discord.accounts.membership.gone")}
+                          </Badge>
+                        )}
                       </div>
                     </td>
 
@@ -265,6 +331,19 @@ export default function AccountsTab() {
 
                     <td className="u-secondary">
                       {acc.linked_at ? fmtDateTime(acc.linked_at) : <NotAvailable />}
+                    </td>
+
+                    <td>
+                      <div className="ui-row-actions">
+                        <IconButton
+                          size="sm"
+                          icon={Trash2}
+                          tone="danger"
+                          loading={pending.isPending(`${acc.discord_user_id}:delete`)}
+                          label={t("discord.accounts.deleteAccountOf", { user: display })}
+                          onClick={() => void handleDelete(acc)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );

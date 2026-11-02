@@ -2938,14 +2938,17 @@
         "loadUsers": "Failed to load users.",
         "linkAppUser": "Failed to link AppUser.",
         "search": "Player search failed.",
-        "linkEos": "Failed to link player."
+        "linkEos": "Failed to link player.",
+        "membership": "Couldn't check who is still in the Discord server.",
+        "delete": "Failed to delete the Discord account."
       },
       "confirmUnlinkAppUser": "Unlink AppUser '{{u}}' from Discord '{{d}}'?",
       "toast": {
         "appUserUnlinked": "AppUser link removed.",
         "eosUnlinked": "Player link removed.",
         "appUserLinked": "AppUser linked.",
-        "eosLinked": "Player linked."
+        "eosLinked": "Player linked.",
+        "deleted": "Discord account deleted."
       },
       "confirmUnlinkEos": "Unlink EOS player '{{e}}' from Discord '{{d}}'?",
       "loading": "Loading Discord accounts…",
@@ -2954,13 +2957,15 @@
         "discord": "Discord",
         "appUser": "Panel AppUser",
         "player": "ARK player",
-        "linkedAt": "Linked at"
+        "linkedAt": "Linked at",
+        "actions": "Actions"
       },
       "action": {
         "unlinkAppUser": "Unlink AppUser",
         "linkAppUser": "Link AppUser",
         "unlinkEos": "Unlink player",
-        "linkEos": "Link player"
+        "linkEos": "Link player",
+        "delete": "Delete account"
       },
       "modal": {
         "linkAppUserTitle": "Link AppUser to {{d}}",
@@ -2983,7 +2988,16 @@
       "appUserWithRole": "{{user}} ({{role}})",
       "copyEos": "Copy the EOS ID of {{user}}",
       "unlinkAppUserFrom": "Unlink the panel user from {{user}}",
-      "unlinkEosFrom": "Unlink the ARK player from {{user}}"
+      "unlinkEosFrom": "Unlink the ARK player from {{user}}",
+      "confirmDelete": "Delete the Discord account '{{d}}'? Its player and panel-user links go with it, and so does its auto-created 'discord:' panel user, if it has one; a panel user created by hand is kept. They can sign in with Discord again later, as a new unlinked account.",
+      "deleteAccountOf": "Delete the Discord account of {{user}}",
+      "membership": {
+        "unavailable": "Server membership not checked",
+        "gone": "Left the server",
+        "goneTitle_one": "{{count}} account is no longer in the Discord server",
+        "goneTitle_other": "{{count}} accounts are no longer in the Discord server",
+        "goneBody": "They are marked \"Left the server\" in the list below. Delete the ones you no longer need with the bin button on their row."
+      }
     },
     "common": {
       "eosShort": "EOS {{id}}…"

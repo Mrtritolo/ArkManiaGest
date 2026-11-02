@@ -7,6 +7,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.17.0] - 2026-11-02
+
+### Added
+
+- **Discord settings: accounts that left the server are flagged.** The
+  Accounts tab checks every known Discord account against the guild member
+  list and marks the ones no longer in it ("Left the server"), with a count
+  above the table. The check needs the bot and the GUILD_MEMBERS intent;
+  without them a warning says why and the table works as before.
+- **Discord settings: delete a Discord account.** Every row of the Accounts
+  tab has a delete action. It removes the stored identity with its OAuth
+  tokens and its player and panel-user links, plus the auto-created
+  `discord:<id>` panel user (the same scope as the self-service GDPR
+  erasure); a panel user created by hand is only unlinked. The tokens are
+  revoked at Discord on a best-effort basis and the delete is audited
+  (`discord.account_delete`). The person can sign in with Discord again
+  later as a new, unlinked account.
+
 ## [4.16.7] - 2026-10-30
 
 ### Fixed
